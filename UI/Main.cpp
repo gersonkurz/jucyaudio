@@ -152,7 +152,7 @@ namespace jucyaudio
             void setupPropertiesFile()
             {
                 juce::File appDataDir{
-                    juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("NGAudioApp_Dev")}; // Same base as your DB
+                    juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("jucyaudioApp_Dev")}; // Same base as your DB
 
                 assert(appDataDir.exists()); // should have been created by the spdlog setup
 
@@ -170,7 +170,7 @@ namespace jucyaudio
                 {
                     // 1. Determine Log File Path (platform-aware, next to DB)
                     juce::File appDataDir{
-                        juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("NGAudioApp_Dev")}; // Same base as your DB
+                        juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("jucyaudioApp_Dev")}; // Same base as your DB
 
                     if (!appDataDir.exists())
                     {
@@ -230,7 +230,7 @@ namespace jucyaudio
 
                     // Test log message
                     spdlog::info("---------------------------------------------------------");
-                    spdlog::info("NGAudio Application Started. Logging initialised.");
+                    spdlog::info("jucyaudio Application Started. Logging initialised.");
                     spdlog::info("Log file: {}", logFilePath_std);
                     spdlog::debug("Debug logging is enabled.");
                 }

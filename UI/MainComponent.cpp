@@ -31,7 +31,7 @@ namespace jucyaudio
               m_mainPlaybackAndStatusPanel{*this}
         {
             // --- TrackLibrary Initialization (remains as is) ---
-            juce::File appDataDir{juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("NGAudioApp_Dev")};
+            juce::File appDataDir{juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("jucyaudioApp_Dev")};
             if (!appDataDir.exists())
             {
                 appDataDir.createDirectory();
@@ -1060,7 +1060,7 @@ namespace jucyaudio
                 result.setActive(true);
                 break;
             case cmd_Exit:
-                result.setInfo("Exit", "Exit NGAudio", "General", 0);
+                result.setInfo("Exit", "Exit jucyaudio", "General", 0);
                 result.addDefaultKeypress('q',
                                           juce::ModifierKeys::commandModifier); // Cmd+Q or Ctrl+Q
                 result.setActive(true);
@@ -1076,8 +1076,8 @@ namespace jucyaudio
             {
             case cmd_About:
                 // Show a simple About box
-                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "About NGAudio",
-                                                       "NGAudio - MP3 Player and Mixer\nVersion 0.1.0 "
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "About jucyaudio",
+                                                       "jucyaudio - MP3 Player and Mixer\nVersion 0.1.0 "
                                                        "(Dev)\n\n(c) 2025 Your Name",
                                                        "OK");
                 return true;

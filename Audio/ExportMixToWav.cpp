@@ -478,8 +478,8 @@ namespace jucyaudio
             lame_set_mode(m_lameFlags, JOINT_STEREO); // joint stereo saves a few bits
                                                       // Add basic ID3 tags
             id3tag_init(m_lameFlags);
-            id3tag_set_artist(m_lameFlags, "NGAudio");
-            id3tag_set_album(m_lameFlags, "NGAudio Mixes");
+            id3tag_set_artist(m_lameFlags, "jucyaudio");
+            id3tag_set_album(m_lameFlags, "jucyaudio Mixes");
             id3tag_set_year(m_lameFlags, "2025");
 
             // Initialize LAME parameters

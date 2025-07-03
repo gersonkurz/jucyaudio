@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-print -P "\e]0;NGAudio\a"
+print -P "\e]0;jucyaudio\a"
 
 export PATH="$PATH:/usr/local/bin"
 export PATH="$PATH:/System/Cryptexes/App/usr/bin"
