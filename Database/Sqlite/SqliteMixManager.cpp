@@ -130,7 +130,7 @@ namespace jucyaudio
                 }
             }
             const auto sql_statement = output.as_string();
-            spdlog::info("Executing SQL statement to get mixes: {}", sql_statement);
+            spdlog::debug("Executing SQL statement to get mixes: {}", sql_statement);
             std::vector<MixInfo> mixes;
             SqliteStatement stmt{m_db};
             stmt.query(

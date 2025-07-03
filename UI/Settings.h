@@ -9,6 +9,8 @@ namespace jucyaudio
 {
     namespace config
     {
+        extern std::shared_ptr<spdlog::logger> logger;
+        
         struct DataViewColumn
         {
             DataViewColumn() = default;
@@ -22,7 +24,7 @@ namespace jucyaudio
             DataViewColumnSection(Section *parent, const std::string &name)
                 : Section{parent, name}
             {
-                spdlog::info("{}: creating DataViewColumnSection with name '{}' at {}", __func__, name, (const void *) this);
+                logger->info("{}: creating DataViewColumnSection with name '{}' at {}", __func__, name, (const void *) this);
             }
             TypedValue<std::string> columnName{this, "ColumnName", ""};
             TypedValue<int> columnWidth{this, "ColumnWidth", 100};

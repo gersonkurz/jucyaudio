@@ -7,8 +7,6 @@ namespace jucyaudio
 {
     namespace database
     {
-        typedef int64_t FolderId;
-
         // Data structure to hold info about a watched folder for the TableListBox
         struct FolderInfo final
         {

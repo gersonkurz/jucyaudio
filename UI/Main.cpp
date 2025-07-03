@@ -1,10 +1,11 @@
-#include <JuceHeader.h>
+#include <Config/toml_backend.h>
+#include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_audio_utils/juce_audio_utils.h>
 #include <UI/MainComponent.h>
+#include <UI/Settings.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/msvc_sink.h>
 #include <spdlog/spdlog.h>
-#include <Config/toml_backend.h>
-#include <UI/Settings.h>
 
 #if _WIN32 // Or specific MSVC checks
 #pragma comment(lib, "aubio.lib")
@@ -37,7 +38,6 @@ namespace jucyaudio
     {
         std::string g_strConfigFilename;
 
-
         //==============================================================================
         class jucyaudioApplication : public juce::JUCEApplication
         {
@@ -51,16 +51,19 @@ namespace jucyaudio
 
             const juce::String getApplicationName() override
             {
-                return ProjectInfo::projectName;
+                return PROJECT_NAME;
             }
+            
             const juce::String getApplicationVersion() override
             {
-                return ProjectInfo::versionString;
+                return PROJECT_VERSION;
             }
+
             bool moreThanOneInstanceAllowed() override
             {
                 return true;
             }
+            
             juce::ApplicationCommandManager &getGlobalCommandManager()
             {
                 return commandManager;
@@ -102,7 +105,7 @@ namespace jucyaudio
                 {
                     setUsingNativeTitleBar(true);
                     m_pMainComponent = new jucyaudio::ui::MainComponent{commandManager}; // Create MainComponent
-                    setContentOwned(m_pMainComponent, true);                           // Set as content
+                    setContentOwned(m_pMainComponent, true);                             // Set as content
 
 // If MainComponent directly handles menus for native Mac bar:
 #if JUCE_MAC
@@ -116,7 +119,7 @@ namespace jucyaudio
                     setVisible(true);
                 }
 
-                const auto getMainComponent() const
+                auto getMainComponent() const
                 {
                     return m_pMainComponent;
                 }
@@ -161,7 +164,7 @@ namespace jucyaudio
 
                 juce::Logger::writeToLog("Properties file location: " + g_strConfigFilename);
             }
-
+            
             void setupLogging()
             {
 
@@ -221,9 +224,21 @@ namespace jucyaudio
                     // Use a descriptive name, "multi_sink_logger" or your app name
                     auto combined_logger = std::make_shared<spdlog::logger>("jucyaudio_logger", begin(sinks), end(sinks));
 
+                    auto conf_logger = std::make_shared<spdlog::logger>("conf", sinks.begin(), sinks.end());
+
+                    // Set levels per module
+                    conf_logger->set_level(spdlog::level::warn);
+
+                    // Optional: Flush level per logger
+                    conf_logger->flush_on(spdlog::level::warn);
+                    config::logger = conf_logger; // Store the config logger globally
+
+                    // Register them globally
+                    spdlog::register_logger(conf_logger);
+
                     // 4. Set Log Level (can be configured from a file later)
-                    combined_logger->set_level(spdlog::level::debug); // Set level on the specific logger
-                    combined_logger->flush_on(spdlog::level::debug);  // Flush frequently during debugging
+                    combined_logger->set_level(spdlog::level::info); // Set level on the specific logger
+                    combined_logger->flush_on(spdlog::level::info);  // Flush frequently during debugging
 
                     // 5. Register it as the default logger (or use it explicitly)
                     spdlog::set_default_logger(combined_logger);
@@ -233,6 +248,17 @@ namespace jucyaudio
                     spdlog::info("jucyaudio Application Started. Logging initialised.");
                     spdlog::info("Log file: {}", logFilePath_std);
                     spdlog::debug("Debug logging is enabled.");
+                    try
+                    {
+                        std::locale loc("en_US.UTF-8");
+                        std::locale::global(loc); // Set the global locale
+                        spdlog::info("Locale set to: {}", loc.name());
+                        spdlog::info("info: {:L}", 1234567); // Test formatting with thousands separators
+                    }
+                    catch (const std::runtime_error &e)
+                    {
+                        spdlog::error("Locale error: {}", e.what());
+                    }
                 }
                 catch (const spdlog::spdlog_ex &ex)
                 {

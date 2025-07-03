@@ -87,7 +87,7 @@ GROUP BY ws.ws_id, ws.name)SQL";
                 }
             }
             const auto sql_statement = output.as_string();
-            spdlog::info("Executing SQL statement to get mixes: {}",
+            spdlog::debug("Executing SQL statement to get mixes: {}",
                          sql_statement);
             std::vector<WorkingSetInfo> workingSets;
             SqliteStatement stmt{m_db};

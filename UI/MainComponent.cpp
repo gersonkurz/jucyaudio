@@ -140,7 +140,7 @@ namespace jucyaudio
                     if (auto *firstTopLevelTreeViewItem =
                             dynamic_cast<NavigationPanelComponent::NavTreeViewItem *>(m_navigationPanel.getTreeView().getItemOnRow(0)))
                     {
-                        if (jucyaudio::INavigationNode *nodeToSelect = firstTopLevelTreeViewItem->getNode())
+                        //if (jucyaudio::INavigationNode *nodeToSelect = firstTopLevelTreeViewItem->getNode())
                         {
                             // Select this item in the TreeView UI
                             firstTopLevelTreeViewItem->setSelected(true, true);
@@ -898,7 +898,7 @@ namespace jucyaudio
                 trackIdsForCleanup.push_back(trackInfo.trackId);
             }
 
-            auto cbOnMixCreatedInDatabase = [this](bool initiationSuccess, MixId newMixId)
+            auto cbOnMixCreatedInDatabase = [](bool initiationSuccess, MixId newMixId)
             {
                 if (initiationSuccess && newMixId != -1)
                 {

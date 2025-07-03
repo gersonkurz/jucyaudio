@@ -14,6 +14,7 @@ namespace jucyaudio
         struct TrackInfo
         {
             TrackId trackId = -1;
+            FolderId folderId = -1; // Folder ID this track belongs to, -1 if not set
             std::filesystem::path filepath; // Path to the audio file
 
             // Filesystem attributes

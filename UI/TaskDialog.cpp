@@ -262,9 +262,12 @@ namespace jucyaudio
             m_statusLabel.setText(juce::String::fromUTF8(statusMessage.data()), juce::dontSendNotification);
             if (progressPercent < 0)
             {
-                m_progressValue = 0.0; // Reset progress for indeterminate state
-                m_isProgressBarDeterminate = false;
-                m_progressBar.setPercentageDisplay(false);
+                if(m_isProgressBarDeterminate)
+                {
+                    m_progressValue = 0.0; // Reset progress for indeterminate state
+                    m_isProgressBarDeterminate = false;
+                    m_progressBar.setPercentageDisplay(false);
+                }
             }
             else
             {

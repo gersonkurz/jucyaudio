@@ -180,7 +180,7 @@ namespace jucyaudio
 
         NavigationPanelComponent::~NavigationPanelComponent()
         {
-            if (auto *root = m_treeView.getRootItem())
+            if (m_treeView.getRootItem())
             {
                 m_treeView.deleteRootItem(); // Juce 7/8 might have this
                 // Or more manually if deleteRootItem() isn't public or what we

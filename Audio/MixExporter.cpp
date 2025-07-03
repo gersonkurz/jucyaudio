@@ -14,7 +14,9 @@
 #include <Database/Includes/IMixManager.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
-#include <JuceHeader.h>
+#include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_audio_devices/juce_audio_devices.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <Utils/AssortedUtils.h>
 #include <spdlog/fmt/chrono.h>
 #include <spdlog/spdlog.h>

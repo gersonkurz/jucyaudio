@@ -2,7 +2,8 @@
 
 #include <Database/Includes/Constants.h>
 #include <Database/Includes/INavigationNode.h>
-#include <JuceHeader.h>
+#include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_graphics/juce_graphics.h>
 
 namespace jucyaudio
 {
@@ -35,7 +36,7 @@ namespace jucyaudio
                 // the item.
                 void itemClicked(const juce::MouseEvent &e) override;
 
-                const auto getNode() const
+                auto getNode() const
                 {
                     return m_associatedNode;
                 }

@@ -19,6 +19,7 @@ namespace jucyaudio
     typedef int64_t MixId;
     typedef int64_t Volume_t;
     typedef int64_t BPM_t;
+    typedef int64_t FolderId;
 
     namespace database
     {

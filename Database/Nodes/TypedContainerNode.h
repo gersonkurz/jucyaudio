@@ -56,18 +56,18 @@ namespace jucyaudio
 
             void refreshChildren() override
             {
-                spdlog::info("Refreshing children for TypedContainerNode: {}",
+                spdlog::debug("Refreshing children for TypedContainerNode: {}",
                              getName());
 
                 if (m_children.empty())
                 {
-                    spdlog::info("No children to refresh, calling client "
+                    spdlog::debug("No children to refresh, calling client "
                                  "creation method.");
                     m_clientCreationMethod(this, m_library, m_children);
                 }
                 else
                 {
-                    spdlog::info(
+                    spdlog::debug(
                         "Children already exist, using optimized variant");
 
 
@@ -131,7 +131,7 @@ namespace jucyaudio
                 if (!m_children.empty())
                 {
                     outChildren.resize(m_children.size());
-                    for (int i = 0; i < m_children.size(); ++i)
+                    for (size_t i = 0; i < m_children.size(); ++i)
                     {
                         outChildren[i] = m_children[i];
                         outChildren[i]->retain(REFCOUNT_DEBUG_ARGS);

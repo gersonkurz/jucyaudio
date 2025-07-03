@@ -7,6 +7,9 @@ namespace jucyaudio
 {
     namespace config
     {
+        extern std::shared_ptr<spdlog::logger> logger;
+        
+        //static auto logger = spdlog::get("conf");
         /// @brief Template for holding actual data values in the configuration system.
         /// @tparam T The type of the value to hold, e.g. int, bool, std::string.
         /// @note This class is a leaf in the configuration tree, meaning it does not have child items
@@ -24,7 +27,8 @@ namespace jucyaudio
                   m_defaultValue{std::move(defaultValue)},
                   m_value{m_defaultValue}
             {
-                spdlog::info("{}: creating TypedValue ({}, {}) at {}", __FUNCTION__, (const void*) parentSection, keyName, (const void *) this);
+                if(logger)
+                logger->info("{}: creating TypedValue ({}, {}) at {}", __FUNCTION__, (const void*) parentSection, keyName, (const void *) this);
                 if (parentSection)
                 {
                     // Forward to a method in Section that knows about
@@ -35,7 +39,7 @@ namespace jucyaudio
 
             ~TypedValue() override
             {
-                spdlog::info("{}: destroying TypedValue ({}, {}) at {}", __FUNCTION__, (const void*) m_parentSection, m_keyName, (const void *) this);
+                logger->info("{}: destroying TypedValue ({}, {}) at {}", __FUNCTION__, (const void*) m_parentSection, m_keyName, (const void *) this);
             }
 
             /// @brief Accessor for the value

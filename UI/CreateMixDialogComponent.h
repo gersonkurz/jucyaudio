@@ -5,7 +5,8 @@
 #include <Database/Includes/TrackInfo.h> // For jucyaudio::database::TrackInfo
 #include <Database/TrackLibrary.h>       // For jucyaudio::TrackLibrary
 #include <Audio/AudioLibrary.h>         // For jucyaudio::AudioLibrary
-#include <JuceHeader.h>
+#include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_graphics/juce_graphics.h>
 #include <filesystem>
 #include <functional>
 #include <vector>

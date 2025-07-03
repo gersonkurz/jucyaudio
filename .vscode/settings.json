@@ -1,6 +1,82 @@
+// .vscode/settings.json
 {
+    "cmake.configureArgs": [
+        "-DCMAKE_BUILD_TYPE=Debug",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+    ],
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
     "files.associations": {
-        "chrono": "cpp",
-        "format": "cpp"
+        "*.juce": "xml"
     }
+}
+
+// .vscode/tasks.json
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "CMake: Configure",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B", "build",
+                "-DCMAKE_BUILD_TYPE=Debug",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "CMake: Build",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build", "build",
+                "--config", "Debug",
+                "-j", "8"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "dependsOn": "CMake: Configure"
+        },
+        {
+            "label": "Run App",
+            "type": "shell",
+            "command": "open",
+            "args": ["${workspaceFolder}/build/jucyaudio_artefacts/Debug/jucyaudio.app"],
+            "group": "test",
+            "dependsOn": "CMake: Build"
+        }
+    ]
+}
+
+// .vscode/launch.json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug jucyaudio",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/jucyaudio_artefacts/Debug/jucyaudio.app/Contents/MacOS/jucyaudio",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "CMake: Build",
+            "console": "integratedTerminal"
+        }
+    ]
 }

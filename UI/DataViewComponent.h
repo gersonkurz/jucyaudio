@@ -2,7 +2,8 @@
 
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Includes/TrackInfo.h>
-#include <JuceHeader.h>
+#include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_graphics/juce_graphics.h>
 #include <UI/DynamicColumnManager.h>
 
 namespace jucyaudio
@@ -28,7 +29,7 @@ namespace jucyaudio
             void resized() override;
 
             void setCurrentNode(INavigationNode *node, bool refresh = false);
-            const auto getCurrentNode() const
+            auto getCurrentNode() const
             {
                 return m_currentNode;
             }

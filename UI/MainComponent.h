@@ -4,7 +4,8 @@
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Nodes/RootNode.h>
 #include <Database/TrackLibrary.h>
-#include <JuceHeader.h>
+#include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_graphics/juce_graphics.h>
 #include <UI/DataViewComponent.h>
 #include <UI/DividerComponent.h>
 #include <UI/DynamicToolbarComponent.h>

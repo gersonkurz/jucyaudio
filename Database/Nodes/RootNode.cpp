@@ -69,7 +69,7 @@ namespace jucyaudio
         {
             assert(outChildren.empty());
             outChildren.resize(m_children.size());
-            for (int i = 0; i < m_children.size(); ++i)
+            for (size_t i = 0; i < m_children.size(); ++i)
             {
                 outChildren[i] = m_children[i];
                 outChildren[i]->retain(REFCOUNT_DEBUG_ARGS);

@@ -12,6 +12,7 @@
 
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Nodes/BaseNode.h>
+#include <Database/Includes/Constants.h>
 
 namespace jucyaudio
 {

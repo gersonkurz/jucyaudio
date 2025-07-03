@@ -20,9 +20,19 @@ namespace
 
     // Array of initial SQL statements for schema creation
     const char *initialSqlStatements[] = {
+        "PRAGMA foreign_keys = ON;",
+        R"SQL(
+    CREATE TABLE IF NOT EXISTS Folders (
+        folder_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fs_path TEXT NOT NULL UNIQUE,
+        num_files INTEGER DEFAULT -1,
+        total_bytes INTEGER DEFAULT 0,
+        last_scanned INTEGER DEFAULT 0
+    );)SQL",
         R"SQL(
 CREATE TABLE IF NOT EXISTS Tracks (
     track_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    folder_id INTEGER,
     filepath TEXT NOT NULL UNIQUE,
     last_modified_fs INTEGER,
     filesize_bytes INTEGER,
@@ -43,18 +53,17 @@ CREATE TABLE IF NOT EXISTS Tracks (
     bpm INTEGER,
     key_string TEXT,
     beat_locations_json TEXT,
-    rating INTEGER DEFAULT 0, liked_status INTEGER DEFAULT 0, play_count INTEGER DEFAULT 0, last_played INTEGER,
-    internal_content_hash TEXT, user_notes TEXT, is_missing INTEGER DEFAULT 0
+    rating INTEGER DEFAULT 0,
+    liked_status INTEGER DEFAULT 0,
+    play_count INTEGER DEFAULT 0,
+    last_played INTEGER,
+    internal_content_hash TEXT,
+    user_notes TEXT,
+    is_missing INTEGER DEFAULT 0,
+    FOREIGN KEY (folder_id) REFERENCES Folders(folder_id) ON DELETE CASCADE
 );)SQL",
-        R"SQL(
-    CREATE TABLE IF NOT EXISTS Folders (
-        folder_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        fs_path TEXT NOT NULL UNIQUE,
-        num_files INTEGER DEFAULT -1,
-        total_bytes INTEGER DEFAULT 0,
-        last_scanned INTEGER DEFAULT 0
-    );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_tracks_filepath ON Tracks (filepath);",
+        "CREATE INDEX IF NOT EXISTS idx_tracks_folder_id ON Tracks (folder_id);",
         "CREATE INDEX IF NOT EXISTS idx_tracks_artist ON Tracks (artist_name "
         "COLLATE NOCASE);",
         "CREATE INDEX IF NOT EXISTS idx_tracks_album ON Tracks (album_title "
@@ -133,6 +142,7 @@ CREATE TABLE IF NOT EXISTS MixTracks(
         TrackInfo info{};
         int col = 0;
         info.trackId = stmt.getInt64(col++);
+        info.folderId = stmt.getInt64(col++);
         if (!stmt.isNull(col))
             info.filepath = pathFromString(stmt.getText(col));
         col++;
@@ -187,6 +197,7 @@ CREATE TABLE IF NOT EXISTS MixTracks(
                                   bool forUpdate = false)
     {
         bool ok = true;
+        ok &= stmt.addParam(info.folderId);
         ok &= stmt.addParam(pathToString(info.filepath));
         ok &= stmt.addParam(timestampToInt64(info.last_modified_fs));
         ok &= stmt.addParam(static_cast<int64_t>(info.filesize_bytes));
@@ -579,13 +590,13 @@ namespace jucyaudio
             if (trackInfo.trackId == -1)
             {  // INSERT
                 const std::string sql = R"SQL(
-            INSERT INTO Tracks (filepath, last_modified_fs, filesize_bytes, date_added, last_scanned,
+            INSERT INTO Tracks (folder_id, filepath, last_modified_fs, filesize_bytes, date_added, last_scanned,
                                 title, artist_name, album_title, album_artist_name, track_number, disc_number, year, 
                                 duration, samplerate, channels, bitrate, codec_name,
                                 bpm, key_string, beat_locations_json,
                                 rating, liked_status, play_count, last_played,
                                 internal_content_hash, user_notes, is_missing) 
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
         )SQL"; // 28 placeholders, is_missing defaults to 0 on insert
 
                 SqliteStatement stmt{m_db, sql};
@@ -604,7 +615,7 @@ namespace jucyaudio
             else
             {  // UPDATE
                 const std::string sql = R"SQL(
-            UPDATE Tracks SET filepath=?, last_modified_fs=?, filesize_bytes=?, date_added=?, last_scanned=?,
+            UPDATE Tracks SET folder_id=?, filepath=?, last_modified_fs=?, filesize_bytes=?, date_added=?, last_scanned=?,
                               title=?, artist_name=?, album_title=?, album_artist_name=?, track_number=?, disc_number=?, year=?, 
                               duration=?, samplerate=?, channels=?, bitrate=?, codec_name=?,
                               bpm=?, key_string=?, beat_locations_json=?,

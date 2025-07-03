@@ -2,7 +2,8 @@
 #include <Database/Includes/FolderInfo.h>
 #include <Database/Includes/IFolderDatabase.h>
 #include <Database/TrackLibrary.h>
-#include <JuceHeader.h>
+#include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_graphics/juce_graphics.h>
 
 namespace jucyaudio
 {
@@ -44,6 +45,7 @@ namespace jucyaudio
             void saveFolders(); // Save changes back to TrackLibrary/Settings
             void selectedRowsChanged(int lastRowSelected) override;
             bool keyPressed(const juce::KeyPress &key) override;
+            bool removeFolderAndAssociatedTracks(const database::FolderInfo &folderInfo);
 
             database::TrackLibrary &m_trackLibrary;
             database::IFolderDatabase &m_folderDatabase;

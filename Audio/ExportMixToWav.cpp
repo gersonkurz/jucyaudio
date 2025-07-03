@@ -377,7 +377,6 @@ namespace jucyaudio
 
         bool ExportWavMixImplementation::onRunMixingLoop()
         {
-            using clock = std::chrono::steady_clock;
             // Create a master output buffer for a block of samples
             const int processingBlockSize = 4096; // samples
             juce::AudioBuffer<float> masterOutputBlock{(int)outputNumChannels(), processingBlockSize};

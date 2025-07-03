@@ -2,11 +2,13 @@
 #include <Config/config_backend.h>
 #include <toml++/toml.hpp>
 #include <spdlog/spdlog.h>
+#include <source_location>
 
 namespace jucyaudio
 {
     namespace config
     {
+        extern std::shared_ptr<spdlog::logger> logger;
 
         class TomlBackend : public ConfigBackend
         {
@@ -20,80 +22,84 @@ namespace jucyaudio
 
             bool load(const std::string &path, int32_t &value) override
             {
-                spdlog::info("{}: Loading int32_t from path: {}", __FUNCTION__, path);
+                auto loc = std::source_location::current();
+                logger->info("{}: Loading int32_t from path: {}", loc.function_name(), path);
                 if (auto val = getValueAtPath(path))
                 {
-                    spdlog::info("{}: getValueAtPath {} returned {}", __FUNCTION__, path, (const void*) val);
+                    logger->info("{}: getValueAtPath {} returned {}", loc.function_name(), path, (const void*) val);
                     if (val->is_integer())
                     {
                         value = static_cast<int32_t>(val->as_integer()->get());
-                        spdlog::info("{}: Loaded '{}' from path: {}", __FUNCTION__, value, path);
+                        logger->info("{}: Loaded '{}' from path: {}", loc.function_name(), value, path);
                         return true;
                     }
                 }
-                spdlog::warn("Failed to load value from path: {}", path);
+                logger->warn("Failed to load value from path: {}", path);
                 return false;
             }
 
             bool save(const std::string &path, int32_t value) override
             {
-                spdlog::info("Set {} at path: {}", value, path);
+                logger->info("Set {} at path: {}", value, path);
                 return setValueAtPath(path, value);
             }
 
             bool load(const std::string &path, bool &value) override
             {
-                spdlog::info("{}: Loading bool from path: {}", __FUNCTION__, path);
+                auto loc = std::source_location::current();
+                logger->info("{}: Loading bool from path: {}", loc.function_name(), path);
                 if (auto val = getValueAtPath(path))
                 {
-                    spdlog::info("{}: getValueAtPath {} returned {}", __FUNCTION__, path, (const void*) val);
+                    logger->info("{}: getValueAtPath {} returned {}", loc.function_name(), path, (const void*) val);
                     if (val->is_boolean())
                     {
                         value = val->as_boolean()->get();
-                        spdlog::info("{}: Loaded '{}' from path: {}", __FUNCTION__, value, path);
+                        logger->info("{}: Loaded '{}' from path: {}", loc.function_name(), value, path);
                         return true;
                     }
                 }
-                spdlog::warn("Failed to load value from path: {}", path);
+                logger->warn("Failed to load value from path: {}", path);
                 return false;
             }
 
             bool save(const std::string &path, bool value) override
             {
-                spdlog::info("Set {} at path: {}", value, path);
+                logger->info("Set {} at path: {}", value, path);
                 return setValueAtPath(path, value);
             }
 
             bool load(const std::string &path, std::string &value) override
             {                
-                spdlog::info("{}: Loading std::string from path: {}", __FUNCTION__, path);
+                auto loc = std::source_location::current();
+                logger->info("{}: Loading std::string from path: {}", loc.function_name(), path);
                 if (auto val = getValueAtPath(path))
                 {
-                    spdlog::info("{}: getValueAtPath {} returned {}", __FUNCTION__, path, (const void*) val);
+                    logger->info("{}: getValueAtPath {} returned {}", loc.function_name(), path, (const void*) val);
                     if (val->is_string())
                     {
                         value = val->as_string()->get();
-                        spdlog::info("{}: Loaded '{}' from path: {}", __FUNCTION__, value, path);
+                        logger->info("{}: Loaded '{}' from path: {}", loc.function_name(), value, path);
                         return true;
                     }
                 }
-                spdlog::warn("Failed to load value from path: {}", path);
+                logger->warn("Failed to load value from path: {}", path);
                 return false;
             }
 
             bool save(const std::string &path, const std::string &value) override
             {
-                spdlog::info("Set {} at path: {}", value, path);
+                logger->info("Set {} at path: {}", value, path);
                 return setValueAtPath(path, value);
             }
 
             bool sectionExists(const std::string &path) override
             {
-                spdlog::info("{}: called for {}", __FUNCTION__, path);
+                auto loc = std::source_location::current();
+                logger->info("{}: called for {}", loc.function_name(), path);
                 auto parts = splitPath(path);
                 if (parts.empty())
                 {
-                    spdlog::warn("{}: Path is empty, cannot check section existence.", __FUNCTION__);
+                    logger->warn("{}: Path is empty, cannot check section existence.", loc.function_name());
                     return false;
                 }
 
@@ -102,7 +108,7 @@ namespace jucyaudio
                 // Navigate through all path parts
                 for (const auto &part : parts)
                 {
-                    spdlog::warn("{}: Looking at part '{}'", __FUNCTION__, part);
+                    logger->info("{}: Looking at part '{}'", loc.function_name(), part);
                     if (auto table = current->as_table())
                     {
                         auto it = table->find(part);
@@ -112,13 +118,13 @@ namespace jucyaudio
                         }
                         else
                         {
-                            spdlog::warn("{}: Section '{}' does not exist in the config.", __FUNCTION__, part);
+                            logger->info("{}: Section '{}' does not exist in the config.", loc.function_name(), part);
                             return false; // Path doesn't exist
                         }
                     }
                     else
                     {
-                        spdlog::warn("{}: Section '{}' is not a table", __FUNCTION__, part);
+                        logger->warn("{}: Section '{}' is not a table", loc.function_name(), part);
                         return false; // Not a table
                     }
                 }
@@ -127,18 +133,19 @@ namespace jucyaudio
                 const auto success = current->is_table();
                 if(success)
                 {
-                    spdlog::info("{}: Section '{}' exists in the config.", __FUNCTION__, path);
+                    logger->info("{}: Section '{}' exists in the config.", loc.function_name(), path);
                 }
                 else
                 {
-                    spdlog::warn("{}: Section '{}' is not a table", __FUNCTION__, path);
+                    logger->warn("{}: Section '{}' is not a table", loc.function_name(), path);
                 }
                 return success;
             }
 
             bool deleteKey(const std::string &path) override
             {
-                spdlog::info("{}: called for {}", __FUNCTION__, path);
+                auto loc = std::source_location::current();
+                logger->info("{}: called for {}", loc.function_name(), path);
                 auto parts = splitPath(path);
                 if (parts.empty())
                     return false;
@@ -177,7 +184,8 @@ namespace jucyaudio
 
             bool deleteSection(const std::string &path) override
             {
-                spdlog::info("{}: called for {}", __FUNCTION__, path);
+                auto loc = std::source_location::current();
+                logger->info("{}: called for {}", loc.function_name(), path);
                 auto parts = splitPath(path);
                 if (parts.empty())
                     return false;
@@ -261,12 +269,13 @@ namespace jucyaudio
 
             toml::node *getValueAtPath(const std::string &path)
             {
-                spdlog::info("{}: called for {}", __FUNCTION__, path);
+                auto loc = std::source_location::current();
+                logger->info("{}: called for {}", loc.function_name(), path);
 
                 auto parts = splitPath(path);
                 if (parts.empty())
                 {
-                    spdlog::error("{}: Path is empty, cannot retrieve value.", __FUNCTION__);
+                    logger->error("{}: Path is empty, cannot retrieve value.", loc.function_name());
                     return nullptr;
                 }
 
@@ -275,7 +284,7 @@ namespace jucyaudio
                 // Navigate to the parent table
                 for (size_t i = 0; i < parts.size() - 1; ++i)
                 {
-                    spdlog::info("{} Navigating to part: {}", __FUNCTION__, parts[i]);
+                    logger->info("{} Navigating to part: {}", loc.function_name(), parts[i]);
                     if (const auto& table = current->as_table())
                     {
                         auto it = table->find(parts[i]);
@@ -285,13 +294,13 @@ namespace jucyaudio
                         }
                         else
                         {
-                            spdlog::warn("{}: Path '{}' does not exist in the config.", __FUNCTION__, parts[i]);
+                            logger->warn("{}: Path '{}' does not exist in the config.", loc.function_name(), parts[i]);
                             return nullptr; // Path doesn't exist
                         }
                     }
                     else
                     {
-                        spdlog::warn("{}: Path '{}' is not a table", __FUNCTION__, parts[i]);
+                        logger->warn("{}: Path '{}' is not a table", loc.function_name(), parts[i]);
                         return nullptr; // Not a table
                     }
                 }
@@ -302,11 +311,11 @@ namespace jucyaudio
                     auto it = table->find(parts.back());
                     if (it != table->end())
                     {
-                        spdlog::info("{}: Found value at path: {}", __FUNCTION__, path);
+                        logger->info("{}: Found value at path: {}", loc.function_name(), path);
                         return &it->second;
                     }
                 }
-                spdlog::warn("{}: Key '{}' does not exist in the config.", __FUNCTION__, parts.back());
+                logger->warn("{}: Key '{}' does not exist in the config.", loc.function_name(), parts.back());
                 return nullptr;
             }
 

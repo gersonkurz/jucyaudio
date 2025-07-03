@@ -241,7 +241,7 @@ namespace jucyaudio
 
         void ScanDialogComponent::paintCell(juce::Graphics &g, int rowNumber, int columnId, int width, int height, bool /*rowIsSelected*/)
         {
-            if (rowNumber < 0 || rowNumber >= m_folders.size())
+            if (rowNumber < 0 || static_cast<size_t>(rowNumber) >= m_folders.size())
                 return; // Out of bounds, shouldn't happen but just in case
 
             const auto &folderInfo = m_folders[rowNumber];
@@ -356,18 +356,15 @@ namespace jucyaudio
             // issues if removing directly from m_folders
             std::sort(rowsToRemove.rbegin(), rowsToRemove.rend());
 
-            bool errorOccurred = false;
             for (int rowIndexToRemove : rowsToRemove)
             {
                 if (rowIndexToRemove >= 0 && static_cast<size_t>(rowIndexToRemove) < m_folders.size())
                 {
-                    auto &folderInfo = m_folders[rowIndexToRemove];
-                    if (!m_folderDatabase.removeFolder(folderInfo.folderId))
+                    const auto &folderInfo = m_folders[rowIndexToRemove];
+
+                    if(!removeFolderAndAssociatedTracks(folderInfo))
                     {
-                        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Error Removing Folder",
-                                                               "Could not remove folder: " + jucePathFromFs(folderInfo.path));
-                        errorOccurred = true;
-                        // Decide if you want to stop on first error or continue
+                        break;
                     }
                 }
             }
@@ -386,6 +383,32 @@ namespace jucyaudio
                 }
             }
         }
+        bool ScanDialogComponent::removeFolderAndAssociatedTracks(const database::FolderInfo &folderInfo)
+        {
+            if (!folderInfo.isValid())
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Invalid Folder", "Cannot remove an invalid folder.");
+                return false;
+            }
+
+            // Confirm deletion
+            juce::String message = "Are you sure you want to remove the folder:\n\n" + jucePathFromFs(folderInfo.path) + "\n\nand all associated tracks?";
+            if(!juce::AlertWindow::showOkCancelBox(juce::AlertWindow::QuestionIcon, "Confirm Removal", message))
+            {
+                return false;
+            }
+
+            if (m_folderDatabase.removeFolder(folderInfo.folderId))
+            {
+                return true; // Successfully removed
+            }
+            else
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Error Removing Folder", "Could not remove folder from library.");
+                return false; // Failed to remove
+            }
+        }
+
 
         using UpdateUiCallback = std::function<void()>;
 
