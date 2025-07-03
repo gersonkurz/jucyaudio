@@ -1,0 +1,311 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT id="jctTCQ" name="jucyaudio" projectType="guiapp" useAppConfig="0"
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" cppLanguageStandard="20"
+              defines="JUCE_MODAL_LOOPS_PERMITTED">
+  <MAINGROUP id="jL0nbD" name="jucyaudio">
+    <GROUP id="{A3531F5B-504A-EA98-B7E1-EEC29F94066F}" name="Config">
+      <FILE id="W2wwx0" name="config_backend.h" compile="0" resource="0"
+            file="Config/config_backend.h"/>
+      <FILE id="DC9ogh" name="toml_backend.h" compile="0" resource="0" file="Config/toml_backend.h"/>
+      <FILE id="UuyB4V" name="section.cpp" compile="1" resource="0" file="Config/section.cpp"/>
+      <FILE id="T9ml8Y" name="section.h" compile="0" resource="0" file="Config/section.h"/>
+      <FILE id="WnYbaK" name="typed_value.h" compile="0" resource="0" file="Config/typed_value.h"/>
+      <FILE id="fRcm4b" name="typed_vector_value.h" compile="0" resource="0"
+            file="Config/typed_vector_value.h"/>
+      <FILE id="bJBy8T" name="value_interface.h" compile="0" resource="0"
+            file="Config/value_interface.h"/>
+    </GROUP>
+    <GROUP id="{6905C272-1258-8174-7B80-D632FFFCF3CC}" name="Audio">
+      <GROUP id="{F86EB31A-F2DE-E850-8EE7-808D82AC8333}" name="Includes">
+        <FILE id="MrAf5w" name="IMixExporter.h" compile="0" resource="0" file="Audio/Includes/IMixExporter.h"/>
+      </GROUP>
+      <FILE id="lImjy1" name="AudioLibrary.h" compile="0" resource="0" file="Audio/AudioLibrary.h"/>
+      <FILE id="nLHxvM" name="ExportMixToWav.cpp" compile="1" resource="0"
+            file="Audio/ExportMixToWav.cpp"/>
+      <FILE id="aehyXp" name="ExportMixToWav.h" compile="0" resource="0"
+            file="Audio/ExportMixToWav.h"/>
+      <FILE id="k2JWBI" name="MixExporter.cpp" compile="1" resource="0" file="Audio/MixExporter.cpp"/>
+      <FILE id="ksNF32" name="MixExporter.h" compile="0" resource="0" file="Audio/MixExporter.h"/>
+    </GROUP>
+    <GROUP id="{C665AC90-E715-F5D3-6C37-34D813A87913}" name="Utils">
+      <FILE id="S9ZF35" name="AssortedUtils.cpp" compile="1" resource="0"
+            file="Utils/AssortedUtils.cpp"/>
+      <FILE id="macxIm" name="AssortedUtils.h" compile="0" resource="0" file="Utils/AssortedUtils.h"/>
+      <FILE id="mGUym1" name="StringWriter.cpp" compile="1" resource="0"
+            file="Utils/StringWriter.cpp"/>
+      <FILE id="ATVKmC" name="StringWriter.h" compile="0" resource="0" file="Utils/StringWriter.h"/>
+      <FILE id="CZACwP" name="UiUtils.cpp" compile="1" resource="0" file="Utils/UiUtils.cpp"/>
+      <FILE id="Xdztcm" name="UiUtils.h" compile="0" resource="0" file="Utils/UiUtils.h"/>
+    </GROUP>
+    <GROUP id="{CD671912-C8E5-F78F-302E-0F42D723C322}" name="Assets">
+      <FILE id="lTulpT" name="pause.svg" compile="0" resource="1" file="Assets/pause.svg"/>
+      <FILE id="dgqaAT" name="play_arrow.svg" compile="0" resource="1" file="Assets/play_arrow.svg"/>
+      <FILE id="KI9aC8" name="repeat.svg" compile="0" resource="1" file="Assets/repeat.svg"/>
+      <FILE id="CWeUq2" name="repeat_all.svg" compile="0" resource="1" file="Assets/repeat_all.svg"/>
+      <FILE id="ywbAka" name="repeat_one.svg" compile="0" resource="1" file="Assets/repeat_one.svg"/>
+      <FILE id="Ey6Qc6" name="shuffle.svg" compile="0" resource="1" file="Assets/shuffle.svg"/>
+      <FILE id="bOA3jY" name="shuffle_on.svg" compile="0" resource="1" file="Assets/shuffle_on.svg"/>
+      <FILE id="dMcOEp" name="stop.svg" compile="0" resource="1" file="Assets/stop.svg"/>
+      <FILE id="bAvLGl" name="volume_down.svg" compile="0" resource="1" file="Assets/volume_down.svg"/>
+      <FILE id="kLXxSJ" name="volume_off.svg" compile="0" resource="1" file="Assets/volume_off.svg"/>
+      <FILE id="p60dWr" name="volume_up.svg" compile="0" resource="1" file="Assets/volume_up.svg"/>
+    </GROUP>
+    <GROUP id="{13513762-86AD-237A-5AA6-9FA30EBD8DA0}" name="Database">
+      <FILE id="sUtyaa" name="TrackLibrary.cpp" compile="1" resource="0"
+            file="Database/TrackLibrary.cpp"/>
+      <FILE id="Pxj2iP" name="TrackLibrary.h" compile="0" resource="0" file="Database/TrackLibrary.h"/>
+      <FILE id="lKjNpO" name="TrackScanner.cpp" compile="1" resource="0"
+            file="Database/TrackScanner.cpp"/>
+      <FILE id="z8S0xo" name="TrackScanner.h" compile="0" resource="0" file="Database/TrackScanner.h"/>
+      <GROUP id="{C8874054-15B4-6BFA-8662-3BF8A89C9BC9}" name="Includes">
+        <FILE id="eCJwOA" name="ILongRunningTask.h" compile="0" resource="0"
+              file="UI/ILongRunningTask.h"/>
+        <FILE id="eJeeSO" name="Constants.h" compile="0" resource="0" file="Database/Includes/Constants.h"/>
+        <FILE id="oHddlf" name="FolderInfo.h" compile="0" resource="0" file="Database/Includes/FolderInfo.h"/>
+        <FILE id="sGVyfq" name="IFolderDatabase.h" compile="0" resource="0"
+              file="Database/Includes/IFolderDatabase.h"/>
+        <FILE id="KcQfXM" name="IMixManager.h" compile="0" resource="0" file="Database/Includes/IMixManager.h"/>
+        <FILE id="Bns7Eq" name="INavigationNode.h" compile="0" resource="0"
+              file="Database/Includes/INavigationNode.h"/>
+        <FILE id="RkbvsZ" name="ITagManager.h" compile="0" resource="0" file="Database/Includes/ITagManager.h"/>
+        <FILE id="xrZwOO" name="ITrackDatabase.h" compile="0" resource="0"
+              file="Database/Includes/ITrackDatabase.h"/>
+        <FILE id="E4AP6v" name="ITrackInfoScanner.h" compile="0" resource="0"
+              file="Database/Includes/ITrackInfoScanner.h"/>
+        <FILE id="gP20QB" name="IWorkingSetManager.h" compile="0" resource="0"
+              file="Database/Includes/IWorkingSetManager.h"/>
+        <FILE id="QHJAV5" name="MixInfo.h" compile="0" resource="0" file="Database/Includes/MixInfo.h"/>
+        <FILE id="GJai6C" name="TrackInfo.h" compile="0" resource="0" file="Database/Includes/TrackInfo.h"/>
+        <FILE id="bW0bEL" name="TrackQueryArgs.h" compile="0" resource="0"
+              file="Database/Includes/TrackQueryArgs.h"/>
+      </GROUP>
+      <GROUP id="{C2BC59D6-C854-753D-009B-07F4F922A744}" name="Sqlite">
+        <FILE id="VoMEWJ" name="sqlite3.c" compile="1" resource="0" file="Database/Sqlite/sqlite3.c"
+              skipPCH="0"/>
+        <FILE id="FNi6pg" name="sqlite3.h" compile="0" resource="0" file="Database/Sqlite/sqlite3.h"/>
+        <FILE id="G42JUA" name="sqlite3ext.h" compile="0" resource="0" file="Database/Sqlite/sqlite3ext.h"/>
+        <FILE id="OtoQpI" name="SqliteDatabase.cpp" compile="1" resource="0"
+              file="Database/Sqlite/SqliteDatabase.cpp"/>
+        <FILE id="qJ4mOl" name="SqliteDatabase.h" compile="0" resource="0"
+              file="Database/Sqlite/SqliteDatabase.h"/>
+        <FILE id="dC2ZQD" name="SqliteFolderDatabase.cpp" compile="1" resource="0"
+              file="Database/Sqlite/SqliteFolderDatabase.cpp"/>
+        <FILE id="Db8Zy8" name="SqliteFolderDatabase.h" compile="0" resource="0"
+              file="Database/Sqlite/SqliteFolderDatabase.h"/>
+        <FILE id="xzFrRf" name="SqliteMixManager.cpp" compile="1" resource="0"
+              file="Database/Sqlite/SqliteMixManager.cpp"/>
+        <FILE id="ms9ffX" name="SqliteMixManager.h" compile="0" resource="0"
+              file="Database/Sqlite/SqliteMixManager.h"/>
+        <FILE id="A2zkoH" name="SqliteStatement.cpp" compile="1" resource="0"
+              file="Database/Sqlite/SqliteStatement.cpp"/>
+        <FILE id="VmdAxt" name="SqliteStatement.h" compile="0" resource="0"
+              file="Database/Sqlite/SqliteStatement.h"/>
+        <FILE id="Q3P4ew" name="SqliteStatementConstruction.cpp" compile="1"
+              resource="0" file="Database/Sqlite/SqliteStatementConstruction.cpp"/>
+        <FILE id="rAxo1E" name="SqliteStatementConstruction.h" compile="0"
+              resource="0" file="Database/Sqlite/SqliteStatementConstruction.h"/>
+        <FILE id="Gb5OC9" name="SqliteTagManager.cpp" compile="1" resource="0"
+              file="Database/Sqlite/SqliteTagManager.cpp"/>
+        <FILE id="FhPI2Q" name="SqliteTagManager.h" compile="0" resource="0"
+              file="Database/Sqlite/SqliteTagManager.h"/>
+        <FILE id="KtktBd" name="SqliteTrackDatabase.cpp" compile="1" resource="0"
+              file="Database/Sqlite/SqliteTrackDatabase.cpp"/>
+        <FILE id="XU91we" name="SqliteTrackDatabase.h" compile="0" resource="0"
+              file="Database/Sqlite/SqliteTrackDatabase.h"/>
+        <FILE id="NDdLCx" name="SqliteTransaction.cpp" compile="1" resource="0"
+              file="Database/Sqlite/SqliteTransaction.cpp"/>
+        <FILE id="l3Hp76" name="SqliteTransaction.h" compile="0" resource="0"
+              file="Database/Sqlite/SqliteTransaction.h"/>
+        <FILE id="dE44n6" name="SqliteWorkingSetManager.cpp" compile="1" resource="0"
+              file="Database/Sqlite/SqliteWorkingSetManager.cpp"/>
+        <FILE id="UIu9GU" name="SqliteWorkingSetManager.h" compile="0" resource="0"
+              file="Database/Sqlite/SqliteWorkingSetManager.h"/>
+      </GROUP>
+      <GROUP id="{C09BBED4-6C7F-6B3B-B914-46B8C785D0E4}" name="Nodes">
+        <FILE id="siAYoU" name="TypedItemsOverview.h" compile="0" resource="0"
+              file="Database/Nodes/TypedItemsOverview.h"/>
+        <FILE id="THUFDn" name="TypedOverviewNode.h" compile="0" resource="0"
+              file="Database/Nodes/TypedOverviewNode.h"/>
+        <FILE id="nbCrwE" name="WorkingSetsOverview.cpp" compile="1" resource="0"
+              file="Database/Nodes/WorkingSetsOverview.cpp"/>
+        <FILE id="qw7hZB" name="WorkingSetsOverview.h" compile="0" resource="0"
+              file="Database/Nodes/WorkingSetsOverview.h"/>
+        <FILE id="hiMpiH" name="BaseNode.cpp" compile="1" resource="0" file="Database/Nodes/BaseNode.cpp"/>
+        <FILE id="s5vAxG" name="BaseNode.h" compile="0" resource="0" file="Database/Nodes/BaseNode.h"/>
+        <FILE id="D2jhTr" name="LibraryNode.cpp" compile="1" resource="0" file="Database/Nodes/LibraryNode.cpp"/>
+        <FILE id="gRyauw" name="LibraryNode.h" compile="0" resource="0" file="Database/Nodes/LibraryNode.h"/>
+        <FILE id="Xt5q7L" name="MixesOverview.cpp" compile="1" resource="0"
+              file="Database/Nodes/MixesOverview.cpp"/>
+        <FILE id="MZGabv" name="MixesOverview.h" compile="0" resource="0" file="Database/Nodes/MixesOverview.h"/>
+        <FILE id="wZPccW" name="LogicalFolderNode.cpp" compile="1" resource="0"
+              file="Database/Nodes/LogicalFolderNode.cpp"/>
+        <FILE id="HLODeh" name="LogicalFolderNode.h" compile="0" resource="0"
+              file="Database/Nodes/LogicalFolderNode.h"/>
+        <FILE id="cI1TLa" name="MixNode.cpp" compile="1" resource="0" file="Database/Nodes/MixNode.cpp"/>
+        <FILE id="t1dkCl" name="MixNode.h" compile="0" resource="0" file="Database/Nodes/MixNode.h"/>
+        <FILE id="YpFjGB" name="RootNode.cpp" compile="1" resource="0" file="Database/Nodes/RootNode.cpp"/>
+        <FILE id="yw9MxX" name="RootNode.h" compile="0" resource="0" file="Database/Nodes/RootNode.h"/>
+        <FILE id="ReXaSu" name="TypedContainerNode.h" compile="0" resource="0"
+              file="Database/Nodes/TypedContainerNode.h"/>
+        <FILE id="ZVjw4Z" name="WorkingSetNode.cpp" compile="1" resource="0"
+              file="Database/Nodes/WorkingSetNode.cpp"/>
+        <FILE id="mrgvuo" name="WorkingSetNode.h" compile="0" resource="0"
+              file="Database/Nodes/WorkingSetNode.h"/>
+      </GROUP>
+      <GROUP id="{3D460BD1-EC14-704C-21CA-D61243EF2CB2}" name="Scanners">
+        <FILE id="z5M6fO" name="AubioScanner.cpp" compile="1" resource="0"
+              file="Database/Scanners/AubioScanner.cpp"/>
+        <FILE id="tuVHLG" name="AubioScanner.h" compile="0" resource="0" file="Database/Scanners/AubioScanner.h"/>
+        <FILE id="Zv3gwg" name="Id3TagScanner.cpp" compile="1" resource="0"
+              file="Database/Scanners/Id3TagScanner.cpp"/>
+        <FILE id="aOFR2a" name="Id3TagScanner.h" compile="0" resource="0" file="Database/Scanners/Id3TagScanner.h"/>
+      </GROUP>
+    </GROUP>
+    <GROUP id="{E198D180-5157-EBE1-E464-311CDABB4859}" name="UI">
+      <FILE id="mvfnKf" name="ColumnConfiguratorDialog.cpp" compile="1" resource="0"
+            file="UI/ColumnConfiguratorDialog.cpp"/>
+      <FILE id="fbjd4A" name="ColumnConfiguratorDialog.h" compile="0" resource="0"
+            file="UI/ColumnConfiguratorDialog.h"/>
+      <FILE id="FEQlLm" name="DynamicColumnManager.cpp" compile="1" resource="0"
+            file="UI/DynamicColumnManager.cpp"/>
+      <FILE id="q2rKnJ" name="DynamicColumnManager.h" compile="0" resource="0"
+            file="UI/DynamicColumnManager.h"/>
+      <FILE id="lHGzqy" name="Settings.cpp" compile="1" resource="0" file="UI/Settings.cpp"/>
+      <FILE id="f5psbp" name="Settings.h" compile="0" resource="0" file="UI/Settings.h"/>
+      <FILE id="vErTL3" name="CreateMixDialogComponent.cpp" compile="1" resource="0"
+            file="UI/CreateMixDialogComponent.cpp"/>
+      <FILE id="zutZlJ" name="CreateMixDialogComponent.h" compile="0" resource="0"
+            file="UI/CreateMixDialogComponent.h"/>
+      <FILE id="Pn0Atf" name="CreateWorkingSetDialogComponent.cpp" compile="1"
+            resource="0" file="UI/CreateWorkingSetDialogComponent.cpp"/>
+      <FILE id="xujhQc" name="CreateWorkingSetDialogComponent.h" compile="0"
+            resource="0" file="UI/CreateWorkingSetDialogComponent.h"/>
+      <FILE id="SOIeca" name="DataViewComponent.cpp" compile="1" resource="0"
+            file="UI/DataViewComponent.cpp"/>
+      <FILE id="L6S04E" name="DataViewComponent.h" compile="0" resource="0"
+            file="UI/DataViewComponent.h"/>
+      <FILE id="u4QGBz" name="DividerComponent.cpp" compile="1" resource="0"
+            file="UI/DividerComponent.cpp"/>
+      <FILE id="I0GKN4" name="DividerComponent.h" compile="0" resource="0"
+            file="UI/DividerComponent.h"/>
+      <FILE id="p45SGy" name="DynamicToolbarComponent.cpp" compile="1" resource="0"
+            file="UI/DynamicToolbarComponent.cpp"/>
+      <FILE id="i6cHuT" name="DynamicToolbarComponent.h" compile="0" resource="0"
+            file="UI/DynamicToolbarComponent.h"/>
+      <FILE id="CUHWYR" name="TaskDialog.cpp" compile="1" resource="0" file="UI/TaskDialog.cpp"/>
+      <FILE id="sJ1CDM" name="TaskDialog.h" compile="0" resource="0" file="UI/TaskDialog.h"/>
+      <FILE id="xG4seV" name="Main.cpp" compile="1" resource="0" file="UI/Main.cpp"/>
+      <FILE id="gkZotv" name="MainComponent.cpp" compile="1" resource="0"
+            file="UI/MainComponent.cpp"/>
+      <FILE id="NfbwTz" name="MainComponent.h" compile="0" resource="0" file="UI/MainComponent.h"/>
+      <FILE id="cxJljg" name="MainPlaybackAndStatusComponent.cpp" compile="1"
+            resource="0" file="UI/MainPlaybackAndStatusComponent.cpp"/>
+      <FILE id="Bv82g1" name="MainPlaybackAndStatusComponent.h" compile="0"
+            resource="0" file="UI/MainPlaybackAndStatusComponent.h"/>
+      <FILE id="iHMaEk" name="NavigationPanelComponent.cpp" compile="1" resource="0"
+            file="UI/NavigationPanelComponent.cpp"/>
+      <FILE id="cd9O0J" name="NavigationPanelComponent.h" compile="0" resource="0"
+            file="UI/NavigationPanelComponent.h"/>
+      <FILE id="a37bfJ" name="PlaybackController.cpp" compile="1" resource="0"
+            file="UI/PlaybackController.cpp"/>
+      <FILE id="O7Ill9" name="PlaybackController.h" compile="0" resource="0"
+            file="UI/PlaybackController.h"/>
+      <FILE id="qjTatP" name="PlaybackToolbarComponent.cpp" compile="1" resource="0"
+            file="UI/PlaybackToolbarComponent.cpp"/>
+      <FILE id="AVYzTg" name="PlaybackToolbarComponent.h" compile="0" resource="0"
+            file="UI/PlaybackToolbarComponent.h"/>
+      <FILE id="az65HB" name="ScanDialogComponent.cpp" compile="1" resource="0"
+            file="UI/ScanDialogComponent.cpp"/>
+      <FILE id="CzP8ap" name="ScanDialogComponent.h" compile="0" resource="0"
+            file="UI/ScanDialogComponent.h"/>
+    </GROUP>
+  </MAINGROUP>
+  <MODULES>
+    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+  </MODULES>
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_USE_MP3AUDIOFORMAT="1"/>
+  <EXPORTFORMATS>
+    <VS2022 targetFolder="Builds/VisualStudio2022" externalLibraries="aubio.lib&#10;spdlog.lib&#10;tag.lib">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="jucyaudio" headerPath="C:\Projects\aubio\include&#10;C:\Projects\spdlog\out\install\x64-Debug\include&#10;C:\Projects\taglib\out\install\x64-Debug\include&#10;C:\Scripts\2025\jucyaudio\jucyaudio&#10;C:\Projects\lame-3.100\include"
+                       libraryPath="C:\Projects\aubio\lib&#10;C:\Projects\spdlog\out\install\x64-Debug\lib&#10;C:\Projects\taglib\out\install\x64-Debug\lib&#10;C:\Projects\lame-3.100"
+                       defines="SPDLOG_COMPILED_LIB&#10;SPDLOG_USE_STD_FORMAT&#10;SPDLOG_MSVC_UTF8&#10;TAGLIB_STATIC"
+                       extraCompilerFlags="/utf-8"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="jucyaudio" headerPath="C:\Projects\aubio\include&#10;C:\Projects\spdlog\out\install\x64-Release\include&#10;C:\Projects\taglib\out\install\x64-Release\include&#10;C:\Scripts\2025\jucyaudio\jucyaudio"
+                       libraryPath="C:\Projects\aubio\lib&#10;C:\Projects\spdlog\out\build\x64-Release&#10;C:\Projects\taglib\out\install\x64-Release\lib"
+                       defines="SPDLOG_COMPILED_LIB&#10;SPDLOG_USE_STD_FORMAT&#10;SPDLOG_MSVC_UTF8&#10;TAGLIB_STATIC "
+                       extraCompilerFlags="/utf-8"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path="../../../../Projects/juce-8.0.7-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_devices" path="../../../../Projects/juce-8.0.7-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_formats" path="../../../../Projects/juce-8.0.7-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors" path="../../../../Projects/juce-8.0.7-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_utils" path="../../../../Projects/juce-8.0.7-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_core" path="../../../../Projects/juce-8.0.7-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_data_structures" path="../../../../Projects/juce-8.0.7-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_events" path="../../../../Projects/juce-8.0.7-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_graphics" path="../../../../Projects/juce-8.0.7-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_basics" path="../../../../Projects/juce-8.0.7-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_extra" path="../../../../Projects/juce-8.0.7-windows/JUCE/modules"/>
+      </MODULEPATHS>
+    </VS2022>
+    <XCODE_MAC targetFolder="Builds/MacOSX">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug" headerPath="/users/gersonkurz/development/aubio_install_macos/include&#10;/Users/gersonkurz/development/spdlog/include&#10;/Users/gersonkurz/development/taglib_install/include&#10;/Users/gersonkurz/development/jucyaudio/jucyaudio&#10;/opt/homebrew/include&#10;/Users/gersonkurz/development/tomlplusplus-master/include"
+                       libraryPath="/users/gersonkurz/development/aubio_install_macos/lib&#10;/Users/gersonkurz/development/spdlog/build&#10;/Users/gersonkurz/development/taglib_install/lib&#10;/opt/homebrew/lib"
+                       extraLinkerFlags="-laubio -lspdlog -ltag -lz -lmp3lame" osxArchitecture="Native"
+                       macOSDeploymentTarget="15.0" osxCompatibility="15.0 SDK" defines="SPDLOG_COMPILED_LIB&#10;TAGLIB_STATIC"/>
+        <CONFIGURATION isDebug="0" name="Release" libraryPath="/users/gersonkurz/development/aubio_install_macos/lib&#10;/Users/gersonkurz/development/spdlog/build&#10;/Users/gersonkurz/development/taglib_install/lib&#10;"
+                       headerPath="/users/gersonkurz/development/aubio_install_macos/include&#10;/Users/gersonkurz/development/spdlog/include&#10;/Users/gersonkurz/development/taglib_install/include&#10;/Users/gersonkurz/development/jucyaudio/jucyaudio"
+                       extraLinkerFlags="-laubio -lspdlog -ltag" macOSDeploymentTarget="15.0"
+                       osxCompatibility="15.0 SDK" defines="SPDLOG_COMPILED_LIB"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path="../../juce"/>
+        <MODULEPATH id="juce_audio_devices" path="../../juce"/>
+        <MODULEPATH id="juce_audio_formats" path="../../juce"/>
+        <MODULEPATH id="juce_audio_processors" path="../../juce"/>
+        <MODULEPATH id="juce_audio_utils" path="../../juce"/>
+        <MODULEPATH id="juce_core" path="../../juce"/>
+        <MODULEPATH id="juce_data_structures" path="../../juce"/>
+        <MODULEPATH id="juce_events" path="../../juce"/>
+        <MODULEPATH id="juce_graphics" path="../../juce"/>
+        <MODULEPATH id="juce_gui_basics" path="../../juce"/>
+        <MODULEPATH id="juce_gui_extra" path="../../juce"/>
+      </MODULEPATHS>
+    </XCODE_MAC>
+    <LINUX_MAKE targetFolder="Builds/LinuxMakefile">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug" headerPath="/users/gersonkurz/development/aubio_install_macos/include&#10;/Users/gersonkurz/development/spdlog/include&#10;/Users/gersonkurz/development/taglib_install/include&#10;/Users/gersonkurz/development/jucyaudio/jucyaudio"
+                       libraryPath="/users/gersonkurz/development/aubio_install_macos/lib&#10;/Users/gersonkurz/development/spdlog/build&#10;/Users/gersonkurz/development/taglib_install/lib"
+                       defines="SPDLOG_COMPILED_LIB&#10;TAGLIB_STATIC" extraLinkerFlags="-laubio -lspdlog -ltag -lz"/>
+        <CONFIGURATION isDebug="0" name="Release"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path="/Users/gersonkurz/development/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_devices" path="/Users/gersonkurz/development/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_formats" path="/Users/gersonkurz/development/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors" path="/Users/gersonkurz/development/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_utils" path="/Users/gersonkurz/development/JUCE/modules"/>
+        <MODULEPATH id="juce_core" path="/Users/gersonkurz/development/JUCE/modules"/>
+        <MODULEPATH id="juce_data_structures" path="/Users/gersonkurz/development/JUCE/modules"/>
+        <MODULEPATH id="juce_events" path="/Users/gersonkurz/development/JUCE/modules"/>
+        <MODULEPATH id="juce_graphics" path="/Users/gersonkurz/development/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_basics" path="/Users/gersonkurz/development/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_extra" path="/Users/gersonkurz/development/JUCE/modules"/>
+      </MODULEPATHS>
+    </LINUX_MAKE>
+  </EXPORTFORMATS>
+</JUCERPROJECT>

@@ -1,0 +1,31 @@
+BasedOnStyle: Microsoft  # Microsoft style already puts braces on new lines
+# Or if you prefer to start with another style but modify brace placement:
+# BasedOnStyle: LLVM
+BreakBeforeBraces: Allman  # This is the key setting - "Allman" style puts all braces on new lines
+IndentWidth: 4
+ColumnLimit: 160
+AccessModifierOffset: -4  # Align access modifiers with class definition
+Standard: c++20  # or whatever C++ standard you're using
+# Prefer C++11 braced list initialization style
+# UseConstexprForTypeAlias: false
+# This is the important setting for your question:
+Language: Cpp
+AllowShortLambdasOnASingleLine: Empty
+PackConstructorInitializers: Never
+NamespaceIndentation: All
+BraceWrapping:
+  AfterCaseLabel: true
+  AfterClass: true
+  AfterControlStatement: true
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterObjCDeclaration: true
+  AfterStruct: true
+  AfterUnion: true
+  BeforeCatch: true
+  BeforeElse: true
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
