@@ -1,5 +1,3 @@
-
-// ILongRunningTask.h
 #pragma once
 
 #include <atomic>

@@ -77,11 +77,14 @@ target_sources(jucyaudio PRIVATE
     Database/TrackScanner.cpp
     Database/TrackLibrary.h
     Database/TrackScanner.h
-    
+    Database/BackgroundService.cpp
+    Database/BackgroundService.h
+
     # Database includes
     UI/ILongRunningTask.h
     Database/Includes/Constants.h
     Database/Includes/FolderInfo.h
+    Database/Includes/IBackgroundTask.h
     Database/Includes/IFolderDatabase.h
     Database/Includes/IMixManager.h
     Database/Includes/INavigationNode.h
