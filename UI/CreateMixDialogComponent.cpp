@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <spdlog/spdlog.h>
 #include <sstream>
+#include <UI/MainComponent.h>
 
 // Forward declare if TrackLibrary provides these directly, or include necessary headers
 // Assuming TrackLibrary provides access to IMixManager and IMixExporter
@@ -27,6 +28,8 @@ namespace jucyaudio
               m_okButton{"Create & Export"},
               m_cancelButton{"Cancel"}
         {
+            m_lookAndFeel.setColourScheme (getColourSchemeFromConfig());
+            setLookAndFeel(&m_lookAndFeel); // Set custom LookAndFeel
             setSize(450, 220); // Slightly wider for "Create & Export"
 
             // Title label
@@ -66,6 +69,7 @@ namespace jucyaudio
 
         CreateMixDialogComponent::~CreateMixDialogComponent()
         {
+            setLookAndFeel(nullptr);
             // Listeners are automatically removed by JUCE
         }
 

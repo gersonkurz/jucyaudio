@@ -1,6 +1,7 @@
 #include "TaskDialog.h" // Assuming TaskDialog.h is in the same folder or path is set
 #include "ILongRunningTask.h"
 #include <spdlog/spdlog.h> // For logging, if using spdlog
+#include <UI/MainComponent.h>
 
 using namespace jucyaudio::database; // For easier access to database types
 
@@ -27,6 +28,9 @@ namespace jucyaudio
               // Use isCancellable from the task object for the button text
               m_actionButton{task && task->m_isCancellable ? "Cancel" : "Close"}
         {
+            m_lookAndFeel.setColourScheme (getColourSchemeFromConfig());
+            setLookAndFeel(&m_lookAndFeel); // Set custom LookAndFeel
+
             if (m_task)
             {
                 m_task->retain(REFCOUNT_DEBUG_ARGS);
@@ -72,6 +76,7 @@ namespace jucyaudio
 
         TaskDialog::~TaskDialog()
         {
+            setLookAndFeel(nullptr);
             spdlog::info("TaskDialog destructor called for task: {}", m_task ? m_task->m_taskName : "UNKNOWN_OR_NULL");
             stopTimer(); // Stop any JUCE timers associated with this component
 

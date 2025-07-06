@@ -70,6 +70,7 @@ namespace jucyaudio
             juce::TextButton m_okButton;
             juce::TextButton m_cancelButton;
             juce::TextButton m_resetButton;
+            juce::LookAndFeel_V4 m_lookAndFeel; // Custom LookAndFeel instance
 
             const juce::String m_viewName;
             const std::vector<database::DataColumn> &m_allAvailableColumns;                      // Reference

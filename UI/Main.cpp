@@ -91,6 +91,8 @@ namespace jucyaudio
                 // the other instance's command-line arguments were.
             }
 
+            juce::LookAndFeel_V4 m_lookAndFeel; // Custom LookAndFeel for the app
+
             //==============================================================================
             /*
                 This class implements the desktop window that contains an instance of
@@ -99,11 +101,12 @@ namespace jucyaudio
             class MainWindow : public juce::DocumentWindow
             { // Or whatever your main window class is
             public:
-                MainWindow(const juce::String &name, juce::ApplicationCommandManager &commandManager)
-                    : DocumentWindow(name, juce::Desktop::getInstance().getDefaultLookAndFeel().findColour(ResizableWindow::backgroundColourId),
+                MainWindow(const juce::String &name, juce::ApplicationCommandManager &commandManager, juce::LookAndFeel_V4& lookAndFeel)
+                    : DocumentWindow(name, lookAndFeel.findColour(ResizableWindow::backgroundColourId),
                                      DocumentWindow::allButtons)
                 {
                     setUsingNativeTitleBar(true);
+                    setLookAndFeel(&lookAndFeel); // Set custom LookAndFeel
                     m_pMainComponent = new jucyaudio::ui::MainComponent{commandManager}; // Create MainComponent
                     setContentOwned(m_pMainComponent, true);                             // Set as content
 
@@ -140,7 +143,11 @@ namespace jucyaudio
                 setupLogging();
                 setupPropertiesFile();
 
-                mainWindow = std::make_unique<MainWindow>(getApplicationName(), commandManager);
+                config::TomlBackend backend{g_strConfigFilename};
+                config::theSettings.load(backend);
+                m_lookAndFeel.setColourScheme(getColourSchemeFromConfig()); // Set a light colour scheme
+
+                mainWindow = std::make_unique<MainWindow>(getApplicationName(), commandManager, m_lookAndFeel);
 
                 // Tell the command manager about your main content component (MainComponent)
                 // Assuming MainWindow creates and holds MainComponent

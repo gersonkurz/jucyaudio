@@ -41,6 +41,7 @@ namespace jucyaudio
             juce::TextEditor m_nameEditor;
             juce::TextButton m_okButton;
             juce::TextButton m_cancelButton;
+            juce::LookAndFeel_V4 m_lookAndFeel; // Custom LookAndFeel instance
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CreateWorkingSetDialogComponent)
         };

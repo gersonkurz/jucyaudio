@@ -55,7 +55,7 @@ namespace jucyaudio
                     : Section{parent, "UI"}
                 {
                 }
-
+                TypedValue<std::string> theme{this, "Theme", "light"};
                 TypedValueVector<DataViewColumnSection> libraryViewColumns{this, "LibraryViewColumns"};
                 TypedValueVector<DataViewColumnSection> workingSetsViewColumns{this, "WorkingSetsViewColumns"};
                 TypedValueVector<DataViewColumnSection> mixesViewColumns{this, "MixesViewColumns"};

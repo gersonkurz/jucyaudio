@@ -1,0 +1,35 @@
+name = "Jucy Dark"
+
+[colors]
+# --- Main Backgrounds & Window ---
+"ResizableWindow::backgroundColourId"      = "#FF000022"  # Main window frame
+"TreeView::backgroundColourId"             = "#FF000022"  # Panels like Navigation, DataView
+"ListBox::backgroundColourId"              = "#FF000022"  # General list background
+
+# --- Text & Labels ---
+"Label::textColourId"                      = "#FFabb2bf"  # Main text color (soft off-white)
+"ListBox::textColourId"                    = "#FFabb2bf"
+
+# --- Selections & Highlights (The Accent Color) ---
+"TreeView::selectedItemBackgroundColourId" = "#FF61afef"  # A nice, clear blue
+"ListBox::selectedBackgroundColourId"      = "#FF61afef"
+"Slider::thumbColourId"                    = "#FF61afef"
+"TextButton::buttonOnColourId"             = "#FF61afef"
+"PopupMenu::highlightedBackgroundColourId" = "#FF2c313a"  # A slightly lighter dark for menu highlights
+
+# --- Inactive & Subtle Elements ---
+"ComboBox::backgroundColourId"             = "#FF3e4451"  # Inactive selection in TreeView
+"TreeView::linesColourId"                  = "#FF3e4451"  # The indent lines
+"Slider::trackColourId"                    = "#FF3e4451"
+"TextButton::buttonColourId"               = "#FF3e4451"  # "Off" state for buttons
+"ListBox::outlineColourId"                 = "#FF3e4451"  # Subtle border for lists/tables
+"TextEditor::outlineColourId"              = "#FF3e4451"
+
+# --- Popups & Editors ---
+"PopupMenu::backgroundColourId"            = "#FF21252b"
+"TextEditor::backgroundColourId"           = "#FF282c34"
+
+# --- Unused / Fallback (can be set to a default) ---
+"TreeView::dragAndDropIndicatorColourId"   = "#FF61afef"  # Use accent for drag/drop
+"TreeView::oddItemsColourId"               = "#00000000"  # Transparent - use main background
+"TreeView::evenItemsColourId"              = "#00000000"  # Transparent - use main background

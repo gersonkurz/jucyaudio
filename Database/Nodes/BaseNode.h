@@ -66,6 +66,9 @@ namespace jucyaudio
             mutable std::vector<INavigationNode *> m_children;
         };
 
+        // helper function to get the path of nodes
+        std::vector<INavigationNode*> getNodePath(INavigationNode *targetNode);
+
 #ifdef USE_REFCOUNT_DEBUGGING
         extern std::unordered_set<BaseNode *> theBaseNodes;
 #endif

@@ -4,6 +4,7 @@
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
 #include <spdlog/spdlog.h>
+#include <UI/MainComponent.h>
 
 namespace jucyaudio
 {
@@ -14,7 +15,6 @@ namespace jucyaudio
             : m_associatedNode{node},
               m_ownerPanel{owner}
         {
-
             if (m_associatedNode)
             {
                 m_associatedNode->retain(REFCOUNT_DEBUG_ARGS);
@@ -42,43 +42,46 @@ namespace jucyaudio
 
         void NavigationPanelComponent::NavTreeViewItem::paintItem(juce::Graphics &g, int width, int height)
         {
-            // Get the LookAndFeel for color lookups
+            // Use the width and height parameters to define the local bounds,
+            // which sidesteps the strange compiler error with getLocalBounds().
+            const juce::Rectangle<int> localBounds{0, 0, width, height};
+            const auto textBounds = localBounds.reduced(4, 2);
             auto &lf = getOwnerView()->getLookAndFeel();
 
             if (isSelected())
             {
-                // Use the TreeView's specific selected item background color
-                g.fillAll(lf.findColour(juce::TreeView::selectedItemBackgroundColourId));
-                // For selected text, there isn't a TreeView-specific one.
-                // We can use a general Label text color, or a contrasting
-                // color. Let's use the default Label text color, assuming the
-                // selected background provides enough contrast. For better
-                // results, a L&F could define a specific "selected tree item
-                // text" color.
-                g.setColour(lf.findColour(juce::Label::textColourId));
+                const bool treeHasFocus = getOwnerView()->hasKeyboardFocus(true);
+
+                const auto highlightColour = treeHasFocus ? lf.findColour(juce::PopupMenu::highlightedBackgroundColourId)
+                                                          : lf.findColour(juce::ComboBox::backgroundColourId); // Inactive selection color
+
+                g.setColour(highlightColour);
+                g.fillRect(localBounds);
+
+                // Use a contrasting text color.
+                g.setColour(lf.findColour(juce::PopupMenu::highlightedTextColourId));
             }
             else
             {
-                // Use the TreeView's general background color for non-selected
-                // items. Alternatively, you could use
-                // oddItemsColourId/evenItemsColourId if you set them up.
-                g.fillAll(getOwnerView()->findColour(juce::TreeView::backgroundColourId));
-                g.setColour(lf.findColour(juce::Label::textColourId)); // General text color for
-                                                                       // non-selected items
+                const auto backgroundColour = lf.findColour(juce::TreeView::backgroundColourId);
+                g.setColour(backgroundColour);
+                g.fillRect(localBounds);
+
+                const auto foregroundColour = lf.findColour(juce::Label::textColourId);
+                g.setColour(foregroundColour);
             }
 
             if (m_associatedNode)
             {
-                // Corrected font usage
+                // Use the modern, non-deprecated Font constructor that you were already using.
                 g.setFont(juce::Font{juce::FontOptions{}.withHeight(height * 0.7f)});
-                g.drawText(m_associatedNode->getName(), 4, 0, width - 6,
-                           height, // Leave a small margin
-                           juce::Justification::centredLeft, true);
+                g.drawText(m_associatedNode->getName(), textBounds, juce::Justification::centredLeft, true);
             }
             else
             {
                 g.setFont(juce::Font{juce::FontOptions{}.withHeight(height * 0.7f)});
-                g.drawText("Error: No Node", 4, 0, width - 6, height, juce::Justification::centredLeft, true);
+                g.setColour(juce::Colours::red);
+                g.drawText("Error: No Node", textBounds, juce::Justification::centredLeft, true);
             }
         }
 
@@ -329,51 +332,66 @@ namespace jucyaudio
 
         void NavigationPanelComponent::selectNode(database::INavigationNode *nodeToSelect)
         {
-            if (nodeToSelect)
+            if (!nodeToSelect || !m_treeView.getRootItem())
             {
-                spdlog::info("MainComponent: Attempting to select node '{}' in "
-                             "navigation.",
-                             nodeToSelect->getName());
+                spdlog::warn("selectNode called with null node or tree has no root.");
+                return;
+            }
 
-                // Find the GUI item for this specific model node
-                const auto treeItemToSelect = findTreeViewItemForNode(nodeToSelect);
+            spdlog::info("selectNode: Attempting to select node '{}'.", nodeToSelect->getName());
 
-                if (treeItemToSelect)
+            // 1. Get the path of nodes from the data model. This is always reliable.
+            const auto path = getNodePath(nodeToSelect);
+
+            // The first element in the path should be our root node model.
+            if (path.empty() || path.front() != m_currentRootNode)
+            {
+                spdlog::error("selectNode: Node path is invalid or doesn't start from the current root.");
+                return;
+            }
+
+            // 2. Traverse the GUI tree, building it as we go.
+            juce::TreeViewItem *currentItem = m_treeView.getRootItem();
+
+            // We start from the second item in the path, as the first is the root.
+            for (size_t i = 1; i < path.size(); ++i)
+            {
+                auto *targetChildNode = path[i];
+
+                // This is the key: If the current GUI item's children haven't been built, build them now.
+                auto *currentNavItem = dynamic_cast<NavTreeViewItem *>(currentItem);
+                if (currentNavItem && !currentNavItem->isOpen())
                 {
-                    // Ensure all parents are open so the item *can* be made
-                    // visible
-                    juce::TreeViewItem *currentParent =
-                        treeItemToSelect->getParentItem();
-                    while (currentParent != nullptr &&
-                           currentParent != getTreeView().getRootItem())
+                    // Opening the item will trigger buildSubItems(), creating the next level of the GUI.
+                    currentNavItem->setOpen(true);
+                }
+
+                // Now find the specific child item we need for the next step of the path.
+                juce::TreeViewItem *nextItem = nullptr;
+                for (int j = 0; j < currentItem->getNumSubItems(); ++j)
+                {
+                    auto *subItem = dynamic_cast<NavTreeViewItem *>(currentItem->getSubItem(j));
+                    if (subItem && subItem->getNode() == targetChildNode)
                     {
-                        // Don't try to open the hidden root item if
-                        // getRootItemVisible() is false
-                        if (!currentParent->isOpen())
-                        {
-                            currentParent->setOpen(true);
-                        }
-                        currentParent = currentParent->getParentItem();
+                        nextItem = subItem;
+                        break;
                     }
-
-                    // Now select the item. If
-                    // m_treeView.setScrollToShowItemsThatAreSelected(true) was
-                    // called, JUCE should handle the scrolling.
-                    treeItemToSelect->setSelected(true, true);
-                    getTreeView().scrollToKeepItemVisible(treeItemToSelect);
-
-                    // No direct scrollToItem needed if the above property is
-                    // set. TreeView will handle it on selection.
-                    spdlog::info("MainComponent: Successfully selected new "
-                                 "item. TreeView should scroll if configured.");
                 }
-                else
+
+                if (nextItem == nullptr)
                 {
-                    spdlog::warn(
-                        "MainComponent: Could not find the NavTreeViewItem for "
-                        "the newly created model node.");
-                    // ... (fallback logic) ...
+                    spdlog::error("selectNode: Failed to find GUI item for node '{}' while traversing path.", targetChildNode->getName());
+                    return; // Abort if we can't build the GUI path
                 }
+                currentItem = nextItem;
+            }
+
+            // 3. At the end of the loop, 'currentItem' is the TreeViewItem we want to select.
+            if (currentItem)
+            {
+                currentItem->setSelected(true, true);
+                m_treeView.scrollToKeepItemVisible(currentItem);
+                spdlog::info("selectNode: Successfully selected and scrolled to item.");
             }
         }
 

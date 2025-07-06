@@ -49,6 +49,7 @@ namespace jucyaudio
 
             database::TrackLibrary &m_trackLibrary;
             database::IFolderDatabase &m_folderDatabase;
+            juce::LookAndFeel_V4 m_lookAndFeel;
 
             // UI Elements
             juce::TextButton m_addFolderButton;

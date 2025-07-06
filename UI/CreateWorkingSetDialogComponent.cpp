@@ -3,6 +3,7 @@
 #include <ctime>
 #include <iomanip>
 #include <sstream>
+#include <UI/MainComponent.h>
 
 namespace jucyaudio
 {
@@ -18,6 +19,8 @@ namespace jucyaudio
               m_okButton{"OK"},
               m_cancelButton{"Cancel"}
         {
+            m_lookAndFeel.setColourScheme (getColourSchemeFromConfig());
+            setLookAndFeel(&m_lookAndFeel); // Set custom LookAndFeel
             setSize(400, 200);
 
             // Title label
@@ -57,6 +60,7 @@ namespace jucyaudio
 
         CreateWorkingSetDialogComponent::~CreateWorkingSetDialogComponent()
         {
+            setLookAndFeel(nullptr);
             // Listeners are automatically removed by JUCE
         }
 

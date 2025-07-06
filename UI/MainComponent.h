@@ -12,11 +12,14 @@
 #include <UI/MainPlaybackAndStatusComponent.h>
 #include <UI/NavigationPanelComponent.h>
 #include <UI/PlaybackController.h>
+#include <UI/ThemeManager.h>
 
 namespace jucyaudio
 {
     namespace ui
     {
+        juce::LookAndFeel_V4::ColourScheme getColourSchemeFromConfig();
+
         extern std::string g_strConfigFilename;
         class MainComponent : public juce::AudioAppComponent,
                               public juce::ApplicationCommandTarget,
@@ -102,6 +105,9 @@ namespace jucyaudio
             PlaybackToolbarComponent m_playbackToolbar; // Direct member object
             PlaybackController m_playbackController;
             MainPlaybackAndStatusComponent m_mainPlaybackAndStatusPanel;
+            juce::LookAndFeel_V4 m_lookAndFeel;
+            
+            std::filesystem::path getThemesDirectoryPath() const;
 
             // Layout parameters
             int m_navPanelWidth{250};        // << NEW: Current width of the navigation panel

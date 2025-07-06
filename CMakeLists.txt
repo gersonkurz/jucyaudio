@@ -175,6 +175,8 @@ target_sources(jucyaudio PRIVATE
     UI/PlaybackController.h
     UI/PlaybackToolbarComponent.h
     UI/ScanDialogComponent.h
+    UI/ThemeManager.cpp
+    UI/ThemeManager.h
 )
 
 # Add binary resources (SVG files)
@@ -260,4 +262,30 @@ endif()
 # Special handling for sqlite3.c to avoid warnings
 set_source_files_properties(Database/Sqlite/sqlite3.c PROPERTIES
     COMPILE_FLAGS "-w"  # Disable warnings for sqlite3.c
+)
+# --- Post-Build Step: Copy Resources (Modern Approach) ---
+
+# Define a variable for the source directory for clarity
+set(THEMES_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/themes")
+
+if(APPLE)
+    # On macOS, the generator expression for the Resources directory is clean.
+    set(THEMES_DEST_DIR "$<TARGET_FILE_DIR:jucyaudio>/../Resources/themes")
+elseif(WIN32)
+    # On Windows, we want it next to the .exe file.
+    set(THEMES_DEST_DIR "$<TARGET_FILE_DIR:jucyaudio>/themes")
+else()
+    # Sensible Linux fallback
+    set(THEMES_DEST_DIR "$<TARGET_FILE_DIR:jucyaudio>/themes")
+endif()
+
+# Add a custom command that runs after the build.
+# It uses generator expressions to get the final paths at build time.
+add_custom_command(
+    TARGET jucyaudio POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${THEMES_DEST_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${THEMES_SOURCE_DIR}" # Source
+            "${THEMES_DEST_DIR}"   # Destination
+    COMMENT "Copying themes to application bundle..."
 )

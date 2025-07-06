@@ -1,15 +1,15 @@
+#include <Config/toml_backend.h>
 #include <Database/Nodes/MixNode.h>
 #include <Database/Nodes/RootNode.h>
+#include <UI/ColumnConfiguratorDialog.h>
 #include <UI/CreateMixDialogComponent.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/ILongRunningTask.h>
 #include <UI/MainComponent.h>
 #include <UI/ScanDialogComponent.h>
 #include <UI/TaskDialog.h>
-#include <UI/ColumnConfiguratorDialog.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
-#include <Config/toml_backend.h>
 #ifndef JUCE_WINDOWS
 #include <unistd.h>
 #endif
@@ -17,10 +17,37 @@
 namespace jucyaudio
 {
     using namespace database;
-    
+
     namespace ui
     {
-
+        juce::LookAndFeel_V4::ColourScheme getColourSchemeFromConfig()
+        {
+            config::TomlBackend backend{g_strConfigFilename};
+            config::theSettings.load(backend);
+            
+            const auto theme = config::theSettings.uiSettings.theme.get();
+            if(theme == "dark")
+            {
+                return juce::LookAndFeel_V4::getDarkColourScheme();
+            }
+            else if(theme == "light")
+            {
+                return juce::LookAndFeel_V4::getLightColourScheme();
+            }
+            else if(theme == "midnight")
+            {
+                return juce::LookAndFeel_V4::getMidnightColourScheme();
+            }
+            else if(theme == "grey")
+            {
+                return juce::LookAndFeel_V4::getGreyColourScheme();
+            }
+            else
+            {
+                // Default to dark if the theme is not recognized
+                return juce::LookAndFeel_V4::getDarkColourScheme();
+            }
+        }
         MainComponent::MainComponent(juce::ApplicationCommandManager &commandManager)
             : m_commandManager{commandManager},
               m_dynamicToolbar{*this}, // Pass *this as MainComponent& owner
@@ -30,6 +57,18 @@ namespace jucyaudio
               m_playbackController{m_playbackToolbar},
               m_mainPlaybackAndStatusPanel{*this}
         {
+            // Assuming you have a way to get the app's resource path
+            auto themesDir = getThemesDirectoryPath(); // You'll need to implement this
+            theThemeManager.scanThemesDirectory(themesDir);
+            theThemeManager.applyTheme(m_lookAndFeel, 0, this); // Apply the first theme by default
+            
+            //m_lookAndFeel.setColourScheme (getColourSchemeFromConfig());
+            //m_lookAndFeel.setDefaultSansSerifTypefaceName("Helvtica"); // Set default font to Arial
+            //const auto color1  = juce::Colour::fromString("FFFF0000"); // Set default text color to black
+            //m_lookAndFeel.setColour(juce::TreeView::backgroundColourId, color1); // Set default background color for TreeView
+
+            //setLookAndFeel(&m_lookAndFeel); // Set custom LookAndFeel
+
             // --- TrackLibrary Initialization (remains as is) ---
             juce::File appDataDir{juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("jucyaudioApp_Dev")};
             if (!appDataDir.exists())
@@ -140,7 +179,7 @@ namespace jucyaudio
                     if (auto *firstTopLevelTreeViewItem =
                             dynamic_cast<NavigationPanelComponent::NavTreeViewItem *>(m_navigationPanel.getTreeView().getItemOnRow(0)))
                     {
-                        //if (jucyaudio::INavigationNode *nodeToSelect = firstTopLevelTreeViewItem->getNode())
+                        // if (jucyaudio::INavigationNode *nodeToSelect = firstTopLevelTreeViewItem->getNode())
                         {
                             // Select this item in the TreeView UI
                             firstTopLevelTreeViewItem->setSelected(true, true);
@@ -209,10 +248,14 @@ namespace jucyaudio
 
             // Required for AudioAppComponent
             setAudioChannels(0, 2); // Output only
+
         }
 
         MainComponent::~MainComponent()
         {
+            // This is important for clean shutdown. It tells all child components
+            // to stop using our m_lookAndFeel object before it gets destroyed.
+            setLookAndFeel(nullptr);
 #ifdef USE_REFCOUNT_DEBUGGING
             for (const auto item : theBaseNodes)
             {
@@ -247,7 +290,9 @@ namespace jucyaudio
         {
             // Optionally fill the main background if child components don't
             // cover everything or if there are gaps.
-            g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
+            const auto backgroundColour = getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId);
+            spdlog::info("MainComponent::paint - juce::ResizableWindow::backgroundColourId colour: '#{}'", backgroundColour.toString().toStdString());
+            g.fillAll(backgroundColour);
         }
 
         // Method called by DividerComponent's mouseDrag
@@ -1035,6 +1080,27 @@ namespace jucyaudio
             commands.addArray(ids, juce::numElementsInArray(ids));
         }
 
+        std::filesystem::path MainComponent::getThemesDirectoryPath() const
+        {
+            return "/Users/gersonkurz/development/jucyaudio/jucyaudio/Themes";
+            // This gets the directory containing the executable or the .app bundle
+            auto appFile = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
+
+            juce::File themesDir;
+#if JUCE_MAC
+            // On macOS, it's in Contents/Resources inside the bundle
+            themesDir = appFile.getChildFile("Contents").getChildFile("Resources").getChildFile("themes");
+#elif JUCE_WINDOWS
+            // On Windows, we placed it next to the executable's directory
+            themesDir = appFile.getSiblingFile("themes");
+#else
+            // Linux fallback
+            themesDir = appFile.getSiblingFile("themes");
+#endif
+
+            return themesDir.getFullPathName().toStdString();
+        }
+
         void MainComponent::getCommandInfo(juce::CommandID commandID, juce::ApplicationCommandInfo &result)
         {
             switch (commandID)
@@ -1154,29 +1220,29 @@ namespace jucyaudio
         bool MainComponent::onShowConfigureColumnsDialog()
         {
             using namespace config;
-            
-            //const auto node = m_dataView.getCurrentlyFocusedComponent();
-            TypedValueVector<DataViewColumnSection>* pConfigSection = nullptr;
+
+            // const auto node = m_dataView.getCurrentlyFocusedComponent();
+            TypedValueVector<DataViewColumnSection> *pConfigSection = nullptr;
             const auto currentNode = m_dataView.getCurrentNode();
-            if(!currentNode)
+            if (!currentNode)
             {
                 m_mainPlaybackAndStatusPanel.setStatusMessage("No node selected at all.", true);
                 return false;
             }
             const auto currentNodeName = currentNode->getName();
-            if(currentNodeName.starts_with(getWorkingSetsRootNodeName()))
+            if (currentNodeName.starts_with(getWorkingSetsRootNodeName()))
             {
                 pConfigSection = &config::theSettings.uiSettings.workingSetsViewColumns;
             }
-            else if(currentNodeName.starts_with(getFoldersRootNodeName()))
+            else if (currentNodeName.starts_with(getFoldersRootNodeName()))
             {
                 pConfigSection = &config::theSettings.uiSettings.foldersViewColumns;
             }
-            else if(currentNodeName.starts_with(getMixesRootNodeName()))
+            else if (currentNodeName.starts_with(getMixesRootNodeName()))
             {
                 pConfigSection = &config::theSettings.uiSettings.mixesViewColumns;
             }
-            else if(currentNodeName.starts_with(getLibraryRootNodeName()))
+            else if (currentNodeName.starts_with(getLibraryRootNodeName()))
             {
                 pConfigSection = &config::theSettings.uiSettings.libraryViewColumns;
             }
@@ -1223,8 +1289,7 @@ namespace jucyaudio
                 {
                 }
 
-                void run([[maybe_unused]] ProgressCallback progressCb, CompletionCallback completionCb,
-                         std::atomic<bool> &shouldCancel) override
+                void run([[maybe_unused]] ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel) override
                 {
                     m_trackLibrary.runMaintenanceTasks(shouldCancel);
                     completionCb(true, "Database maintenance completed successfully.");

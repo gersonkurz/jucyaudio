@@ -42,6 +42,7 @@ namespace jucyaudio
             database::ILongRunningTask *m_task; // Retained pointer
             std::optional<int> m_autoCloseOnSuccessDelayMs;
             bool m_waitingForAutoClose = false;
+            juce::LookAndFeel_V4 m_lookAndFeel; // Custom LookAndFeel instance
 
             // UI Elements
             juce::Label m_titleLabel;

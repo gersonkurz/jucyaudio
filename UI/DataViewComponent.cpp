@@ -177,7 +177,7 @@ namespace jucyaudio
         void DataViewComponent::paintRowBackground(juce::Graphics &g, int rowNumber, [[maybe_unused]] int width, [[maybe_unused]] int height,
                                                    bool rowIsSelected)
         {
-            auto &lf = juce::LookAndFeel::getDefaultLookAndFeel();
+            auto &lf = getLookAndFeel();
             if (rowIsSelected)
             {
                 // TableListBox DOES have selectedItemBackgroundColourId
@@ -221,7 +221,7 @@ namespace jucyaudio
             // this is important: we match OUR column to the underlying model column
             const auto &columnDef = m_currentDataColumns[dataColumnIndex];
             const auto textToDisplay = m_currentNode->getCellText(rowNumber, columnDef.column->index);
-            auto &lf = juce::LookAndFeel::getDefaultLookAndFeel();
+            auto &lf = getLookAndFeel();
             if (rowIsSelected)
             {
                 // Use the PopupMenu's highlighted text color for selected items

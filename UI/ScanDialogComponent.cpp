@@ -30,6 +30,9 @@ namespace jucyaudio
               m_folderListTable{"foldersTable", this},
               m_titleLabel{"titleLabel", "Scan Folders"}
         {
+            m_lookAndFeel.setColourScheme (getColourSchemeFromConfig());
+            setLookAndFeel(&m_lookAndFeel); // Set custom LookAndFeel
+
             setSize(700, 500); // Set a reasonable initial size for the dialog
 
             // --- Button Setup ---
@@ -76,6 +79,7 @@ namespace jucyaudio
 
         ScanDialogComponent::~ScanDialogComponent()
         {
+            setLookAndFeel(nullptr);
             juce::MessageManager::callAsync(
                 [callback = onDialogClosed]()
                 {

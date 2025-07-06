@@ -2,7 +2,6 @@
 #include <cassert>
 #include <spdlog/spdlog.h>
 
-
 namespace jucyaudio
 {
     namespace database
@@ -70,7 +69,7 @@ namespace jucyaudio
         {
             return nullptr;
         }
-       
+
         bool BaseNode::prepareToShowData()
         {
             return true;
@@ -103,8 +102,6 @@ namespace jucyaudio
         void BaseNode::refreshChildren()
         {
         }
-
-
 
         void BaseNode::retain(REFCOUNT_DEBUG_SPEC) const
         {
@@ -147,12 +144,12 @@ namespace jucyaudio
             spdlog::info("Not implemented: BaseNode::removeObjectAtRow({})", rowIndex);
             // Default implementation does nothing, derived classes should override if needed
         }
-        
+
         const TrackQueryArgs *BaseNode::getQueryArgs() const
         {
             return nullptr;
         }
-        
+
         const std::string &BaseNode::getName() const
         {
             return m_name;
@@ -186,6 +183,19 @@ namespace jucyaudio
         const DataActions &BaseNode::getRowActions([[maybe_unused]] RowIndex_t rowIndex) const
         {
             return NoActionsPossible;
+        }
+
+        std::vector<INavigationNode*> getNodePath(INavigationNode *targetNode)
+        {
+            std::vector<INavigationNode *> path;
+            auto *current = targetNode;
+            while (current != nullptr)
+            {
+                path.push_back(current);
+                current = current->getParent();
+            }
+            std::reverse(path.begin(), path.end()); // We want the path from root to target
+            return path;
         }
     } // namespace database
 } // namespace jucyaudio

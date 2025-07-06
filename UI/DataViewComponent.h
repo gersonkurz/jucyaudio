@@ -64,7 +64,6 @@ namespace jucyaudio
 
             MainComponent &m_ownerMainComponent;
             juce::TableListBox m_tableListBox;
-
             INavigationNode *m_currentNode{nullptr};
             std::vector<database::DataColumnWithIndex> m_currentDataColumns;
 
