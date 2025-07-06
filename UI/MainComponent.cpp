@@ -8,6 +8,8 @@
 #include <UI/MainComponent.h>
 #include <UI/ScanDialogComponent.h>
 #include <UI/TaskDialog.h>
+#include <Database/BackgroundService.h>
+#include <Database/BackgroundTasks/BpmAnalysis.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
 #ifndef JUCE_WINDOWS
@@ -22,7 +24,7 @@ namespace jucyaudio
     {
         MainComponent::MainComponent(juce::ApplicationCommandManager &commandManager)
             : MenuPresenter{commandManager},
-             m_commandManager{commandManager},
+              m_commandManager{commandManager},
               m_dynamicToolbar{*this}, // Pass *this as MainComponent& owner
               m_navigationPanel{*this},
               m_dataView{*this},
@@ -197,48 +199,76 @@ namespace jucyaudio
             // --- Application Commands and Menu ---
             m_commandManager.registerAllCommandsForTarget(this); // Register commands defined in this class
 
-            auto& menuManager = getManager();
+            auto &menuManager = getManager();
 
             // 1. Define static menus
-            menuManager.registerMenu("File", {
-                // The lambda captures `this` from MainComponent, keeping logic and state together.
-                {"Scan Folders...", "...", [&](){ onShowScanDialog(); }, {{'s', juce::ModifierKeys::commandModifier}}, {}},
-                {"-"},
-                {"Database Maintenance...", "...", [&](){ onShowMaintenanceDialog(); }},
-                {"-"},
-                {"Exit", "...", [&](){ juce::JUCEApplication::getInstance()->systemRequestedQuit(); }, {{'q', juce::ModifierKeys::commandModifier}}, {}}
-            });
-            
-            menuManager.registerMenu("View", {
-                {"Configure Columns...", "...", [&](){ onShowConfigureColumnsDialog(); }}
-            });
+            menuManager.registerMenu("File", {// The lambda captures `this` from MainComponent, keeping logic and state together.
+                                              {"Scan Folders...",
+                                               "...",
+                                               [&]()
+                                               {
+                                                   onShowScanDialog();
+                                               },
+                                               {{'s', juce::ModifierKeys::commandModifier}},
+                                               {}},
+                                              {"-"},
+                                              {"Database Maintenance...", "...",
+                                               [&]()
+                                               {
+                                                   onShowMaintenanceDialog();
+                                               }},
+                                              {"-"},
+                                              {"Exit",
+                                               "...",
+                                               [&]()
+                                               {
+                                                   juce::JUCEApplication::getInstance()->systemRequestedQuit();
+                                               },
+                                               {{'q', juce::ModifierKeys::commandModifier}},
+                                               {}}});
+
+            menuManager.registerMenu("View", {{"Configure Columns...", "...", [&]()
+                                               {
+                                                   onShowConfigureColumnsDialog();
+                                               }}});
 
             // 2. Define dynamic theme submenu
             std::vector<MenuItem> themeItems;
-            const auto& availableThemes = theThemeManager.getAvailableThemes();
+            const auto &availableThemes = theThemeManager.getAvailableThemes();
             for (size_t i = 0; i < availableThemes.size(); ++i)
             {
                 themeItems.push_back({
                     availableThemes[i].name,
                     "Select this theme",
-                    [this, i](){ onApplyThemeByIndex(i); }, // Lambda captures index
+                    [this, i]()
+                    {
+                        onApplyThemeByIndex(i);
+                    }, // Lambda captures index
                     {},
                     true, // isRadioButton
-                    [i](){ return theThemeManager.isCurrentIndex(i); } // isTicked lambda
+                    [i]()
+                    {
+                        return theThemeManager.isCurrentIndex(i);
+                    } // isTicked lambda
                 });
             }
             menuManager.addSubMenu("View", "Theme", themeItems);
 
-            menuManager.registerMenu("Help", {
-                {"About...", "...", [&](){ onShowAboutDialog(); }},
-            });
+            menuManager.registerMenu("Help",
+                                     {
+                                         {"About...", "...",
+                                          [&]()
+                                          {
+                                              onShowAboutDialog();
+                                          }},
+                                     });
 
             // 3. After defining everything, tell the presenter to register the commands with JUCE
             registerCommands();
-            
-        #if JUCE_MAC
+
+#if JUCE_MAC
             juce::MenuBarModel::setMacMainMenu(getMenuBarModel());
-        #endif
+#endif
             // --- Timer ---
             startTimerHz(30); // For smooth UI updates (e.g., playback position slider)
 
@@ -248,12 +278,21 @@ namespace jucyaudio
             // Required for AudioAppComponent
             setAudioChannels(0, 2); // Output only
 
+            // Setup the background service (assuming it's a member m_backgroundService)
+            database::theBackgroundTaskService.start();
+
+            // Create and register our new BPM analysis task.
+            // Note: the service will retain() the task, so we can release our initial reference.
+            auto *bpmTask = new database::background_tasks::BpmAnalysis{m_trackLibrary};
+            database::theBackgroundTaskService.registerTask(bpmTask);
+            bpmTask->release();
         }
 
         MainComponent::~MainComponent()
         {
+            database::theBackgroundTaskService.stop();
 #if JUCE_MAC
-    juce::MenuBarModel::setMacMainMenu(nullptr);
+            juce::MenuBarModel::setMacMainMenu(nullptr);
 #endif
             // This is important for clean shutdown. It tells all child components
             // to stop using our m_lookAndFeel object before it gets destroyed.
@@ -1068,15 +1107,14 @@ namespace jucyaudio
             return true;
         }
 
-
         bool MainComponent::onShowAboutDialog()
         {
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "About jucyaudio",
-                                                            "jucyaudio - MP3 Player and Mixer\nVersion 0.1.0 "
-                                                            "(Dev)\n\n(c) 2025 Your Name",
-                                                            "OK");
+                                                   "jucyaudio - MP3 Player and Mixer\nVersion 0.1.0 "
+                                                   "(Dev)\n\n(c) 2025 Your Name",
+                                                   "OK");
 
-                                                            return true;
+            return true;
         }
 
         bool MainComponent::onShowConfigureColumnsDialog()
@@ -1140,10 +1178,9 @@ namespace jucyaudio
             return true;
         }
 
-
         bool MainComponent::onApplyThemeByIndex(size_t themeIndex)
         {
-            const auto& availableThemes = theThemeManager.getAvailableThemes();
+            const auto &availableThemes = theThemeManager.getAvailableThemes();
             if (themeIndex < availableThemes.size())
             {
                 const auto selectedThemeName = theThemeManager.applyTheme(m_lookAndFeel, themeIndex, this);
@@ -1161,7 +1198,6 @@ namespace jucyaudio
             spdlog::error("Invalid theme index: {}", themeIndex);
             return false;
         }
-
 
         bool MainComponent::onShowMaintenanceDialog()
         {

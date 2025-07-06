@@ -58,6 +58,16 @@ namespace jucyaudio
                 return m_lastErrorMessage;
             }
 
+            ITrackDatabase *getTrackDatabase() const
+            {
+                if (!m_isInitialised || !m_database)
+                {
+                    setLastError("TrackLibrary not initialised.");
+                    return nullptr;
+                }
+                return m_database;
+            }
+
             ITagManager *getTagManager()
             {
                 if (!m_isInitialised || !m_database)
@@ -85,6 +95,8 @@ namespace jucyaudio
                 return m_database->getWorkingSetManager();
             }
 
+
+            
             int getTotalTrackCount(const TrackQueryArgs &baseFilters = TrackQueryArgs{}) const
             {
                 if (!m_isInitialised || !m_database)

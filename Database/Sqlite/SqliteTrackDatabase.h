@@ -66,6 +66,12 @@ namespace jucyaudio
 
             IFolderDatabase &getFolderDatabase() const override;
 
+            // Finds one track that has no BPM data and returns its info.
+            // Returns std::nullopt if no such tracks are found.
+            std::optional<TrackInfo> getNextTrackForBpmAnalysis() const override;
+
+            // Performs a targeted update of only the BPM for a given track.
+            DbResult updateTrackBpm(TrackId trackId, int newBpm) override;
 
             ITagManager &getTagManager() override;
             const ITagManager &getTagManager() const override;

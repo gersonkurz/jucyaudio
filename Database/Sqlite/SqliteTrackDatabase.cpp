@@ -696,6 +696,37 @@ namespace jucyaudio
             return std::nullopt;
         }
 
+
+        std::optional<TrackInfo> SqliteTrackDatabase::getNextTrackForBpmAnalysis() const
+        {
+            if (!isOpen())
+            {
+                return std::nullopt;
+            }
+            m_lastErrorMessage.clear(); // mutable m_lastErrorMessage
+
+            SqliteStatement stmt{m_db,
+                                 "SELECT * FROM Tracks WHERE bpm IS NULL OR bpm <= 0 LIMIT 1;"};
+            if (!stmt.isValid())
+            {
+                m_lastErrorMessage = m_db.getLastError();
+                return std::nullopt;
+            }
+            if (stmt.getNextResult())
+            {
+                return trackInfoFromStatement(stmt);
+            }
+            // If getNextResult returns false, it might be an error or just no
+            // rows. Your SqliteStatement::getNextResult() should distinguish
+            // this or m_db.getLastError() should be checked.
+            if (!m_db.getLastError().empty() &&
+                m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
+            { // Crude check
+                m_lastErrorMessage = m_db.getLastError();
+            }
+            return std::nullopt;
+        }
+
         std::optional<TrackInfo> SqliteTrackDatabase::getTrackByFilepath(
             const std::filesystem::path &filepath) const
         {
@@ -771,6 +802,15 @@ namespace jucyaudio
                                  " update: " + m_db.getLastError();
             return DbResult::failure(DbResultStatus::ErrorDB,
                                      m_lastErrorMessage);
+        }
+
+        DbResult SqliteTrackDatabase::updateTrackBpm(TrackId trackId, int newBpm)
+        {
+            return updateSingleTrackField<int>(trackId, "bpm", newBpm,
+                                               [](SqliteStatement &s, int val)
+                                               {
+                                                   return s.addParam(val);
+                                               });
         }
 
         DbResult SqliteTrackDatabase::updateTrackRating(TrackId trackId,

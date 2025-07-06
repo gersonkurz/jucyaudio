@@ -69,6 +69,8 @@ namespace jucyaudio
         {
             while (!m_shouldExit)
             {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500)); // Simulate work
+                
                 // --- Wait for work or notification ---
                 {
                     std::unique_lock<std::mutex> lock(m_conditionMutex);
@@ -104,10 +106,11 @@ namespace jucyaudio
                     try
                     {
                         task->processWork();
+                        std::this_thread::sleep_for(std::chrono::milliseconds(500)); // Simulate work
                     }
                     catch (const std::exception &e)
                     {
-                        spdlog::error("Task '{}' threw an exception: {}", task->getName(), e.what());
+                        spdlog::error("Task '{}' threw an exception: {}", task->m_taskName, e.what());
                     }
                 }
             }
