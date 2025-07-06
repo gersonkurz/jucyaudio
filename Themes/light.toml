@@ -1,0 +1,35 @@
+name = "Jucy Light"
+
+[colors]
+# --- Main Backgrounds & Window ---
+"ResizableWindow::backgroundColourId"      = "#FFF8F8F8"
+"TreeView::backgroundColourId"             = "#FFFFFFFF"  # Pure white panels for content clarity
+"ListBox::backgroundColourId"              = "#FFFFFFFF"
+
+# --- Text & Labels ---
+"Label::textColourId"                      = "#FF212121"  # Dark charcoal, not pure black
+"ListBox::textColourId"                    = "#FF212121"
+
+# --- Selections & Highlights (Professional Blue) ---
+"TreeView::selectedItemBackgroundColourId" = "#FF007AFF"
+"ListBox::selectedBackgroundColourId"      = "#FF007AFF"
+"Slider::thumbColourId"                    = "#FF007AFF"
+"TextButton::buttonOnColourId"             = "#FF007AFF"
+"PopupMenu::highlightedBackgroundColourId" = "#FFEFEFF4"  # Very light gray for menu hover
+
+# --- Inactive & Subtle Elements ---
+"ComboBox::backgroundColourId"             = "#FFD1D1D6"  # Inactive selection gray
+"TreeView::linesColourId"                  = "#FFD1D1D6"
+"Slider::trackColourId"                    = "#FFD1D1D6"
+"TextButton::buttonColourId"               = "#FFEFEFF4"  # A very light button background
+"ListBox::outlineColourId"                 = "#FFC7C7CC"  # Subtle border for lists/tables
+"TextEditor::outlineColourId"              = "#FFC7C7CC"
+
+# --- Popups & Editors ---
+"PopupMenu::backgroundColourId"            = "#FFFFFFFF"
+"TextEditor::backgroundColourId"           = "#FFFFFFFF"
+
+# --- Unused / Fallback ---
+"TreeView::dragAndDropIndicatorColourId"   = "#FF007AFF"
+"TreeView::oddItemsColourId"               = "#00000000"
+"TreeView::evenItemsColourId"              = "#FFF8F8F8"  # Subtle alternating row color

@@ -28,8 +28,7 @@ namespace jucyaudio
               m_okButton{"Create & Export"},
               m_cancelButton{"Cancel"}
         {
-            m_lookAndFeel.setColourScheme (getColourSchemeFromConfig());
-            setLookAndFeel(&m_lookAndFeel); // Set custom LookAndFeel
+            theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
             setSize(450, 220); // Slightly wider for "Create & Export"
 
             // Title label

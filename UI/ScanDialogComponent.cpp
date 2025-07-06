@@ -30,8 +30,7 @@ namespace jucyaudio
               m_folderListTable{"foldersTable", this},
               m_titleLabel{"titleLabel", "Scan Folders"}
         {
-            m_lookAndFeel.setColourScheme (getColourSchemeFromConfig());
-            setLookAndFeel(&m_lookAndFeel); // Set custom LookAndFeel
+            theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
 
             setSize(700, 500); // Set a reasonable initial size for the dialog
 

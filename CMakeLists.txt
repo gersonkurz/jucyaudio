@@ -177,6 +177,10 @@ target_sources(jucyaudio PRIVATE
     UI/ScanDialogComponent.h
     UI/ThemeManager.cpp
     UI/ThemeManager.h
+    UI/MenuManager.cpp
+    UI/MenuManager.h
+    UI/MenuPresenter.cpp
+    UI/MenuPresenter.h
 )
 
 # Add binary resources (SVG files)

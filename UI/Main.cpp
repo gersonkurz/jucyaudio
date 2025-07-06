@@ -1,8 +1,8 @@
 #include <Config/toml_backend.h>
-#include <juce_gui_basics/juce_gui_basics.h>
-#include <juce_audio_utils/juce_audio_utils.h>
 #include <UI/MainComponent.h>
 #include <UI/Settings.h>
+#include <juce_audio_utils/juce_audio_utils.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/msvc_sink.h>
 #include <spdlog/spdlog.h>
@@ -53,7 +53,7 @@ namespace jucyaudio
             {
                 return PROJECT_NAME;
             }
-            
+
             const juce::String getApplicationVersion() override
             {
                 return PROJECT_VERSION;
@@ -63,7 +63,7 @@ namespace jucyaudio
             {
                 return true;
             }
-            
+
             juce::ApplicationCommandManager &getGlobalCommandManager()
             {
                 return commandManager;
@@ -101,22 +101,15 @@ namespace jucyaudio
             class MainWindow : public juce::DocumentWindow
             { // Or whatever your main window class is
             public:
-                MainWindow(const juce::String &name, juce::ApplicationCommandManager &commandManager, juce::LookAndFeel_V4& lookAndFeel)
-                    : DocumentWindow(name, lookAndFeel.findColour(ResizableWindow::backgroundColourId),
-                                     DocumentWindow::allButtons)
+                MainWindow(const juce::String &name, juce::ApplicationCommandManager &commandManager, juce::LookAndFeel_V4 &lookAndFeel)
+                    : DocumentWindow(name, lookAndFeel.findColour(ResizableWindow::backgroundColourId), DocumentWindow::allButtons)
                 {
                     setUsingNativeTitleBar(true);
-                    setLookAndFeel(&lookAndFeel); // Set custom LookAndFeel
+                    theThemeManager.applyCurrentTheme(lookAndFeel, this);
                     m_pMainComponent = new jucyaudio::ui::MainComponent{commandManager}; // Create MainComponent
                     setContentOwned(m_pMainComponent, true);                             // Set as content
-
-// If MainComponent directly handles menus for native Mac bar:
-#if JUCE_MAC
-                                                             // MainComponent::setMacMainMenu was already called from MainComponent constructor
-#else
-                                                             // If menu is in-window, MainComponent already added its m_menuBar
-#endif
                     setMenuBar(m_pMainComponent);
+                    theThemeManager.applyCurrentTheme(lookAndFeel, getMenuBarComponent());
                     setResizable(true, true);
                     centreWithSize(getWidth(), getHeight());
                     setVisible(true);
@@ -137,6 +130,27 @@ namespace jucyaudio
                 JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainWindow)
             };
 
+            std::filesystem::path getThemesDirectoryPath() const
+            {
+                return "/Users/gersonkurz/development/jucyaudio/jucyaudio/Themes";
+                // This gets the directory containing the executable or the .app bundle
+                auto appFile = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
+
+                juce::File themesDir;
+#if JUCE_MAC
+                // On macOS, it's in Contents/Resources inside the bundle
+                themesDir = appFile.getChildFile("Contents").getChildFile("Resources").getChildFile("themes");
+#elif JUCE_WINDOWS
+                // On Windows, we placed it next to the executable's directory
+                themesDir = appFile.getSiblingFile("themes");
+#else
+                // Linux fallback
+                themesDir = appFile.getSiblingFile("themes");
+#endif
+
+                return themesDir.getFullPathName().toStdString();
+            }
+
             //==============================================================================
             void initialise([[maybe_unused]] const juce::String &commandLine) override
             {
@@ -145,7 +159,8 @@ namespace jucyaudio
 
                 config::TomlBackend backend{g_strConfigFilename};
                 config::theSettings.load(backend);
-                m_lookAndFeel.setColourScheme(getColourSchemeFromConfig()); // Set a light colour scheme
+
+                theThemeManager.initialize(getThemesDirectoryPath(), config::theSettings.uiSettings.theme.get());
 
                 mainWindow = std::make_unique<MainWindow>(getApplicationName(), commandManager, m_lookAndFeel);
 
@@ -171,7 +186,7 @@ namespace jucyaudio
 
                 juce::Logger::writeToLog("Properties file location: " + g_strConfigFilename);
             }
-            
+
             void setupLogging()
             {
 

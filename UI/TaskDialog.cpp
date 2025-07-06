@@ -28,8 +28,7 @@ namespace jucyaudio
               // Use isCancellable from the task object for the button text
               m_actionButton{task && task->m_isCancellable ? "Cancel" : "Close"}
         {
-            m_lookAndFeel.setColourScheme (getColourSchemeFromConfig());
-            setLookAndFeel(&m_lookAndFeel); // Set custom LookAndFeel
+            theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
 
             if (m_task)
             {

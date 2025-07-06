@@ -19,8 +19,7 @@ namespace jucyaudio
               m_okButton{"OK"},
               m_cancelButton{"Cancel"}
         {
-            m_lookAndFeel.setColourScheme (getColourSchemeFromConfig());
-            setLookAndFeel(&m_lookAndFeel); // Set custom LookAndFeel
+            theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
             setSize(400, 200);
 
             // Title label

@@ -33,8 +33,7 @@ namespace jucyaudio
               m_columnsConfigToModifyRef(columnsConfigToModify),
               m_onConfiguredCallback(std::move(onConfiguredCallback))
         {
-            m_lookAndFeel.setColourScheme (getColourSchemeFromConfig());
-            setLookAndFeel(&m_lookAndFeel); // Set custom LookAndFeel
+            theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
             setSize(dialogWidth, dialogHeight);
 
             addAndMakeVisible(m_titleLabel);

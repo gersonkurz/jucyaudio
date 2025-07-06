@@ -4,15 +4,17 @@
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Nodes/RootNode.h>
 #include <Database/TrackLibrary.h>
-#include <juce_gui_basics/juce_gui_basics.h>
-#include <juce_graphics/juce_graphics.h>
 #include <UI/DataViewComponent.h>
 #include <UI/DividerComponent.h>
 #include <UI/DynamicToolbarComponent.h>
 #include <UI/MainPlaybackAndStatusComponent.h>
+#include <UI/MenuManager.h>
+#include <UI/MenuPresenter.h>
 #include <UI/NavigationPanelComponent.h>
 #include <UI/PlaybackController.h>
 #include <UI/ThemeManager.h>
+#include <juce_graphics/juce_graphics.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 
 namespace jucyaudio
 {
@@ -21,11 +23,7 @@ namespace jucyaudio
         juce::LookAndFeel_V4::ColourScheme getColourSchemeFromConfig();
 
         extern std::string g_strConfigFilename;
-        class MainComponent : public juce::AudioAppComponent,
-                              public juce::ApplicationCommandTarget,
-                              public juce::MenuBarModel,
-                              public juce::Timer,
-                              public juce::ChangeListener
+        class MainComponent : public juce::AudioAppComponent, public MenuPresenter, public juce::Timer, public juce::ChangeListener
         {
         public:
             MainComponent(juce::ApplicationCommandManager &commandManager);
@@ -34,16 +32,6 @@ namespace jucyaudio
             void paint(juce::Graphics &g) override;
             void resized() override;
 
-            // ... (AudioAppComponent, ApplicationCommandTarget (with corrected
-            // 'perform'), MenuBarModel, Timer, ChangeListener overrides remain
-            // the same) ...
-            ApplicationCommandTarget *getNextCommandTarget() override;
-            void getAllCommands(juce::Array<juce::CommandID> &commands) override;
-            void getCommandInfo(juce::CommandID commandID, juce::ApplicationCommandInfo &result) override;
-            bool perform(const InvocationInfo &info) override;
-            juce::StringArray getMenuBarNames() override;
-            juce::PopupMenu getMenuForIndex(int topLevelMenuIndex, const juce::String &menuName) override;
-            void menuItemSelected(int menuItemID, int topLevelMenuIndex) override;
             void timerCallback() override;
             void changeListenerCallback(juce::ChangeBroadcaster *source) override;
 
@@ -78,10 +66,14 @@ namespace jucyaudio
             void onDoRemoveMix(database::INavigationNode *selectedNode, const database::MixInfo &mixToDelete, int result);
 
             void requestPlayOrPlaySelection();
-            void scanFolders();
             void syncPlaybackUIToControllerState();
+
+            // menu management --------------------------------
+            bool onShowScanDialog();
             bool onShowMaintenanceDialog();
             bool onShowConfigureColumnsDialog();
+            bool onShowAboutDialog();
+            bool onApplyThemeByIndex(size_t themeIndex);
 
             // working set management -------------------------------
             bool createWorkingSet();
@@ -106,7 +98,7 @@ namespace jucyaudio
             PlaybackController m_playbackController;
             MainPlaybackAndStatusComponent m_mainPlaybackAndStatusPanel;
             juce::LookAndFeel_V4 m_lookAndFeel;
-            
+
             std::filesystem::path getThemesDirectoryPath() const;
 
             // Layout parameters

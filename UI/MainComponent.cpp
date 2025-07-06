@@ -20,36 +20,9 @@ namespace jucyaudio
 
     namespace ui
     {
-        juce::LookAndFeel_V4::ColourScheme getColourSchemeFromConfig()
-        {
-            config::TomlBackend backend{g_strConfigFilename};
-            config::theSettings.load(backend);
-            
-            const auto theme = config::theSettings.uiSettings.theme.get();
-            if(theme == "dark")
-            {
-                return juce::LookAndFeel_V4::getDarkColourScheme();
-            }
-            else if(theme == "light")
-            {
-                return juce::LookAndFeel_V4::getLightColourScheme();
-            }
-            else if(theme == "midnight")
-            {
-                return juce::LookAndFeel_V4::getMidnightColourScheme();
-            }
-            else if(theme == "grey")
-            {
-                return juce::LookAndFeel_V4::getGreyColourScheme();
-            }
-            else
-            {
-                // Default to dark if the theme is not recognized
-                return juce::LookAndFeel_V4::getDarkColourScheme();
-            }
-        }
         MainComponent::MainComponent(juce::ApplicationCommandManager &commandManager)
-            : m_commandManager{commandManager},
+            : MenuPresenter{commandManager},
+             m_commandManager{commandManager},
               m_dynamicToolbar{*this}, // Pass *this as MainComponent& owner
               m_navigationPanel{*this},
               m_dataView{*this},
@@ -57,17 +30,7 @@ namespace jucyaudio
               m_playbackController{m_playbackToolbar},
               m_mainPlaybackAndStatusPanel{*this}
         {
-            // Assuming you have a way to get the app's resource path
-            auto themesDir = getThemesDirectoryPath(); // You'll need to implement this
-            theThemeManager.scanThemesDirectory(themesDir);
-            theThemeManager.applyTheme(m_lookAndFeel, 0, this); // Apply the first theme by default
-            
-            //m_lookAndFeel.setColourScheme (getColourSchemeFromConfig());
-            //m_lookAndFeel.setDefaultSansSerifTypefaceName("Helvtica"); // Set default font to Arial
-            //const auto color1  = juce::Colour::fromString("FFFF0000"); // Set default text color to black
-            //m_lookAndFeel.setColour(juce::TreeView::backgroundColourId, color1); // Set default background color for TreeView
-
-            //setLookAndFeel(&m_lookAndFeel); // Set custom LookAndFeel
+            theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
 
             // --- TrackLibrary Initialization (remains as is) ---
             juce::File appDataDir{juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("jucyaudioApp_Dev")};
@@ -233,13 +196,49 @@ namespace jucyaudio
 
             // --- Application Commands and Menu ---
             m_commandManager.registerAllCommandsForTarget(this); // Register commands defined in this class
-            // If this is the main window's content, set the menu bar model
-            // This is usually done by the MainWindow class:
-            // menuBarModelChanged() For now, we assume this MainComponent might
-            // be used as a model directly if no MainWindow class
-            // juce::MenuBarModel::setMenuBarVisible(true); // This is on
-            // DocumentWindow
 
+            auto& menuManager = getManager();
+
+            // 1. Define static menus
+            menuManager.registerMenu("File", {
+                // The lambda captures `this` from MainComponent, keeping logic and state together.
+                {"Scan Folders...", "...", [&](){ onShowScanDialog(); }, {{'s', juce::ModifierKeys::commandModifier}}, {}},
+                {"-"},
+                {"Database Maintenance...", "...", [&](){ onShowMaintenanceDialog(); }},
+                {"-"},
+                {"Exit", "...", [&](){ juce::JUCEApplication::getInstance()->systemRequestedQuit(); }, {{'q', juce::ModifierKeys::commandModifier}}, {}}
+            });
+            
+            menuManager.registerMenu("View", {
+                {"Configure Columns...", "...", [&](){ onShowConfigureColumnsDialog(); }}
+            });
+
+            // 2. Define dynamic theme submenu
+            std::vector<MenuItem> themeItems;
+            const auto& availableThemes = theThemeManager.getAvailableThemes();
+            for (size_t i = 0; i < availableThemes.size(); ++i)
+            {
+                themeItems.push_back({
+                    availableThemes[i].name,
+                    "Select this theme",
+                    [this, i](){ onApplyThemeByIndex(i); }, // Lambda captures index
+                    {},
+                    true, // isRadioButton
+                    [i](){ return theThemeManager.isCurrentIndex(i); } // isTicked lambda
+                });
+            }
+            menuManager.addSubMenu("View", "Theme", themeItems);
+
+            menuManager.registerMenu("Help", {
+                {"About...", "...", [&](){ onShowAboutDialog(); }},
+            });
+
+            // 3. After defining everything, tell the presenter to register the commands with JUCE
+            registerCommands();
+            
+        #if JUCE_MAC
+            juce::MenuBarModel::setMacMainMenu(getMenuBarModel());
+        #endif
             // --- Timer ---
             startTimerHz(30); // For smooth UI updates (e.g., playback position slider)
 
@@ -253,6 +252,9 @@ namespace jucyaudio
 
         MainComponent::~MainComponent()
         {
+#if JUCE_MAC
+    juce::MenuBarModel::setMacMainMenu(nullptr);
+#endif
             // This is important for clean shutdown. It tells all child components
             // to stop using our m_lookAndFeel object before it gets destroyed.
             setLookAndFeel(nullptr);
@@ -1042,7 +1044,7 @@ namespace jucyaudio
             syncPlaybackUIToControllerState();
         }
 
-        void MainComponent::scanFolders()
+        bool MainComponent::onShowScanDialog()
         {
             auto *scanDialog = new ScanDialogComponent{m_trackLibrary};
 
@@ -1063,158 +1065,18 @@ namespace jucyaudio
 
             launchOptions.launchAsync();
             m_mainPlaybackAndStatusPanel.setStatusMessage("Folder management dialog opened.", false);
+            return true;
         }
 
-        // --- juce::ApplicationCommandTarget Overrides ---
-        MainComponent::ApplicationCommandTarget *MainComponent::getNextCommandTarget()
+
+        bool MainComponent::onShowAboutDialog()
         {
-            // In a multi-window app, this might return other targets or
-            // nullptr. For a single main component, often returns nullptr.
-            return nullptr;
-        }
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "About jucyaudio",
+                                                            "jucyaudio - MP3 Player and Mixer\nVersion 0.1.0 "
+                                                            "(Dev)\n\n(c) 2025 Your Name",
+                                                            "OK");
 
-        void MainComponent::getAllCommands(juce::Array<juce::CommandID> &commands)
-        {
-            // Add all command IDs that this component can handle.
-            const juce::CommandID ids[] = {cmd_About, cmd_ScanFolders, cmd_Options_ConfigureColumns, cmd_DatabaseMaintenance, cmd_Exit /*, ... */};
-            commands.addArray(ids, juce::numElementsInArray(ids));
-        }
-
-        std::filesystem::path MainComponent::getThemesDirectoryPath() const
-        {
-            return "/Users/gersonkurz/development/jucyaudio/jucyaudio/Themes";
-            // This gets the directory containing the executable or the .app bundle
-            auto appFile = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
-
-            juce::File themesDir;
-#if JUCE_MAC
-            // On macOS, it's in Contents/Resources inside the bundle
-            themesDir = appFile.getChildFile("Contents").getChildFile("Resources").getChildFile("themes");
-#elif JUCE_WINDOWS
-            // On Windows, we placed it next to the executable's directory
-            themesDir = appFile.getSiblingFile("themes");
-#else
-            // Linux fallback
-            themesDir = appFile.getSiblingFile("themes");
-#endif
-
-            return themesDir.getFullPathName().toStdString();
-        }
-
-        void MainComponent::getCommandInfo(juce::CommandID commandID, juce::ApplicationCommandInfo &result)
-        {
-            switch (commandID)
-            {
-            case cmd_About:
-                result.setInfo("About", "Show About box", "Help", 0);
-                result.setActive(true);
-                break;
-            case cmd_ScanFolders:
-                result.setInfo("Scan Folders", "Scan library folders for new music", "General", 0);
-                result.addDefaultKeypress('s',
-                                          juce::ModifierKeys::commandModifier); // Cmd+S or Ctrl+S
-                result.setActive(true);
-                break;
-            case cmd_Options_ConfigureColumns:
-                result.setInfo("Columns", "Configure Columns", "Options", 0);
-                result.setActive(true);
-                break;
-            case cmd_DatabaseMaintenance:
-                result.setInfo("Database Maintenance", "Perform database maintenance tasks", "General", 0);
-                result.addDefaultKeypress('m',
-                                          juce::ModifierKeys::commandModifier); // Cmd+M or Ctrl+M
-                result.setActive(true);
-                break;
-            case cmd_Exit:
-                result.setInfo("Exit", "Exit jucyaudio", "General", 0);
-                result.addDefaultKeypress('q',
-                                          juce::ModifierKeys::commandModifier); // Cmd+Q or Ctrl+Q
-                result.setActive(true);
-                break;
-            default:
-                break;
-            }
-        }
-
-        bool MainComponent::perform(const InvocationInfo &info)
-        {
-            switch (info.commandID)
-            {
-            case cmd_About:
-                // Show a simple About box
-                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "About jucyaudio",
-                                                       "jucyaudio - MP3 Player and Mixer\nVersion 0.1.0 "
-                                                       "(Dev)\n\n(c) 2025 Your Name",
-                                                       "OK");
-                return true;
-            case cmd_ScanFolders:
-                scanFolders();
-                return true;
-            case cmd_DatabaseMaintenance:
-                // Show a dialog for database maintenance tasks
-                return onShowMaintenanceDialog();
-            case cmd_Options_ConfigureColumns:
-                // Show a dialog to configure columns in DataView
-                return onShowConfigureColumnsDialog();
-            case cmd_Exit:
-                juce::JUCEApplication::getInstance()->systemRequestedQuit();
-                return true;
-            default:
-                return false;
-            }
-        }
-
-        // --- juce::MenuBarModel Overrides ---
-        juce::StringArray MainComponent::getMenuBarNames()
-        {
-            // Return the names for the top-level menus
-            return {"File", "Edit", "Options", "Help"};
-        }
-
-        juce::PopupMenu MainComponent::getMenuForIndex(int topLevelMenuIndex, const juce::String & /*menuName*/)
-        {
-            juce::PopupMenu menu;
-            if (topLevelMenuIndex == 0) // File Menu
-            {
-                menu.addCommandItem(&m_commandManager, cmd_ScanFolders);
-                menu.addCommandItem(&m_commandManager, cmd_AddFolderToLibrary);
-                menu.addSeparator();
-                menu.addCommandItem(&m_commandManager, cmd_DatabaseMaintenance);
-                menu.addSeparator();
-                menu.addCommandItem(&m_commandManager, cmd_Exit);
-            }
-            else if (topLevelMenuIndex == 1) // Edit Menu (dummy)
-            {
-                // menu.addItem(1001, "Undo (dummy)");
-                // menu.addItem(1002, "Redo (dummy)");
-            }
-            else if (topLevelMenuIndex == 2) // Options Menu (dummy)
-            {
-                menu.addCommandItem(&m_commandManager, cmd_Options_ConfigureColumns);
-                // menu.addItem(1003, "Undo (dummy)");
-                // menu.addItem(1004, "Redo (dummy)");
-            }
-            else if (topLevelMenuIndex == 3) // Help Menu (dummy)
-            {
-                menu.addCommandItem(&m_commandManager, cmd_About);
-            }
-            // Add other menus...
-            return menu;
-        }
-
-        void MainComponent::menuItemSelected(int menuItemID, int /*topLevelMenuIndex*/)
-        {
-            // This is called when a menu item *without* a command ID is
-            // clicked. If using command manager for all items, this might not
-            // be heavily used. For items added with addCommandItem,
-            // ApplicationCommandTarget::perform is called. If you add items
-            // directly with menu.addItem(id, name), this callback is used.
-
-            // Example for dummy edit menu items:
-            if (menuItemID == 1001)
-                m_mainPlaybackAndStatusPanel.setStatusMessage("Undo clicked (not implemented)", false);
-            if (menuItemID == 1002)
-                m_mainPlaybackAndStatusPanel.setStatusMessage("Redo clicked (not implemented)", false);
+                                                            return true;
         }
 
         bool MainComponent::onShowConfigureColumnsDialog()
@@ -1277,6 +1139,29 @@ namespace jucyaudio
             lo.launchAsync();
             return true;
         }
+
+
+        bool MainComponent::onApplyThemeByIndex(size_t themeIndex)
+        {
+            const auto& availableThemes = theThemeManager.getAvailableThemes();
+            if (themeIndex < availableThemes.size())
+            {
+                const auto selectedThemeName = theThemeManager.applyTheme(m_lookAndFeel, themeIndex, this);
+                m_navigationPanel.sendLookAndFeelChange();
+                m_dataView.sendLookAndFeelChange();
+                m_playbackToolbar.sendLookAndFeelChange();
+                m_mainPlaybackAndStatusPanel.sendLookAndFeelChange();
+                m_dynamicToolbar.sendLookAndFeelChange();
+
+                config::TomlBackend backend{g_strConfigFilename};
+                config::theSettings.uiSettings.theme.set(selectedThemeName);
+                config::theSettings.save(backend);
+                return true;
+            }
+            spdlog::error("Invalid theme index: {}", themeIndex);
+            return false;
+        }
+
 
         bool MainComponent::onShowMaintenanceDialog()
         {

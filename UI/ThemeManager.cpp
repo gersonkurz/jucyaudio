@@ -81,7 +81,7 @@ namespace jucyaudio
                 return std::nullopt;
             }
         }
-        void ThemeManager::scanThemesDirectory(const std::filesystem::path &themesFolderPath)
+        void ThemeManager::initialize(const std::filesystem::path &themesFolderPath, const std::string& currentThemeName)
         {
             m_availableThemes.clear();
             for (const auto &entry : std::filesystem::directory_iterator(themesFolderPath))
@@ -94,16 +94,17 @@ namespace jucyaudio
                     }
                 }
             }
+            m_currentThemeIndex = getThemeIndexByName(currentThemeName);
         }
 
-        void ThemeManager::applyTheme(juce::LookAndFeel_V4& lookAndFeel, size_t themeIndex, juce::Component *pComponent)
+        std::string ThemeManager::applyTheme(juce::LookAndFeel_V4& lookAndFeel, size_t themeIndex, juce::Component* pComponent)
         {
-            spdlog::info("Applying theme at index: {}", themeIndex);
-            
+            // TODO: rework logging here
             if (themeIndex < m_availableThemes.size())
             {
                 const auto& theme = m_availableThemes[themeIndex];
-                spdlog::info("Applying theme: {}", theme.name);
+                m_currentThemeIndex = themeIndex; // Update current theme index
+                //spdlog::info("Applying theme: {}", theme.name);
 
                 for (const auto &[nameOfColour, intColourId] : colourNameMap)
                 {
@@ -112,19 +113,16 @@ namespace jucyaudio
                     {
                         const auto colorToSet = it->second;
                         lookAndFeel.setColour(intColourId, colorToSet);
-                        spdlog::info("Set colour '{}' to '#{}'", nameOfColour, colorToSet.toString().toStdString());
-                    }
-                    else
-                    {
-                        spdlog::warn("Set colour '{}' to default", nameOfColour);
+                        //spdlog::info("Set colour '{}' to '#{}'", nameOfColour, colorToSet.toString().toStdString());
                     }
                 }
-                pComponent->setLookAndFeel(&lookAndFeel);
+                if(pComponent)
+                {
+                    pComponent->setLookAndFeel(&lookAndFeel);
+                }
+                return theme.name;
             }
-            else 
-            {
-                spdlog::warn("Cannot apply theme: Invalid index or target LookAndFeel is null.");
-            }
+            return getNameOfTheme(0);
         }
 
         ThemeManager theThemeManager;
