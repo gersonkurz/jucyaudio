@@ -8,17 +8,22 @@ namespace jucyaudio
     // anonymous namespace: defines are only valid in this translation unit
     namespace
     {
-        const ColumnIndex_t Column_Title{0};
-        const ColumnIndex_t Column_Artist{1};
-        const ColumnIndex_t Column_Album{2};
-        const ColumnIndex_t Column_Duration{3};
-        const ColumnIndex_t Column_BPM{4};
-        const ColumnIndex_t Column_TrackId{5};
-        const ColumnIndex_t Column_Filepath{6};
-        const ColumnIndex_t Column_Filename{7};
-        const ColumnIndex_t Column_LastModified{8};
+        enum class Column : ColumnIndex_t
+        {
+            Title = 0,
+            Artist,
+            Album,
+            Duration,
+            BPM,
+            Intro,
+            Outro,
+            TrackId,
+            Filepath,
+            Filename,
+            LastModified
+        };
     } // namespace
-    
+
     namespace database
     {
 
@@ -26,39 +31,19 @@ namespace jucyaudio
         const DataActions LibraryRowActions{DataAction::Play,        DataAction::CreateWorkingSet, DataAction::CreateMix,
                                             DataAction::ShowDetails, DataAction::EditMetadata,     DataAction::Delete};
         const std::vector<DataColumn> LibraryColumns = {
-            DataColumn{Column_Title, "title", "Title", 200, ColumnAlignment::Left, ColumnDataTypeHint::String},
-            DataColumn{Column_Artist, "artist_name", "Artist", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
-            DataColumn{Column_Album, "album_title", "Album", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
-            DataColumn{Column_Duration, "duration", "Duration", 100, ColumnAlignment::Right, ColumnDataTypeHint::Duration},
-            DataColumn{Column_BPM, "bpm", "BPM", 80, ColumnAlignment::Left, ColumnDataTypeHint::Double},
-            DataColumn{Column_TrackId, "track_id", "Track ID", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
-            DataColumn{Column_Filepath, "filepath", "Path", 80, ColumnAlignment::Left, ColumnDataTypeHint::String},
-            DataColumn{Column_Filename, "filepath", "Name", 80, ColumnAlignment::Left, ColumnDataTypeHint::String},
-            DataColumn{Column_LastModified, "last_modified_fs", "Last Modified", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::Title, "title", "Title", 200, ColumnAlignment::Left, ColumnDataTypeHint::String},
+            DataColumn{(ColumnIndex_t)Column::Artist, "artist_name", "Artist", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
+            DataColumn{(ColumnIndex_t)Column::Album, "album_title", "Album", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
+            DataColumn{(ColumnIndex_t)Column::Duration, "duration", "Duration", 100, ColumnAlignment::Right, ColumnDataTypeHint::Duration},
+            DataColumn{(ColumnIndex_t)Column::BPM, "bpm", "BPM at start", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::Intro, "intro_end", "Intro", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::Outro, "outro_start", "Outro", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::TrackId, "track_id", "Track ID", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::Filepath, "filepath", "Path", 80, ColumnAlignment::Left, ColumnDataTypeHint::String},
+            DataColumn{(ColumnIndex_t)Column::Filename, "filepath", "Name", 80, ColumnAlignment::Left, ColumnDataTypeHint::String},
+            DataColumn{(ColumnIndex_t)Column::LastModified, "last_modified_fs", "Last Modified", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
         };
-        /*
 
-            filesize_bytes INTEGER,
-            date_added INTEGER,
-            last_scanned INTEGER,
-            title TEXT,
-            artist_name TEXT,
-            album_title TEXT,
-            album_artist_name TEXT,
-            track_number INTEGER,
-            disc_number INTEGER,
-            year INTEGER,
-            duration INTEGER,
-            samplerate INTEGER,
-            channels INTEGER,
-            bitrate INTEGER,
-            codec_name TEXT,
-            bpm INTEGER,
-            key_string TEXT,
-            beat_locations_json TEXT,
-            rating INTEGER DEFAULT 0, liked_status INTEGER DEFAULT 0, play_count INTEGER DEFAULT 0, last_played INTEGER,
-            internal_content_ha
-        */
         const DataActions &LibraryNode::getNodeActions() const
         {
             return LibraryNodeActions;
@@ -137,25 +122,39 @@ namespace jucyaudio
                 return {};
             }
 
-            switch (index)
+            switch (static_cast<Column>(index))
             {
-            case Column_Title:
+            case Column::Title:
                 return track->title;
-            case Column_Artist:
+            case Column::Artist:
                 return track->artist_name;
-            case Column_Album: 
+            case Column::Album:
                 return track->album_title;
-            case Column_Duration:
+            case Column::Duration:
                 return durationToString(track->duration);
-            case Column_BPM:
-                return std::to_string(track->bpm);
-            case Column_TrackId:
+            case Column::BPM:
+                if (track->bpm.has_value())
+                {
+                    return std::format("{:.2f}", track->bpm.value() / 100.0);
+                }
+                return "-";
+            case Column::Intro:
+                return track->intro_end.has_value() ? durationToString(*track->intro_end) : "-";
+            case Column::Outro:
+                if (track->outro_start.has_value())
+                {
+                    using ms = std::chrono::milliseconds;
+                    ms remaining = track->duration - *track->outro_start;
+                    return durationToString(remaining);
+                }
+                return "-";
+            case Column::TrackId:
                 return std::to_string(track->trackId);
-            case Column_Filepath:
+            case Column::Filepath:
                 return track->filepath.string();
-            case Column_Filename:
+            case Column::Filename:
                 return track->filepath.filename().string();
-            case Column_LastModified:
+            case Column::LastModified:
                 return jucyaudio::timestampToString(track->last_modified_fs);
 
             default:

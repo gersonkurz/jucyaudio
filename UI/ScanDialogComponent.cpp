@@ -2,6 +2,7 @@
 #include <UI/ScanDialogComponent.h>
 #include <UI/TaskDialog.h>
 #include <Utils/AssortedUtils.h>
+#include <Database/BackgroundService.h>
 #include <Utils/UiUtils.h>
 
 using namespace jucyaudio::database;
@@ -429,7 +430,16 @@ namespace jucyaudio
 
             void run(ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel) override
             {
-                m_trackLibrary.scanLibrary(m_foldersToScan, m_bForceRescan, progressCb, completionCb, &shouldCancel);
+                theBackgroundTaskService.pause();
+                try
+                {
+                    m_trackLibrary.scanLibrary(m_foldersToScan, m_bForceRescan, progressCb, completionCb, &shouldCancel);
+                }
+                catch(const std::exception& e)
+                {
+                    spdlog::error("ScanFoldersTask: Exception during scan: {}", e.what());
+                }
+                theBackgroundTaskService.resume();
                 m_updateUiCallback();
             }
 

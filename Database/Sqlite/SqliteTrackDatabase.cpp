@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS Tracks (
     bitrate INTEGER,
     codec_name TEXT,
     bpm INTEGER,
+    intro_end INTEGER,
+    outro_start INTEGER,
     key_string TEXT,
     beat_locations_json TEXT,
     rating INTEGER DEFAULT 0,
@@ -171,8 +173,22 @@ CREATE TABLE IF NOT EXISTS MixTracks(
         info.bitrate = stmt.getInt32(col++);
         if (!stmt.isNull(col))
             info.codec_name = stmt.getText(col);
-        col++;
-        info.bpm = stmt.getInt32(col++);
+        ++col;
+        if(stmt.isNull(col))
+            info.bpm = std::nullopt;
+        else
+            info.bpm = stmt.getInt32(col);
+        ++col;
+        if(stmt.isNull(col))
+            info.intro_end = std::nullopt;
+        else
+            info.intro_end = durationFromInt64(stmt.getInt64(col));
+        ++col;
+        if(stmt.isNull(col))
+            info.outro_start = std::nullopt;
+        else
+            info.outro_start = durationFromInt64(stmt.getInt64(col));
+        ++col;
         if (!stmt.isNull(col))
             info.key_string = stmt.getText(col);
         col++;
@@ -210,14 +226,14 @@ CREATE TABLE IF NOT EXISTS MixTracks(
         ok &= stmt.addParam(info.track_number);
         ok &= stmt.addParam(info.disc_number);
         ok &= stmt.addParam(info.year);
-        ok &= stmt.addParam(durationToInt64(
-            info.duration)); // Assuming SqliteStatement has addParam(double)
+        ok &= stmt.addParam(durationToInt64(info.duration));
         ok &= stmt.addParam(info.samplerate);
         ok &= stmt.addParam(info.channels);
         ok &= stmt.addParam(info.bitrate);
         ok &= stmt.addParam(info.codec_name);
-        ok &= stmt.addParam(
-            info.bpm); // Assuming SqliteStatement has addParam(double)
+        ok &= info.bpm.has_value() ? stmt.addParam((int64_t)info.bpm.value()) : stmt.addNullParam();
+        ok &= info.intro_end.has_value() ? stmt.addParam(durationToInt64(info.intro_end.value())) : stmt.addNullParam();
+        ok &= info.outro_start.has_value() ? stmt.addParam(durationToInt64(info.outro_start.value())) : stmt.addNullParam();
         ok &= stmt.addParam(info.key_string);
         ok &= stmt.addParam(info.beat_locations_json);
         ok &= stmt.addParam(info.rating);
@@ -593,10 +609,10 @@ namespace jucyaudio
             INSERT INTO Tracks (folder_id, filepath, last_modified_fs, filesize_bytes, date_added, last_scanned,
                                 title, artist_name, album_title, album_artist_name, track_number, disc_number, year, 
                                 duration, samplerate, channels, bitrate, codec_name,
-                                bpm, key_string, beat_locations_json,
+                                bpm, intro_end, outro_start, key_string, beat_locations_json,
                                 rating, liked_status, play_count, last_played,
                                 internal_content_hash, user_notes, is_missing) 
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
         )SQL"; // 28 placeholders, is_missing defaults to 0 on insert
 
                 SqliteStatement stmt{m_db, sql};
@@ -618,7 +634,7 @@ namespace jucyaudio
             UPDATE Tracks SET folder_id=?, filepath=?, last_modified_fs=?, filesize_bytes=?, date_added=?, last_scanned=?,
                               title=?, artist_name=?, album_title=?, album_artist_name=?, track_number=?, disc_number=?, year=?, 
                               duration=?, samplerate=?, channels=?, bitrate=?, codec_name=?,
-                              bpm=?, key_string=?, beat_locations_json=?,
+                              bpm=?, intro_end=?, outro_start=?, key_string=?, beat_locations_json=?,
                               rating=?, liked_status=?, play_count=?, last_played=?,
                               internal_content_hash=?, user_notes=?, is_missing=?
             WHERE track_id = ?;
@@ -706,7 +722,7 @@ namespace jucyaudio
             m_lastErrorMessage.clear(); // mutable m_lastErrorMessage
 
             SqliteStatement stmt{m_db,
-                                 "SELECT * FROM Tracks WHERE bpm IS NULL OR bpm <= 0 LIMIT 1;"};
+                                 "SELECT * FROM Tracks WHERE bpm IS NULL or bpm<=0 LIMIT 1;"};
             if (!stmt.isValid())
             {
                 m_lastErrorMessage = m_db.getLastError();
@@ -804,13 +820,54 @@ namespace jucyaudio
                                      m_lastErrorMessage);
         }
 
-        DbResult SqliteTrackDatabase::updateTrackBpm(TrackId trackId, int newBpm)
+        DbResult SqliteTrackDatabase::updateTrackBpm(TrackId trackId, const AudioMetadata& am)
         {
-            return updateSingleTrackField<int>(trackId, "bpm", newBpm,
-                                               [](SqliteStatement &s, int val)
-                                               {
-                                                   return s.addParam(val);
-                                               });
+            if (!isOpen())
+            {
+                return DbResult::failure(DbResultStatus::ErrorConnection,
+                                         "DB not open for update.");
+            }
+            m_lastErrorMessage.clear();
+            std::string sql =
+                "UPDATE Tracks SET bpm=?, intro_end=?, outro_start=? WHERE track_id = ?;";
+            SqliteStatement stmt{m_db, sql};
+
+            if (!stmt.isValid())
+            {
+                m_lastErrorMessage = "Prepare failed for updateTrackBpm(): " + m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB,
+                                         m_lastErrorMessage);
+            }
+            stmt.addParam(static_cast<int64_t>(am.bpm*100)); // Store as integer
+            if(am.hasIntro)
+            {
+                stmt.addParam(static_cast<int64_t>(am.introEnd*1000));
+            }
+            else
+            {
+                stmt.addNullParam(); // Use null if no intro end
+            }
+            if(am.hasOutro)
+            {
+                stmt.addParam(static_cast<int64_t>(am.outroStart*1000));
+            }
+            else
+            {
+                stmt.addNullParam(); // Use null if no intro end
+            }
+            stmt.addParam(trackId);
+
+            if (stmt.execute())
+            {
+                // Check sqlite3_changes(m_db.getInternalHandle()) if you need
+                // to confirm rows affected
+                spdlog::debug("updateTrackBpm for track_id: {}", 
+                              trackId);
+                return DbResult::success();
+            }
+            m_lastErrorMessage = "Execute failed for updateTrackBpm(): " + m_db.getLastError();
+            return DbResult::failure(DbResultStatus::ErrorDB,
+                                     m_lastErrorMessage);
         }
 
         DbResult SqliteTrackDatabase::updateTrackRating(TrackId trackId,

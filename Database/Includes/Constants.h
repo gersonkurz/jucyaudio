@@ -18,7 +18,7 @@ namespace jucyaudio
     typedef int64_t WorkingSetId;
     typedef int64_t MixId;
     typedef int64_t Volume_t;
-    typedef int64_t BPM_t;
+    typedef int64_t BPM_t; // Beats per minute, stored as an integer*100 to avoid floating-point issues
     typedef int64_t FolderId;
 
     namespace database

@@ -47,6 +47,7 @@ namespace jucyaudio
             std::condition_variable m_condition; // Replaces juce::WaitableEvent
             std::mutex m_conditionMutex;
             std::atomic<bool> m_isPaused{false};
+            std::atomic<bool> m_isProcessing{false};
         };
 
         extern BackgroundTaskService theBackgroundTaskService;

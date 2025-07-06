@@ -43,7 +43,9 @@ namespace jucyaudio
             std::string codec_name;
 
             // Analysis Results
-            BPM_t bpm = 0;
+            std::optional<BPM_t> bpm;
+            std::optional<Duration_t> intro_end; // relative to beginning of the track
+            std::optional<Duration_t> outro_start; // relative to beginning of the track
             std::string key_string;
             std::string beat_locations_json; // Or a more structured representation
 

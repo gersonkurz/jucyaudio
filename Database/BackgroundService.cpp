@@ -18,7 +18,7 @@ namespace jucyaudio
             // Release our references to the tasks
             const std::lock_guard<std::mutex> lock(m_tasksMutex);
             for (auto *task : m_tasks)
-                task->release();
+                task->release(REFCOUNT_DEBUG_ARGS);
             m_tasks.clear();
         }
 
@@ -45,7 +45,7 @@ namespace jucyaudio
             if (task)
             {
                 const std::lock_guard<std::mutex> lock(m_tasksMutex);
-                task->retain();
+                task->retain(REFCOUNT_DEBUG_ARGS);
                 m_tasks.push_back(task);
                 notify(); // Wake up to check the new task
             }
@@ -55,10 +55,16 @@ namespace jucyaudio
         {
             m_condition.notify_one();
         }
+
         void BackgroundTaskService::pause()
         {
             m_isPaused = true;
+            for(int i = 0; i < 10 && m_isProcessing; ++i)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Wait for current task to finish
+            }
         }
+
         void BackgroundTaskService::resume()
         {
             m_isPaused = false;
@@ -76,7 +82,7 @@ namespace jucyaudio
                     std::unique_lock<std::mutex> lock(m_conditionMutex);
                     // The condition variable waits until notify() is called OR the timeout elapses.
                     // We add a predicate to handle spurious wakeups.
-                    m_condition.wait_for(lock, std::chrono::seconds(30),
+                    m_condition.wait_for(lock, std::chrono::seconds(5),
                                          [this]
                                          {
                                              // Wake up if we are exiting or have been notified.
@@ -92,12 +98,12 @@ namespace jucyaudio
                     continue;
 
                 // --- Round-robin through all registered tasks ---
+                m_isProcessing = true;
                 std::vector<IBackgroundTask *> tasksCopy;
                 {
                     const std::lock_guard<std::mutex> lock(m_tasksMutex);
                     tasksCopy = m_tasks;
                 }
-
                 for (auto *task : tasksCopy)
                 {
                     if (m_shouldExit || m_isPaused)
@@ -113,6 +119,7 @@ namespace jucyaudio
                         spdlog::error("Task '{}' threw an exception: {}", task->m_taskName, e.what());
                     }
                 }
+                m_isProcessing = true;
             }
             spdlog::info("BackgroundTaskService thread finished.");
         }

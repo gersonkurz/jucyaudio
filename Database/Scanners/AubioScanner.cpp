@@ -88,7 +88,7 @@ namespace jucyaudio
                     total_frames_processed += frames_to_read;
                 }
 
-                trackInfo.bpm = static_cast<BPM_t>(aubio_tempo_get_bpm(tempo) * BPM_NORMALIZATION);
+                //trackInfo.bpm_middle = static_cast<BPM_t>(aubio_tempo_get_bpm(tempo) * BPM_NORMALIZATION);
 
                 // Convert beat times to JSON
                 if (!beat_times_seconds.empty())

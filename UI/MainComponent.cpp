@@ -285,7 +285,7 @@ namespace jucyaudio
             // Note: the service will retain() the task, so we can release our initial reference.
             auto *bpmTask = new database::background_tasks::BpmAnalysis{m_trackLibrary};
             database::theBackgroundTaskService.registerTask(bpmTask);
-            bpmTask->release();
+            bpmTask->release(REFCOUNT_DEBUG_ARGS);
         }
 
         MainComponent::~MainComponent()

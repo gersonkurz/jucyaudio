@@ -4,6 +4,7 @@
 #include <string_view>
 #include <list>
 #include <Database/Sqlite/SqliteDatabase.h>
+#include <Database/Includes/Constants.h>
 
 namespace jucyaudio
 {
@@ -71,7 +72,6 @@ namespace jucyaudio
             {
                 return sqlite3_column_int64(m_statement, index);
             }
-
             int32_t getInt32(int index) const
             {
                 return sqlite3_column_int(m_statement, index);

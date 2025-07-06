@@ -70,8 +70,7 @@ namespace jucyaudio
             // Returns std::nullopt if no such tracks are found.
             std::optional<TrackInfo> getNextTrackForBpmAnalysis() const override;
 
-            // Performs a targeted update of only the BPM for a given track.
-            DbResult updateTrackBpm(TrackId trackId, int newBpm) override;
+            DbResult updateTrackBpm(TrackId trackId, const AudioMetadata& am) override;
 
             ITagManager &getTagManager() override;
             const ITagManager &getTagManager() const override;

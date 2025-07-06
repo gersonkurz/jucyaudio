@@ -1,13 +1,13 @@
 #pragma once
 
 #include <Database/Includes/Constants.h>
-#include <Database/Includes/TrackQueryArgs.h>
-#include <Database/Includes/ITagManager.h>
-#include <Database/Includes/IMixManager.h>
-#include <Database/Includes/IWorkingSetManager.h>
 #include <Database/Includes/IFolderDatabase.h>
-#include <Database/Includes/TrackInfo.h>
+#include <Database/Includes/IMixManager.h>
+#include <Database/Includes/ITagManager.h>
+#include <Database/Includes/IWorkingSetManager.h>
 #include <Database/Includes/MixInfo.h>
+#include <Database/Includes/TrackInfo.h>
+#include <Database/Includes/TrackQueryArgs.h>
 #include <chrono>
 #include <filesystem>
 #include <functional> // For potential callbacks if needed, though not directly for CRUD
@@ -19,6 +19,16 @@ namespace jucyaudio
 {
     namespace database
     {
+        struct AudioMetadata
+        {
+            float bpm = 0.0f;
+            double introStart = 0.0;
+            double introEnd = 0.0;
+            double outroStart = 0.0;
+            double outroEnd = 0.0;
+            bool hasIntro = false;
+            bool hasOutro = false;
+        };
 
         // Simple status for operations, can be expanded
         enum class DbResultStatus
@@ -58,7 +68,6 @@ namespace jucyaudio
             }
         };
 
-        
         class ITrackDatabase
         {
         public:
@@ -98,13 +107,13 @@ namespace jucyaudio
             virtual DbResult updateTrackLikedStatus(TrackId trackId, int likedStatus) = 0;
             virtual DbResult incrementTrackPlayCount(TrackId trackId) = 0; // And update last_played
             virtual DbResult updateTrackUserNotes(TrackId trackId, const std::string &notes) = 0;
-            
+
             // Finds one track that has no BPM data and returns its info.
             // Returns std::nullopt if no such tracks are found.
             virtual std::optional<TrackInfo> getNextTrackForBpmAnalysis() const = 0;
 
             // Performs a targeted update of only the BPM for a given track.
-            virtual DbResult updateTrackBpm(TrackId trackId, int newBpm) = 0;
+            virtual DbResult updateTrackBpm(TrackId trackId, const AudioMetadata& am) = 0;
 
             // Used during rescans to update basic file info before deciding on full re-analysis
             virtual DbResult updateTrackFilesystemInfo(TrackId trackId, Timestamp_t lastModified, std::uintmax_t filesize) = 0;
@@ -124,8 +133,6 @@ namespace jucyaudio
             virtual IWorkingSetManager &getWorkingSetManager() = 0;
             virtual const IWorkingSetManager &getWorkingSetManager() const = 0;
 
-
-
             /// @brief Update the tags for a track.
             /// @param trackId track ID
             /// @param tagIds updated list of tag IDs to associate with the track.
@@ -140,11 +147,6 @@ namespace jucyaudio
             /// @brief  Get all tags in the database.
             /// @return set of all tag IDs in the database.
             virtual std::vector<TagId> getAllTags() const = 0; // For tag clouds/lists
-
-
-
-
-
         };
 
     } // namespace database

@@ -56,11 +56,11 @@ namespace jucyaudio
             {
             }
 
-            void retain() const override final
+            void retain(REFCOUNT_DEBUG_SPEC) const override final
             {
                 ++m_refCount;
             }
-            void release() const override final
+            void release(REFCOUNT_DEBUG_SPEC) const override final
             {
                 if (--m_refCount == 0)
                     delete this;
@@ -81,12 +81,12 @@ namespace jucyaudio
             {
             }
 
-            void retain() const override final
+            void retain(REFCOUNT_DEBUG_SPEC) const override final
             {
                 ++m_refCount;
             }
 
-            void release() const override final
+            void release(REFCOUNT_DEBUG_SPEC) const override final
             {
                 if (--m_refCount == 0)
                     delete this;
