@@ -6,7 +6,7 @@ namespace jucyaudio
 {
     namespace ui
     {
-        TimelineComponent::TimelineComponent(juce::AudioFormatManager& formatManager, juce::AudioThumbnailCache &thumbnailCache)
+        TimelineComponent::TimelineComponent(juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache)
             : m_formatManager{formatManager},
               m_thumbnailCache{thumbnailCache}
         {
@@ -61,9 +61,9 @@ namespace jucyaudio
 
             for (const auto &mixTrack : mixLoader.getMixTracks())
             {
-                const auto *trackInfo = mixLoader.getTrackInfoForId(mixTrack.trackId);
-                if (trackInfo)
+                if (const auto *trackInfo = mixLoader.getTrackInfoForId(mixTrack.trackId))
                 {
+                    spdlog::info("Adding track ID: {} to timeline", mixTrack.trackId);
                     TrackView view;
                     view.mixTrackData = &mixTrack;
                     view.trackInfoData = trackInfo;
@@ -71,9 +71,34 @@ namespace jucyaudio
                     addAndMakeVisible(*view.component);
                     m_trackViews.push_back(std::move(view));
                 }
+                else
+                {
+                    spdlog::warn("Track info not found for track ID: {}", mixTrack.trackId);
+                }
             }
 
             // Trigger a call to resized() to position the new components.
+            // --- NEW LOGIC: Calculate and set the total size of the timeline ---
+            const int trackHeight = 80;
+            const int trackGap = 10;
+
+            // Calculate total height
+            const int totalHeight = 30 + (m_trackViews.size() * (trackHeight + trackGap)); // 30px for time markers
+            // Calculate total width
+            double maxTimeSecs = 0.0;
+            if (!m_trackViews.empty())
+            {
+                // CORRECTED: Use .back() to get a reference to the last element.
+                const auto &lastView = m_trackViews.back();
+
+                // CORRECTED: Use the . operator because lastView is a reference to a struct.
+                const auto startTime = std::chrono::duration<double>(lastView.mixTrackData->mixStartTime).count();
+                const auto duration = std::chrono::duration<double>(lastView.trackInfoData->duration).count();
+                maxTimeSecs = startTime + duration;
+            }
+
+            const int totalWidth = static_cast<int>(maxTimeSecs * m_pixelsPerSecond) + 200;
+            setSize(totalWidth, totalHeight);
             resized();
         }
     } // namespace ui

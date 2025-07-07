@@ -450,7 +450,9 @@ namespace jucyaudio
             if (dataViewWidth < 0)
                 dataViewWidth = 0; // Prevent negative width
 
-            m_currentMainViewComponent->setBounds(dataViewX, centralArea.getY(), dataViewWidth, centralArea.getHeight());
+            //m_currentMainViewComponent->setBounds(dataViewX, centralArea.getY(), dataViewWidth, centralArea.getHeight());
+            m_dataViewComponent.setBounds(dataViewX, centralArea.getY(), dataViewWidth, centralArea.getHeight());
+            m_mixEditorComponent.setBounds(dataViewX, centralArea.getY(), dataViewWidth, centralArea.getHeight());
         }
 
         void MainComponent::adjustSplitterPosition([[maybe_unused]] int desiredNewNavPanelLeftEdge) // Or pass delta
@@ -569,7 +571,6 @@ namespace jucyaudio
                     {
                         m_currentMainViewComponent = &m_mixEditorComponent;
                         m_currentMainView = MainViewType::MixEditor;
-                        m_mixEditorComponent.loadMix(m_currentSelectedDataNode->getUniqueId()); // Load the mix data
                         m_mixEditorComponent.setVisible(true);
                     }
                     else
@@ -580,7 +581,6 @@ namespace jucyaudio
                     }
                 }
 
-
                 // we should use a function to crate a string path here.
                 const auto path{getNodePath(m_currentSelectedDataNode)};
 
@@ -588,7 +588,7 @@ namespace jucyaudio
                 m_dynamicToolbar.setCurrentNode(m_currentSelectedDataNode); // Toolbar updates its actions
                 if (m_currentMainView == MainViewType::MixEditor)
                 {
-                    // do nothing
+                    m_mixEditorComponent.loadMix(m_currentSelectedDataNode->getUniqueId()); // Load the mix data
                 }
                 else
                 {

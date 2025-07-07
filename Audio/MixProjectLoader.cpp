@@ -14,23 +14,22 @@ namespace jucyaudio
         {
             if (m_mixId != mixId)
             {
+                spdlog::debug("MixProjectLoader: Loading mix with ID {}", mixId);
                 m_mixId = mixId;
-                load(); // Reload data for the new mix ID
+                m_mixTracks = theTrackLibrary.getMixManager().getMixTracks(m_mixId);
+                spdlog::info("MixProjectLoader: Loaded {} tracks for mix ID {}", m_mixTracks.size(), m_mixId);
+                m_trackInfos = theTrackLibrary.getTracks(getMixTrackQueryArgs(m_mixId));
+                spdlog::info("MixProjectLoader: Loaded {} track infos for mix ID {}", m_trackInfos.size(), m_mixId);
+
+                m_trackInfosMap.clear();
+                for (const auto &ti : m_trackInfos)
+                {
+                    m_trackInfosMap[ti.trackId] = &ti;
+                }
+                spdlog::info("MixProjectLoader: Indexed {} track infos for mix ID {}", m_trackInfosMap.size(), m_mixId);
             }
         }
 
-        // Public method to explicitly reload data if needed
-        void MixProjectLoader::load()
-        {
-            m_mixTracks = theTrackLibrary.getMixManager().getMixTracks(m_mixId);
-            m_trackInfos = theTrackLibrary.getTracks(getMixTrackQueryArgs(m_mixId));
-
-            m_trackInfosMap.clear();
-            for (const auto &ti : m_trackInfos)
-            {
-                m_trackInfosMap[ti.trackId] = &ti;
-            }
-        }
 
     } // namespace audio
 } // namespace jucyaudio

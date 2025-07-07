@@ -1,6 +1,7 @@
 #include <Database/Includes/INavigationNode.h>
 #include <UI/MainComponent.h>
 #include <UI/MixEditorComponent.h>
+#include <Utils/StringWriter.h>
 #include <Utils/UiUtils.h>
 
 namespace jucyaudio
@@ -12,7 +13,14 @@ namespace jucyaudio
         {
             m_formatManager.registerBasicFormats();
 
-            addAndMakeVisible(m_timeline);
+            // addAndMakeVisible(m_timeline);
+            //  Set the timeline as the component to be viewed by the viewport.
+            m_viewport.setViewedComponent(&m_timeline, false); // false = don't delete when replaced
+
+            // We want both horizontal and vertical scrollbars if needed.
+            m_viewport.setScrollBarsShown(true, true);
+
+            addAndMakeVisible(m_viewport);
         }
 
         void MixEditorComponent::paint(juce::Graphics &g)
@@ -25,11 +33,13 @@ namespace jucyaudio
             spdlog::info("Loading mix with ID: {}", mixId);
             m_mixProjectLoader.loadMix(mixId);
             m_timeline.populateFrom(m_mixProjectLoader);
-            m_timeline.repaint(); // Ensure the timeline is updated with the new mix data
+            spdlog::info("Mix loaded with {} tracks", m_mixProjectLoader.getMixTracks().size());
         }
 
         void MixEditorComponent::resized()
         {
+            // The viewport now fills the entire editor area.
+            m_viewport.setBounds(getLocalBounds());
         }
     } // namespace ui
 } // namespace jucyaudio

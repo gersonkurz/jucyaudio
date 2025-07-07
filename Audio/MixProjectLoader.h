@@ -44,7 +44,6 @@ namespace jucyaudio
             }
 
         private:
-            void load();
 
             // Helper to construct the query args needed to fetch all tracks for this mix.
             TrackQueryArgs getMixTrackQueryArgs(MixId mixId) const

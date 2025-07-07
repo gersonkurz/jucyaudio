@@ -29,6 +29,7 @@ namespace jucyaudio
             juce::AudioThumbnailCache m_thumbnailCache{5}; // 5 items in the cache
 
             TimelineComponent m_timeline;
+            juce::Viewport m_viewport;
             audio::MixProjectLoader m_mixProjectLoader;
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixEditorComponent)
         };
