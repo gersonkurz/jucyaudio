@@ -6,7 +6,8 @@ namespace jucyaudio
     namespace database
     {
         SqliteStatement::SqliteStatement(SqliteDatabase &db, std::string_view statement)
-            : m_db{db},
+            : m_lock(db.getMutex()),
+              m_db{db},
               m_statement{nullptr},
               m_param_index{1},
               m_statement_text{},
@@ -16,7 +17,8 @@ namespace jucyaudio
         }
 
         SqliteStatement::SqliteStatement(SqliteDatabase &db)
-            : m_db{db},
+            : m_lock(db.getMutex()),
+              m_db{db},
               m_statement{nullptr},
               m_param_index{1},
               m_done{false}

@@ -1,9 +1,9 @@
 #pragma once
 
+#include <Database/Sqlite/sqlite3.h>
+#include <spdlog/spdlog.h>
 #include <string>
 #include <string_view>
-#include <spdlog/spdlog.h>
-#include <Database/Sqlite/sqlite3.h>
 
 namespace jucyaudio
 {
@@ -42,9 +42,16 @@ namespace jucyaudio
             SqliteDatabase(SqliteDatabase &&) = delete;
             SqliteDatabase &operator=(SqliteDatabase &&) = delete;
 
-            const auto& getLastError() const
+            const auto &getLastError() const
             {
                 return m_lastErrorMessage;
+            }
+
+            std::recursive_mutex &getMutex()
+            {
+                // This mutex is used to ensure thread safety for database operations
+                // and should be locked before performing any operations on the database.
+                return m_mutex;
             }
 
         private:
@@ -60,6 +67,7 @@ namespace jucyaudio
 
         private:
             sqlite3 *m_db;
+            mutable std::recursive_mutex m_mutex;
             mutable std::string m_lastErrorMessage;
         };
 

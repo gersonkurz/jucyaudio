@@ -5,6 +5,7 @@
 #include <list>
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Includes/Constants.h>
+#include <spdlog/spdlog.h>
 
 namespace jucyaudio
 {
@@ -15,6 +16,12 @@ namespace jucyaudio
         public:
             SqliteStatement(SqliteDatabase &db, std::string_view statement);
             SqliteStatement(SqliteDatabase &db);
+
+            SqliteStatement(const SqliteStatement &) = delete;
+            SqliteStatement &operator=(const SqliteStatement &) = delete;
+            SqliteStatement(SqliteStatement &&) = delete;
+            SqliteStatement &operator=(SqliteStatement &&) = delete;
+
             ~SqliteStatement()
             {
                 if (m_statement)
@@ -122,6 +129,7 @@ namespace jucyaudio
             /// Note: we are using a list, so that the pointers do not change
             /// </summary>
             std::list<std::string> m_copy_of_string_args;
+            std::lock_guard<std::recursive_mutex> m_lock;
             SqliteDatabase &m_db;
             sqlite3_stmt *m_statement;
             int m_param_index;
