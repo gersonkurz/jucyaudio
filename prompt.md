@@ -1,79 +1,95 @@
-## JucyAudio - AI Introduction Prompt (v4)
+# JucyAudio - AI Introduction Prompt (v5)
 
-**Objective:** To collaboratively develop **JucyAudio**, a sophisticated audio curation tool and mixer for macOS (primary target, Apple Silicon) and Windows. The application's core logic is standard C++20, with Juce used for the application layer (UI, audio I/O).
+**Objective:** To collaboratively develop **JucyAudio**, a sophisticated audio curation and mixing application for macOS (primary target, Apple Silicon) and Windows. The application's core logic is standard C++20, with Juce used for the UI and application layer.
 
 ## Collaboration Style & Preferences
 
 *   **Discussion-first, code-later approach:** Explore the *why* and *what* before diving into the *how*.
 *   **Library-first philosophy:** Core logic is structured into distinct, decoupled libraries:
-    *   `jucyaudio::database`: For all database and data model logic (SQLite, `INavigationNode`s). Standard C++20 only.
-    *   `jucyaudio::audio`: For all audio processing, mixing, and analysis (with Juce/Aubio dependencies).
-    *   `jucyaudio::ui`: For the Juce-based frontend components.
-    *   `jucyaudio::config`: For the configuration system backed by TOML files.
+    *   `jucyaudio::database`: All database logic, data models, and background tasks. Standard C++20.
+    *   `jucyaudio::audio`: Audio processing, analysis (`AudioAnalyzer`), and exporting.
+    *   `jucyaudio::ui`: The Juce-based frontend components (`MixEditorComponent`, etc.).
+    *   `jucyaudio::config`: The TOML-backed configuration system.
 *   **Architecture over implementation:** Focus on clean design, interfaces, and long-term project direction.
-*   Human has a strong C++20 background. AI assistance is primarily needed for JUCE/Aubio specifics and as a design sounding board.
+*   Human has a strong C++20 background. AI assistance is primarily needed for JUCE specifics and as a design sounding board.
 *   Human has a strong preference for `{}` initializers and modern C++20 practices.
 *   **No apologies for mistakes or sycophancy; focus on the tasks ahead.**
 
 **Core Functional Pillars:**
 
-1.  **Music Library:** Manages a large music library with rich metadata (ID3, BPM, ratings, etc.) stored in an SQLite database, enabling powerful, user-driven querying and filtering.
-2.  **Music Mixer:** Accepts curated playlists ("Mix Projects") and enables high-quality automated/assisted transitions, with both WAV and MP3 (via LAME) export capabilities.
-3.  **Curation Workflow (Current Focus):** A structured process for users to navigate large collections, identify "candidate" tracks, rate them, organize them into "Working Sets," and assemble them into "Mix Projects."
+1.  **Music Library:** Manages a large music library with rich, automatically generated metadata (BPM, intros/outros, etc.) stored in a thread-safe SQLite database.
+2.  **Music Mixer (Current Focus):** A powerful, visually-driven mix editor for arranging tracks on a timeline, manipulating fades, and exporting the final result.
+3.  **Curation Workflow:** The process of navigating the library, leveraging the rich metadata to build "Working Sets," and creating "Mix Projects" from them.
 
 ---
 
 ## Technical Architecture & Stack (Current State)
 
 *   **Language:** C++20 (UTF-8, modern practices).
+*   **Build System:** CMake (v3.22+). Dependencies like JUCE are managed via `FetchContent` for reproducible builds.
 *   **Core Libraries:**
-    *   `database::TrackLibrary`: Façade for database operations (tracks, folders, mixes, working sets).
-    *   `audio::AudioLibrary`: Façade for audio operations (provides `IMixExporter`).
-*   **Database Backend:** SQLite, accessed via custom C++ helper classes.
-*   **Configuration System:** A custom, type-safe, hierarchical configuration system implemented with a backend-agnostic design (`ConfigBackend` interface). The current implementation uses a `TomlBackend` (leveraging `toml++`) for persistence. The system supports structured lists of settings (`TypedValueVector`), which is used for managing user-configurable UI columns.
-*   **Primary Tagging Library:** TagLib.
-*   **Primary Audio Analysis Library:** Aubio.
-*   **Primary Audio/UI Framework:** Juce (v8.0.8 or later).
-*   **MP3 Encoding:** LAME (linked via Homebrew on macOS, pre-built DLL/LIB on Windows).
-*   **Logging:** `spdlog`.
-*   **Licensing:** GPL.
+    *   `database::TrackLibrary`: The primary thread-safe facade for all database operations.
+    *   `audio::AudioAnalyzer`: A sophisticated class that performs structural analysis on audio files (BPM, energy-based intro/outro detection).
+*   **Database Backend:** SQLite. Thread-safety is enforced at the lowest level via a `std::recursive_mutex` integrated into the `SqliteStatement` class lifecycle (RAII), making all `TrackLibrary` calls inherently safe from any thread.
+*   **Database Schema:** The `Tracks` table has been evolved to store rich analytical data, including `bpm` (integer-scaled), `intro_end`, and `outro_start` (stored as `std::optional<std::chrono::milliseconds>`).
+*   **Audio Analysis:** Aubio (for tempo) and custom DSP logic (for energy/spectral analysis).
+*   **Audio/UI Framework:** Juce (v8.0.8 or later).
 
 ---
 
 ## Application and UI Architecture
 
-*   **Main Layout:** A 4-quadrant layout with `NavigationPanel` (left), `DataView` (right), and other panels for toolbars and playback status.
-*   **`INavigationNode` System:** A sophisticated data model for the UI.
-    *   `INavigationNode` is the base interface for all items displayed in the navigation tree and for data sources shown in the `DataView`.
-    *   Nodes are reference-counted via a custom `IRefCounted` interface.
-    *   **`TypedContainerNode`:** A generic template for parent nodes in the navigation tree (e.g., "Folders") that creates its children on demand via a `ClientCreationMethod` function pointer.
-    *   **`TypedOverviewNode`:** A more advanced template that acts as both a parent in the tree *and* a data source for the `DataView` (used for "Mixes" and "Working Sets"). It uses a `TypedItemsOverview` struct (via template specialization) as a policy/strategy for type-specific logic.
-*   **`DataViewComponent` (UI Table/List):**
-    *   A `juce::TableListBox`-based component driven by the currently selected `INavigationNode`.
-    *   **Configurable Columns:** Implements a `DynamicColumnManager` system. The visibility, order, and width of columns are user-configurable and persisted to the TOML config file.
-*   **Long-Running Task Management:**
-    *   A generic, reusable system for handling background tasks without freezing the UI.
-    *   **`ILongRunningTask` Interface:** A ref-counted interface that defines a task's `run` method, its name, and whether it's cancellable.
-    *   **`TaskDialog` Component:** A modal `juce::Component` that takes an `ILongRunningTask`, runs it on a background thread, and displays its progress and status.
+*   **Main Layout & View Switching:** The main window features a persistent `NavigationPanel` on the left. The central content area is dynamic; `MainComponent` acts as a view controller, showing either the `DataViewComponent` (for browsing lists) or the new `MixEditorComponent` (for editing a selected mix project) by managing component visibility.
+*   **`MixEditorComponent`:** The heart of the mixing workflow. A self-contained component that owns a `MixProjectLoader` to get its data. It contains the main `TimelineComponent`.
+    *   **`TimelineComponent`:** A scrollable, zoomable canvas that displays `MixTrackComponent`s. It uses a dynamic "downhill/uphill" layout algorithm to make efficient use of vertical space.
+    *   **`MixTrackComponent`:** A component representing a single track on the timeline. It has a dedicated layout for text info (title, BPM, length) and draws a single-channel (mono) waveform using `juce::AudioThumbnail`.
+*   **Theming System:** A fully data-driven theming engine.
+    *   Themes are defined in `.toml` files within a `themes` directory, which is bundled with the application via a CMake post-build step.
+    *   A global `ThemeManager` scans this directory at startup.
+    *   The menu provides a dynamic list of available themes. Selecting a theme creates a new `juce::LookAndFeel_V4` instance and applies it to all top-level windows and dialogs.
+*   **Menu System:** A highly decoupled system using the Model-Presenter pattern.
+    *   `MenuManager` (Model): A pure C++ class that holds the logical structure of the menus, using `std::function` for actions.
+    *   `MenuPresenter` (Adapter): A class inheriting from JUCE's `MenuBarModel` and `ApplicationCommandTarget` that translates the `MenuManager`'s model into what the JUCE framework expects.
+    *   `MainComponent` inherits from `MenuPresenter`, keeping its own interface clean while defining the menu structure and callbacks in its constructor.
+*   **`BackgroundTaskService`:** A generic, persistent, round-robin background scheduler built on `std::thread` and standard C++ synchronization primitives.
+    *   It manages a list of persistent `IBackgroundTask` providers.
+    *   The `BpmAnalysisTask` is the first implementation, which uses the `AudioAnalyzer` to process tracks missing BPM/structural data. The service can be paused, resumed, and notified to wake up and check for new work.
 
 ---
 
 ## Project Status Highlights (as of our last session)
 
-1.  **Refactoring Complete for Background Tasks:**
-    *   **Mix Export:** Fully refactored into `CreateMixTask` (`ILongRunningTask`) using `MixExporter`. WAV and MP3/LAME export is functional.
-    *   **Library Scanning:** Fully refactored into `ScanFoldersTask` (`ILongRunningTask`). The `TrackScanner` class is now a synchronous worker. Selective folder scanning is implemented.
+**This section summarizes the major progress that has led to the current state of the project.**
 
-2.  **UI Refresh Logic:**
-    *   An `INavigationNode::refreshChildren()` method is implemented for `TypedContainerNode` to intelligently update its list of model children (reusing existing nodes by ID where possible).
-    *   A `TypedOverviewNode::refreshCache(bool flushCache)` method allows for explicitly invalidating and reloading list view data.
-    *   The **"Jump To"** feature is implemented: after a new Mix or Working Set is created, the UI automatically refreshes the navigation panel, selects the new item, and scrolls it into view.
+1.  **Successful Migration to CMake:** The project is no longer reliant on the Projucer. The entire build is managed by a clean `CMakeLists.txt` file, making it more robust and portable.
 
-3.  **Key Functionality Working:**
-    *   **Mix Creation:** Auto-mix definition and export to WAV and MP3/LAME.
-    *   **Working Set Creation:** Works from both selected tracks and from all tracks in a given view.
-    *   **Configurable Columns:** The underlying system for saving/loading column visibility, order, and width is implemented using the TOML backend.
-    *   **Database Maintenance:** A "Database Maintenance" task (for VACUUM) is implemented using the `TaskDialog` system.
+2.  **Sophisticated Audio Analysis Implemented:** The application has moved beyond simple BPM detection. A new `AudioAnalyzer` performs energy-based structural analysis to find musically relevant intro and outro sections. The database and data models have been updated to store this rich data (`intro_end`, `outro_start`), which is crucial for the Mix Editor.
 
-4.  **Known Issues / Future Work:**
-    *   The project's ongoing tasks, enhancements, and bugs are tracked using **Linear.app**. This will serve as the canonical list for future work.
+3.  **Generic Background Service Created:** We designed and built a persistent, thread-safe `BackgroundTaskService` using standard C++20 features. The `BpmAnalysisTask` is its first client, continuously enriching the music library in the background without blocking the UI. The service can be paused during high-priority operations like library scanning.
+
+4.  **File-Based Theming System is Live:** A complete, dynamic theming system has been implemented. Users can switch between different looks (`.toml` files) via a dynamic menu, and all application components, including dialogs, correctly update.
+
+5.  **`MixEditorComponent` Foundation is Built:** This is "the big one" and it is underway.
+    *   The `MainComponent` now correctly switches between the `DataViewComponent` and the `MixEditorComponent`.
+    *   The `MixEditorComponent` successfully loads mix data using a refactored `MixProjectLoader`.
+    *   The `TimelineComponent` can now **visually render a static mix**. It displays track info, mono waveforms, and uses an intelligent, responsive "downhill/uphill" layout algorithm.
+
+6.  **"Create Mix" Workflow Refactored:** The user workflow is now more powerful. "Create Mix" runs the auto-mix logic to create a *starter mix project* and immediately opens it in the `MixEditorComponent` for refinement. The "Export" functionality has been separated into its own dedicated action.
+
+---
+
+## Current Roadmap / Future Work
+
+This is the prioritized list of tasks for the `MixEditorComponent` that we will be working on next.
+
+*   **Tier 1 (Core Interaction & Navigation):**
+    *   **Zooming:** Implement Ctrl+MouseWheel zooming on the timeline.
+    *   **Selection:** Implement a selection model with clear visual feedback (e.g., highlighting) for the selected track on the timeline.
+*   **Tier 2 (Editing & Visuals):**
+    *   **Deletion:** Implement track removal via the Delete key.
+    *   **Volume Envelopes:** Visualize the pre-calculated volume and fade envelopes on top of the waveforms.
+    *   **Trimming:** Allow non-destructive trimming of a track's start/end points by dragging handles.
+*   **Tier 3 (Advanced Features):**
+    *   **Playback Engine:** Implement the audible playback of the mix sequence.
+    *   **Repositioning:** Allow horizontal sliding and full drag-and-drop reordering of tracks.
+    *   **Information Display:** Add UI elements for total mix length, rulers, etc.
