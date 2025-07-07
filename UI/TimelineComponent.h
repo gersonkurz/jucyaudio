@@ -10,7 +10,7 @@ namespace jucyaudio
         class TimelineComponent : public juce::Component
         {
         public:
-            TimelineComponent(juce::AudioFormatManager& formatManager, juce::AudioThumbnailCache &thumbnailCache);
+            TimelineComponent(juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache);
 
             void paint(juce::Graphics &g) override;
             void resized() override;
@@ -27,10 +27,11 @@ namespace jucyaudio
                 const database::TrackInfo *trackInfoData;
             };
 
-            juce::AudioFormatManager& m_formatManager;
+            juce::AudioFormatManager &m_formatManager;
             juce::AudioThumbnailCache &m_thumbnailCache;
             std::vector<TrackView> m_trackViews;
-
+            int m_calculatedWidth = 0;
+            int m_calculatedHeight = 0;
             // For converting time to pixels
             double m_pixelsPerSecond = 10.0;
 

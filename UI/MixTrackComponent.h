@@ -10,25 +10,32 @@ namespace jucyaudio
     namespace ui
     {
         // Visually represents a single track segment on the timeline.
-        class MixTrackComponent : public juce::Component,
-                                  public juce::ChangeListener // To receive updates from the thumbnail
+        class MixTrackComponent : public juce::Component, public juce::ChangeListener
         {
         public:
-            // Takes the data it needs to draw itself.
-            MixTrackComponent(const database::MixTrack &mixTrack, const database::TrackInfo &trackInfo, juce::AudioFormatManager& formatManager, juce::AudioThumbnailCache &thumbnailCache);
+            // We can define the layout constants publicly for the TimelineComponent to use
+            static constexpr int textSectionHeight = 20;
+            static constexpr int waveformSectionHeight = 60;
+            static constexpr int totalHeight = textSectionHeight + waveformSectionHeight;
+
+            MixTrackComponent(const database::MixTrack &mixTrack, const database::TrackInfo &trackInfo, juce::AudioFormatManager &formatManager,
+                              juce::AudioThumbnailCache &thumbnailCache);
 
             ~MixTrackComponent() override;
 
             void paint(juce::Graphics &g) override;
+            void resized() override; // We'll add this to position our label
 
-            // From juce::ChangeListener, called when the thumbnail has new data to draw.
             void changeListenerCallback(juce::ChangeBroadcaster *source) override;
 
         private:
-            const database::MixTrack &m_mixTrack;   // Non-owning reference to the model data
-            const database::TrackInfo &m_trackInfo; // Non-owning reference
+            const database::MixTrack &m_mixTrack;
+            const database::TrackInfo &m_trackInfo;
 
-            juce::AudioThumbnail m_thumbnail; // Manages the waveform drawing
+            juce::AudioThumbnail m_thumbnail;
+
+            // A label for displaying the track info text
+            juce::Label m_infoLabel;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixTrackComponent)
         };

@@ -350,7 +350,7 @@ namespace jucyaudio
             // Optionally fill the main background if child components don't
             // cover everything or if there are gaps.
             const auto backgroundColour = getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId);
-            spdlog::info("MainComponent::paint - juce::ResizableWindow::backgroundColourId colour: '#{}'", backgroundColour.toString().toStdString());
+            //spdlog::info("MainComponent::paint - juce::ResizableWindow::backgroundColourId colour: '#{}'", backgroundColour.toString().toStdString());
             g.fillAll(backgroundColour);
         }
 

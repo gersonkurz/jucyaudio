@@ -174,17 +174,17 @@ CREATE TABLE IF NOT EXISTS MixTracks(
         if (!stmt.isNull(col))
             info.codec_name = stmt.getText(col);
         ++col;
-        if(stmt.isNull(col))
+        if (stmt.isNull(col))
             info.bpm = std::nullopt;
         else
             info.bpm = stmt.getInt32(col);
         ++col;
-        if(stmt.isNull(col))
+        if (stmt.isNull(col))
             info.intro_end = std::nullopt;
         else
             info.intro_end = durationFromInt64(stmt.getInt64(col));
         ++col;
-        if(stmt.isNull(col))
+        if (stmt.isNull(col))
             info.outro_start = std::nullopt;
         else
             info.outro_start = durationFromInt64(stmt.getInt64(col));
@@ -209,8 +209,7 @@ CREATE TABLE IF NOT EXISTS MixTracks(
         return info;
     }
 
-    bool bindTrackInfoToStatement(SqliteStatement &stmt, const TrackInfo &info,
-                                  bool forUpdate = false)
+    bool bindTrackInfoToStatement(SqliteStatement &stmt, const TrackInfo &info, bool forUpdate = false)
     {
         bool ok = true;
         ok &= stmt.addParam(info.folderId);
@@ -250,9 +249,7 @@ CREATE TABLE IF NOT EXISTS MixTracks(
         }
         if (!ok)
         {
-            spdlog::error(
-                "Failed to bind one or more parameters for TrackInfo: {}",
-                pathToString(info.filepath));
+            spdlog::error("Failed to bind one or more parameters for TrackInfo: {}", pathToString(info.filepath));
         }
         return ok;
     }
@@ -288,59 +285,49 @@ namespace jucyaudio
 
         IFolderDatabase &SqliteTrackDatabase::getFolderDatabase() const
         {
-            assert(isOpen() &&
-                   "Cannot get folder database when database is not open");
+            assert(isOpen() && "Cannot get folder database when database is not open");
             return m_folderDatabase; // Return reference to the tag manager
         }
 
         ITagManager &SqliteTrackDatabase::getTagManager()
         {
-            assert(isOpen() &&
-                   "Cannot get tag manager when database is not open");
+            assert(isOpen() && "Cannot get tag manager when database is not open");
             return m_tagManager; // Return reference to the tag manager
         }
 
         const ITagManager &SqliteTrackDatabase::getTagManager() const
         {
-            assert(isOpen() &&
-                   "Cannot get tag manager when database is not open");
+            assert(isOpen() && "Cannot get tag manager when database is not open");
             return m_tagManager; // Return const reference to the tag manager
         }
 
         IMixManager &SqliteTrackDatabase::getMixManager()
         {
-            assert(isOpen() &&
-                   "Cannot get mix manager when database is not open");
+            assert(isOpen() && "Cannot get mix manager when database is not open");
             return m_mixManager;
         }
 
         const IMixManager &SqliteTrackDatabase::getMixManager() const
         {
-            assert(isOpen() &&
-                   "Cannot get mix manager when database is not open");
+            assert(isOpen() && "Cannot get mix manager when database is not open");
             return m_mixManager;
         }
 
         IWorkingSetManager &SqliteTrackDatabase::getWorkingSetManager()
         {
-            assert(isOpen() &&
-                   "Cannot get working-set manager when database is not open");
+            assert(isOpen() && "Cannot get working-set manager when database is not open");
             return m_workingSetManager;
         }
 
-        const IWorkingSetManager &SqliteTrackDatabase::getWorkingSetManager()
-            const
+        const IWorkingSetManager &SqliteTrackDatabase::getWorkingSetManager() const
         {
-            assert(isOpen() &&
-                   "Cannot get working-set manager when database is not open");
+            assert(isOpen() && "Cannot get working-set manager when database is not open");
             return m_workingSetManager;
         }
 
         std::string SqliteTrackDatabase::getLastError() const
         {
-            return m_db.isValid()
-                       ? m_db.getLastError()
-                       : m_lastErrorMessage; // Prefer m_db's error if open
+            return m_db.isValid() ? m_db.getLastError() : m_lastErrorMessage; // Prefer m_db's error if open
         }
 
         bool SqliteTrackDatabase::isOpen() const
@@ -352,16 +339,14 @@ namespace jucyaudio
         {
             if (isOpen())
             {
-                spdlog::info("Closing SQLite database: {}",
-                             pathToString(m_databaseFilePath));
+                spdlog::info("Closing SQLite database: {}", pathToString(m_databaseFilePath));
             }
             m_db.close();
             m_databaseFilePath.clear(); // Clear path only if close was
                                         // intentional by this class
         }
 
-        DbResult SqliteTrackDatabase::connect(
-            const std::filesystem::path &databaseFilePath)
+        DbResult SqliteTrackDatabase::connect(const std::filesystem::path &databaseFilePath)
         {
             if (isOpen())
             {
@@ -377,46 +362,34 @@ namespace jucyaudio
                 {
                     if (!std::filesystem::create_directories(parentDir))
                     {
-                        m_lastErrorMessage =
-                            "Could not create parent directory: " +
-                            pathToString(parentDir);
-                        return DbResult::failure(DbResultStatus::ErrorIO,
-                                                 m_lastErrorMessage);
+                        m_lastErrorMessage = "Could not create parent directory: " + pathToString(parentDir);
+                        return DbResult::failure(DbResultStatus::ErrorIO, m_lastErrorMessage);
                     }
                 }
                 catch (const std::filesystem::filesystem_error &e)
                 {
-                    m_lastErrorMessage =
-                        "Filesystem error creating parent directory " +
-                        pathToString(parentDir) + ": " + e.what();
-                    return DbResult::failure(DbResultStatus::ErrorIO,
-                                             m_lastErrorMessage);
+                    m_lastErrorMessage = "Filesystem error creating parent directory " + pathToString(parentDir) + ": " + e.what();
+                    return DbResult::failure(DbResultStatus::ErrorIO, m_lastErrorMessage);
                 }
             }
 
             if (!m_db.open(pathToString(databaseFilePath)))
-            { // Use u8string for cross-platform path safety
-                m_lastErrorMessage =
-                    m_db.getLastError(); // SqliteDatabase::open should set its
-                                         // error
-                return DbResult::failure(DbResultStatus::ErrorConnection,
-                                         m_lastErrorMessage);
+            {                                             // Use u8string for cross-platform path safety
+                m_lastErrorMessage = m_db.getLastError(); // SqliteDatabase::open should set its
+                                                          // error
+                return DbResult::failure(DbResultStatus::ErrorConnection, m_lastErrorMessage);
             }
-            spdlog::info("SQLite database opened: {}",
-                         pathToString(databaseFilePath));
+            spdlog::info("SQLite database opened: {}", pathToString(databaseFilePath));
 
             if (!m_db.execute("PRAGMA journal_mode=WAL;"))
             {
-                spdlog::warn("Failed to set WAL mode (continuing). Error: {}",
-                             m_db.getLastError());
+                spdlog::warn("Failed to set WAL mode (continuing). Error: {}", m_db.getLastError());
             }
             if (!m_db.execute("PRAGMA foreign_keys=ON;"))
             {
-                m_lastErrorMessage =
-                    "Failed to enable foreign keys: " + m_db.getLastError();
+                m_lastErrorMessage = "Failed to enable foreign keys: " + m_db.getLastError();
                 m_db.close(); // Close on critical pragma failure
-                return DbResult::failure(DbResultStatus::ErrorDB,
-                                         m_lastErrorMessage);
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
 
             DbResult schemaResult = createTablesIfNeeded();
@@ -428,8 +401,7 @@ namespace jucyaudio
             return DbResult::success();
         }
 
-        bool SqliteTrackDatabase::runMaintenanceTasks(
-            [[maybe_unused]] std::atomic<bool> &shouldCancel)
+        bool SqliteTrackDatabase::runMaintenanceTasks([[maybe_unused]] std::atomic<bool> &shouldCancel)
         {
             if (!isOpen())
             {
@@ -440,11 +412,8 @@ namespace jucyaudio
             {
                 if (!m_db.execute(sql))
                 {
-                    m_lastErrorMessage = "Maintenance statement failed [" +
-                                         std::string(sql) +
-                                         "] Error: " + m_db.getLastError();
-                    spdlog::error("Maintenance task failed: {}",
-                                  m_lastErrorMessage);
+                    m_lastErrorMessage = "Maintenance statement failed [" + std::string(sql) + "] Error: " + m_db.getLastError();
+                    spdlog::error("Maintenance task failed: {}", m_lastErrorMessage);
                     return false;
                 }
             }
@@ -456,8 +425,7 @@ namespace jucyaudio
         {
             if (!isOpen())
             {
-                return DbResult::failure(DbResultStatus::ErrorConnection,
-                                         "DB not open for schema creation.");
+                return DbResult::failure(DbResultStatus::ErrorConnection, "DB not open for schema creation.");
             }
 
             spdlog::info("Verifying/Creating database schema...");
@@ -465,34 +433,23 @@ namespace jucyaudio
             {
                 if (!m_db.execute(sql))
                 {
-                    m_lastErrorMessage = "Schema creation failed on SQL: [" +
-                                         std::string(sql) +
-                                         "] Error: " + m_db.getLastError();
-                    return DbResult::failure(DbResultStatus::ErrorDB,
-                                             m_lastErrorMessage);
+                    m_lastErrorMessage = "Schema creation failed on SQL: [" + std::string(sql) + "] Error: " + m_db.getLastError();
+                    return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
                 }
             }
 
-            SqliteStatement stmt{
-                m_db,
-                "INSERT OR IGNORE INTO SchemaInfo (key, value) VALUES (?, ?);"};
+            SqliteStatement stmt{m_db, "INSERT OR IGNORE INTO SchemaInfo (key, value) VALUES (?, ?);"};
             if (!stmt.isValid())
             {
-                m_lastErrorMessage =
-                    "Failed to prepare schema version insert: " +
-                    m_db.getLastError();
-                return DbResult::failure(DbResultStatus::ErrorDB,
-                                         m_lastErrorMessage);
+                m_lastErrorMessage = "Failed to prepare schema version insert: " + m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
             stmt.addParam("schema_version");
             stmt.addParam("1"); // Initial schema version
             if (!stmt.execute())
             {
-                m_lastErrorMessage =
-                    "Failed to insert initial schema version: " +
-                    m_db.getLastError();
-                return DbResult::failure(DbResultStatus::ErrorDB,
-                                         m_lastErrorMessage);
+                m_lastErrorMessage = "Failed to insert initial schema version: " + m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
 
             // return runMigrations(); // Call migrations after basic schema is
@@ -511,9 +468,7 @@ namespace jucyaudio
         {
             if (!isOpen())
                 return 0; // Or -1 to indicate error
-            SqliteStatement stmt{
-                m_db,
-                "SELECT value FROM SchemaInfo WHERE key = 'schema_version';"};
+            SqliteStatement stmt{m_db, "SELECT value FROM SchemaInfo WHERE key = 'schema_version';"};
             if (stmt.isValid() && stmt.getNextResult())
             {
                 if (!stmt.isNull(0))
@@ -524,38 +479,29 @@ namespace jucyaudio
                     }
                     catch (const std::exception &e)
                     {
-                        spdlog::error("Failed to parse schema_version '{}': {}",
-                                      stmt.getText(0), e.what());
+                        spdlog::error("Failed to parse schema_version '{}': {}", stmt.getText(0), e.what());
                         return 0; // Or error code
                     }
                 }
             }
-            spdlog::warn(
-                "Could not retrieve schema_version or table is empty.");
+            spdlog::warn("Could not retrieve schema_version or table is empty.");
             return 0; // Default to 0 if not found or error
         }
 
         DbResult SqliteTrackDatabase::setDBSchemaVersion(int version)
         {
             if (!isOpen())
-                return DbResult::failure(DbResultStatus::ErrorConnection,
-                                         "Database not open.");
+                return DbResult::failure(DbResultStatus::ErrorConnection, "Database not open.");
             SqliteStatement stmt{m_db, "UPDATE SchemaInfo SET value = ? WHERE "
                                        "key = 'schema_version';"};
             if (!stmt.isValid())
             {
-                return DbResult::failure(
-                    DbResultStatus::ErrorDB,
-                    "Prepare failed for setDBSchemaVersion: " +
-                        m_db.getLastError());
+                return DbResult::failure(DbResultStatus::ErrorDB, "Prepare failed for setDBSchemaVersion: " + m_db.getLastError());
             }
             stmt.addParam(std::to_string(version));
             if (!stmt.execute())
             {
-                return DbResult::failure(
-                    DbResultStatus::ErrorDB,
-                    "Execute failed for setDBSchemaVersion: " +
-                        m_db.getLastError());
+                return DbResult::failure(DbResultStatus::ErrorDB, "Execute failed for setDBSchemaVersion: " + m_db.getLastError());
             }
             return DbResult::success();
         }
@@ -580,16 +526,13 @@ namespace jucyaudio
         {
             if (!isOpen())
             {
-                return DbResult::failure(DbResultStatus::ErrorConnection,
-                                         "DB not open for saveTrackInfo.");
+                return DbResult::failure(DbResultStatus::ErrorConnection, "DB not open for saveTrackInfo.");
             }
             m_lastErrorMessage.clear();
 
             if (trackInfo.filepath.empty())
             {
-                return DbResult::failure(
-                    DbResultStatus::ErrorGeneric,
-                    "Filepath cannot be empty for saveTrackInfo.");
+                return DbResult::failure(DbResultStatus::ErrorGeneric, "Filepath cannot be empty for saveTrackInfo.");
             }
 
             // For simplicity, we'll use a single transaction for INSERT or
@@ -597,9 +540,7 @@ namespace jucyaudio
             // app
             if (!m_db.execute("BEGIN TRANSACTION;"))
             {
-                return DbResult::failure(DbResultStatus::ErrorDB,
-                                         "Failed to begin transaction: " +
-                                             m_db.getLastError());
+                return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin transaction: " + m_db.getLastError());
             }
 
             bool success = false;
@@ -616,14 +557,10 @@ namespace jucyaudio
         )SQL"; // 28 placeholders, is_missing defaults to 0 on insert
 
                 SqliteStatement stmt{m_db, sql};
-                if (stmt.isValid() &&
-                    bindTrackInfoToStatement(stmt, trackInfo, false) &&
-                    stmt.execute())
+                if (stmt.isValid() && bindTrackInfoToStatement(stmt, trackInfo, false) && stmt.execute())
                 {
                     trackInfo.trackId = m_db.getLastInsertRowId();
-                    spdlog::debug("Inserted track ID: {}, Path: {}",
-                                  trackInfo.trackId,
-                                  pathToString(trackInfo.filepath));
+                    spdlog::debug("Inserted track ID: {}, Path: {}", trackInfo.trackId, pathToString(trackInfo.filepath));
                     success = true;
                 }
                 m_cachedTotalTrackCount = false;
@@ -641,9 +578,7 @@ namespace jucyaudio
         )SQL"; // 28 fields + 1 for track_id in WHERE
 
                 SqliteStatement stmt{m_db, sql};
-                if (stmt.isValid() &&
-                    bindTrackInfoToStatement(stmt, trackInfo, true) &&
-                    stmt.execute())
+                if (stmt.isValid() && bindTrackInfoToStatement(stmt, trackInfo, true) && stmt.execute())
                 {
                     spdlog::debug("Updated track ID: {}", trackInfo.trackId);
                     success = true;
@@ -652,34 +587,27 @@ namespace jucyaudio
 
             if (success)
             {
-                updateTrackTagsFromInsideTransaction(
-                    trackInfo.trackId,
-                    trackInfo.tag_ids); // Update tags after insert
+                updateTrackTagsFromInsideTransaction(trackInfo.trackId,
+                                                     trackInfo.tag_ids); // Update tags after insert
                 if (!m_db.execute("COMMIT;"))
                 {
-                    m_lastErrorMessage =
-                        "Failed to commit transaction: " + m_db.getLastError();
+                    m_lastErrorMessage = "Failed to commit transaction: " + m_db.getLastError();
                     // Attempt to rollback, though the main operation might have
                     // already written
                     m_db.execute("ROLLBACK;");
-                    return DbResult::failure(DbResultStatus::ErrorDB,
-                                             m_lastErrorMessage);
+                    return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
                 }
                 return DbResult::success();
             }
             else
             {
-                m_lastErrorMessage =
-                    "SaveTrackInfo failed: " +
-                    m_db.getLastError();   // Get last error from SqliteDatabase
-                m_db.execute("ROLLBACK;"); // Rollback on any failure
-                return DbResult::failure(DbResultStatus::ErrorDB,
-                                         m_lastErrorMessage);
+                m_lastErrorMessage = "SaveTrackInfo failed: " + m_db.getLastError(); // Get last error from SqliteDatabase
+                m_db.execute("ROLLBACK;");                                           // Rollback on any failure
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
         }
 
-        std::optional<TrackInfo> SqliteTrackDatabase::getTrackById(
-            TrackId trackId) const
+        std::optional<TrackInfo> SqliteTrackDatabase::getTrackById(TrackId trackId) const
         {
             if (!isOpen())
             {
@@ -687,8 +615,7 @@ namespace jucyaudio
             }
             m_lastErrorMessage.clear(); // mutable m_lastErrorMessage
 
-            SqliteStatement stmt{m_db,
-                                 "SELECT * FROM Tracks WHERE track_id = ?;"};
+            SqliteStatement stmt{m_db, "SELECT * FROM Tracks WHERE track_id = ?;"};
             if (!stmt.isValid())
             {
                 m_lastErrorMessage = m_db.getLastError();
@@ -704,14 +631,12 @@ namespace jucyaudio
             // If getNextResult returns false, it might be an error or just no
             // rows. Your SqliteStatement::getNextResult() should distinguish
             // this or m_db.getLastError() should be checked.
-            if (!m_db.getLastError().empty() &&
-                m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
+            if (!m_db.getLastError().empty() && m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
             { // Crude check
                 m_lastErrorMessage = m_db.getLastError();
             }
             return std::nullopt;
         }
-
 
         std::optional<TrackInfo> SqliteTrackDatabase::getNextTrackForBpmAnalysis() const
         {
@@ -721,30 +646,31 @@ namespace jucyaudio
             }
             m_lastErrorMessage.clear(); // mutable m_lastErrorMessage
 
-            SqliteStatement stmt{m_db,
-                                 "SELECT * FROM Tracks WHERE bpm IS NULL or bpm<=0 LIMIT 1;"};
-            if (!stmt.isValid())
+            // --- PRIORITY 1: Un-analyzed tracks that are part of ANY mix project ---
+            std::string sql_priority1 = R"SQL(
+                SELECT T.* FROM Tracks T
+                JOIN MixTracks MT ON T.track_id = MT.track_id
+                WHERE T.bpm IS NULL OR T.bpm <= 0
+                LIMIT 1;
+            )SQL";
+
+            SqliteStatement stmt1{m_db, sql_priority1};
+            if (stmt1.getNextResult())
             {
-                m_lastErrorMessage = m_db.getLastError();
-                return std::nullopt;
+                return trackInfoFromStatement(stmt1); // Found a high-priority track
             }
-            if (stmt.getNextResult())
+
+            // --- PRIORITY 2: Any other un-analyzed track ---
+            std::string sql_priority2 = "SELECT * FROM Tracks WHERE bpm IS NULL OR bpm <= 0 LIMIT 1;";
+            SqliteStatement stmt2{m_db, sql_priority2};
+            if (stmt2.getNextResult())
             {
-                return trackInfoFromStatement(stmt);
-            }
-            // If getNextResult returns false, it might be an error or just no
-            // rows. Your SqliteStatement::getNextResult() should distinguish
-            // this or m_db.getLastError() should be checked.
-            if (!m_db.getLastError().empty() &&
-                m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
-            { // Crude check
-                m_lastErrorMessage = m_db.getLastError();
+                return trackInfoFromStatement(stmt2); // Found a regular-priority track
             }
             return std::nullopt;
         }
 
-        std::optional<TrackInfo> SqliteTrackDatabase::getTrackByFilepath(
-            const std::filesystem::path &filepath) const
+        std::optional<TrackInfo> SqliteTrackDatabase::getTrackByFilepath(const std::filesystem::path &filepath) const
         {
             if (!isOpen())
             {
@@ -752,8 +678,7 @@ namespace jucyaudio
             }
             m_lastErrorMessage.clear();
 
-            SqliteStatement stmt{m_db,
-                                 "SELECT * FROM Tracks WHERE filepath = ?;"};
+            SqliteStatement stmt{m_db, "SELECT * FROM Tracks WHERE filepath = ?;"};
             if (!stmt.isValid())
             {
                 m_lastErrorMessage = m_db.getLastError();
@@ -766,8 +691,7 @@ namespace jucyaudio
                 result.tag_ids = getTrackTags(result.trackId);
                 return result;
             }
-            if (!m_db.getLastError().empty() &&
-                m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
+            if (!m_db.getLastError().empty() && m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
             {
                 m_lastErrorMessage = m_db.getLastError();
             }
@@ -776,33 +700,26 @@ namespace jucyaudio
 
         // --- Generic single field update helper ---
         template <typename T>
-        DbResult SqliteTrackDatabase::updateSingleTrackField(
-            TrackId trackId, const std::string &columnName, T value,
-            std::function<bool(SqliteStatement &, T)> binder)
+        DbResult SqliteTrackDatabase::updateSingleTrackField(TrackId trackId, const std::string &columnName, T value,
+                                                             std::function<bool(SqliteStatement &, T)> binder)
         {
             if (!isOpen())
             {
-                return DbResult::failure(DbResultStatus::ErrorConnection,
-                                         "DB not open for update.");
+                return DbResult::failure(DbResultStatus::ErrorConnection, "DB not open for update.");
             }
             m_lastErrorMessage.clear();
-            std::string sql =
-                "UPDATE Tracks SET " + columnName + " = ? WHERE track_id = ?;";
+            std::string sql = "UPDATE Tracks SET " + columnName + " = ? WHERE track_id = ?;";
             SqliteStatement stmt{m_db, sql};
 
             if (!stmt.isValid())
             {
-                m_lastErrorMessage = "Prepare failed for " + columnName +
-                                     " update: " + m_db.getLastError();
-                return DbResult::failure(DbResultStatus::ErrorDB,
-                                         m_lastErrorMessage);
+                m_lastErrorMessage = "Prepare failed for " + columnName + " update: " + m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
             if (!binder(stmt, value))
             { // Call custom binder
-                m_lastErrorMessage = "Bind failed for " + columnName +
-                                     " update: " + m_db.getLastError();
-                return DbResult::failure(DbResultStatus::ErrorDB,
-                                         m_lastErrorMessage);
+                m_lastErrorMessage = "Bind failed for " + columnName + " update: " + m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
             stmt.addParam(trackId);
 
@@ -810,46 +727,40 @@ namespace jucyaudio
             {
                 // Check sqlite3_changes(m_db.getInternalHandle()) if you need
                 // to confirm rows affected
-                spdlog::debug("Updated {} for track_id: {}", columnName,
-                              trackId);
+                spdlog::debug("Updated {} for track_id: {}", columnName, trackId);
                 return DbResult::success();
             }
-            m_lastErrorMessage = "Execute failed for " + columnName +
-                                 " update: " + m_db.getLastError();
-            return DbResult::failure(DbResultStatus::ErrorDB,
-                                     m_lastErrorMessage);
+            m_lastErrorMessage = "Execute failed for " + columnName + " update: " + m_db.getLastError();
+            return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
         }
 
-        DbResult SqliteTrackDatabase::updateTrackBpm(TrackId trackId, const AudioMetadata& am)
+        DbResult SqliteTrackDatabase::updateTrackBpm(TrackId trackId, const AudioMetadata &am)
         {
             if (!isOpen())
             {
-                return DbResult::failure(DbResultStatus::ErrorConnection,
-                                         "DB not open for update.");
+                return DbResult::failure(DbResultStatus::ErrorConnection, "DB not open for update.");
             }
             m_lastErrorMessage.clear();
-            std::string sql =
-                "UPDATE Tracks SET bpm=?, intro_end=?, outro_start=? WHERE track_id = ?;";
+            std::string sql = "UPDATE Tracks SET bpm=?, intro_end=?, outro_start=? WHERE track_id = ?;";
             SqliteStatement stmt{m_db, sql};
 
             if (!stmt.isValid())
             {
                 m_lastErrorMessage = "Prepare failed for updateTrackBpm(): " + m_db.getLastError();
-                return DbResult::failure(DbResultStatus::ErrorDB,
-                                         m_lastErrorMessage);
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
-            stmt.addParam(static_cast<int64_t>(am.bpm*100)); // Store as integer
-            if(am.hasIntro)
+            stmt.addParam(static_cast<int64_t>(am.bpm * 100)); // Store as integer
+            if (am.hasIntro)
             {
-                stmt.addParam(static_cast<int64_t>(am.introEnd*1000));
+                stmt.addParam(static_cast<int64_t>(am.introEnd * 1000));
             }
             else
             {
                 stmt.addNullParam(); // Use null if no intro end
             }
-            if(am.hasOutro)
+            if (am.hasOutro)
             {
-                stmt.addParam(static_cast<int64_t>(am.outroStart*1000));
+                stmt.addParam(static_cast<int64_t>(am.outroStart * 1000));
             }
             else
             {
@@ -861,17 +772,14 @@ namespace jucyaudio
             {
                 // Check sqlite3_changes(m_db.getInternalHandle()) if you need
                 // to confirm rows affected
-                spdlog::debug("updateTrackBpm for track_id: {}", 
-                              trackId);
+                spdlog::debug("updateTrackBpm for track_id: {}", trackId);
                 return DbResult::success();
             }
             m_lastErrorMessage = "Execute failed for updateTrackBpm(): " + m_db.getLastError();
-            return DbResult::failure(DbResultStatus::ErrorDB,
-                                     m_lastErrorMessage);
+            return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
         }
 
-        DbResult SqliteTrackDatabase::updateTrackRating(TrackId trackId,
-                                                        int rating)
+        DbResult SqliteTrackDatabase::updateTrackRating(TrackId trackId, int rating)
         {
             return updateSingleTrackField<int>(trackId, "rating", rating,
                                                [](SqliteStatement &s, int val)
@@ -880,34 +788,29 @@ namespace jucyaudio
                                                });
         }
 
-        DbResult SqliteTrackDatabase::updateTrackLikedStatus(TrackId trackId,
-                                                             int likedStatus)
+        DbResult SqliteTrackDatabase::updateTrackLikedStatus(TrackId trackId, int likedStatus)
         {
-            return updateSingleTrackField<int>(trackId, "liked_status",
-                                               likedStatus,
+            return updateSingleTrackField<int>(trackId, "liked_status", likedStatus,
                                                [](SqliteStatement &s, int val)
                                                {
                                                    return s.addParam(val);
                                                });
         }
 
-        DbResult SqliteTrackDatabase::updateTrackUserNotes(
-            TrackId trackId, const std::string &notes)
+        DbResult SqliteTrackDatabase::updateTrackUserNotes(TrackId trackId, const std::string &notes)
         {
-            return updateSingleTrackField<const std::string &>(
-                trackId, "user_notes", notes,
-                [](SqliteStatement &s, const std::string &val)
-                {
-                    return s.addParam(val);
-                });
+            return updateSingleTrackField<const std::string &>(trackId, "user_notes", notes,
+                                                               [](SqliteStatement &s, const std::string &val)
+                                                               {
+                                                                   return s.addParam(val);
+                                                               });
         }
 
         DbResult SqliteTrackDatabase::incrementTrackPlayCount(TrackId trackId)
         {
             if (!isOpen())
             {
-                return DbResult::failure(DbResultStatus::ErrorConnection,
-                                         "DB not open");
+                return DbResult::failure(DbResultStatus::ErrorConnection, "DB not open");
             }
             m_lastErrorMessage.clear();
             std::string sql = "UPDATE Tracks SET play_count = play_count + 1, "
@@ -915,10 +818,8 @@ namespace jucyaudio
             SqliteStatement stmt{m_db, sql};
             if (!stmt.isValid())
             {
-                m_lastErrorMessage = "Prepare failed for incrementPlayCount: " +
-                                     m_db.getLastError();
-                return DbResult::failure(DbResultStatus::ErrorDB,
-                                         m_lastErrorMessage);
+                m_lastErrorMessage = "Prepare failed for incrementPlayCount: " + m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
 
             stmt.addParam(timestampToInt64(std::chrono::system_clock::now()));
@@ -928,19 +829,15 @@ namespace jucyaudio
             {
                 return DbResult::success();
             }
-            m_lastErrorMessage =
-                "Execute failed for incrementPlayCount: " + m_db.getLastError();
-            return DbResult::failure(DbResultStatus::ErrorDB,
-                                     m_lastErrorMessage);
+            m_lastErrorMessage = "Execute failed for incrementPlayCount: " + m_db.getLastError();
+            return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
         }
 
-        DbResult SqliteTrackDatabase::updateTrackFilesystemInfo(
-            TrackId trackId, Timestamp_t lastModified, std::uintmax_t filesize)
+        DbResult SqliteTrackDatabase::updateTrackFilesystemInfo(TrackId trackId, Timestamp_t lastModified, std::uintmax_t filesize)
         {
             if (!isOpen())
             {
-                return DbResult::failure(DbResultStatus::ErrorConnection,
-                                         "DB not open");
+                return DbResult::failure(DbResultStatus::ErrorConnection, "DB not open");
             }
             m_lastErrorMessage.clear();
             std::string sql = "UPDATE Tracks SET last_modified_fs = ?, "
@@ -948,10 +845,8 @@ namespace jucyaudio
             SqliteStatement stmt{m_db, sql};
             if (!stmt.isValid())
             {
-                m_lastErrorMessage =
-                    "Prepare failed for updateFSInfo: " + m_db.getLastError();
-                return DbResult::failure(DbResultStatus::ErrorDB,
-                                         m_lastErrorMessage);
+                m_lastErrorMessage = "Prepare failed for updateFSInfo: " + m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
 
             stmt.addParam(timestampToInt64(lastModified));
@@ -962,17 +857,13 @@ namespace jucyaudio
             {
                 return DbResult::success();
             }
-            m_lastErrorMessage =
-                "Execute failed for updateFSInfo: " + m_db.getLastError();
-            return DbResult::failure(DbResultStatus::ErrorDB,
-                                     m_lastErrorMessage);
+            m_lastErrorMessage = "Execute failed for updateFSInfo: " + m_db.getLastError();
+            return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
         }
 
-        DbResult SqliteTrackDatabase::setTrackPathMissing(TrackId trackId,
-                                                          bool isMissing)
+        DbResult SqliteTrackDatabase::setTrackPathMissing(TrackId trackId, bool isMissing)
         {
-            return updateSingleTrackField<int>(trackId, "is_missing",
-                                               isMissing ? 1 : 0,
+            return updateSingleTrackField<int>(trackId, "is_missing", isMissing ? 1 : 0,
                                                [](SqliteStatement &s, int val)
                                                {
                                                    return s.addParam(val);
@@ -981,8 +872,7 @@ namespace jucyaudio
 
         // GetTracks and GetTotalTrackCount need more complex SQL building based
         // on TrackQueryArgs
-        std::vector<TrackInfo> SqliteTrackDatabase::getTracks(
-            const TrackQueryArgs &args) const
+        std::vector<TrackInfo> SqliteTrackDatabase::getTracks(const TrackQueryArgs &args) const
         {
             if (!isOpen())
                 return {};
@@ -994,8 +884,7 @@ namespace jucyaudio
             SqliteStatementConstruction stmtConstruction{stmt};
             if (!stmtConstruction.createSelectStatement(args))
             {
-                m_lastErrorMessage =
-                    "Failed to create select statement: " + m_db.getLastError();
+                m_lastErrorMessage = "Failed to create select statement: " + m_db.getLastError();
                 return results; // Return empty vector on failure
             }
 
@@ -1011,8 +900,7 @@ namespace jucyaudio
             {
                 m_lastErrorMessage = m_db.getLastError();
             }
-            if (!m_db.getLastError().empty() &&
-                m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
+            if (!m_db.getLastError().empty() && m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
             {
                 m_lastErrorMessage = m_db.getLastError();
             }
@@ -1025,36 +913,29 @@ namespace jucyaudio
             return counter.fetch_add(1, std::memory_order_relaxed);
         }
 
-        std::string generateTempTableName(
-            const std::string &base = "temp_table_")
+        std::string generateTempTableName(const std::string &base = "temp_table_")
         {
             return base + "_" + std::to_string(nextUniqueId());
         }
 
-        void SqliteTrackDatabase::readAllTagTracks(
-            std::vector<TrackInfo> &tracks) const
+        void SqliteTrackDatabase::readAllTagTracks(std::vector<TrackInfo> &tracks) const
         {
             const auto tempTableName{generateTempTableName()};
             m_db.execute("BEGIN TRANSACTION;");
             m_db.execute("DROP TABLE IF EXISTS " + tempTableName + ";");
-            m_db.execute("CREATE TEMP TABLE " + tempTableName +
-                         " (track_id INTEGER PRIMARY KEY);");
+            m_db.execute("CREATE TEMP TABLE " + tempTableName + " (track_id INTEGER PRIMARY KEY);");
             std::unordered_map<TrackId, TrackInfo *> trackMap;
             for (auto &track : tracks)
             {
                 if (track.trackId != -1) // Only insert valid track IDs
                 {
-                    m_db.execute("INSERT INTO " + tempTableName +
-                                 " (track_id) VALUES (" +
-                                 std::to_string(track.trackId) + ");");
-                    trackMap[track.trackId] =
-                        &track; // Store pointer to TrackInfo
+                    m_db.execute("INSERT INTO " + tempTableName + " (track_id) VALUES (" + std::to_string(track.trackId) + ");");
+                    trackMap[track.trackId] = &track; // Store pointer to TrackInfo
                 }
             }
-            SqliteStatement stmt{m_db,
-                                 "SELECT track_id, tag_id FROM TrackTags WHERE "
-                                 "track_id IN (SELECT track_id FROM " +
-                                     tempTableName + ");"};
+            SqliteStatement stmt{m_db, "SELECT track_id, tag_id FROM TrackTags WHERE "
+                                       "track_id IN (SELECT track_id FROM " +
+                                           tempTableName + ");"};
             while (stmt.getNextResult())
             {
                 if (!stmt.isNull(0))
@@ -1064,8 +945,7 @@ namespace jucyaudio
                     if (it != trackMap.end())
                     {
                         TagId tagId = stmt.getInt64(1);
-                        it->second->tag_ids.emplace_back(
-                            tagId); // Add tag_id to the corresponding TrackInfo
+                        it->second->tag_ids.emplace_back(tagId); // Add tag_id to the corresponding TrackInfo
                     }
                 }
             }
@@ -1073,8 +953,7 @@ namespace jucyaudio
             m_db.execute("COMMIT;");
         }
 
-        int SqliteTrackDatabase::getTotalTrackCount(
-            const TrackQueryArgs &args) const
+        int SqliteTrackDatabase::getTotalTrackCount(const TrackQueryArgs &args) const
         {
             if (!isOpen())
                 return -1; // Indicate error
@@ -1083,8 +962,7 @@ namespace jucyaudio
             SqliteStatementConstruction stmtConstruction{stmt};
             if (!stmtConstruction.createCountStatement(args))
             {
-                m_lastErrorMessage =
-                    "Failed to create select statement: " + m_db.getLastError();
+                m_lastErrorMessage = "Failed to create select statement: " + m_db.getLastError();
                 return -1;
             }
             if (stmt.isValid())
@@ -1099,11 +977,9 @@ namespace jucyaudio
         }
 
         // --- Tag Management Implementations ---
-        bool SqliteTrackDatabase::updateTrackTagsFromInsideTransaction(
-            TrackId trackId, const std::vector<TagId> &tagIds)
+        bool SqliteTrackDatabase::updateTrackTagsFromInsideTransaction(TrackId trackId, const std::vector<TagId> &tagIds)
         {
-            SqliteStatement stmt_delete{
-                m_db, "DELETE FROM TrackTags WHERE track_id = ?;"};
+            SqliteStatement stmt_delete{m_db, "DELETE FROM TrackTags WHERE track_id = ?;"};
             if (!stmt_delete.isValid())
             {
                 m_lastErrorMessage = m_db.getLastError();
@@ -1119,9 +995,7 @@ namespace jucyaudio
             for (const auto tagId : tagIds)
             {
                 // Insert new tag associations
-                SqliteStatement stmt_insert{
-                    m_db,
-                    "INSERT INTO TrackTags (track_id, tag_id) VALUES (?, ?);"};
+                SqliteStatement stmt_insert{m_db, "INSERT INTO TrackTags (track_id, tag_id) VALUES (?, ?);"};
                 if (!stmt_insert.isValid())
                 {
                     return false;
@@ -1136,13 +1010,11 @@ namespace jucyaudio
             return true;
         }
 
-        DbResult SqliteTrackDatabase::updateTrackTags(
-            TrackId trackId, const std::vector<TagId> &tagIds)
+        DbResult SqliteTrackDatabase::updateTrackTags(TrackId trackId, const std::vector<TagId> &tagIds)
         {
             if (!isOpen())
             {
-                return DbResult::failure(DbResultStatus::ErrorConnection,
-                                         "DB not open");
+                return DbResult::failure(DbResultStatus::ErrorConnection, "DB not open");
             }
             m_lastErrorMessage.clear();
 
@@ -1150,38 +1022,30 @@ namespace jucyaudio
             if (!m_db.execute("BEGIN TRANSACTION;"))
             {
                 m_lastErrorMessage = m_db.getLastError();
-                return DbResult::failure(DbResultStatus::ErrorDB,
-                                         "Unable to begin transaction: " +
-                                             m_db.getLastError());
+                return DbResult::failure(DbResultStatus::ErrorDB, "Unable to begin transaction: " + m_db.getLastError());
             }
 
             if (!updateTrackTagsFromInsideTransaction(trackId, tagIds))
             {
                 m_db.execute("ROLLBACK;");
-                return DbResult::failure(DbResultStatus::ErrorDB,
-                                         "Failed to update track tags: " +
-                                             m_db.getLastError());
+                return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update track tags: " + m_db.getLastError());
             }
             if (!m_db.execute("COMMIT;"))
             {
                 m_db.execute("ROLLBACK;");
                 m_lastErrorMessage = m_db.getLastError();
-                return DbResult::failure(DbResultStatus::ErrorDB,
-                                         "Failed to commit transaction: " +
-                                             m_db.getLastError());
+                return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit transaction: " + m_db.getLastError());
             }
             return DbResult::success();
         }
 
-        std::vector<TagId> SqliteTrackDatabase::getTrackTags(
-            TrackId trackId) const
+        std::vector<TagId> SqliteTrackDatabase::getTrackTags(TrackId trackId) const
         {
             if (!isOpen())
                 return {};
             m_lastErrorMessage.clear();
             std::vector<TagId> tags;
-            SqliteStatement stmt{
-                m_db, "SELECT tag_id FROM TrackTags WHERE track_id = ?;"};
+            SqliteStatement stmt{m_db, "SELECT tag_id FROM TrackTags WHERE track_id = ?;"};
             if (!stmt.isValid())
             {
                 m_lastErrorMessage = m_db.getLastError();
@@ -1196,8 +1060,7 @@ namespace jucyaudio
                     tags.emplace_back(stmt.getInt64(0));
                 }
             }
-            if (!m_db.getLastError().empty() &&
-                m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
+            if (!m_db.getLastError().empty() && m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
             {
                 m_lastErrorMessage = m_db.getLastError();
             }
@@ -1223,8 +1086,7 @@ namespace jucyaudio
                     tags.emplace_back(stmt.getInt64(0));
                 }
             }
-            if (!m_db.getLastError().empty() &&
-                m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
+            if (!m_db.getLastError().empty() && m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
             {
                 m_lastErrorMessage = m_db.getLastError();
             }
