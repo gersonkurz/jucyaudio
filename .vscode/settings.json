@@ -1,4 +1,3 @@
-// .vscode/settings.json
 {
     "cmake.configureArgs": [
         "-DCMAKE_BUILD_TYPE=Debug",
@@ -6,77 +5,36 @@
     ],
     "cmake.buildDirectory": "${workspaceFolder}/build",
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "C_Cpp.intelliSenseEngine": "default",
+    "C_Cpp.errorSquiggles": "enabled",
+    "C_Cpp.default.intelliSenseMode": "macos-clang-arm64",
+    "C_Cpp.default.cppStandard": "c++20",
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/**",
+        "${workspaceFolder}/JuceLibraryCode",
+        "/Users/gersonkurz/development/jucyaudio/jucyaudio/build/_deps/juce-src/modules",
+        "/Users/gersonkurz/development/aubio_install_macos/include",
+        "/Users/gersonkurz/development/spdlog/include",
+        "/Users/gersonkurz/development/taglib_install/include",
+        "/Users/gersonkurz/development/tomlplusplus-master/include",
+        "/opt/homebrew/include"
+    ],
+    "C_Cpp.default.defines": [
+        "JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1",
+        "JUCE_STRICT_REFCOUNTEDPOINTER=1",
+        "JUCE_APPLICATION_NAME_STRING=\"jucyaudio\"",
+        "JUCE_APPLICATION_VERSION_STRING=\"0.2.0\"",
+        "DEBUG=1",
+        "_DEBUG=1"
+    ],
     "files.associations": {
-        "*.juce": "xml"
-    }
-}
-
-// .vscode/tasks.json
-{
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "CMake: Configure",
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "-B", "build",
-                "-DCMAKE_BUILD_TYPE=Debug",
-                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
-            ],
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared"
-            }
-        },
-        {
-            "label": "CMake: Build",
-            "type": "shell",
-            "command": "cmake",
-            "args": [
-                "--build", "build",
-                "--config", "Debug",
-                "-j", "8"
-            ],
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            },
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared"
-            },
-            "dependsOn": "CMake: Configure"
-        },
-        {
-            "label": "Run App",
-            "type": "shell",
-            "command": "open",
-            "args": ["${workspaceFolder}/build/jucyaudio_artefacts/Debug/jucyaudio.app"],
-            "group": "test",
-            "dependsOn": "CMake: Build"
-        }
-    ]
-}
-
-// .vscode/launch.json
-{
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "Debug jucyaudio",
-            "type": "lldb",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/jucyaudio_artefacts/Debug/jucyaudio.app/Contents/MacOS/jucyaudio",
-            "args": [],
-            "cwd": "${workspaceFolder}",
-            "preLaunchTask": "CMake: Build",
-            "console": "integratedTerminal"
-        }
-    ]
+        "*.juce": "xml",
+        "*.h": "cpp",
+        "*.hpp": "cpp",
+        "*.cpp": "cpp",
+        "*.mm": "objective-cpp"
+    },
+    "cmake.sourceDirectory": "${workspaceFolder}",
+    "cmake.generator": "Ninja"
 }

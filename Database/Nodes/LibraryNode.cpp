@@ -190,6 +190,17 @@ namespace jucyaudio
             return &m_tracks[targetIndex];
         }
 
+        void LibraryNode::refreshCache(bool flushCache) const
+        {
+            // if the cache is invalid, or the rowIndex is out of bounds, we need to retrieve the rows
+            const auto refreshCache = !m_bCacheInitialized || flushCache;
+            if (refreshCache)
+            {
+                m_tracks = m_library.getTracks(m_queryArgs);
+                m_bCacheInitialized = true;
+            }
+        }
+
         const TrackQueryArgs *LibraryNode::getQueryArgs() const
         {
             return &m_queryArgs;

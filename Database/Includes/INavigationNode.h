@@ -46,6 +46,15 @@ namespace jucyaudio
             /// If not implemented, it can be a no-op.
             virtual void refreshChildren() = 0;
 
+            /// @brief Refresh the cache of this navigation node.
+            /// This method is called to refresh the cached data of the node.
+            /// If `flushCache` is true, it should clear the existing cache and re-fetch the data.
+            /// If `flushCache` is false, it should only update the cache if it is invalid or outdated.
+            /// @param flushCache If true, the cache should be cleared and re-fetched; if false, only update if necessary.
+            /// @note This method is declared const because conceptually it does not modify the state of the node,
+            /// but it may update internal caches or data structures.
+            virtual void refreshCache(bool flushCache = false) const = 0;
+
             virtual INavigationNode *get(const std::string &name) const = 0;
 
             /// @brief Get a navigation node by its unique ID.

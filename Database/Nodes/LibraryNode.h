@@ -40,6 +40,7 @@ namespace jucyaudio
             bool setSortOrder(const std::vector<SortOrderInfo> &sortOrders) override;
             std::vector<SortOrderInfo> getCurrentSortOrder() const override;
             const TrackQueryArgs *getQueryArgs() const override;
+            void refreshCache(bool flushCache = false) const override;
 
         private:
             mutable std::vector<TrackInfo> m_tracks;

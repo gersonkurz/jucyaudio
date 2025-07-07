@@ -55,6 +55,9 @@ namespace jucyaudio
             int64_t getUniqueId() const override;
             INavigationNode *get(const std::string &name) const override;
             INavigationNode *get(int64_t uniqueId) const override;
+            void refreshCache(bool flushCache = false) const override
+            {
+            }
 
         private:
             INavigationNode *const m_parent;

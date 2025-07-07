@@ -147,7 +147,18 @@ namespace jucyaudio
                     auto pme = const_cast<TypedContainerNode<T> *>(this);
                     pme->refreshChildren();
                 }
-                return true;
+                return !m_children.empty();
+            }
+
+            void refreshCache(bool flushCache = false) const override
+            {
+                spdlog::debug("Refreshing cache for TypedContainerNode: {}",
+                             getName());
+                if (flushCache || m_children.empty())
+                {
+                    auto pme = const_cast<TypedContainerNode<T> *>(this);
+                    pme->refreshChildren();
+                }
             }
 
         protected:

@@ -35,12 +35,25 @@ namespace jucyaudio
             m_tableListBox.setOutlineThickness(1);
             m_tableListBox.setHeaderHeight(30);
             m_tableListBox.setMultipleSelectionEnabled(true);
+            startTimer(2000);
         }
 
         DataViewComponent::~DataViewComponent()
         {
+            stopTimer();
         }
 
+        void DataViewComponent::timerCallback()
+        {
+            // This method is called automatically by the JUCE message thread every 2 seconds.
+            if(m_currentNode)
+            {
+                // If the current node is set, we can refresh the view.
+                m_currentNode->refreshCache(true);
+                m_tableListBox.updateContent();
+                m_tableListBox.repaint();
+            }
+        }
         void DataViewComponent::resized()
         {
             m_tableListBox.setBounds(getLocalBounds());

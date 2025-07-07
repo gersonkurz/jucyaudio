@@ -145,6 +145,19 @@ namespace jucyaudio
                 }
             }
 
+            void refreshCache(bool flushCache = false) const override
+            {
+                // if the cache is invalid, or the rowIndex is out of bounds, we
+                // need to retrieve the rows
+                if (flushCache || !m_bCacheInitialized)
+                {
+                    m_overview.refreshCache(m_library2, m_queryArgs, m_objects);
+                    m_bCacheInitialized = true;
+                }
+            }
+
+
+
             void refreshData()
             {
                 spdlog::info("Refreshing data for overview node: {}",
@@ -172,17 +185,6 @@ namespace jucyaudio
             }
 
         private:
-            void refreshCache(bool flushCache = false) const
-            {
-                // if the cache is invalid, or the rowIndex is out of bounds, we
-                // need to retrieve the rows
-                if (flushCache || !m_bCacheInitialized)
-                {
-                    m_overview.refreshCache(m_library2, m_queryArgs, m_objects);
-                    m_bCacheInitialized = true;
-                }
-            }
-
             TrackLibrary &m_library2;
             mutable TrackQueryArgs m_queryArgs;
             mutable std::vector<ITEM_TYPE> m_objects;

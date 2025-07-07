@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Database/Includes/Constants.h>
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Includes/TrackInfo.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -13,14 +14,14 @@ namespace jucyaudio
         // Forward declaration
         class MainComponent;
         // Using directives for convenience within this UI namespace
-        using database::DataAction;
+        using jucyaudio::database::DataAction;
         using database::DataColumn; // For m_currentDataColumns
         using database::INavigationNode; // For m_currentNode
 
         // Alias for the row action callback function type
         using RowActionCallback = std::function<void(RowIndex_t rowNumber, DataAction action, const juce::Point<int> &screenPosition)>;
 
-        class DataViewComponent : public juce::Component, private juce::TableListBoxModel
+        class DataViewComponent : public juce::Component, private juce::TableListBoxModel, private juce::Timer
         {
         public:
             explicit DataViewComponent(MainComponent &owner);
@@ -48,6 +49,9 @@ namespace jucyaudio
             std::vector<database::TrackId> getSelectedTrackIds() const; 
             
         private:
+            // --- juce::Timer overrides ---
+            void timerCallback() override;
+
             // --- juce::TableListBoxModel overrides ---
             int getNumRows() override;
             void paintRowBackground(juce::Graphics &g, int rowNumber, int width, int height, bool rowIsSelected) override;
