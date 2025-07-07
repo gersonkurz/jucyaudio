@@ -67,6 +67,7 @@ namespace jucyaudio
             Delete,         // Delete the item
             CreateMix,     // Create a mix from the item(s) selected
             RemoveMix,
+            ExportMix, // Export mix to file
         };
 
         using DataActions = std::vector<DataAction>;

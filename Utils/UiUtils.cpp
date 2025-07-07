@@ -24,6 +24,8 @@ namespace jucyaudio
                 return "Create Mix";
             case database::DataAction::RemoveMix:
                 return "Remove Mix";
+            case database::DataAction::ExportMix:
+                return "Export Mix";
             case database::DataAction::ShowDetails:
                 return "Details";
             case database::DataAction::EditMetadata:

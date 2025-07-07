@@ -1,24 +1,43 @@
 #pragma once
 
+#include <Audio/AudioLibrary.h>          // For jucyaudio::AudioLibrary
 #include <Database/Includes/Constants.h> // For jucyaudio::database::MixId
 #include <Database/Includes/MixInfo.h>   // For jucyaudio::database::MixId
 #include <Database/Includes/TrackInfo.h> // For jucyaudio::database::TrackInfo
 #include <Database/TrackLibrary.h>       // For jucyaudio::TrackLibrary
-#include <Audio/AudioLibrary.h>         // For jucyaudio::AudioLibrary
-#include <juce_gui_basics/juce_gui_basics.h>
-#include <juce_graphics/juce_graphics.h>
 #include <filesystem>
 #include <functional>
+#include <juce_graphics/juce_graphics.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
+
+#undef EXPORT_FILE_FROM_CREATE_MIX_DIALOG
 
 namespace jucyaudio
 {
     namespace ui
     {
+        class CreateMixTask final : public database::ILongRunningTask
+        {
+        public:
+            CreateMixTask(const database::MixInfo& mixInfo, const audio::IMixExporter &mixExporter, database::TrackLibrary &trackLibrary,
+                          const std::filesystem::path &targetExportPath);
+            void run(database::ProgressCallback progressCb, database::CompletionCallback completionCb,
+                     [[maybe_unused]] std::atomic<bool> &shouldCancel) override;
+
+            bool m_bExported{false};
+
+        private:
+            MixId m_mixId;
+            std::filesystem::path m_targetExportPath;
+            const audio::IMixExporter &m_mixExporter;
+            database::TrackLibrary &m_trackLibrary;
+        };
+
         class CreateMixDialogComponent : public juce::Component, public juce::Button::Listener, public juce::TextEditor::Listener
         {
         public:
-            using OnMixCreatedAndExportedCallback = std::function<void(bool /*success*/, MixId /*newMixId*/)>;
+            using OnMixCreatedAndExportedCallback = std::function<void(bool /*success*/, const database::MixInfo & /*newMixInfo */)>;
 
             CreateMixDialogComponent(audio::AudioLibrary &audioLibrary, database::TrackLibrary &trackLibrary,
                                      const std::vector<database::TrackInfo> &tracksForMix, OnMixCreatedAndExportedCallback onOkCallback);
@@ -38,13 +57,13 @@ namespace jucyaudio
 
         private:
             void closeThisDialog(bool success);
-            void handleCreateAndExport();
+            void handleCreateMix();
             void handleCancel();
             juce::String generateDefaultMixName();
-            void launchExportFileChooserAndProcess(MixId mixId, const juce::String &mixName); // Renamed for clarity
-            void onFileChooserModalDismissed(const juce::FileChooser &chooser,
-                                             MixId mixId,        // Pass mixId
-                                             const juce::String &mixName); // Pass mixName
+#ifdef EXPORT_FILE_FROM_CREATE_MIX_DIALOG
+            void launchExportFileChooserAndProcess(database::MixInfo mixInfo); // Renamed for clarity
+            void onFileChooserModalDismissed(const juce::FileChooser &chooser, database::MixInfo mixInfo);
+#endif
 
             audio::AudioLibrary &m_audioLibrary;
             database::TrackLibrary &m_trackLibrary;

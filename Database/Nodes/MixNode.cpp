@@ -9,7 +9,7 @@ namespace jucyaudio
     namespace database
     {
         // Careful: these are actions for the *MixNode*, not the tracks shown in the mix.
-        const DataActions MixNodeActions{DataAction::RemoveMix};
+        const DataActions MixNodeActions{DataAction::RemoveMix, DataAction::ExportMix};
 
         MixNode::MixNode(INavigationNode *parent, TrackLibrary &library, const MixInfo &mixInfo)
             : LibraryNode{parent, library, mixInfo.name},

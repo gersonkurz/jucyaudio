@@ -605,7 +605,10 @@ namespace jucyaudio
                 createMix();
                 break;
             case DataAction::RemoveMix:
-                removeMix(selectedNode);
+                onRemoveMix(selectedNode);
+                break;
+            case DataAction::ExportMix:
+                onExportMix(selectedNode);
                 break;
             case DataAction::None:
             default:
@@ -628,8 +631,9 @@ namespace jucyaudio
                 createMix();
                 break;
             case DataAction::RemoveMix:
-                spdlog::warn("DataAction::RemoveMix not supported in "
-                             "handleRowActionFromDataView()");
+            case DataAction::ExportMix:
+                spdlog::warn("Unsupported action '{}' for row {}. This should not happen.",
+                             static_cast<int>(action), rowIndex);
                 break;
             case DataAction::ShowDetails:
                 m_mainPlaybackAndStatusPanel.setStatusMessage("Show details for: " + std::to_string(rowIndex), false);
@@ -928,9 +932,56 @@ namespace jucyaudio
             }
         }
 
-        void MainComponent::removeMix(INavigationNode *selectedNode)
+        void MainComponent::onExportMix(INavigationNode *selectedNode)
         {
-            assert(selectedNode != nullptr && "Selected node should not be null in removeMix()");
+            assert(selectedNode != nullptr && "Selected node should not be null in onExportMix()");
+
+            const auto mixNode{static_cast<MixNode *>(selectedNode)};
+            const auto mixInfo{mixNode->getMixInfo()};
+
+            const auto title{ std::format("Export Mix '{}' As...", mixInfo.name)};
+            // Store the FileChooser in a member unique_ptr to keep it alive
+            m_activeFileChooser = std::make_unique<juce::FileChooser>(title, juce::File::getSpecialLocation(juce::File::userMusicDirectory),
+                                                                      "*.mp3;*.wav", true, false, this);
+
+            int chooserFlags =
+                juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting;
+
+            // Use std::bind (or a small capturing lambda) to call our member function
+            // We need to pass mixId and mixName to the callback.
+            m_activeFileChooser->launchAsync(chooserFlags,
+                                             // This lambda is small and just forwards to the member function, passing captured state.
+                                             // It is copyable.
+                                             [this, mixInfo](const juce::FileChooser &chooser)
+                                             {
+                                                 this->onExportMixFileChooserModalDismissed(chooser, mixInfo);
+                                             });
+
+        }
+
+        void MainComponent::onExportMixFileChooserModalDismissed(const juce::FileChooser &chooser, database::MixInfo mixInfo)
+        {
+            const juce::File chosenFile = chooser.getResult();
+
+            // Release the FileChooser now that its job is done
+            m_activeFileChooser.reset();
+
+            if (chosenFile == juce::File{}) // User cancelled
+            {
+                return;
+            }
+
+            std::filesystem::path targetExportPath = chosenFile.getFullPathName().toStdString();
+            spdlog::info("Exporting mix ID: {} (Name: '{}') to: {}", mixInfo.mixId, mixInfo.name, pathToString(targetExportPath));
+
+            auto *task = new CreateMixTask(mixInfo, m_audioLibrary.getMixExporter(), m_trackLibrary, targetExportPath);
+            TaskDialog::launch("Mix Creation In Progress", task, 500, this);
+            task->release(REFCOUNT_DEBUG_ARGS);
+        }
+
+        void MainComponent::onRemoveMix(INavigationNode *selectedNode)
+        {
+            assert(selectedNode != nullptr && "Selected node should not be null in onRemoveMix()");
 
             const auto mixNode{static_cast<MixNode *>(selectedNode)};
             const auto mixInfo{mixNode->getMixInfo()};
@@ -984,32 +1035,12 @@ namespace jucyaudio
                 trackIdsForCleanup.push_back(trackInfo.trackId);
             }
 
-            auto cbOnMixCreatedInDatabase = [](bool initiationSuccess, MixId newMixId)
-            {
-                if (initiationSuccess && newMixId != -1)
-                {
-                    spdlog::info("MainComponent: Mix {} defined by CreateMixDialog.", newMixId);
-
-                    // 1. Refresh UI to show the new mix in lists/trees
-                    //    This is essential so the user sees the mix they just
-                    //    defined. (Assuming a method exists to refresh the part
-                    //    of the navigation tree showing mixes)
-                    // m_navigationPanel.updateMixNodeView(); // Or whatever
-                    // your refresh mechanism is
-                }
-                else
-                {
-                    spdlog::error("MainComponent: CreateMixDialog reported failure in "
-                                  "mix definition stage for Mix ID (if any): {}.",
-                                  newMixId);
-                    // CreateMixDialogComponent would have shown an error to the
-                    // user. MainComponent might not need to do much more here.
-                }
-            };
-
             // The CreateMixDialogComponent will be managed by
             // DialogWindow::LaunchOptions
-            auto *dialog = new ui::CreateMixDialogComponent(m_audioLibrary, m_trackLibrary, selectedTracks, cbOnMixCreatedInDatabase);
+            auto *dialog = new ui::CreateMixDialogComponent(m_audioLibrary, m_trackLibrary, selectedTracks, [this](bool success, const MixInfo &mixInfo)
+            {
+                onMixCreatedCallback(success, mixInfo);
+            });
 
             juce::DialogWindow::LaunchOptions launchOptions;
             launchOptions.content.setOwned(dialog); // DialogWindow takes ownership
@@ -1017,6 +1048,29 @@ namespace jucyaudio
             launchOptions.escapeKeyTriggersCloseButton = true;
             launchOptions.resizable = false; // Or true if you prefer
             launchOptions.launchAsync();
+        }
+
+
+        void MainComponent::onMixCreatedCallback(bool success, const MixInfo& mixInfo)
+        {
+            if (success)
+            {
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Mix '" + mixInfo.name + "' created successfully.", false);
+
+                if (const auto mixesRootNode{m_rootNavigationNode->getMixesRootNode()})
+                {
+                    m_navigationPanel.refreshNode(mixesRootNode);
+                    if (const auto newMixNode{mixesRootNode->get(mixInfo.mixId)})
+                    {
+                        m_navigationPanel.selectNode(newMixNode);
+                        newMixNode->release(REFCOUNT_DEBUG_ARGS);
+                    }
+                }
+            }
+            else
+            {
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Failed to create mix: " + mixInfo.name, true);
+            }
         }
 
         void MainComponent::requestPlayOrPlaySelection()

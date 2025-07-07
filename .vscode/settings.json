@@ -33,7 +33,14 @@
         "*.h": "cpp",
         "*.hpp": "cpp",
         "*.cpp": "cpp",
-        "*.mm": "objective-cpp"
+        "*.mm": "objective-cpp",
+        "osmemory": "cpp",
+        "any": "cpp",
+        "bitset": "cpp",
+        "memory": "cpp",
+        "future": "cpp",
+        "optional": "cpp",
+        "random": "cpp"
     },
     "cmake.sourceDirectory": "${workspaceFolder}",
     "cmake.generator": "Ninja"

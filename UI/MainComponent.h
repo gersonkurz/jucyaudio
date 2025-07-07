@@ -62,8 +62,15 @@ namespace jucyaudio
             void playDataRow(RowIndex_t rowIndex);
             void deleteSelectedRows();
             void createMix();
-            void removeMix(database::INavigationNode *selectedNode);
+
+            // --- remove mix functionality ---
+            void onRemoveMix(database::INavigationNode *selectedNode);
             void onDoRemoveMix(database::INavigationNode *selectedNode, const database::MixInfo &mixToDelete, int result);
+
+            // --- export mix functionality ---
+            void onExportMix(database::INavigationNode *selectedNode);
+            void onExportMixFileChooserModalDismissed(const juce::FileChooser &chooser, database::MixInfo mixInfo);
+            std::unique_ptr<juce::FileChooser> m_activeFileChooser;
 
             void requestPlayOrPlaySelection();
             void syncPlaybackUIToControllerState();
@@ -82,6 +89,7 @@ namespace jucyaudio
             bool createWorkingSetFromNode(const database::INavigationNode *node);
             void onCreateWorkingSetFromNodeCallback(const juce::String &name, const database::INavigationNode *node);
             void onCommonCreateWorkingSetCallback(bool success, const database::WorkingSetInfo &workingSetInfo);
+            void onMixCreatedCallback(bool success, const database::MixInfo& mixInfo);
             bool onHandleCreateWorkingSetDialog(int64_t trackCount, std::function<void(const juce::String &)> callback);
 
             database::TrackLibrary m_trackLibrary;
