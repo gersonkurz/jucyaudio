@@ -50,19 +50,19 @@ namespace jucyaudio
             return nullptr;
         }
 
-        RootNode::RootNode(TrackLibrary &library)
+        RootNode::RootNode()
             : BaseNode{nullptr, "Root"}
         {
-            m_children.emplace_back(new LibraryNode{this, library});
+            m_children.emplace_back(new LibraryNode{this});
             m_children.emplace_back(new TypedContainerNode<LogicalFolderNode>{
-                this, library, getFoldersRootNodeName(),
+                this, getFoldersRootNodeName(),
                 &LogicalFolderNode::createChildren});
             m_children.emplace_back(
                 new TypedOverviewNode<WorkingSetInfo, WorkingSetNode>{
-                    this, library, getWorkingSetsRootNodeName(),
+                    this, getWorkingSetsRootNodeName(),
                     &WorkingSetNode::createChildren});
             m_children.emplace_back(new TypedOverviewNode<MixInfo, MixNode>{
-                this, library, getMixesRootNodeName(), &MixNode::createChildren});
+                this, getMixesRootNodeName(), &MixNode::createChildren});
         }
 
         bool RootNode::getChildren(std::vector<INavigationNode *> &outChildren)

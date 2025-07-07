@@ -49,7 +49,7 @@ namespace jucyaudio
         class ExportMixImplementation : public MixProjectLoader
         {
         public:
-            ExportMixImplementation(MixId mixId, const TrackLibrary &trackLibrary, const std::filesystem::path &targetFilepath,
+            ExportMixImplementation(MixId mixId, const std::filesystem::path &targetFilepath,
                                     MixExporterProgressCallback progressCallback);
             virtual ~ExportMixImplementation() = default;
             bool run();

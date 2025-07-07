@@ -24,13 +24,12 @@ namespace jucyaudio
         {
         public:
             explicit TypedOverviewNode<ITEM_TYPE, NODE_TYPE>(
-                INavigationNode *root, TrackLibrary &library,
+                INavigationNode *root, 
                 std::string_view name,
                 TypedContainerNode<NODE_TYPE>::ClientCreationMethod
                     clientCreationMethod)
-                : TypedContainerNode<NODE_TYPE>{root, library, name,
-                                                clientCreationMethod},
-                  m_library2{library}
+                : TypedContainerNode<NODE_TYPE>{root, name,
+                                                clientCreationMethod}
             {
             }
 
@@ -105,7 +104,7 @@ namespace jucyaudio
                 if (rowIndex < m_objects.size())
                 {
                     const auto &ws = m_objects[rowIndex];
-                    if (!m_overview.removeObject(m_library2, ws))
+                    if (!m_overview.removeObject(ws))
                     {
                         spdlog::error(
                             "Failed to remove object at row index: {}",
@@ -151,7 +150,7 @@ namespace jucyaudio
                 // need to retrieve the rows
                 if (flushCache || !m_bCacheInitialized)
                 {
-                    m_overview.refreshCache(m_library2, m_queryArgs, m_objects);
+                    m_overview.refreshCache(m_queryArgs, m_objects);
                     m_bCacheInitialized = true;
                 }
             }
@@ -185,7 +184,6 @@ namespace jucyaudio
             }
 
         private:
-            TrackLibrary &m_library2;
             mutable TrackQueryArgs m_queryArgs;
             mutable std::vector<ITEM_TYPE> m_objects;
             mutable bool m_bCacheInitialized{false};

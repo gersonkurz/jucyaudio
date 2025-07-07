@@ -13,7 +13,7 @@ namespace jucyaudio
         class MixNode final : public LibraryNode
         {
         public:
-            explicit MixNode(INavigationNode *parent, TrackLibrary &library, const MixInfo &mixInfo);
+            explicit MixNode(INavigationNode *parent, const MixInfo &mixInfo);
             ~MixNode() override = default;
 
             const MixInfo& getMixInfo() const
@@ -26,7 +26,7 @@ namespace jucyaudio
                 return m_mixInfo.mixId;
             }
 
-            static void createChildren(INavigationNode *parent, TrackLibrary &library, std::vector<INavigationNode *> &children);
+            static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
 
         private:
             const DataActions &getNodeActions() const override;

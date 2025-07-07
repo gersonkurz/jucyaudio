@@ -58,7 +58,7 @@ namespace jucyaudio
             juce::File dbJuceFile{appDataDir.getChildFile("jucyaudio_library_dev.sqlite")};
             std::filesystem::path dbPath{dbJuceFile.getFullPathName().toStdString()};
 
-            if (m_trackLibrary.initialise(dbPath))
+            if (theTrackLibrary.initialise(dbPath))
             {
                 spdlog::info("TrackLibrary initialised successfully by "
                              "MainComponent for DB: {}",
@@ -68,10 +68,10 @@ namespace jucyaudio
             {
                 spdlog::error("TrackLibrary FAILED to initialise from "
                               "MainComponent. Error: {}",
-                              m_trackLibrary.getLastError());
+                              theTrackLibrary.getLastError());
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Engine Error",
                                                        "TrackLibrary failed to initialize.\nDB Path: " + dbJuceFile.getFullPathName() +
-                                                           "\nError: " + juce::String(m_trackLibrary.getLastError()));
+                                                           "\nError: " + juce::String(theTrackLibrary.getLastError()));
             }
 
             // --- Add and make visible all child components ---
@@ -141,7 +141,7 @@ namespace jucyaudio
             };
 
             // --- Initialize Navigation ---
-            m_rootNavigationNode = static_cast<RootNode *>(m_trackLibrary.getRootNavigationNode()); // Returns retained
+            m_rootNavigationNode = static_cast<RootNode *>(theTrackLibrary.getRootNavigationNode()); // Returns retained
             if (m_rootNavigationNode)
             {
                 m_navigationPanel.setRootNode(m_rootNavigationNode);
@@ -301,7 +301,7 @@ namespace jucyaudio
 
             // Create and register our new BPM analysis task.
             // Note: the service will retain() the task, so we can release our initial reference.
-            auto *bpmTask = new database::background_tasks::BpmAnalysis{m_trackLibrary};
+            auto *bpmTask = new database::background_tasks::BpmAnalysis{};
             database::theBackgroundTaskService.registerTask(bpmTask);
             bpmTask->release(REFCOUNT_DEBUG_ARGS);
         }
@@ -569,6 +569,7 @@ namespace jucyaudio
                     {
                         m_currentMainViewComponent = &m_mixEditorComponent;
                         m_currentMainView = MainViewType::MixEditor;
+                        m_mixEditorComponent.loadMix(m_currentSelectedDataNode->getUniqueId()); // Load the mix data
                         m_mixEditorComponent.setVisible(true);
                     }
                     else
@@ -898,7 +899,7 @@ namespace jucyaudio
         void MainComponent::onCreateWorkingSetFromTrackIdsCallback(const juce::String &name, std::vector<TrackId> trackIds)
         {
             WorkingSetInfo workingSetInfo;
-            onCommonCreateWorkingSetCallback(m_trackLibrary.getWorkingSetManager().createWorkingSetFromTrackIds(trackIds, name.toStdString(), workingSetInfo),
+            onCommonCreateWorkingSetCallback(theTrackLibrary.getWorkingSetManager().createWorkingSetFromTrackIds(trackIds, name.toStdString(), workingSetInfo),
                                              workingSetInfo);
         }
 
@@ -940,7 +941,7 @@ namespace jucyaudio
             assert(node != nullptr);
             WorkingSetInfo workingSetInfo;
             onCommonCreateWorkingSetCallback(
-                m_trackLibrary.getWorkingSetManager().createWorkingSetFromQuery(*node->getQueryArgs(), name.toStdString(), workingSetInfo), workingSetInfo);
+                theTrackLibrary.getWorkingSetManager().createWorkingSetFromQuery(*node->getQueryArgs(), name.toStdString(), workingSetInfo), workingSetInfo);
         }
 
         // helper method
@@ -970,7 +971,7 @@ namespace jucyaudio
             if (result == 1) // User clicked "Delete Mix" (OK button)
             {
                 spdlog::info("User confirmed deletion for mix ID: {} [{}]", mixToDelete.mixId, mixToDelete.name);
-                const bool removed = m_trackLibrary.getMixManager().removeMix(mixToDelete.mixId);
+                const bool removed = theTrackLibrary.getMixManager().removeMix(mixToDelete.mixId);
                 if (removed)
                 {
                     m_mainPlaybackAndStatusPanel.setStatusMessage(std::format("Mix {} successfully removed.", mixToDelete.name), false);
@@ -1041,7 +1042,7 @@ namespace jucyaudio
             std::filesystem::path targetExportPath = chosenFile.getFullPathName().toStdString();
             spdlog::info("Exporting mix ID: {} (Name: '{}') to: {}", mixInfo.mixId, mixInfo.name, pathToString(targetExportPath));
 
-            auto *task = new CreateMixTask(mixInfo, m_audioLibrary.getMixExporter(), m_trackLibrary, targetExportPath);
+            auto *task = new CreateMixTask(mixInfo, m_audioLibrary.getMixExporter(), targetExportPath);
             TaskDialog::launch("Mix Creation In Progress", task, 500, this);
             task->release(REFCOUNT_DEBUG_ARGS);
         }
@@ -1109,7 +1110,7 @@ namespace jucyaudio
 
             // The CreateMixDialogComponent will be managed by
             // DialogWindow::LaunchOptions
-            auto *dialog = new ui::CreateMixDialogComponent(m_audioLibrary, m_trackLibrary, selectedTracks,
+            auto *dialog = new ui::CreateMixDialogComponent(m_audioLibrary, selectedTracks,
                                                             [this](bool success, const MixInfo &mixInfo)
                                                             {
                                                                 onMixCreatedCallback(success, mixInfo);
@@ -1172,7 +1173,7 @@ namespace jucyaudio
 
         bool MainComponent::onShowScanDialog()
         {
-            auto *scanDialog = new ScanDialogComponent{m_trackLibrary};
+            auto *scanDialog = new ScanDialogComponent{};
 
             juce::DialogWindow::LaunchOptions launchOptions;
             launchOptions.content.setOwned(scanDialog);
@@ -1301,23 +1302,19 @@ namespace jucyaudio
             class DatabaseMaintenanceTask final : public ILongRunningTask
             {
             public:
-                DatabaseMaintenanceTask(TrackLibrary &trackLibrary)
-                    : ILongRunningTask{"Performing Database Maintenance", false},
-                      m_trackLibrary{trackLibrary}
+                DatabaseMaintenanceTask()
+                    : ILongRunningTask{"Performing Database Maintenance", false}
                 {
                 }
 
                 void run([[maybe_unused]] ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel) override
                 {
-                    m_trackLibrary.runMaintenanceTasks(shouldCancel);
+                    theTrackLibrary.runMaintenanceTasks(shouldCancel);
                     completionCb(true, "Database maintenance completed successfully.");
                 }
-
-            private:
-                TrackLibrary &m_trackLibrary;
             };
 
-            auto *task = new DatabaseMaintenanceTask{m_trackLibrary};
+            auto *task = new DatabaseMaintenanceTask{};
             TaskDialog::launch("Database Maintenance", task, {}, this);
             task->release(REFCOUNT_DEBUG_ARGS);
             return true;

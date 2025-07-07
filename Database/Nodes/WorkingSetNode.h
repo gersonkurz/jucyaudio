@@ -11,7 +11,7 @@ namespace jucyaudio
         class WorkingSetNode final : public LibraryNode
         {
         public:
-            explicit WorkingSetNode(INavigationNode *parent, TrackLibrary &library, const WorkingSetInfo& workingSet);
+            explicit WorkingSetNode(INavigationNode *parent, const WorkingSetInfo& workingSet);
             ~WorkingSetNode() override = default;
 
             int64_t getUniqueId() const override
@@ -19,7 +19,7 @@ namespace jucyaudio
                 return m_queryArgs.workingSetId;
             }
 
-            static void createChildren(INavigationNode *parent, TrackLibrary &library, std::vector<INavigationNode *> &children);
+            static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
         };
     } // namespace database
 } // namespace jucyaudio

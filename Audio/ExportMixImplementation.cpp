@@ -45,9 +45,9 @@ namespace jucyaudio
             }
         }
 
-        ExportMixImplementation::ExportMixImplementation(MixId mixId, const TrackLibrary &trackLibrary, const std::filesystem::path &targetFilepath,
+        ExportMixImplementation::ExportMixImplementation(MixId mixId, const std::filesystem::path &targetFilepath,
                                                          MixExporterProgressCallback progressCallback)
-            : MixProjectLoader{mixId, trackLibrary},
+            : MixProjectLoader{},
               m_progressCallback{progressCallback},
               m_targetFilepath{targetFilepath},
               m_totalMixDurationMs{Duration_t::zero()}

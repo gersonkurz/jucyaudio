@@ -13,8 +13,10 @@ namespace jucyaudio
 {
     namespace database
     {
+        TrackLibrary theTrackLibrary;
+
         TrackLibrary::TrackLibrary()
-            : m_rootNavNode{new RootNode{*this}}
+            : m_rootNavNode{new RootNode{}}
               // Create a root node with no children
         {
             spdlog::debug("TrackLibrary created.");

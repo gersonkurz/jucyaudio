@@ -23,12 +23,10 @@ namespace jucyaudio
 
             // @brief Exports a defined mix to an audio file.
             // @param mixId The ID of the mix to export (fetches definition from IMixManager).
-            // @param trackLibrary A reference to the track library
             // @param targetFilepath The full path where the exported audio file should be saved.
             // @param progressCallback Optional callback for progress updates.
             // @return True if export was successful, false otherwise.
-            virtual bool exportMixToFile(MixId mixId, const database::TrackLibrary& trackLibrary,
-                                         const std::filesystem::path &targetFilepath,
+            virtual bool exportMixToFile(MixId mixId, const std::filesystem::path &targetFilepath,
                                          MixExporterProgressCallback progressCallback = nullptr
                                          // Potentially add format parameters later
                                          ) const = 0;

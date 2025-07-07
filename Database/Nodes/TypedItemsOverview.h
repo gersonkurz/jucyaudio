@@ -38,11 +38,11 @@ namespace jucyaudio
             {
                 return "???";
             }
-            bool removeObject(const TrackLibrary &library, const ITEM_TYPE &wsi) const
+            bool removeObject(const ITEM_TYPE &wsi) const
             {
                 return false;
             }
-            void refreshCache(const TrackLibrary &library, const TrackQueryArgs &args, std::vector<ITEM_TYPE> &data) const
+            void refreshCache(const TrackQueryArgs &args, std::vector<ITEM_TYPE> &data) const
             {
             }
         };

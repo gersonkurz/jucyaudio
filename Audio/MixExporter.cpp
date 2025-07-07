@@ -29,7 +29,7 @@ namespace jucyaudio
     {
         using namespace jucyaudio::database;
 
-        bool MixExporter::exportMixToFile(MixId mixId, const TrackLibrary &trackLibrary, const std::filesystem::path &targetFilePath,
+        bool MixExporter::exportMixToFile(MixId mixId, const std::filesystem::path &targetFilePath,
                                           MixExporterProgressCallback progressCallback) const
         {
             ExportMixImplementation *implementation = nullptr;
@@ -37,11 +37,11 @@ namespace jucyaudio
             const auto targetExtension{getLowercaseExtension(targetFilePath)};
             if (targetExtension == ".mp3")
             {
-                implementation = new ExportMp3MixImplementation{mixId, trackLibrary, targetFilePath, progressCallback};
+                implementation = new ExportMp3MixImplementation{mixId, targetFilePath, progressCallback};
             }
             else if (targetExtension == ".wav")
             {
-                implementation = new ExportWavMixImplementation{mixId, trackLibrary, targetFilePath, progressCallback};
+                implementation = new ExportWavMixImplementation{mixId, targetFilePath, progressCallback};
             }
             else
             {

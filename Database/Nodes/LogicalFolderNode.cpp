@@ -9,9 +9,9 @@ namespace jucyaudio
     namespace database
     {
 
-        LogicalFolderNode::LogicalFolderNode(INavigationNode *parent, TrackLibrary &library, const std::filesystem::path &folderPath,
+        LogicalFolderNode::LogicalFolderNode(INavigationNode *parent, const std::filesystem::path &folderPath,
                                              const std::string &displayName)
-            : LibraryNode{parent, library, displayName}, // Call base constructor
+            : LibraryNode{parent, displayName}, // Call base constructor
               m_thisFolderPath{folderPath}
         {
             // IMPORTANT: Initialize this instance's query to be specific to its path
@@ -96,7 +96,6 @@ namespace jucyaudio
                         // Create new LogicalFolderNode for each sub-directory
                         auto *childFolderNode = new LogicalFolderNode{
                             this,                      // Parent node
-                            this->m_library,           // Pass down TrackLibrary reference
                             entry.path(),              // Full path of the subdirectory
                             pathToString(entry.path().filename()) // Display name (just the folder name)
                                                        // u8string() then convert to std::string as needed
@@ -121,14 +120,14 @@ namespace jucyaudio
             return !outChildren.empty();
         }
 
-        void LogicalFolderNode::createChildren(INavigationNode *parent, TrackLibrary &library, std::vector<INavigationNode *> &children)
+        void LogicalFolderNode::createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children)
         {
             std::vector<FolderInfo> folders;
-            if (library.getFolderDatabase().getFolders(folders))
+            if (theTrackLibrary.getFolderDatabase().getFolders(folders))
             {
                 for (const auto &folder : folders)
                 {
-                    children.emplace_back(new LogicalFolderNode{parent, library, folder.path, pathToString(folder.path.filename())});
+                    children.emplace_back(new LogicalFolderNode{parent, folder.path, pathToString(folder.path.filename())});
                 }
             }
         }

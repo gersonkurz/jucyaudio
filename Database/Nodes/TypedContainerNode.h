@@ -19,15 +19,12 @@ namespace jucyaudio
         {
         public:
             using ClientCreationMethod =
-                std::function<void(INavigationNode *, TrackLibrary &,
-                                   std::vector<INavigationNode *> &)>;
+                std::function<void(INavigationNode *, std::vector<INavigationNode *> &)>;
 
             explicit TypedContainerNode(
-                INavigationNode *root, TrackLibrary &library,
-                std::string_view name,
+                INavigationNode *root, std::string_view name,
                 ClientCreationMethod clientCreationMethod)
                 : BaseNode{root, name},
-                  m_library{library},
                   m_clientCreationMethod{clientCreationMethod}
             {
             }
@@ -63,7 +60,7 @@ namespace jucyaudio
                 {
                     spdlog::debug("No children to refresh, calling client "
                                  "creation method.");
-                    m_clientCreationMethod(this, m_library, m_children);
+                    m_clientCreationMethod(this, m_children);
                 }
                 else
                 {
@@ -95,7 +92,7 @@ namespace jucyaudio
                     // if a child is new, it needs to be added.
                     //      - that means, it never was in existingChildrenMap 
                     std::vector<INavigationNode *> updatedChildren;
-                    m_clientCreationMethod(this, m_library, m_children);
+                    m_clientCreationMethod(this, m_children);
                     const auto maxIndex = m_children.size();
                     for (size_t index = 0; index < maxIndex; ++index)
                     {
@@ -162,7 +159,6 @@ namespace jucyaudio
             }
 
         protected:
-            TrackLibrary &m_library;
             const ClientCreationMethod m_clientCreationMethod;
         };
     } // namespace database

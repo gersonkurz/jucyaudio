@@ -5,8 +5,10 @@
 #include <Database/Includes/TrackInfo.h>
 #include <Database/TrackLibrary.h>
 #include <UI/DynamicColumnManager.h>
+#include <UI/TimelineComponent.h>
 #include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <Audio/MixProjectLoader.h>
 
 namespace jucyaudio
 {
@@ -20,10 +22,14 @@ namespace jucyaudio
             void paint(juce::Graphics &g) override;
             void resized() override;
 
+            void loadMix(MixId mixId);
+
         private:
+            juce::AudioFormatManager m_formatManager;
+            juce::AudioThumbnailCache m_thumbnailCache{5}; // 5 items in the cache
 
-            juce::Label m_placeholderLabel;
-
+            TimelineComponent m_timeline;
+            audio::MixProjectLoader m_mixProjectLoader;
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixEditorComponent)
         };
 

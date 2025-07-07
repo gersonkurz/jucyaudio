@@ -153,5 +153,6 @@ namespace jucyaudio
             INavigationNode *const m_rootNavNode;   // Raw pointer
         };
 
+        extern TrackLibrary theTrackLibrary;
     } // namespace database
 } // namespace jucyaudio

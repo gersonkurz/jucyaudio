@@ -15,13 +15,12 @@ namespace jucyaudio
 {
     namespace ui
     {
-        CreateMixTask::CreateMixTask(const database::MixInfo& mixInfo, const audio::IMixExporter &mixExporter, database::TrackLibrary &trackLibrary,
+        CreateMixTask::CreateMixTask(const database::MixInfo& mixInfo, const audio::IMixExporter &mixExporter,
                                      const std::filesystem::path &targetExportPath)
             : database::ILongRunningTask{std::format("Creating Mix {} with {:L} tracks", mixInfo.name, mixInfo.numberOfTracks), false},
               m_mixId{mixInfo.mixId},
               m_targetExportPath{targetExportPath},
-              m_mixExporter{mixExporter},
-              m_trackLibrary{trackLibrary}
+              m_mixExporter{mixExporter}
         {
         }
 
@@ -39,15 +38,14 @@ namespace jucyaudio
                     lastProgress = ni;
                 }
             };
-            m_bExported = m_mixExporter.exportMixToFile(m_mixId, m_trackLibrary, m_targetExportPath, exportProgressCallback);
+            m_bExported = m_mixExporter.exportMixToFile(m_mixId, m_targetExportPath, exportProgressCallback);
             completionCb(m_bExported, "Create mix task completed");
         }
 
 
-        CreateMixDialogComponent::CreateMixDialogComponent(audio::AudioLibrary &audioLibrary, database::TrackLibrary &trackLibrary,
+        CreateMixDialogComponent::CreateMixDialogComponent(audio::AudioLibrary &audioLibrary,
                                                            const std::vector<database::TrackInfo> &tracksForMix, OnMixCreatedAndExportedCallback onOkCallback)
             : m_audioLibrary{audioLibrary},
-              m_trackLibrary{trackLibrary},
               m_tracksForMix{tracksForMix}, // Store reference
               m_onOkCallback{std::move(onOkCallback)},
               m_titleLabel{"titleLabel", "Create Mix"},
@@ -192,7 +190,7 @@ namespace jucyaudio
             // Using the default crossfade duration from IMixManager's createAndSaveAutoMix
             // Or pass a specific one: database::Duration_t crossfadeDuration{5000};
             bool mixDefined =
-                m_trackLibrary.getMixManager().createAndSaveAutoMix(m_tracksForMix, newMixInfo, resultingMixTracks /*, crossfadeDuration (optional) */);
+                ::jucyaudio::database::theTrackLibrary.getMixManager().createAndSaveAutoMix(m_tracksForMix, newMixInfo, resultingMixTracks /*, crossfadeDuration (optional) */);
 
             if (!mixDefined || newMixInfo.mixId == -1)
             {
@@ -255,7 +253,7 @@ namespace jucyaudio
             std::filesystem::path targetExportPath = chosenFile.getFullPathName().toStdString();
             spdlog::info("Exporting mix ID: {} (Name: '{}') to: {}", mixInfo.mixId, mixInfo.name, pathToString(targetExportPath));
 
-            auto *task = new CreateMixTask(mixInfo.mixId, m_audioLibrary.getMixExporter(), m_trackLibrary, targetExportPath);
+            auto *task = new CreateMixTask(mixInfo.mixId, m_audioLibrary.getMixExporter(), targetExportPath);
             TaskDialog::launch("Mix Creation In Progress", task, 500, this);
             task->release(REFCOUNT_DEBUG_ARGS);
             closeThisDialog(true);

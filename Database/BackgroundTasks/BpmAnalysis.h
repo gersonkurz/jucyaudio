@@ -18,9 +18,8 @@ namespace jucyaudio
         {
             struct BpmAnalysis final : public IBackgroundTask
             {
-                explicit BpmAnalysis(TrackLibrary &trackLibrary)
-                    : IBackgroundTask{"BPM Analysis Task"},
-                      m_trackLibrary{trackLibrary}
+                explicit BpmAnalysis()
+                    : IBackgroundTask{"BPM Analysis Task"}
                 {
                 }
 
@@ -29,8 +28,6 @@ namespace jucyaudio
                 void processWork() override;
 
                 std::optional<std::chrono::steady_clock::time_point> m_startTime;
-
-                TrackLibrary &m_trackLibrary;
 
                 /// @brief The file path to the audio file to analyze.
                 std::string audioFilePath;

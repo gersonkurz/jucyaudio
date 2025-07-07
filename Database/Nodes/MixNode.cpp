@@ -11,8 +11,8 @@ namespace jucyaudio
         // Careful: these are actions for the *MixNode*, not the tracks shown in the mix.
         const DataActions MixNodeActions{DataAction::RemoveMix, DataAction::ExportMix};
 
-        MixNode::MixNode(INavigationNode *parent, TrackLibrary &library, const MixInfo &mixInfo)
-            : LibraryNode{parent, library, mixInfo.name},
+        MixNode::MixNode(INavigationNode *parent, const MixInfo &mixInfo)
+            : LibraryNode{parent, mixInfo.name},
               m_mixInfo{mixInfo}
         {
             m_queryArgs.mixId = mixInfo.mixId;
@@ -23,13 +23,13 @@ namespace jucyaudio
             return MixNodeActions;
         }
 
-        void MixNode::createChildren(INavigationNode *parent, TrackLibrary &library, std::vector<INavigationNode *> &children)
+        void MixNode::createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children)
         {
             TrackQueryArgs args;
-            const auto mixes{library.getMixManager().getMixes(args)};
+            const auto mixes{theTrackLibrary.getMixManager().getMixes(args)};
             for (const auto &mix : mixes)
             {
-                children.emplace_back(new MixNode{parent, library, mix});
+                children.emplace_back(new MixNode{parent, mix});
             }
         }
 

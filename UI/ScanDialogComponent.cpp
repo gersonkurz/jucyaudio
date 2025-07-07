@@ -25,9 +25,8 @@ namespace jucyaudio
             };
         } // namespace FolderTableColumnIDs
 
-        ScanDialogComponent::ScanDialogComponent(TrackLibrary &trackLib)
-            : m_trackLibrary{trackLib},
-              m_folderDatabase{m_trackLibrary.getFolderDatabase()},
+        ScanDialogComponent::ScanDialogComponent()
+            : m_folderDatabase{theTrackLibrary.getFolderDatabase()},
               m_folderListTable{"foldersTable", this},
               m_titleLabel{"titleLabel", "Scan Folders"}
         {
@@ -419,9 +418,8 @@ namespace jucyaudio
         class ScanFoldersTask final : public ILongRunningTask
         {
         public:
-            ScanFoldersTask(TrackLibrary &trackLibrary, std::vector<FolderInfo> foldersToScan, bool forceRescan, UpdateUiCallback updateUiCallback)
+            ScanFoldersTask(std::vector<FolderInfo> foldersToScan, bool forceRescan, UpdateUiCallback updateUiCallback)
                 : ILongRunningTask{"Scanning Files & Folders", false},
-                  m_trackLibrary{trackLibrary},
                   m_foldersToScan{foldersToScan},
                   m_updateUiCallback{updateUiCallback},
                   m_bForceRescan{forceRescan}
@@ -433,7 +431,7 @@ namespace jucyaudio
                 theBackgroundTaskService.pause();
                 try
                 {
-                    m_trackLibrary.scanLibrary(m_foldersToScan, m_bForceRescan, progressCb, completionCb, &shouldCancel);
+                    theTrackLibrary.scanLibrary(m_foldersToScan, m_bForceRescan, progressCb, completionCb, &shouldCancel);
                 }
                 catch(const std::exception& e)
                 {
@@ -444,7 +442,6 @@ namespace jucyaudio
             }
 
         private:
-            TrackLibrary &m_trackLibrary;
             std::vector<FolderInfo> m_foldersToScan;
             UpdateUiCallback m_updateUiCallback;
             bool m_bForceRescan;
@@ -469,7 +466,7 @@ namespace jucyaudio
                         });
                 };
                 const bool force = m_forceRescanCheckbox.getToggleState();
-                auto *task = new ScanFoldersTask{m_trackLibrary, folderInfosToScan, force, updateUiCallback};
+                auto *task = new ScanFoldersTask{folderInfosToScan, force, updateUiCallback};
                 TaskDialog::launch("Scanning in progress", task, 500, this);
                 task->release(REFCOUNT_DEBUG_ARGS);
             }

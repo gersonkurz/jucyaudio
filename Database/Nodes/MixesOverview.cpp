@@ -49,14 +49,14 @@ namespace jucyaudio
             return MixesRowActions;
         }
 
-        bool TypedItemsOverview<MixInfo>::removeObject(const TrackLibrary &library, const MixInfo &mix) const
+        bool TypedItemsOverview<MixInfo>::removeObject(const MixInfo &mix) const
         {
-            return library.getMixManager().removeMix(mix.mixId);
+            return theTrackLibrary.getMixManager().removeMix(mix.mixId);
         }
 
-        void TypedItemsOverview<MixInfo>::refreshCache(const TrackLibrary &library, const TrackQueryArgs &args, std::vector<MixInfo> &data) const
+        void TypedItemsOverview<MixInfo>::refreshCache(const TrackQueryArgs &args, std::vector<MixInfo> &data) const
         {
-            data = library.getMixManager().getMixes(args);
+            data = theTrackLibrary.getMixManager().getMixes(args);
         }
 
         std::string TypedItemsOverview<MixInfo>::getCellText(const MixInfo &mix, ColumnIndex_t index) const

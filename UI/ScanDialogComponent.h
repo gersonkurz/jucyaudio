@@ -15,7 +15,7 @@ namespace jucyaudio
                                     public juce::TableListBoxModel
         {
         public:
-            ScanDialogComponent(database::TrackLibrary &trackLib);
+            ScanDialogComponent();
             ~ScanDialogComponent();
 
             void paint(juce::Graphics &g) override;
@@ -47,7 +47,6 @@ namespace jucyaudio
             bool keyPressed(const juce::KeyPress &key) override;
             bool removeFolderAndAssociatedTracks(const database::FolderInfo &folderInfo);
 
-            database::TrackLibrary &m_trackLibrary;
             database::IFolderDatabase &m_folderDatabase;
             juce::LookAndFeel_V4 m_lookAndFeel;
 

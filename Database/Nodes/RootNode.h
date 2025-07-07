@@ -38,7 +38,7 @@ namespace jucyaudio
         class RootNode final : public BaseNode
         {
         public:
-            RootNode(TrackLibrary &library);
+            RootNode();
 
             INavigationNode *get(const std::string &name) const override;
 

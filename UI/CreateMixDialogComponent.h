@@ -20,7 +20,7 @@ namespace jucyaudio
         class CreateMixTask final : public database::ILongRunningTask
         {
         public:
-            CreateMixTask(const database::MixInfo& mixInfo, const audio::IMixExporter &mixExporter, database::TrackLibrary &trackLibrary,
+            CreateMixTask(const database::MixInfo& mixInfo, const audio::IMixExporter &mixExporter, 
                           const std::filesystem::path &targetExportPath);
             void run(database::ProgressCallback progressCb, database::CompletionCallback completionCb,
                      [[maybe_unused]] std::atomic<bool> &shouldCancel) override;
@@ -31,7 +31,6 @@ namespace jucyaudio
             MixId m_mixId;
             std::filesystem::path m_targetExportPath;
             const audio::IMixExporter &m_mixExporter;
-            database::TrackLibrary &m_trackLibrary;
         };
 
         class CreateMixDialogComponent : public juce::Component, public juce::Button::Listener, public juce::TextEditor::Listener
@@ -39,7 +38,7 @@ namespace jucyaudio
         public:
             using OnMixCreatedAndExportedCallback = std::function<void(bool /*success*/, const database::MixInfo & /*newMixInfo */)>;
 
-            CreateMixDialogComponent(audio::AudioLibrary &audioLibrary, database::TrackLibrary &trackLibrary,
+            CreateMixDialogComponent(audio::AudioLibrary &audioLibrary, 
                                      const std::vector<database::TrackInfo> &tracksForMix, OnMixCreatedAndExportedCallback onOkCallback);
             ~CreateMixDialogComponent() override;
 
@@ -66,7 +65,6 @@ namespace jucyaudio
 #endif
 
             audio::AudioLibrary &m_audioLibrary;
-            database::TrackLibrary &m_trackLibrary;
             std::vector<database::TrackInfo> m_tracksForMix; // Store as reference
             OnMixCreatedAndExportedCallback m_onOkCallback;
 

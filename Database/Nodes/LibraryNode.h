@@ -19,7 +19,7 @@ namespace jucyaudio
         class LibraryNode : public BaseNode
         {
         public:
-            LibraryNode(INavigationNode *root, TrackLibrary &library, const std::string& name = "");
+            LibraryNode(INavigationNode *root, const std::string& name = "");
             ~LibraryNode() override;
 
         private:
@@ -47,7 +47,6 @@ namespace jucyaudio
             mutable bool m_bCacheInitialized{false};
 
         protected:
-            TrackLibrary &m_library;
             mutable TrackQueryArgs m_queryArgs;
         };
 

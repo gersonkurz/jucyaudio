@@ -61,10 +61,9 @@ namespace jucyaudio
             m_tracks.clear();
         }
 
-        LibraryNode::LibraryNode(INavigationNode *root, TrackLibrary &library, const std::string &name)
+        LibraryNode::LibraryNode(INavigationNode *root, const std::string &name)
             : BaseNode{root, name.empty() ? getLibraryRootNodeName() : name},
-              m_bCacheInitialized{false},
-              m_library{library}
+              m_bCacheInitialized{false}
         {
         }
 
@@ -86,7 +85,7 @@ namespace jucyaudio
 
         bool LibraryNode::getNumberOfRows(int64_t &outCount) const
         {
-            outCount = m_library.getTotalTrackCount(m_queryArgs);
+            outCount = theTrackLibrary.getTotalTrackCount(m_queryArgs);
             return true;
         }
 
@@ -178,7 +177,7 @@ namespace jucyaudio
                 m_queryArgs.offset = temp * QUERY_PAGE_SIZE;
                 // we should maybe switch the limit from a variable to a constant: this is an implementation detail
                 // callers of our library shouldn't need to know about this
-                m_tracks = m_library.getTracks(m_queryArgs);
+                m_tracks = theTrackLibrary.getTracks(m_queryArgs);
                 m_bCacheInitialized = true;
             }
             const auto targetIndex = rowIndex - m_queryArgs.offset;
@@ -196,7 +195,7 @@ namespace jucyaudio
             const auto refreshCache = !m_bCacheInitialized || flushCache;
             if (refreshCache)
             {
-                m_tracks = m_library.getTracks(m_queryArgs);
+                m_tracks = theTrackLibrary.getTracks(m_queryArgs);
                 m_bCacheInitialized = true;
             }
         }

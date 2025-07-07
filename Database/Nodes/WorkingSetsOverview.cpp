@@ -42,14 +42,14 @@ namespace jucyaudio
             return WorkingSetsRowActions;
         }
 
-        bool TypedItemsOverview<WorkingSetInfo>::removeObject(const TrackLibrary &library, const WorkingSetInfo &wsi) const
+        bool TypedItemsOverview<WorkingSetInfo>::removeObject(const WorkingSetInfo &wsi) const
         {
-            return library.getWorkingSetManager().removeWorkingSet(wsi.id);
+            return theTrackLibrary.getWorkingSetManager().removeWorkingSet(wsi.id);
         }
 
-        void TypedItemsOverview<WorkingSetInfo>::refreshCache(const TrackLibrary &library, const TrackQueryArgs &args, std::vector<WorkingSetInfo> &data) const
+        void TypedItemsOverview<WorkingSetInfo>::refreshCache(const TrackQueryArgs &args, std::vector<WorkingSetInfo> &data) const
         {
-            data = library.getWorkingSetManager().getWorkingSets(args);
+            data = theTrackLibrary.getWorkingSetManager().getWorkingSets(args);
         }
 
         const std::vector<DataColumn> &TypedItemsOverview<WorkingSetInfo>::getColumns() const

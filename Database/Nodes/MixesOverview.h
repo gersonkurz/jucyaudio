@@ -28,8 +28,8 @@ namespace jucyaudio
             const std::vector<DataColumn> &getColumns() const;
 
             std::string getCellText(const MixInfo &wsi, ColumnIndex_t index) const;
-            bool removeObject(const TrackLibrary &library, const MixInfo &wsi) const;
-            void refreshCache(const TrackLibrary &library, const TrackQueryArgs &args, std::vector<MixInfo> &data) const;
+            bool removeObject(const MixInfo &wsi) const;
+            void refreshCache(const TrackQueryArgs &args, std::vector<MixInfo> &data) const;
         };
 
     } // namespace database

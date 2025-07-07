@@ -17,7 +17,7 @@ namespace jucyaudio
         {
         public:
             // Constructor loads all necessary data from the database.
-            MixProjectLoader(MixId mixId, const TrackLibrary &trackLibrary);
+            MixProjectLoader();
             virtual ~MixProjectLoader() = default;
 
             MixProjectLoader(const MixProjectLoader &) = delete;            // No copy
@@ -26,7 +26,7 @@ namespace jucyaudio
             MixProjectLoader &operator=(MixProjectLoader &&) = delete;      // No move assignment
 
             // Public method to explicitly reload data if needed
-            void setMixId(MixId mixId);
+            void loadMix(MixId mixId);
 
             // --- Public Accessors ---
             MixId getMixId() const
@@ -57,7 +57,6 @@ namespace jucyaudio
 
         protected:
             MixId m_mixId;
-            const TrackLibrary &m_trackLibrary;
             std::vector<MixTrack> m_mixTracks;
             std::vector<TrackInfo> m_trackInfos;
             std::unordered_map<TrackId, const TrackInfo *> m_trackInfosMap;

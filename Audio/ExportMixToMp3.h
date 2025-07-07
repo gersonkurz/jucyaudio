@@ -28,9 +28,9 @@ namespace jucyaudio
         class ExportMp3MixImplementation final : public ExportMixImplementation
         {
         public:
-            ExportMp3MixImplementation(MixId mixId, const TrackLibrary &trackLibrary, const std::filesystem::path &targetFilepath,
+            ExportMp3MixImplementation(MixId mixId, const std::filesystem::path &targetFilepath,
                                        MixExporterProgressCallback progressCallback)
-                : ExportMixImplementation(mixId, trackLibrary, targetFilepath, progressCallback)
+                : ExportMixImplementation(mixId, targetFilepath, progressCallback)
             {
             }
             JUCE_DECLARE_NON_COPYABLE(ExportMp3MixImplementation)

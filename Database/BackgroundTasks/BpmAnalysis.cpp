@@ -390,7 +390,7 @@ namespace jucyaudio
                 }
 
                 // --- 1. Get a track to process ---
-                std::optional<TrackInfo> trackOpt = m_trackLibrary.getTrackDatabase()->getNextTrackForBpmAnalysis();
+                std::optional<TrackInfo> trackOpt = theTrackLibrary.getTrackDatabase()->getNextTrackForBpmAnalysis();
                 if (!trackOpt)
                 {
                     spdlog::info("BPM Analysis Task: No tracks available for analysis.");
@@ -404,7 +404,7 @@ namespace jucyaudio
                 spdlog::info("{}\nbpm: {}, intro: {}-{}, outro: {}-{}, hasIntro: {}, hasOutro: {}", pathToString(trackInfo.filepath), am.bpm, am.introStart, am.introEnd,
                                 am.outroStart, am.outroEnd, am.hasIntro, am.hasOutro);
 
-                m_trackLibrary.getTrackDatabase()->updateTrackBpm(trackInfo.trackId, am);
+                theTrackLibrary.getTrackDatabase()->updateTrackBpm(trackInfo.trackId, am);
             }
         } // namespace background_tasks
     } // namespace database

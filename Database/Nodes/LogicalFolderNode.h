@@ -9,14 +9,14 @@ namespace jucyaudio
         class LogicalFolderNode : public LibraryNode
         {
         public:
-            LogicalFolderNode(INavigationNode *parent, TrackLibrary &library, const std::filesystem::path &folderPath,
+            LogicalFolderNode(INavigationNode *parent, const std::filesystem::path &folderPath,
                               const std::string &displayName); // displayName might be folderPath.filename()
             ~LogicalFolderNode() override = default;
 
             bool hasChildren() const override;
             bool getChildren(std::vector<INavigationNode *> &outChildren) override;
 
-            static void createChildren(INavigationNode *parent, TrackLibrary &library, std::vector<INavigationNode *> &children);
+            static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
 
         private:
             std::filesystem::path m_thisFolderPath;
