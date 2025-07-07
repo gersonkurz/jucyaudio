@@ -58,11 +58,18 @@ target_sources(jucyaudio PRIVATE
     
     # Audio files
     Audio/ExportMixToWav.cpp
-    Audio/MixExporter.cpp
     Audio/AudioLibrary.h
+    Audio/ExportMixImplementation.cpp
+    Audio/ExportMixImplementation.h
+    Audio/ExportMixToMp3.cpp
+    Audio/ExportMixToMp3.h
+    Audio/ExportMixToWav.cpp
     Audio/ExportMixToWav.h
+    Audio/MixExporter.cpp
     Audio/MixExporter.h
     Audio/Includes/IMixExporter.h
+    Audio/MixProjectLoader.cpp
+    Audio/MixProjectLoader.h
     
     # Utils files
     Utils/AssortedUtils.cpp

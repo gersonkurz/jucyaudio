@@ -8,7 +8,9 @@
   ==============================================================================
 */
 
+#include <Audio/ExportMixImplementation.h>
 #include <Audio/ExportMixToWav.h>
+#include <Audio/ExportMixToMp3.h>
 #include <Audio/MixExporter.h>
 #include <Database/Includes/Constants.h>
 #include <Database/Includes/IMixManager.h>

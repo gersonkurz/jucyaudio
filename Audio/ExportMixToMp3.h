@@ -25,19 +25,27 @@ namespace jucyaudio
     {
         using namespace database;
 
-        class ExportWavMixImplementation final : public ExportMixImplementation
+        class ExportMp3MixImplementation final : public ExportMixImplementation
         {
         public:
-            ExportWavMixImplementation(MixId mixId, const TrackLibrary &trackLibrary, const std::filesystem::path &targetFilepath,
+            ExportMp3MixImplementation(MixId mixId, const TrackLibrary &trackLibrary, const std::filesystem::path &targetFilepath,
                                        MixExporterProgressCallback progressCallback)
                 : ExportMixImplementation(mixId, trackLibrary, targetFilepath, progressCallback)
             {
             }
-            JUCE_DECLARE_NON_COPYABLE(ExportWavMixImplementation)
-
+            JUCE_DECLARE_NON_COPYABLE(ExportMp3MixImplementation)
         private:
             bool onSetupAudioFormatManagerAndWriter() override;
-            bool onRunMixingLoop() override;
+            bool onRunMixingLoop() override; // Override to use LAME instead of JUCE writer
+
+            // LAME-specific members
+            lame_global_flags *m_lameFlags = nullptr;
+            std::unique_ptr<juce::FileOutputStream> m_outputStream;
+            unsigned char *m_mp3Buffer = nullptr;
+            int m_mp3BufferSize = 0;
+
+            // Override destructor to clean up LAME
+            ~ExportMp3MixImplementation() override;
         };
 
     } // namespace audio
