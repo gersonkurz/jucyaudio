@@ -24,7 +24,7 @@ namespace jucyaudio
         class DataViewComponent : public juce::Component, private juce::TableListBoxModel, private juce::Timer
         {
         public:
-            explicit DataViewComponent(MainComponent &owner);
+            explicit DataViewComponent();
             ~DataViewComponent() override;
 
             void resized() override;
@@ -66,7 +66,6 @@ namespace jucyaudio
 
             void updateTableColumns();
 
-            MainComponent &m_ownerMainComponent;
             juce::TableListBox m_tableListBox;
             INavigationNode *m_currentNode{nullptr};
             std::vector<database::DataColumnWithIndex> m_currentDataColumns;

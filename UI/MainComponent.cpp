@@ -1,4 +1,6 @@
 #include <Config/toml_backend.h>
+#include <Database/BackgroundService.h>
+#include <Database/BackgroundTasks/BpmAnalysis.h>
 #include <Database/Nodes/MixNode.h>
 #include <Database/Nodes/RootNode.h>
 #include <UI/ColumnConfiguratorDialog.h>
@@ -8,8 +10,6 @@
 #include <UI/MainComponent.h>
 #include <UI/ScanDialogComponent.h>
 #include <UI/TaskDialog.h>
-#include <Database/BackgroundService.h>
-#include <Database/BackgroundTasks/BpmAnalysis.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
 #ifndef JUCE_WINDOWS
@@ -22,12 +22,27 @@ namespace jucyaudio
 
     namespace ui
     {
+        MainViewType determineType(const database::INavigationNode *node)
+        {
+            const auto nodePath{getNodePath(node)};
+            if(nodePath.size() >= 3)
+            {
+                if(nodePath[1]->getName() == getMixesRootNodeName())
+                {
+                    return MainViewType::MixEditor;
+                }
+            }
+            // Add more types as needed
+            return MainViewType::DataView; // Default to DataView if no specific type matches
+        }
+
         MainComponent::MainComponent(juce::ApplicationCommandManager &commandManager)
             : MenuPresenter{commandManager},
               m_commandManager{commandManager},
               m_dynamicToolbar{*this}, // Pass *this as MainComponent& owner
               m_navigationPanel{*this},
-              m_dataView{*this},
+              m_currentMainView{MainViewType::DataView},
+              m_currentMainViewComponent{&m_dataViewComponent},
               m_verticalDivider{*this, true},
               m_playbackController{m_playbackToolbar},
               m_mainPlaybackAndStatusPanel{*this}
@@ -63,13 +78,16 @@ namespace jucyaudio
             addAndMakeVisible(m_dynamicToolbar);
             addAndMakeVisible(m_navigationPanel);
             addAndMakeVisible(m_verticalDivider);
-            addAndMakeVisible(m_dataView);
+
+            addAndMakeVisible(m_dataViewComponent);
+            addChildComponent(m_mixEditorComponent); // also a child but not yet visible
+
             addAndMakeVisible(m_mainPlaybackAndStatusPanel);
 
             // --- Setup Callbacks from UI Components ---
 
             // Data View
-            m_dataView.m_onRowActionRequested = [this](RowIndex_t rowIndex, DataAction action, const juce::Point<int> &screenPos)
+            m_dataViewComponent.m_onRowActionRequested = [this](RowIndex_t rowIndex, DataAction action, const juce::Point<int> &screenPos)
             {
                 handleRowActionFromDataView(rowIndex, action, screenPos);
             };
@@ -432,7 +450,7 @@ namespace jucyaudio
             if (dataViewWidth < 0)
                 dataViewWidth = 0; // Prevent negative width
 
-            m_dataView.setBounds(dataViewX, centralArea.getY(), dataViewWidth, centralArea.getHeight());
+            m_currentMainViewComponent->setBounds(dataViewX, centralArea.getY(), dataViewWidth, centralArea.getHeight());
         }
 
         void MainComponent::adjustSplitterPosition([[maybe_unused]] int desiredNewNavPanelLeftEdge) // Or pass delta
@@ -537,24 +555,58 @@ namespace jucyaudio
                 m_currentSelectedDataNode->release(REFCOUNT_DEBUG_ARGS);
             }
 
+            const auto currentViewType{m_currentMainView};
             m_currentSelectedDataNode = selectedNode; // Takes ownership of the retained selectedNode
 
             if (m_currentSelectedDataNode)
             {
+                const auto newViewType{determineType(m_currentSelectedDataNode)};
+
+                if(currentViewType != newViewType)
+                {
+                    m_currentMainViewComponent->setVisible(false);
+                    if(newViewType == MainViewType::MixEditor)
+                    {
+                        m_currentMainViewComponent = &m_mixEditorComponent;
+                        m_currentMainView = MainViewType::MixEditor;
+                        m_mixEditorComponent.setVisible(true);
+                    }
+                    else
+                    {
+                        m_currentMainViewComponent = &m_dataViewComponent;
+                        m_currentMainView = MainViewType::DataView;
+                        m_dataViewComponent.setVisible(true);
+                    }
+                }
+
+
+                // we should use a function to crate a string path here.
+                const auto path{getNodePath(m_currentSelectedDataNode)};
+
                 m_currentSelectedDataNode->prepareToShowData();
                 m_dynamicToolbar.setCurrentNode(m_currentSelectedDataNode); // Toolbar updates its actions
-                m_dataView.setCurrentNode(m_currentSelectedDataNode);       // DataView updates its content
-                                                                            // source
-                m_dataView.refreshView();                                   // Tell DataView to redraw
-                // Clear filter text in toolbar when node changes? Or keep it?
-                // m_dynamicToolbar.setFilterText("",
-                // juce::dontSendNotification);
+                if (m_currentMainView == MainViewType::MixEditor)
+                {
+                    // do nothing
+                }
+                else
+                {
+                    m_dataViewComponent.setCurrentNode(m_currentSelectedDataNode); // DataView updates its content source
+                    m_dataViewComponent.refreshView();                             // Tell DataView to redraw
+                }
             }
             else
             {
                 m_dynamicToolbar.setCurrentNode(nullptr);
-                m_dataView.setCurrentNode(nullptr);
-                m_dataView.refreshView();
+                if (m_currentMainView == MainViewType::MixEditor)
+                {
+                    // in MixEditor view, there is no "current node" concept, so we can ignore this.
+                }
+                else
+                {
+                    m_dataViewComponent.setCurrentNode(nullptr);
+                    m_dataViewComponent.refreshView();
+                }
             }
             syncPlaybackUIToControllerState(); // Update play button enable
                                                // state
@@ -579,8 +631,14 @@ namespace jucyaudio
 
                 if (m_currentSelectedDataNode->setSearchTerms(searchTerms))
                 {
-                    m_dataView.refreshView(); // Tell DataView data has changed
-                                              // due to filter
+                    if (m_currentMainView == MainViewType::MixEditor)
+                    {
+                        // mix editor doesn't support filtering, so nothing to see here
+                    }
+                    else
+                    {
+                        m_dataViewComponent.refreshView(); // Tell DataView data has changed due to filter
+                    }
                 }
             }
         }
@@ -632,8 +690,7 @@ namespace jucyaudio
                 break;
             case DataAction::RemoveMix:
             case DataAction::ExportMix:
-                spdlog::warn("Unsupported action '{}' for row {}. This should not happen.",
-                             static_cast<int>(action), rowIndex);
+                spdlog::warn("Unsupported action '{}' for row {}. This should not happen.", static_cast<int>(action), rowIndex);
                 break;
             case DataAction::ShowDetails:
                 m_mainPlaybackAndStatusPanel.setStatusMessage("Show details for: " + std::to_string(rowIndex), false);
@@ -695,7 +752,13 @@ namespace jucyaudio
                     node->removeObjectAtRow(rowIndex);
                 }
                 m_navigationPanel.refreshNode(node);
-                m_dataView.refreshView(); // Refresh the view after deletion
+                if (m_currentMainView == MainViewType::MixEditor)
+                {
+                }
+                else
+                {
+                    m_dataViewComponent.refreshView(); // Refresh data view if it's the current view
+                }
                 m_mainPlaybackAndStatusPanel.setStatusMessage("Selected mixes deleted successfully.", false);
             }
             else
@@ -711,9 +774,14 @@ namespace jucyaudio
                 m_mainPlaybackAndStatusPanel.setStatusMessage("No data node selected.", true);
                 return;
             }
+            if (m_currentMainView == MainViewType::MixEditor)
+            {
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Cannot delete rows in Mix Editor view.", true);
+                return;
+            }
             const auto name{m_currentSelectedDataNode->getName()};
             const bool isWorkingSetsNode = (name == getWorkingSetsRootNodeName());
-            auto selectedRows = m_dataView.getSelectedRowIndices();
+            auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
             if (selectedRows.empty())
             {
                 m_mainPlaybackAndStatusPanel.setStatusMessage("No rows selected for deletion.", true);
@@ -778,10 +846,15 @@ namespace jucyaudio
                 m_mainPlaybackAndStatusPanel.setStatusMessage("No data node selected to create working set from.", true);
                 return false;
             }
-
-            if (m_dataView.getNumSelectedRows() > 0)
+            if (m_currentMainView == MainViewType::MixEditor)
             {
-                return createWorkingSetFromTrackIds(m_dataView.getSelectedTrackIds());
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Cannot create working set in Mix Editor view.", true);
+                return false;
+            }
+
+            if (m_dataViewComponent.getNumSelectedRows() > 0)
+            {
+                return createWorkingSetFromTrackIds(m_dataViewComponent.getSelectedTrackIds());
             }
             else if (m_currentSelectedDataNode)
             {
@@ -815,7 +888,6 @@ namespace jucyaudio
                         wsNewNode->release(REFCOUNT_DEBUG_ARGS);
                     }
                 }
-                // m_dataView.refreshView();
             }
             else
             {
@@ -913,10 +985,6 @@ namespace jucyaudio
                     // Simplest might be to re-set the root node if your tree
                     // isn't too deep/complex to rebuild.
                     m_navigationPanel.removeNodeFromTree(selectedNode); // Assuming you implement such a method
-
-                    // If the DataView was showing tracks from this mix, clear
-                    // or update it. m_dataView.setCurrentNode(nullptr); or
-                    // select a default node.
                 }
                 else
                 {
@@ -939,10 +1007,10 @@ namespace jucyaudio
             const auto mixNode{static_cast<MixNode *>(selectedNode)};
             const auto mixInfo{mixNode->getMixInfo()};
 
-            const auto title{ std::format("Export Mix '{}' As...", mixInfo.name)};
+            const auto title{std::format("Export Mix '{}' As...", mixInfo.name)};
             // Store the FileChooser in a member unique_ptr to keep it alive
-            m_activeFileChooser = std::make_unique<juce::FileChooser>(title, juce::File::getSpecialLocation(juce::File::userMusicDirectory),
-                                                                      "*.mp3;*.wav", true, false, this);
+            m_activeFileChooser =
+                std::make_unique<juce::FileChooser>(title, juce::File::getSpecialLocation(juce::File::userMusicDirectory), "*.mp3;*.wav", true, false, this);
 
             int chooserFlags =
                 juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting;
@@ -956,7 +1024,6 @@ namespace jucyaudio
                                              {
                                                  this->onExportMixFileChooserModalDismissed(chooser, mixInfo);
                                              });
-
         }
 
         void MainComponent::onExportMixFileChooserModalDismissed(const juce::FileChooser &chooser, database::MixInfo mixInfo)
@@ -1007,9 +1074,14 @@ namespace jucyaudio
                 m_mainPlaybackAndStatusPanel.setStatusMessage("No data node selected.", true);
                 return;
             }
+            if (m_currentMainView == MainViewType::MixEditor)
+            {
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Cannot create mix in Mix Editor view.", true);
+                return;
+            }
             std::vector<TrackInfo> selectedTracks{
-                m_dataView.getSelectedTracks() // Assuming DataView has a method
-                                               // to get selected tracks
+                m_dataViewComponent.getSelectedTracks() // Assuming DataView has a method
+                                                        // to get selected tracks
             };
             if (selectedTracks.size() <= 1)
             {
@@ -1037,10 +1109,11 @@ namespace jucyaudio
 
             // The CreateMixDialogComponent will be managed by
             // DialogWindow::LaunchOptions
-            auto *dialog = new ui::CreateMixDialogComponent(m_audioLibrary, m_trackLibrary, selectedTracks, [this](bool success, const MixInfo &mixInfo)
-            {
-                onMixCreatedCallback(success, mixInfo);
-            });
+            auto *dialog = new ui::CreateMixDialogComponent(m_audioLibrary, m_trackLibrary, selectedTracks,
+                                                            [this](bool success, const MixInfo &mixInfo)
+                                                            {
+                                                                onMixCreatedCallback(success, mixInfo);
+                                                            });
 
             juce::DialogWindow::LaunchOptions launchOptions;
             launchOptions.content.setOwned(dialog); // DialogWindow takes ownership
@@ -1050,8 +1123,7 @@ namespace jucyaudio
             launchOptions.launchAsync();
         }
 
-
-        void MainComponent::onMixCreatedCallback(bool success, const MixInfo& mixInfo)
+        void MainComponent::onMixCreatedCallback(bool success, const MixInfo &mixInfo)
         {
             if (success)
             {
@@ -1088,46 +1160,7 @@ namespace jucyaudio
 
             if (m_playbackController.getCurrentFilepath().isEmpty() || m_playbackController.getCurrentState() == PlaybackController::State::Stopped)
             {
-                // Attempt to play the currently selected row in DataView
-                // This requires DataView to expose its current selection, or
-                // for us to query m_currentSelectedDataNode for its "primary"
-                // selection if it's a list. For now, this logic is difficult
-                // without knowing DataView's selection model. Let's assume if a
-                // track was double-clicked, playDataRow was called. This button
-                // might just call m_playbackController.play() which plays if
-                // something is cued. The old MainComponent selected the first
-                // row if nothing was cued. That's too complex for now. For now,
-                // if play is clicked and nothing is cued/playing, it does
-                // nothing. Double-click on a track in DataView is the primary
-                // way to start playback of a new track.
 
-                // If we *really* want "play selected if nothing cued":
-                // int selectedRowIndexInDataView = m_dataView.getSelectedRow();
-                // // Needs method in DataView if (selectedRowIndexInDataView !=
-                // -1 && m_currentSelectedDataNode) {
-                //    const IDataRow* row = nullptr;
-                //    if
-                //    (m_currentSelectedDataNode->getRow(selectedRowIndexInDataView,
-                //    row) && row) {
-                //        playDataRow(const_cast<IDataRow*>(row)); //
-                //        playDataRow will release
-                //        // Note: getRow gives const, playDataRow currently
-                //        takes non-const due to placeholder nature.
-                //        // This needs to be consistent. Let's assume getRow
-                //        provides a row that can be used.
-                //        // And if playDataRow needs to modify (it shouldn't),
-                //        that's an issue.
-                //        // For now, const_cast is a sign of this mismatch.
-                //    }
-                //    if(row) row->release(REFCOUNT_DEBUG_ARGS); // if getRow
-                //    was used directly here and playDataRow didn't consume the
-                //    ref count
-                // } else {
-                //    m_mainPlaybackAndStatusPanel.setStatusMessage("Select a
-                //    track to play.", false);
-                // }
-                // This is too complex. Let the play button just act on current
-                // transport state.
                 m_playbackController.play(); // Will play if a track is loaded/paused.
             }
             else
@@ -1148,10 +1181,15 @@ namespace jucyaudio
             launchOptions.resizable = true;
             scanDialog->onDialogClosed = [this]()
             {
-                // This lambda is called on the message thread after the DialogWindow has closed.
-                // 'returnValue' is the value passed to exitModalState().
                 spdlog::info("MainComponent: ScanDialogComponent closed");
-                m_dataView.refreshView();
+                if (m_currentMainView == MainViewType::MixEditor)
+                {
+                }
+                else
+                {
+                    // If we are in DataView, we refresh it.
+                    m_dataViewComponent.refreshView();
+                }
 
                 m_mainPlaybackAndStatusPanel.setStatusMessage("Scan dialog closed.", false);
             };
@@ -1175,9 +1213,13 @@ namespace jucyaudio
         {
             using namespace config;
 
-            // const auto node = m_dataView.getCurrentlyFocusedComponent();
+            if(m_currentMainView == MainViewType::MixEditor)
+            {
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Column configuration not available in Mix Editor view.", true);
+                return false;
+            }
             TypedValueVector<DataViewColumnSection> *pConfigSection = nullptr;
-            const auto currentNode = m_dataView.getCurrentNode();
+            const auto currentNode = m_dataViewComponent.getCurrentNode();
             if (!currentNode)
             {
                 m_mainPlaybackAndStatusPanel.setStatusMessage("No node selected at all.", true);
@@ -1217,7 +1259,7 @@ namespace jucyaudio
             spdlog::info("Column configuration changed. Refreshing DataView.");
             config::TomlBackend backend{g_strConfigFilename};
             theSettings.save(backend); // Save changes to config
-            m_dataView.setCurrentNode(currentNode, true); // Refresh the current node
+            m_dataViewComponent.setCurrentNode(currentNode, true); // Refresh the current node
         }
     }
 );
@@ -1239,7 +1281,8 @@ namespace jucyaudio
             {
                 const auto selectedThemeName = theThemeManager.applyTheme(m_lookAndFeel, themeIndex, this);
                 m_navigationPanel.sendLookAndFeelChange();
-                m_dataView.sendLookAndFeelChange();
+                m_dataViewComponent.sendLookAndFeelChange();
+                m_mixEditorComponent.sendLookAndFeelChange();
                 m_playbackToolbar.sendLookAndFeelChange();
                 m_mainPlaybackAndStatusPanel.sendLookAndFeelChange();
                 m_dynamicToolbar.sendLookAndFeelChange();

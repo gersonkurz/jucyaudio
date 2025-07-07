@@ -197,6 +197,8 @@ target_sources(jucyaudio PRIVATE
     UI/MenuManager.h
     UI/MenuPresenter.cpp
     UI/MenuPresenter.h
+    UI/MixEditorComponent.cpp
+    UI/MixEditorComponent.h
 )
 
 # Add binary resources (SVG files)

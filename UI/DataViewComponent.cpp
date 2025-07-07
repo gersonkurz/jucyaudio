@@ -26,9 +26,8 @@ namespace jucyaudio
         return;                                                                                                                                                \
     }
 
-        DataViewComponent::DataViewComponent(MainComponent &owner)
-            : m_ownerMainComponent{owner},
-              m_tableListBox{juce::String{}, this}
+        DataViewComponent::DataViewComponent()
+            : m_tableListBox{juce::String{}, this}
         {
             addAndMakeVisible(m_tableListBox);
             m_tableListBox.setColour(juce::ListBox::outlineColourId, juce::Colours::grey);

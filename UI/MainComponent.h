@@ -11,6 +11,7 @@
 #include <UI/MenuManager.h>
 #include <UI/MenuPresenter.h>
 #include <UI/NavigationPanelComponent.h>
+#include <UI/MixEditorComponent.h>
 #include <UI/PlaybackController.h>
 #include <UI/ThemeManager.h>
 #include <juce_graphics/juce_graphics.h>
@@ -21,6 +22,14 @@ namespace jucyaudio
     namespace ui
     {
         juce::LookAndFeel_V4::ColourScheme getColourSchemeFromConfig();
+
+        enum class MainViewType
+        {
+            DataView,
+            MixEditor
+        };
+
+        MainViewType determineType(const database::INavigationNode *node);
 
         extern std::string g_strConfigFilename;
         class MainComponent : public juce::AudioAppComponent, public MenuPresenter, public juce::Timer, public juce::ChangeListener
@@ -98,8 +107,13 @@ namespace jucyaudio
 
             // UI Child Components
             DynamicToolbarComponent m_dynamicToolbar;
-            NavigationPanelComponent m_navigationPanel; // Will be laid out directly
-            DataViewComponent m_dataView;               // Will be laid out directly
+            NavigationPanelComponent m_navigationPanel;
+
+            MainViewType m_currentMainView{MainViewType::DataView};
+            juce::Component *m_currentMainViewComponent{nullptr};
+            DataViewComponent m_dataViewComponent;
+            MixEditorComponent m_mixEditorComponent;
+
             DividerComponent m_verticalDivider;
 
             PlaybackToolbarComponent m_playbackToolbar; // Direct member object

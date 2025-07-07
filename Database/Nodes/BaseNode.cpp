@@ -185,16 +185,20 @@ namespace jucyaudio
             return NoActionsPossible;
         }
 
-        std::vector<INavigationNode*> getNodePath(INavigationNode *targetNode)
+        NodePath getNodePath(const INavigationNode *targetNode)
         {
-            std::vector<INavigationNode *> path;
-            auto *current = targetNode;
-            while (current != nullptr)
+            NodePath path;
+            if (targetNode)
             {
-                path.push_back(current);
-                current = current->getParent();
+                auto *current = targetNode;
+                while (current != nullptr)
+                {
+                    current->retain(REFCOUNT_DEBUG_ARGS); // Retain the current node
+                    path.push_back(current);
+                    current = current->getParent();
+                }
+                std::reverse(path.begin(), path.end()); // We want the path from root to target
             }
-            std::reverse(path.begin(), path.end()); // We want the path from root to target
             return path;
         }
     } // namespace database

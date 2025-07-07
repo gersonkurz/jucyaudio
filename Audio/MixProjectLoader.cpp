@@ -12,6 +12,15 @@ namespace jucyaudio
             load();
         }
 
+        void MixProjectLoader::setMixId(MixId mixId)
+        {
+            if (m_mixId != mixId)
+            {
+                m_mixId = mixId;
+                load(); // Reload data for the new mix ID
+            }
+        }
+
         // Public method to explicitly reload data if needed
         void MixProjectLoader::load()
         {

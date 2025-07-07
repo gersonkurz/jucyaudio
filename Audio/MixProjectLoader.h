@@ -26,6 +26,7 @@ namespace jucyaudio
             MixProjectLoader &operator=(MixProjectLoader &&) = delete;      // No move assignment
 
             // Public method to explicitly reload data if needed
+            void setMixId(MixId mixId);
 
             // --- Public Accessors ---
             MixId getMixId() const
