@@ -27,14 +27,14 @@ namespace jucyaudio
             void resized() override; // We'll add this to position our label
 
             void changeListenerCallback(juce::ChangeBroadcaster *source) override;
-
+            bool isSelected() const;
+        
         private:
+            void mouseDown(const juce::MouseEvent &event) override;
+
             const database::MixTrack &m_mixTrack;
             const database::TrackInfo &m_trackInfo;
-
             juce::AudioThumbnail m_thumbnail;
-
-            // A label for displaying the track info text
             juce::Label m_infoLabel;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixTrackComponent)

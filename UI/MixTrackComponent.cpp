@@ -1,5 +1,6 @@
 #include "BinaryData.h"
 #include <UI/MixTrackComponent.h>
+#include <UI/TimelineComponent.h>
 #include <Utils/AssortedUtils.h>
 #include <spdlog/spdlog.h>
 
@@ -32,6 +33,23 @@ namespace jucyaudio
             m_thumbnail.removeChangeListener(this);
         }
 
+        void MixTrackComponent::mouseDown(const juce::MouseEvent &event)
+        {
+            if (event.mods.isLeftButtonDown())
+            {
+                // Tell the timeline that this track was selected
+                if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                {
+                    timeline->setSelectedTrack(this);
+
+                    // Also set playhead position based on where we clicked within the track
+                    auto localClick = event.position;
+                    auto trackBounds = getBounds();
+                    double clickTime = (trackBounds.getX() + localClick.x) / timeline->getPixelsPerSecond();
+                    timeline->setCurrentTimePosition(clickTime);
+                }
+            }
+        }
         void MixTrackComponent::resized()
         {
             auto bounds = getLocalBounds();
@@ -39,28 +57,42 @@ namespace jucyaudio
             m_infoLabel.setBounds(bounds.removeFromTop(textSectionHeight).reduced(4, 0));
         }
 
+        // In MixTrackComponent.cpp
+        bool MixTrackComponent::isSelected() const
+        {
+            // Get parent timeline and check if we're the selected track
+            if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+            {
+                return timeline->getSelectedTrack() == this;
+            }
+            return false;
+        }
+
         void MixTrackComponent::paint(juce::Graphics &g)
         {
             auto &lf = getLookAndFeel();
             auto bounds = getLocalBounds();
 
-            // The background for the entire component
-            g.setColour(lf.findColour(juce::TextEditor::backgroundColourId));
+            // Background color - different if selected
+            juce::Colour bgColor = lf.findColour(juce::TextEditor::backgroundColourId);
+            if (isSelected())
+            {
+                bgColor = bgColor.brighter(0.2f); // Slightly brighter when selected
+            }
+
+            g.setColour(bgColor);
             g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
 
             auto waveformArea = bounds.removeFromBottom(waveformSectionHeight);
             g.setColour(lf.findColour(juce::Slider::thumbColourId));
-
-            // --- The Mono Waveform Fix ---
-            // Instead of drawing all channels, we get the number of channels from the thumbnail
-            // and then call drawChannel for each, but we tell it to draw them on top of each other.
-            // A simpler way is to just draw channel 0. For most stereo music, the difference
-            // between L and R is not visually significant at this zoom level.
-            // The most robust way is to ask the thumbnail to give us a mono representation.
-            // However, the AudioThumbnail itself doesn't do mixing. It just draws what it's given.
-
-            // Let's go with the simplest effective solution: draw only the left channel (channel 0).
-            // This is visually clean and computationally cheap.
+            
+            // Selection border
+            if (isSelected())
+            {
+                g.setColour(juce::Colours::orange); // Or theme color
+                g.drawRoundedRectangle(bounds.toFloat().reduced(1), 4.0f, 2.0f);
+            }
+            
             m_thumbnail.drawChannel(g, waveformArea.reduced(2),
                                     0.0,                          // start time
                                     m_thumbnail.getTotalLength(), // end time

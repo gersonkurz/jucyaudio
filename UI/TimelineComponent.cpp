@@ -19,7 +19,6 @@ namespace jucyaudio
 
             // Draw the time grid
             g.setColour(getLookAndFeel().findColour(juce::TextEditor::outlineColourId));
-
             const int numMarkers = static_cast<int>(getWidth() / (30 * m_pixelsPerSecond));
             for (int i = 0; i <= numMarkers; ++i)
             {
@@ -30,6 +29,22 @@ namespace jucyaudio
                 int seconds = (i * 30) % 60;
                 juce::String time = juce::String::formatted("%d:%02d", minutes, seconds);
                 g.drawText(time, juce::roundToInt(x) + 4, 4, 100, 20, juce::Justification::topLeft);
+            }
+        }
+
+        void TimelineComponent::paintOverChildren(juce::Graphics &g)
+        {
+            // Draw playhead OVER all the tracks
+            if (m_currentTimePosition >= 0.0)
+            {
+                float playheadX = static_cast<float>(m_currentTimePosition * m_pixelsPerSecond);
+                g.setColour(juce::Colours::red);
+                g.drawVerticalLine(juce::roundToInt(playheadX), 0.0f, static_cast<float>(getHeight()));
+
+                // Optional: draw a small triangle at the top
+                juce::Path playheadMarker;
+                playheadMarker.addTriangle(playheadX - 5, 0, playheadX + 5, 0, playheadX, 10);
+                g.fillPath(playheadMarker);
             }
         }
 
@@ -64,6 +79,61 @@ namespace jucyaudio
                 auto currentViewPos = viewport->getViewPosition();
                 int deltaX = newMouseX - mouseX;
                 viewport->setViewPosition(currentViewPos.x + deltaX, currentViewPos.y);
+            }
+        }
+
+        void TimelineComponent::mouseDown(const juce::MouseEvent &event)
+        {
+            if (event.mods.isLeftButtonDown())
+            {
+                // Only handle this if we didn't click on a track
+                // (Track components will handle their own clicks)
+                MixTrackComponent *clickedTrack = getTrackAtPosition(event.position.toInt());
+                if (!clickedTrack)
+                {
+                    // Clicked in empty space - move playhead and clear selection
+                    double clickTime = event.position.x / m_pixelsPerSecond;
+                    setCurrentTimePosition(clickTime);
+                    setSelectedTrack(nullptr);
+                    repaint();
+                }
+            }
+        }
+
+        MixTrackComponent *TimelineComponent::getTrackAtPosition(juce::Point<int> position)
+        {
+            for (auto &view : m_trackViews)
+            {
+                if (view.component->getBounds().contains(position))
+                {
+                    return view.component.get();
+                }
+            }
+            return nullptr;
+        }
+
+        void TimelineComponent::setSelectedTrack(MixTrackComponent *track)
+        {
+            if (m_selectedTrack != track)
+            {
+                // Repaint old selection
+                if (m_selectedTrack)
+                    m_selectedTrack->repaint();
+
+                m_selectedTrack = track;
+
+                // Repaint new selection
+                if (m_selectedTrack)
+                    m_selectedTrack->repaint();
+            }
+        }
+
+        void TimelineComponent::setCurrentTimePosition(double timeInSeconds)
+        {
+            if (m_currentTimePosition != timeInSeconds)
+            {
+                m_currentTimePosition = timeInSeconds;
+                repaint(); // Redraw playhead
             }
         }
 
@@ -159,7 +229,8 @@ namespace jucyaudio
             // Clear all existing components
             m_trackViews.clear();
             removeAllChildren();
-
+            m_selectedTrack = nullptr;
+            m_currentTimePosition = 0.0;
             for (const auto &mixTrack : mixLoader.getMixTracks())
             {
                 if (const auto *trackInfo = mixLoader.getTrackInfoForId(mixTrack.trackId))
