@@ -54,6 +54,8 @@ namespace jucyaudio
         {
             if (m_progressCallback)
                 m_progressCallback(0.0f, "Starting export...");
+
+            loadMix(mixId);
         }
 
         bool ExportMixImplementation::run()
