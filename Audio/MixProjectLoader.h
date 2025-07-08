@@ -39,6 +39,11 @@ namespace jucyaudio
                 return m_mixTracks;
             }
 
+            std::vector<MixTrack> &getMixTracks()
+            {
+                return m_mixTracks;
+            }
+
             const TrackInfo *getTrackInfoForId(TrackId trackId) const
             {
                 const auto it = m_trackInfosMap.find(trackId);

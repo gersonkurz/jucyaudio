@@ -378,6 +378,7 @@ namespace jucyaudio
 
             void BpmAnalysis::processWork()
             {
+                return;
                 spdlog::info("BPM Analysis Task: Starting work...");
                 // --- Cooperative Startup Delay (unchanged, correct) ---
                 if (!m_startTime.has_value())

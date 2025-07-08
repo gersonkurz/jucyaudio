@@ -33,7 +33,15 @@ namespace jucyaudio
                 return m_timeline;
             }
 
+            auto &getMixProjectLoader()
+            {
+                return m_mixProjectLoader;
+            }
+
         private:
+            void updateTrackPositionInData(TrackId trackId, std::chrono::milliseconds newStartTime);
+            void saveMixChanges();
+
             juce::AudioFormatManager m_formatManager;
             juce::AudioThumbnailCache m_thumbnailCache{5}; // 5 items in the cache
 

@@ -27,6 +27,13 @@ namespace jucyaudio
             // Load the thumbnail source
             m_thumbnail.setSource(new juce::FileInputSource(juce::File(trackInfo.filepath.string())));
             m_thumbnail.addChangeListener(this);
+
+                // Set up drag constraints for horizontal-only movement
+            m_constrainer.setMinimumOnscreenAmounts(0xffffff, 0xffffff, 0xffffff, 0xffffff);
+
+            // Restrict to horizontal movement only by setting fixed Y position
+            // We'll update this in resized() to match the actual Y position
+            m_constrainer.setFixedAspectRatio(0.0); // Allow any aspect ratio
         }
 
         MixTrackComponent::~MixTrackComponent()
@@ -42,13 +49,8 @@ namespace jucyaudio
                 {
                     timeline->setSelectedTrack(this);
 
-                    // Calculate the time position within the track
-                    auto localClick = event.position;
-                    auto trackBounds = getBounds();
-                    double clickTime = (trackBounds.getX() + localClick.x) / timeline->getPixelsPerSecond();
-                    timeline->setCurrentTimePosition(clickTime);
-
-                    spdlog::info("Track clicked at local x: {:.1f}, global time: {:.2f}s", localClick.x, clickTime);
+                    // Only handle click-to-seek if we're not about to start dragging
+                    // (We'll determine this based on whether the mouse moves significantly)
 
                     if (event.getNumberOfClicks() == 2)
                     {
@@ -56,6 +58,10 @@ namespace jucyaudio
                         spdlog::info("Double-click on track - requesting playback");
                         if (timeline->onPlaybackRequested)
                         {
+                            auto localClick = event.position;
+                            auto trackBounds = getBounds();
+                            double clickTime = (trackBounds.getX() + localClick.x) / timeline->getPixelsPerSecond();
+
                             const auto startTime = std::chrono::duration<double>(m_mixTrack.mixStartTime).count();
                             double trackOffset = clickTime - startTime;
                             trackOffset = juce::jlimit(0.0, std::chrono::duration<double>(m_trackInfo.duration).count(), trackOffset);
@@ -64,24 +70,18 @@ namespace jucyaudio
                             timeline->onPlaybackRequested(audioFile, trackOffset);
                         }
                     }
-                    else if (event.getNumberOfClicks() == 1)
-                    {
-                        // Single-click: only change playback if something is already playing
-                        if (timeline->onSeekRequested)
-                        {
-                            spdlog::info("Single-click on track - checking if we should switch playback");
-                            timeline->onSeekRequested(clickTime);
-                        }
-                    }
+                    // Single-click behavior will be handled in mouseUp if no drag occurred
                 }
             }
         }
+
 
         void MixTrackComponent::resized()
         {
             auto bounds = getLocalBounds();
             // Place the label in the top section
             m_infoLabel.setBounds(bounds.removeFromTop(textSectionHeight).reduced(4, 0));
+
         }
 
         // In MixTrackComponent.cpp
@@ -225,5 +225,75 @@ namespace jucyaudio
                 repaint();
             }
         }
+
+        void MixTrackComponent::setTopLeftPositionWithLogging(int newX, int newY)
+        {
+            auto oldPos = getPosition();
+            spdlog::info("POSITION_CHANGE: Track {}, from ({},{}) to ({},{}), isDragging={}", m_mixTrack.trackId, oldPos.x, oldPos.y, newX, newY, m_isDragging);
+
+            setTopLeftPosition(newX, newY);
+
+            // Log the actual position after setting (to catch any constraints)
+            auto newPos = getPosition();
+            if (newPos.x != newX || newPos.y != newY)
+            {
+                spdlog::warn("POSITION_CONSTRAINED: Track {}, requested ({},{}), actual ({},{})", m_mixTrack.trackId, newX, newY, newPos.x, newPos.y);
+            }
+        }
+
+        void MixTrackComponent::mouseDrag(const juce::MouseEvent &event)
+        {
+            if (event.mods.isLeftButtonDown())
+            {
+                if (!m_isDragging)
+                {
+                    m_isDragging = true;
+                    m_originalTrackX = getX();
+
+                    // Lock the constrainer to the current Y position
+                    int currentY = getY();
+                    m_constrainer.setLockedY(currentY);
+
+                    spdlog::info("DRAG_START: Track {}, originalX={}, locking Y to {}", m_mixTrack.trackId, m_originalTrackX, currentY);
+
+                    if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                    {
+                        timeline->startTrackDrag(this);
+                    }
+                }
+
+                // Use JUCE's ComponentDragger with our horizontal-only constrainer
+                m_dragger.dragComponent(this, event, &m_constrainer);
+
+                // Log the result
+                spdlog::debug("DRAG_MOVE: Track {}, position=({},{})", m_mixTrack.trackId, getX(), getY());
+
+                // Notify timeline of new position
+                if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                {
+                    double newTime = getX() / timeline->getPixelsPerSecond();
+                    timeline->updateTrackDrag(this, newTime);
+                }
+            }
+        }
+
+        void MixTrackComponent::mouseUp(const juce::MouseEvent &event)
+        {
+            if (m_isDragging)
+            {
+                spdlog::info("Finished dragging track ID: {}", m_mixTrack.trackId);
+
+                // Notify timeline that drag is complete
+                if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                {
+                    double finalTime = getX() / timeline->getPixelsPerSecond();
+                    timeline->finishTrackDrag(this, finalTime);
+                }
+
+                m_isDragging = false;
+            }
+        }
+
+
     } // namespace ui
 } // namespace jucyaudio

@@ -295,30 +295,22 @@ namespace jucyaudio
         }
         void TimelineComponent::resized()
         {
-            spdlog::info("TimelineComponent::resized() called -----------------------");
-            // --- THIS IS THE CRITICAL CHANGE ---
-            // We do NOT use getHeight() here. getHeight() returns the *current* size of the component,
-            // which might be the large size we just set.
-            // We need the size of the VISIBLE AREA, which is the Viewport's size.
-            // We can get this from our parent component, which is the Viewport's own content area.
+            spdlog::info("LAYOUT_START: TimelineComponent::resized() -----------------------");
 
-            // This is the width and height of the visible "window" onto our timeline.
             auto visibleArea = getParentComponent()->getLocalBounds();
-
             const int rulerHeight = 30;
             const int trackHeight = MixTrackComponent::totalHeight;
             const int yGap = 5;
-
             const int availableHeightForLanes = visibleArea.getHeight() - rulerHeight;
-            spdlog::info("Available height for tracks: {}", availableHeightForLanes);
+
+            spdlog::info("LAYOUT_INFO: visibleArea={}x{}, availableHeight={}", visibleArea.getWidth(), visibleArea.getHeight(), availableHeightForLanes);
+
             int numLanes = availableHeightForLanes / (trackHeight + yGap);
             if (numLanes < 1)
                 numLanes = 1;
 
-            spdlog::info("Number of lanes available: {}", numLanes);
-
             int currentLane = 0;
-            int laneDirection = +1; // +1 for downhill, -1 for uphill
+            int laneDirection = +1;
 
             for (const auto &view : m_trackViews)
             {
@@ -329,31 +321,31 @@ namespace jucyaudio
 
                 const int startX = static_cast<int>(startTime * m_pixelsPerSecond);
                 const int width = static_cast<int>(trackDuration * m_pixelsPerSecond);
-
-                // Calculate the Y position based on the current lane.
                 const int yPos = rulerHeight + (currentLane * (trackHeight + yGap));
+
+                // Log BEFORE setting bounds
+                spdlog::info("LAYOUT_TRACK: Track {}, startTime={:.3f}s, startX={}, width={}, yPos={}, currentBounds=({},{},{}x{})", view.mixTrackData->trackId,
+                             startTime, startX, width, yPos, view.component->getX(), view.component->getY(), view.component->getWidth(),
+                             view.component->getHeight());
+
                 view.component->setBounds(startX, yPos, width, trackHeight);
 
-                spdlog::info("Setting bounds for track ID {}: x={}, y={}, width={}, height={}", view.mixTrackData->trackId, startX, yPos, width, trackHeight);
-                // --- Update the lane for the next track ---
-                // If we are about to go out of bounds...
+                // Log AFTER setting bounds
+                spdlog::info("LAYOUT_SET: Track {}, newBounds=({},{},{}x{})", view.mixTrackData->trackId, view.component->getX(), view.component->getY(),
+                             view.component->getWidth(), view.component->getHeight());
+
+                // Update lane logic
                 if ((currentLane + laneDirection) >= numLanes || (currentLane + laneDirection) < 0)
                 {
-                    spdlog::info("Changing lane direction at lane {} (numLanes: {})", currentLane, numLanes);
-                    // Reverse direction.
                     laneDirection *= -1;
-                    spdlog::info("New lane direction: {}", laneDirection);
                 }
-
-                // Move to the next lane.
                 currentLane += laneDirection;
-                spdlog::info("Moving to lane: {}", currentLane);
-
-                // A special case for when numLanes is 1, to prevent getting stuck.
                 if (numLanes == 1)
                     currentLane = 0;
             }
-            spdlog::info("TimelineComponent::resized() finished -----------------------");
+
+            spdlog::info("LAYOUT_END: TimelineComponent::resized() finished -----------------------");
+
         }
 
         void TimelineComponent::populateFrom(const audio::MixProjectLoader &mixLoader)
@@ -406,6 +398,111 @@ namespace jucyaudio
             spdlog::info("Forcing resized() call after populateFrom");
             resized();
             repaint();
+        }
+
+        void TimelineComponent::startTrackDrag(MixTrackComponent *track)
+        {
+            m_draggingTrack = track;
+            setSelectedTrack(track);
+
+            spdlog::info("Timeline: Started drag for track at time position: {:.2f}s", track->getX() / m_pixelsPerSecond);
+        }
+
+        void TimelineComponent::updateTrackDrag(MixTrackComponent *track, double newTime)
+        {
+            if (m_draggingTrack == track)
+            {
+                spdlog::info("TIMELINE_DRAG: Track at time {:.3f}s, draggingTrack={}", newTime, m_draggingTrack != nullptr);
+
+                static double lastUpdateTime = -1.0;
+                if (std::abs(newTime - lastUpdateTime) > 0.1)
+                {
+                    lastUpdateTime = newTime;
+                    spdlog::info("TIMELINE_UPDATE: Significant time change to {:.3f}s", newTime);
+                }
+            }
+        }
+
+        void TimelineComponent::finishTrackDrag(MixTrackComponent *track, double finalTime)
+        {
+            if (m_draggingTrack == track)
+            {
+                spdlog::info("Timeline: Finished drag at time: {:.2f}s", finalTime);
+
+                // Find the track data and update it
+                auto trackId = getTrackIdForComponent(track);
+                if (trackId != 0)
+                {
+                    updateTrackPosition(trackId, finalTime);
+                }
+
+                m_draggingTrack = nullptr;
+
+                // Recalculate layout after position change
+                recalculateTrackOrder();
+                resized();
+                repaint();
+
+                // Notify that mix data has changed
+                if (onMixChanged)
+                {
+                    onMixChanged();
+                }
+            }
+        }
+
+        // Helper method to get track ID from component
+        TrackId TimelineComponent::getTrackIdForComponent(MixTrackComponent *component)
+        {
+            for (const auto &view : m_trackViews)
+            {
+                if (view.component.get() == component)
+                {
+                    return view.mixTrackData->trackId;
+                }
+            }
+            return 0; // Not found
+        }
+
+        // Update track position in the data model
+        void TimelineComponent::updateTrackPosition(TrackId trackId, double newTimeInSeconds)
+        {
+            // We need access to the MixProjectLoader to modify the data
+            // This will require getting a reference to it from MixEditorComponent
+
+            // For now, let's assume we have a callback to get the mix data
+            if (onTrackPositionChanged)
+            {
+                auto newStartTime = std::chrono::milliseconds(static_cast<int64_t>(newTimeInSeconds * 1000));
+                onTrackPositionChanged(trackId, newStartTime);
+            }
+        }
+
+        // Method to recalculate track order based on new positions
+        void TimelineComponent::recalculateTrackOrder()
+        {
+            // Sort tracks by their mixStartTime and update orderInMix
+            std::vector<TrackView *> sortedViews;
+            for (auto &view : m_trackViews)
+            {
+                sortedViews.push_back(&view);
+            }
+
+            std::sort(sortedViews.begin(), sortedViews.end(),
+                      [](const TrackView *a, const TrackView *b)
+                      {
+                          return a->mixTrackData->mixStartTime < b->mixTrackData->mixStartTime;
+                      });
+
+            // Update orderInMix values
+            for (size_t i = 0; i < sortedViews.size(); ++i)
+            {
+                // This is a const_cast because we need to modify the data
+                // We'll need to get non-const access to the mix data
+                const_cast<database::MixTrack *>(sortedViews[i]->mixTrackData)->orderInMix = static_cast<int>(i);
+            }
+
+            spdlog::info("Recalculated track order for {} tracks", sortedViews.size());
         }
     } // namespace ui
 } // namespace jucyaudio

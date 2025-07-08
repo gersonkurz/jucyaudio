@@ -29,14 +29,46 @@ namespace jucyaudio
             void changeListenerCallback(juce::ChangeBroadcaster *source) override;
             bool isSelected() const;
             void drawVolumeEnvelope(juce::Graphics &g, juce::Rectangle<int> area);
-        
+            
         private:
+            // Custom constrainer that only allows horizontal movement
+            class HorizontalOnlyConstrainer : public juce::ComponentBoundsConstrainer
+            {
+            public:
+                void setLockedY(int y)
+                {
+                    m_lockedY = y;
+                }
+
+                void checkBounds(juce::Rectangle<int> &bounds, const juce::Rectangle<int> & /*previousBounds*/, const juce::Rectangle<int> & /*limits*/,
+                                 bool /*isStretchingTop*/, bool /*isStretchingLeft*/, bool /*isStretchingBottom*/, bool /*isStretchingRight*/) override
+                {
+                    // Lock the Y position - only allow horizontal movement
+                    bounds.setY(m_lockedY);
+
+                    // Prevent dragging before X=0 (before timeline start)
+                    if (bounds.getX() < 0)
+                        bounds.setX(0);
+                }
+
+            private:
+                int m_lockedY = 0;
+            };
             void mouseDown(const juce::MouseEvent &event) override;
+            void mouseDrag(const juce::MouseEvent &event) override;
+            void mouseUp(const juce::MouseEvent &event) override;
+            void setTopLeftPositionWithLogging(int newX, int newY);
 
             const database::MixTrack &m_mixTrack;
             const database::TrackInfo &m_trackInfo;
             juce::AudioThumbnail m_thumbnail;
             juce::Label m_infoLabel;
+            juce::ComponentDragger m_dragger;
+            HorizontalOnlyConstrainer m_constrainer; 
+
+            bool m_isDragging = false;
+            juce::Point<int> m_dragStartPosition;
+            int m_originalTrackX = 0;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixTrackComponent)
         };

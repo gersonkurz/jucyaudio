@@ -3,24 +3,33 @@
 #include <UI/MixEditorComponent.h>
 #include <Utils/StringWriter.h>
 #include <Utils/UiUtils.h>
+#include <Database/TrackLibrary.h>
 
 namespace jucyaudio
 {
     namespace ui
     {
+
         MixEditorComponent::MixEditorComponent()
             : m_timeline{m_formatManager, m_thumbnailCache}
         {
             m_formatManager.registerBasicFormats();
 
-            // addAndMakeVisible(m_timeline);
-            //  Set the timeline as the component to be viewed by the viewport.
+            // Set the timeline as the component to be viewed by the viewport.
             m_viewport.setViewedComponent(&m_timeline, false); // false = don't delete when replaced
-
-            // We want both horizontal and vertical scrollbars if needed.
             m_viewport.setScrollBarsShown(true, true);
-
             addAndMakeVisible(m_viewport);
+
+            // Set up the new drag-related callbacks
+            m_timeline.onTrackPositionChanged = [this](TrackId trackId, std::chrono::milliseconds newStartTime)
+            {
+                updateTrackPositionInData(trackId, newStartTime);
+            };
+
+            m_timeline.onMixChanged = [this]()
+            {
+                saveMixChanges();
+            };
         }
 
         void MixEditorComponent::forceRefresh()
@@ -63,6 +72,49 @@ namespace jucyaudio
         {
             // The viewport now fills the entire editor area.
             m_viewport.setBounds(getLocalBounds());
+        }
+
+
+        // Add new methods to MixEditorComponent.cpp
+        void MixEditorComponent::updateTrackPositionInData(TrackId trackId, std::chrono::milliseconds newStartTime)
+        {
+            spdlog::info("Updating position for track {} to {}ms", trackId, newStartTime.count());
+
+            // Get non-const access to the mix tracks
+            auto &mixTracks = m_mixProjectLoader.getMixTracks(); // This method needs to be added
+
+            // Find and update the track
+            for (auto &track : mixTracks)
+            {
+                if (track.trackId == trackId)
+                {
+                    track.mixStartTime = newStartTime;
+                    spdlog::info("Updated track {} mixStartTime to {}", trackId, newStartTime.count());
+                    break;
+                }
+            }
+        }
+
+        void MixEditorComponent::saveMixChanges()
+        {
+            spdlog::info("Saving mix changes to database");
+
+            // Get the current mix info and tracks
+            auto mixId = m_mixProjectLoader.getMixId();
+            auto &mixTracks = m_mixProjectLoader.getMixTracks();
+
+            // Get mix info from database
+            auto mixInfo = database::theTrackLibrary.getMixManager().getMix(mixId);
+
+            // Save changes back to database
+            if (database::theTrackLibrary.getMixManager().createOrUpdateMix(mixInfo, mixTracks))
+            {
+                spdlog::info("Successfully saved mix changes");
+            }
+            else
+            {
+                spdlog::error("Failed to save mix changes");
+            }
         }
     } // namespace ui
 } // namespace jucyaudio

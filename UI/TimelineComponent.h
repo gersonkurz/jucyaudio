@@ -36,11 +36,15 @@ namespace jucyaudio
             void playSelectedTrackFromPosition(double timePosition);
             bool keyPressed(const juce::KeyPress &key) override;
             void deleteSelectedTrack();
+            void startTrackDrag(MixTrackComponent *track);
+            void updateTrackDrag(MixTrackComponent *track, double newTime);
+            void finishTrackDrag(MixTrackComponent *track, double finalTime);
 
             std::function<void(const juce::File &, double)> onPlaybackRequested;
             std::function<void(double)> onSeekRequested;
             std::function<void(TrackId)> onTrackDeleted;
-
+            std::function<void(TrackId, std::chrono::milliseconds)> onTrackPositionChanged;
+            std::function<void()> onMixChanged;
 
         private:
             void paint(juce::Graphics &g) override;
@@ -60,7 +64,7 @@ namespace jucyaudio
                 const database::MixTrack *mixTrackData;
                 const database::TrackInfo *trackInfoData;
             };
-
+            MixTrackComponent *m_draggingTrack = nullptr;
             juce::AudioFormatManager &m_formatManager;
             juce::AudioThumbnailCache &m_thumbnailCache;
             std::vector<TrackView> m_trackViews;
@@ -76,6 +80,9 @@ namespace jucyaudio
 
             // Helper methods
             MixTrackComponent *getTrackAtPosition(juce::Point<int> position);
+            TrackId getTrackIdForComponent(MixTrackComponent *component);
+            void updateTrackPosition(TrackId trackId, double newTimeInSeconds);
+            void recalculateTrackOrder();
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimelineComponent)
         };
