@@ -33,6 +33,64 @@ namespace jucyaudio
             }
         }
 
+        void TimelineComponent::recalculateLayout()
+        {
+            // Recalculate width based on new zoom
+            double maxTimeSecs = 0.0;
+            if (!m_trackViews.empty())
+            {
+                const auto &lastView = m_trackViews.back();
+                const auto startTime = std::chrono::duration<double>(lastView.mixTrackData->mixStartTime).count();
+                const auto duration = std::chrono::duration<double>(lastView.trackInfoData->duration).count();
+                maxTimeSecs = startTime + duration;
+            }
+
+            m_calculatedWidth = static_cast<int>(maxTimeSecs * m_pixelsPerSecond)  + 200;
+            setSize(m_calculatedWidth, m_calculatedHeight);
+
+            // This will trigger resized() which repositions all tracks
+            resized();
+            repaint();
+        }
+
+        void TimelineComponent::maintainViewportPosition(double timeAtMouse, int mouseX)
+        {
+            if (auto *viewport = findParentComponentOfClass<juce::Viewport>())
+            {
+                // Calculate where that time position should be after zoom
+                int newMouseX = static_cast<int>(timeAtMouse * m_pixelsPerSecond);
+
+                // Adjust viewport to keep the time position under the cursor
+                auto currentViewPos = viewport->getViewPosition();
+                int deltaX = newMouseX - mouseX;
+                viewport->setViewPosition(currentViewPos.x + deltaX, currentViewPos.y);
+            }
+        }
+
+        void TimelineComponent::mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel)
+        {
+            if (event.mods.isCtrlDown())
+            {
+                // Get mouse position relative to timeline
+                auto mousePos = event.getPosition();
+
+                // Calculate time position at mouse cursor
+                double timeAtMouse = mousePos.x / m_pixelsPerSecond;
+
+                // Calculate new zoom level
+                double zoomDelta = wheel.deltaY > 0 ? ZOOM_FACTOR : (1.0 / ZOOM_FACTOR);
+                double newZoom = juce::jlimit(MIN_ZOOM, MAX_ZOOM, m_pixelsPerSecond * zoomDelta);
+
+                if (newZoom != m_pixelsPerSecond)
+                {
+                    m_pixelsPerSecond = newZoom;
+                    recalculateLayout();
+
+                    // Keep the time position under the mouse cursor stable
+                    maintainViewportPosition(timeAtMouse, mousePos.x);
+                }
+            }
+        }
         void TimelineComponent::resized()
         {
             spdlog::info("TimelineComponent::resized() called -----------------------");

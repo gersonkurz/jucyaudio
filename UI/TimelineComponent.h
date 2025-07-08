@@ -12,11 +12,17 @@ namespace jucyaudio
         public:
             TimelineComponent(juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache);
 
+            // The main method to update the timeline display from the data model.
+            void populateFrom(const audio::MixProjectLoader &mixLoader);
+
+
+        private:
             void paint(juce::Graphics &g) override;
             void resized() override;
 
-            // The main method to update the timeline display from the data model.
-            void populateFrom(const audio::MixProjectLoader &mixLoader);
+            void mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel) override;
+            void recalculateLayout();
+            void maintainViewportPosition(double timeAtMouse, int mouseX);
 
         private:
             // A helper struct to manage UI components and their model data together.
@@ -33,7 +39,10 @@ namespace jucyaudio
             int m_calculatedWidth = 0;
             int m_calculatedHeight = 0;
             // For converting time to pixels
-            double m_pixelsPerSecond = 10.0;
+            double m_pixelsPerSecond = 1.5;
+            static constexpr double MIN_ZOOM = 1.0;    // 1 pixel per second (zoomed out)
+            static constexpr double MAX_ZOOM = 100.0;  // 100 pixels per second (zoomed in)
+            static constexpr double ZOOM_FACTOR = 1.2; // 20% zoom steps
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimelineComponent)
         };
