@@ -78,21 +78,21 @@ namespace jucyaudio
         std::vector<MixInfo> SqliteMixManager::getMixes(const TrackQueryArgs &args) const
         {
             const std::string BASE_STMT = R"SQL(SELECT 
-                m.mix_id,
-                m.name,
-                m.timestamp as created,
-                COUNT(mt.track_id) as track_count,
-                MAX(mt.mix_start_time + mt.cutoff_time) as total_length
-            FROM Mixes m
-            LEFT JOIN MixTracks mt ON m.mix_id = mt.mix_id
-            GROUP BY m.mix_id, m.name, m.timestamp)SQL";
+    m.mix_id,
+    m.name,
+    m.timestamp as created,
+    COUNT(mt.track_id) as track_count,
+    MAX(mt.mix_start_time + mt.cutoff_time) as total_length
+FROM Mixes m
+LEFT JOIN MixTracks mt ON m.mix_id = mt.mix_id
+)SQL";
 
             StringWriter output;
             output.append(BASE_STMT);
+            bool first = true;
             if (!args.searchTerms.empty())
             {
                 output.append(" WHERE ");
-                bool first = true;
                 for (const auto &searchTerm : args.searchTerms)
                 {
                     if (first)
@@ -108,9 +108,24 @@ namespace jucyaudio
                     output.append("%'");
                 }
             }
+            if (args.mixId)
+            {
+                if (first)
+                {
+                    output.append(" WHERE ");
+                    first = false;
+                }
+                else
+                {
+                    output.append(" AND ");
+                }
+                output.append("m.mix_id = ");
+                output.append(std::to_string(args.mixId));
+            }
+            output.append("\nGROUP BY m.mix_id, m.name, m.timestamp\n");
             if (!args.sortBy.empty())
             {
-                output.append(" ORDER BY ");
+                output.append("ORDER BY ");
                 bool first = true;
                 for (const auto &sortOrder : args.sortBy)
                 {
@@ -155,6 +170,21 @@ namespace jucyaudio
                 },
                 "SELECT * FROM MixTracks WHERE mix_id=? ORDER BY order_in_mix ASC", mixId);
             return mixTracks;
+        }
+
+        bool SqliteMixManager::removeTrackFromMix(MixId mixId, TrackId trackId) const
+        {
+            if (SqliteTransaction transaction{m_db})
+            {
+                SqliteStatement stmt{m_db, "DELETE FROM MixTracks WHERE mix_id = ? AND track_id = ?"};
+                stmt.addParam(mixId);
+                stmt.addParam(trackId);
+                if (stmt.execute())
+                {
+                    return transaction.commit();
+                }
+            }
+            return false;
         }
 
         bool SqliteMixManager::createOrUpdateMix(MixInfo &mixInfo, std::vector<MixTrack> &tracks) const

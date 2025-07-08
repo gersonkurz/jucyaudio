@@ -10,6 +10,64 @@ namespace jucyaudio
             : m_formatManager{formatManager},
               m_thumbnailCache{thumbnailCache}
         {
+            setWantsKeyboardFocus(true);  
+        }
+
+        bool TimelineComponent::keyPressed(const juce::KeyPress &key)
+        {
+            if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
+            {
+                if (m_selectedTrack)
+                {
+                    spdlog::info("Delete key pressed - removing selected track");
+                    deleteSelectedTrack();
+                    return true; // Consumed the key event
+                }
+            }
+
+            return false; // Let parent handle other keys
+        }
+
+        void TimelineComponent::deleteSelectedTrack()
+        {
+            if (!m_selectedTrack)
+                return;
+
+            spdlog::info("Deleting selected track from timeline");
+
+            // Find which track view corresponds to the selected component
+            auto it = std::find_if(m_trackViews.begin(), m_trackViews.end(),
+                                   [this](const TrackView &view)
+                                   {
+                                       return view.component.get() == m_selectedTrack;
+                                   });
+
+            if (it != m_trackViews.end())
+            {
+                // Get the track ID before we remove it (for data model update)
+                TrackId trackIdToRemove = it->mixTrackData->trackId;
+
+                // Remove from UI
+                removeChildComponent(it->component.get());
+
+                // Remove from our track views
+                m_trackViews.erase(it);
+
+                // Clear selection since we just deleted the selected track
+                m_selectedTrack = nullptr;
+
+                // Notify the parent that we need to update the data model
+                if (onTrackDeleted)
+                {
+                    onTrackDeleted(trackIdToRemove);
+                }
+
+                // Recalculate layout and repaint
+                resized();
+                repaint();
+
+                spdlog::info("Track {} removed from timeline", trackIdToRemove);
+            }
         }
 
         void TimelineComponent::paint(juce::Graphics &g)
@@ -300,11 +358,12 @@ namespace jucyaudio
 
         void TimelineComponent::populateFrom(const audio::MixProjectLoader &mixLoader)
         {
+            m_selectedTrack = nullptr;
+            m_currentTimePosition = 0.0;
             // Clear all existing components
             m_trackViews.clear();
             removeAllChildren();
-            m_selectedTrack = nullptr;
-            m_currentTimePosition = 0.0;
+
             for (const auto &mixTrack : mixLoader.getMixTracks())
             {
                 if (const auto *trackInfo = mixLoader.getTrackInfoForId(mixTrack.trackId))
@@ -314,9 +373,6 @@ namespace jucyaudio
                     view.mixTrackData = &mixTrack;
                     view.trackInfoData = trackInfo;
                     view.component = std::make_unique<MixTrackComponent>(*view.mixTrackData, *view.trackInfoData, m_formatManager, m_thumbnailCache);
-                    // This is important for a clean layout:
-                    // We add the component, but we also explicitly set its z-order.
-                    // This ensures that track 1 is drawn *on top of* track 0, etc.
                     addAndMakeVisible(*view.component, m_trackViews.size());
                     m_trackViews.push_back(std::move(view));
                 }
@@ -326,18 +382,13 @@ namespace jucyaudio
                 }
             }
 
-            // --- Calculate the ideal size, but store it in members ---
+            // Calculate size
             const int trackHeight = MixTrackComponent::totalHeight;
             const int yGap = 5;
             const int rulerHeight = 30;
-
-            // The height is now determined by the NUMBER OF LANES we intend to use,
-            // not a simple stack of all tracks. Let's assume a reasonable number of lanes
-            // for now, and then use the *actual* height in resized().
-            const int numLanesForHeightCalc = 8; // Let's use a generous fixed number for the total height
+            const int numLanesForHeightCalc = 8;
             m_calculatedHeight = rulerHeight + (numLanesForHeightCalc * (trackHeight + yGap));
 
-            // Width calculation is correct.
             double maxTimeSecs = 0.0;
             if (!m_trackViews.empty())
             {
@@ -348,8 +399,13 @@ namespace jucyaudio
             }
             m_calculatedWidth = static_cast<int>(maxTimeSecs * m_pixelsPerSecond) + 200;
 
-            // Set the component's size to its calculated ideal size.
+            // Set the component's size to its calculated ideal size
             setSize(m_calculatedWidth, m_calculatedHeight);
+
+            // FORCE the layout calculation - this is the missing piece!
+            spdlog::info("Forcing resized() call after populateFrom");
+            resized();
+            repaint();
         }
     } // namespace ui
 } // namespace jucyaudio

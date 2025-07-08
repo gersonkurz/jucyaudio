@@ -589,7 +589,7 @@ namespace jucyaudio
                 if (m_currentMainView == MainViewType::MixEditor)
                 {
                     m_mixEditorComponent.loadMix(m_currentSelectedDataNode->getUniqueId()); // Load the mix data
-                    
+
                     // Set up playback callback
                     m_mixEditorComponent.setPlaybackCallback(
                         [this](const juce::File &audioFile, double startPosition)
@@ -602,6 +602,13 @@ namespace jucyaudio
                         [this](double timePosition)
                         {
                             this->seekToTimelinePosition(timePosition);
+                        });
+
+                    // Set up track deletion callback
+                    m_mixEditorComponent.setTrackDeletionCallback(
+                        [this](TrackId trackId)
+                        {
+                            this->removeTrackFromMix(trackId);
                         });
                 }
                 else
@@ -627,6 +634,60 @@ namespace jucyaudio
                                                // state
         }
 
+        void MainComponent::removeTrackFromMix(TrackId trackId)
+        {
+            if (!m_currentSelectedDataNode)
+                return;
+
+            spdlog::info("Removing track {} from mix data model", trackId);
+
+            // Get the mix ID from the current node
+            MixId mixId = m_currentSelectedDataNode->getUniqueId();
+
+            auto mixManager{&theTrackLibrary.getMixManager()};
+            auto mixInfo{mixManager->getMix(mixId)};
+            auto mixTracks{mixManager->getMixTracks(mixId)};
+            auto it = std::find_if(mixTracks.begin(), mixTracks.end(),
+                                   [trackId](const MixTrack &item)
+                                   {
+                                       return item.trackId == trackId;
+                                   });
+
+            if (it != mixTracks.end())
+            {
+                const auto index = std::distance(mixTracks.begin(), it);
+                auto startTimeOfNextTrack = it->mixStartTime; // Start time of the track to be removed
+                mixTracks.erase(it);
+
+                // Now index points to the element that came after the removed one
+                for (std::size_t i = index; i < mixTracks.size(); ++i)
+                {
+                    auto &track{mixTracks[i]}; // Reference to the track at index i
+                    assert(track.orderInMix > 1);
+                    --track.orderInMix;
+                    const auto temp{startTimeOfNextTrack};
+                    startTimeOfNextTrack = track.mixStartTime;
+                    track.mixStartTime = temp;
+                }
+            }
+
+            // Remove from the database/data model
+            if (mixManager->createOrUpdateMix(mixInfo, mixTracks))
+            {
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Track removed from mix", false);
+
+                // Refresh the mix data in the editor
+                // This will reload the mix without the deleted track
+                m_mixEditorComponent.loadMix(mixId);
+                m_mixEditorComponent.forceRefresh();
+            }
+            else
+            {
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Failed to remove track from mix", true);
+                spdlog::error("Failed to remove track {} from mix {}", trackId, mixId);
+            }
+        }
+
         void MainComponent::seekToTimelinePosition(double timePosition)
         {
             spdlog::info("seekToTimelinePosition called with time: {:.2f}", timePosition);
@@ -635,13 +696,27 @@ namespace jucyaudio
             if (m_playbackController.getCurrentState() == PlaybackController::State::Playing ||
                 m_playbackController.getCurrentState() == PlaybackController::State::Paused)
             {
-                spdlog::info("Seeking active playback to position: {:.2f}", timePosition);
-                m_playbackController.seek(timePosition);
-                m_mainPlaybackAndStatusPanel.setStatusMessage("Seeking to " + juce::String(timePosition, 1) + "s", false);
+                spdlog::info("Something is playing - switching to clicked track position");
+
+                // We need to figure out which track was clicked and play that
+                // For now, let's get the selected track and play it from the position
+                auto &timeline = m_mixEditorComponent.getTimeline(); // You'll need to add this getter
+                if (timeline.getSelectedTrack())
+                {
+                    // Play the selected track from the clicked position
+                    timeline.playSelectedTrackFromPosition(timePosition);
+                }
+                else
+                {
+                    // Fallback: just seek within current track
+                    m_playbackController.seek(timePosition);
+                }
             }
             else
             {
-                spdlog::info("No active playback - just updating visual position");
+                spdlog::info("Nothing playing - just updating visual position (no playback change)");
+                // Just update the visual position - no playback starts
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Position set to " + juce::String(timePosition, 1) + "s", false);
             }
         }
 

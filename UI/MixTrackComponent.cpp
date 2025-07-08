@@ -49,18 +49,28 @@ namespace jucyaudio
 
                     spdlog::info("Track clicked at local x: {:.1f}, global time: {:.2f}s", localClick.x, clickTime);
 
-                    // Both single-click and double-click do the same thing:
-                    // Play this track from the clicked position
-                    if (timeline->onPlaybackRequested)
+                    if (event.getNumberOfClicks() == 2)
                     {
-                        // Calculate offset within this specific track
-                        const auto startTime = std::chrono::duration<double>(m_mixTrack.mixStartTime).count();
-                        double trackOffset = clickTime - startTime;
-                        trackOffset = juce::jlimit(0.0, std::chrono::duration<double>(m_trackInfo.duration).count(), trackOffset);
+                        // Double-click: ALWAYS play this track from clicked position
+                        spdlog::info("Double-click on track - requesting playback");
+                        if (timeline->onPlaybackRequested)
+                        {
+                            const auto startTime = std::chrono::duration<double>(m_mixTrack.mixStartTime).count();
+                            double trackOffset = clickTime - startTime;
+                            trackOffset = juce::jlimit(0.0, std::chrono::duration<double>(m_trackInfo.duration).count(), trackOffset);
 
-                        spdlog::info("Playing track from offset: {:.2f}s", trackOffset);
-                        juce::File audioFile(m_trackInfo.filepath.string());
-                        timeline->onPlaybackRequested(audioFile, trackOffset);
+                            juce::File audioFile(m_trackInfo.filepath.string());
+                            timeline->onPlaybackRequested(audioFile, trackOffset);
+                        }
+                    }
+                    else if (event.getNumberOfClicks() == 1)
+                    {
+                        // Single-click: only change playback if something is already playing
+                        if (timeline->onSeekRequested)
+                        {
+                            spdlog::info("Single-click on track - checking if we should switch playback");
+                            timeline->onSeekRequested(clickTime);
+                        }
                     }
                 }
             }

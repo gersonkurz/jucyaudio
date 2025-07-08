@@ -23,6 +23,18 @@ namespace jucyaudio
             addAndMakeVisible(m_viewport);
         }
 
+        void MixEditorComponent::forceRefresh()
+        {
+            m_timeline.repaint();
+            m_viewport.repaint();
+            resized(); // Recalculate viewport content
+        }
+
+        void MixEditorComponent::setTrackDeletionCallback(std::function<void(TrackId)> callback)
+        {
+            m_timeline.onTrackDeleted = callback;
+        }
+
         void MixEditorComponent::setPlaybackCallback(std::function<void(const juce::File &, double)> callback)
         {
             m_timeline.onPlaybackRequested = callback;
@@ -41,6 +53,7 @@ namespace jucyaudio
         void MixEditorComponent::loadMix(MixId mixId)
         {
             spdlog::info("Loading mix with ID: {}", mixId);
+            spdlog::info("Existing tracks size before loadMix(): {}", m_mixProjectLoader.getMixTracks().size());
             m_mixProjectLoader.loadMix(mixId);
             m_timeline.populateFrom(m_mixProjectLoader);
             spdlog::info("Mix loaded with {} tracks", m_mixProjectLoader.getMixTracks().size());

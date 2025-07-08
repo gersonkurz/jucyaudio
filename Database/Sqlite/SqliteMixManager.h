@@ -26,6 +26,7 @@ namespace jucyaudio
                                       /*in/out*/ MixInfo &mixInfo,
                                       /*out*/ std::vector<MixTrack> &resultingTracks, const Duration_t defaultCrossfadeDuration // Default 5s
                                       ) const override;
+            bool removeTrackFromMix(MixId mixId, TrackId trackId) const override;
 
         private:
             database::SqliteDatabase &m_db;

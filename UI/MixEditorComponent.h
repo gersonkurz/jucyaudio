@@ -23,6 +23,8 @@ namespace jucyaudio
             void resized() override;
 
             void loadMix(MixId mixId);
+            void forceRefresh();
+            void setTrackDeletionCallback(std::function<void(TrackId)> callback);
             void setPlaybackCallback(std::function<void(const juce::File &, double)> callback);
             void setSeekCallback(std::function<void(double)> callback);
 
