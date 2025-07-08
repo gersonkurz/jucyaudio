@@ -315,18 +315,18 @@ namespace jucyaudio
             for (const auto &view : m_trackViews)
             {
                 const auto startTime = std::chrono::duration<double>(view.mixTrackData->mixStartTime).count();
-                auto trackDuration = view.mixTrackData->cutoffTime > std::chrono::milliseconds(0)
-                                         ? std::chrono::duration<double>(view.mixTrackData->cutoffTime).count()
-                                         : std::chrono::duration<double>(view.trackInfoData->duration).count();
+
+                // With envelope system, tracks play their full duration
+                const auto trackDuration = std::chrono::duration<double>(view.trackInfoData->duration).count();
 
                 const int startX = static_cast<int>(startTime * m_pixelsPerSecond);
                 const int width = static_cast<int>(trackDuration * m_pixelsPerSecond);
                 const int yPos = rulerHeight + (currentLane * (trackHeight + yGap));
 
                 // Log BEFORE setting bounds
-                spdlog::info("LAYOUT_TRACK: Track {}, startTime={:.3f}s, startX={}, width={}, yPos={}, currentBounds=({},{},{}x{})", view.mixTrackData->trackId,
-                             startTime, startX, width, yPos, view.component->getX(), view.component->getY(), view.component->getWidth(),
-                             view.component->getHeight());
+                spdlog::info("LAYOUT_TRACK: Track {}, startTime={:.3f}s, duration={:.3f}s, startX={}, width={}, yPos={}, currentBounds=({},{},{}x{})",
+                             view.mixTrackData->trackId, startTime, trackDuration, startX, width, yPos, view.component->getX(), view.component->getY(),
+                             view.component->getWidth(), view.component->getHeight());
 
                 view.component->setBounds(startX, yPos, width, trackHeight);
 
@@ -345,7 +345,6 @@ namespace jucyaudio
             }
 
             spdlog::info("LAYOUT_END: TimelineComponent::resized() finished -----------------------");
-
         }
 
         void TimelineComponent::populateFrom(const audio::MixProjectLoader &mixLoader)

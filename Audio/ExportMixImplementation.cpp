@@ -96,6 +96,51 @@ namespace jucyaudio
             }
             return true;
         }
+        float interpolateVolumeFromEnvelope(const std::vector<EnvelopePoint> &envelopePoints, Duration_t timeInTrack)
+        {
+            if (envelopePoints.empty())
+            {
+                return 1.0f; // Default to full volume if no envelope points
+            }
+
+            // If before first point, use first point's volume
+            if (timeInTrack <= envelopePoints.front().time)
+            {
+                return envelopePoints.front().volume / (float)VOLUME_NORMALIZATION;
+            }
+
+            // If after last point, use last point's volume
+            if (timeInTrack >= envelopePoints.back().time)
+            {
+                return envelopePoints.back().volume / (float)VOLUME_NORMALIZATION;
+            }
+
+            // Find the two points to interpolate between
+            for (size_t i = 0; i < envelopePoints.size() - 1; ++i)
+            {
+                const auto &pointA = envelopePoints[i];
+                const auto &pointB = envelopePoints[i + 1];
+
+                if (timeInTrack >= pointA.time && timeInTrack <= pointB.time)
+                {
+                    // Linear interpolation between the two points
+                    float progress = 0.0f;
+                    auto timeDiff = pointB.time - pointA.time;
+                    if (timeDiff.count() > 0)
+                    {
+                        progress = (float)(timeInTrack - pointA.time).count() / (float)timeDiff.count();
+                    }
+
+                    float volumeA = pointA.volume / (float)VOLUME_NORMALIZATION;
+                    float volumeB = pointB.volume / (float)VOLUME_NORMALIZATION;
+
+                    return volumeA + progress * (volumeB - volumeA);
+                }
+            }
+
+            // Fallback (shouldn't reach here)
+            return 1.0f;
+        }
 
         bool ExportMixImplementation::calculateMixDuration()
         {
@@ -112,12 +157,9 @@ namespace jucyaudio
                 return fail("MTE: Last track ID " + std::to_string(lastTrackDef.trackId) + " not found in database.");
             }
 
-            // Effective duration of last track in the mix
-            Duration_t lastTrackEffectiveDuration = std::min(lastTrackInfoOpt->duration, lastTrackDef.cutoffTime) - lastTrackDef.silenceStart;
-
-            // TBD: not sure what to do in this case here:
-            if (lastTrackEffectiveDuration < Duration_t::zero())
-                lastTrackEffectiveDuration = Duration_t::zero();
+            // With envelope system, tracks play their full duration
+            // The envelope controls audibility, not the track length
+            Duration_t lastTrackEffectiveDuration = lastTrackInfoOpt->duration;
 
             m_totalMixDurationMs = lastTrackDef.mixStartTime + lastTrackEffectiveDuration;
 
@@ -162,101 +204,37 @@ namespace jucyaudio
                 const juce::int64 currentSampleInThisMixTrack =
                     currentSampleInOutputTimeline - context.trackMixStartSamples; // 0 to trackFileEffectiveDurationSamples
 
-                // 1. Calculate gain from MixTrack's internal fades (fadeInStart/End, fadeOutStart/End)
-                float internalFadeGain; // Will be assigned directly by the equal power logic
+                // Convert sample position back to time within the track
+                Duration_t timeInTrack{static_cast<int64_t>((currentSampleInThisMixTrack * 1000.0) / outputSampleRate())};
 
-                // Pre-calculate these as before
-                const juce::int64 fadeInStartSamples = static_cast<juce::int64>((mixTrackDef.fadeInStart.count() / 1000.0) * outputSampleRate());
-                const juce::int64 fadeInEndSamples = static_cast<juce::int64>((mixTrackDef.fadeInEnd.count() / 1000.0) * outputSampleRate());
-                const juce::int64 fadeOutStartSamples = static_cast<juce::int64>((mixTrackDef.fadeOutStart.count() / 1000.0) * outputSampleRate());
-                const juce::int64 fadeOutEndSamples = static_cast<juce::int64>((mixTrackDef.fadeOutEnd.count() / 1000.0) * outputSampleRate());
+                // Get volume from envelope interpolation
+                float envelopeGain = interpolateVolumeFromEnvelope(mixTrackDef.envelopePoints, timeInTrack);
 
-                float fadeInDuration = (float)(fadeInEndSamples - fadeInStartSamples);
-                if (fadeInDuration <= 0)
-                    fadeInDuration = 1.0f; // Avoid div by zero, effectively makes it an instant switch if duration is 0 or negative
-
-                float fadeOutDuration = (float)(fadeOutEndSamples - fadeOutStartSamples);
-                if (fadeOutDuration <= 0)
-                    fadeOutDuration = 1.0f;
-
-                // currentSampleInThisMixTrack is also calculated as before
-
-                // --- Direct Equal Power Fade Logic ---
-                if (currentSampleInThisMixTrack < fadeInStartSamples || currentSampleInThisMixTrack >= fadeOutEndSamples)
-                {
-                    // Before the track's fade-in starts OR at or after its fade-out ends
-                    internalFadeGain = 0.0f;
-                }
-                else if (currentSampleInThisMixTrack < fadeInEndSamples)
-                {
-                    // During fade-in period (currentSampleInThisMixTrack >= fadeInStartSamples is implied)
-                    float progress = (float)(currentSampleInThisMixTrack - fadeInStartSamples) / fadeInDuration;
-                    internalFadeGain = std::sin(progress * juce::MathConstants<float>::halfPi); // sin(0) to sin(pi/2) -> 0 to 1
-                }
-                else if (currentSampleInThisMixTrack >= fadeOutStartSamples)
-                {
-                    // During fade-out period (currentSampleInThisMixTrack < fadeOutEndSamples is implied by the first if)
-                    float progress = (float)(currentSampleInThisMixTrack - fadeOutStartSamples) / fadeOutDuration;
-                    internalFadeGain = std::cos(progress * juce::MathConstants<float>::halfPi); // cos(0) to cos(pi/2) -> 1 to 0
-                }
-                else
-                {
-                    // Between fadeInEnd and fadeOutStart: full volume
-                    internalFadeGain = 1.0f;
-                }
-
-                // It's still good practice to clamp, especially if dealing with floating point math that might slightly exceed bounds.
-                internalFadeGain = juce::jlimit(0.0f, 1.0f, internalFadeGain);
-                // 2. Calculate gain from crossfade with *previous* track (if applicable)
-                // This requires knowing the *previous* track in the mixTracks list and its end time.
-                // This is the most complex part: a track might be fading IN due to its own MixTrack.fadeIn
-                // AND fading IN due to a crossfade from the PREVIOUS track ending.
-                // Or it might be fading OUT due to its own MixTrack.fadeOut
-                // AND fading OUT because the NEXT track is crossfading in.
-                // The current simple `runStitchingTest` approach (gainA = 1-prog, gainB = prog) works for two tracks.
-                // For a multi-track mix, each sample in masterOutputBlock is a sum.
-                // A simpler model: each track contributes its audio (after internal fades) to the masterOutputBlock.
-                // The crossfade is implicitly handled by two tracks being active and summed during their overlap.
-                // The `MixTrack.crossfadeDuration` primarily sets `mixStartTime` of the *next* track.
-                // The actual fade curves (linear, equal power) happen here. For now, linear.
-
-                // Let's assume the `mixTrackDef.fadeIn/Out` fields are for the *crossfade itself*.
-                // If mixTrackDef.fadeInStart/End is 0-5s, it means this track fades in over 5s *as part of the crossfade*.
-                // This interpretation makes more sense with your `MixTrack` struct.
-
-                float overallGain = internalFadeGain; // Start with internal fade gain
-
-                // Apply overall volume adjustment for the track
-                // Assuming volumeAtStart/End are for a ramp over the track's visible duration
-                float trackProgress = (float)currentSampleInThisMixTrack / (float)juce::jmax((juce::int64)1, context.trackFileEffectiveDurationSamples);
-                float volumeEnvelope = (1.0f - trackProgress) * (mixTrackDef.volumeAtStart / (float)VOLUME_NORMALIZATION) +
-                                       trackProgress * (mixTrackDef.volumeAtEnd / (float)VOLUME_NORMALIZATION);
-                overallGain *= volumeEnvelope;
+                // Clamp gain to reasonable bounds
+                envelopeGain = juce::jlimit(0.0f, 1.0f, envelopeGain);
 
                 // Add to master output block
-                // The s_idx_in_block maps to where in sourceTrackBlock we read the data,
-                // and where in masterOutputBlock we need to write (offset by when this track starts in the block)
                 const juce::int64 targetSampleInMasterBlock = currentSampleInOutputTimeline - context.currentBlockStartTimeSamples;
                 if (targetSampleInMasterBlock >= 0 && targetSampleInMasterBlock < context.samplesToProcessInThisBlock)
                 {
                     if (s_idx_in_block < 5 && context.samplesWrittenTotal < 8192)
-                    { // Log first few samples of first few blocks
-                        spdlog::debug("MTE DEBUG: s_idx_in_block: {}, overallGain: {}, internalFadeGain: {}, volumeEnvelope: {}", s_idx_in_block, overallGain,
-                                      internalFadeGain, volumeEnvelope);
-                        // Also log sourceTrackBlock.getSample(0, (int)s_idx_in_block) to see if source data has values
+                    {
+                        spdlog::debug("MTE DEBUG: s_idx_in_block: {}, timeInTrack: {}ms, envelopeGain: {}", s_idx_in_block, timeInTrack.count(), envelopeGain);
                         if (sourceTrackBlock.getNumChannels() > 0)
                         {
                             spdlog::debug("MTE DEBUG: sourceSample[0]: {}", sourceTrackBlock.getSample(0, (int)s_idx_in_block));
                         }
                     }
+
                     for (unsigned int chan = 0; chan < outputNumChannels(); ++chan)
                     {
-                        masterOutputBlock.addSample(chan, (int)targetSampleInMasterBlock, sourceTrackBlock.getSample(chan, (int)s_idx_in_block) * overallGain);
+                        masterOutputBlock.addSample(chan, (int)targetSampleInMasterBlock, sourceTrackBlock.getSample(chan, (int)s_idx_in_block) * envelopeGain);
                     }
                 }
             }
             return true; // Successfully processed this mix track
         }
+
 
         bool ExportMixImplementation::fail(const std::string &errorMessage)
         {
@@ -299,21 +277,18 @@ namespace jucyaudio
         }
 
         // Renamed and takes an ActiveTrackSource
-        bool ExportMixImplementation::contributeFromActiveSource(ActiveTrackSource &activeSource,     // Non-const to update reader pos
-                                                                 const SampleContext &overallContext, // Overall timeline context
+        bool ExportMixImplementation::contributeFromActiveSource(ActiveTrackSource &activeSource, const SampleContext &overallContext,
                                                                  juce::AudioBuffer<float> &masterOutputBlock)
         {
             const MixTrack &mixTrackDef = *activeSource.mixTrackDefPtr;
             const TrackInfo &trackInfo = *activeSource.trackInfoPtr;
-            juce::AudioFormatReader *reader = activeSource.reader.get(); // Get raw pointer
-            // juce::AudioSource* actualSourceToReadFrom = activeSource.resamplerSource ? activeSource.resamplerSource.get() :
-            // activeSource.readerSource.get();
+            juce::AudioFormatReader *reader = activeSource.reader.get();
 
             // --- Calculate timing for *this specific track* based on mixTrackDef ---
             juce::int64 trackMixStartSamples = static_cast<juce::int64>((mixTrackDef.mixStartTime.count() / 1000.0) * outputSampleRate());
-            Duration_t trackFileEffectiveDurationMs = std::min(trackInfo.duration, mixTrackDef.cutoffTime) - mixTrackDef.silenceStart;
-            if (trackFileEffectiveDurationMs < Duration_t::zero())
-                trackFileEffectiveDurationMs = Duration_t::zero();
+
+            // With envelope system, tracks play their full duration
+            Duration_t trackFileEffectiveDurationMs = trackInfo.duration;
             const juce::int64 trackFileEffectiveDurationSamples =
                 static_cast<juce::int64>((trackFileEffectiveDurationMs.count() / 1000.0) * outputSampleRate());
             juce::int64 trackMixEndSamples = trackMixStartSamples + trackFileEffectiveDurationSamples;
@@ -321,15 +296,11 @@ namespace jucyaudio
             // --- Check if this track is active in the current masterOutputBlock ---
             if (trackMixEndSamples <= overallContext.currentBlockStartTimeSamples || trackMixStartSamples >= overallContext.currentBlockEndTimeSamples)
             {
-                // spdlog::warn("Track ID {} is not active in current block ({} - {}). Skipping.", mixTrackDef.trackId,
-                //              overallContext.currentBlockStartTimeSamples, overallContext.currentBlockEndTimeSamples);
                 return true; // Not active in this block
             }
 
             // --- Track is active: Use its pre-opened reader ---
-            juce::AudioBuffer<float> sourceTrackBlock(
-                outputNumChannels(),
-                (int)overallContext.samplesToProcessInThisBlock); // Buffer for this track's contribution to the current output block
+            juce::AudioBuffer<float> sourceTrackBlock(outputNumChannels(), (int)overallContext.samplesToProcessInThisBlock);
             sourceTrackBlock.clear();
 
             juce::int64 readStartInOutputTimeline = juce::jmax(overallContext.currentBlockStartTimeSamples, trackMixStartSamples);
@@ -343,30 +314,24 @@ namespace jucyaudio
                 return true;
             }
 
-            juce::int64 readOffsetInSourceFileSamples =
-                (readStartInOutputTimeline - trackMixStartSamples) + static_cast<juce::int64>((mixTrackDef.silenceStart.count() / 1000.0) * reader->sampleRate);
+            // With envelope system, we start reading from the beginning of the track file
+            // The envelope controls volume, not which part of the file to read
+            juce::int64 readOffsetInSourceFileSamples = (readStartInOutputTimeline - trackMixStartSamples) * reader->sampleRate / outputSampleRate();
 
-            // How many samples to read from source into our local sourceTrackBlock.
-            // The reader reads from its current position.
-            // We need to seek the reader or manage its position carefully if not using AudioSource interface.
-            // Using reader->read() directly:
             const auto readSuccess = reader->read(&sourceTrackBlock, 0, (int)numSamplesToReadForThisTrackInBlock, readOffsetInSourceFileSamples, true, true);
             if (!readSuccess)
             {
                 spdlog::error("MTE: Failed to read samples for track ID {} from source file: {}", mixTrackDef.trackId, pathToString(trackInfo.filepath));
-                return false; // Error reading
+                return false;
             }
-            // If using readerSource.getNextAudioBlock(), it manages its own position, but you need to feed it blocks.
-            // The current direct reader->read() with an absolute offset is simpler if not using full AudioSource chain.
 
             // SampleContext for this specific track's contribution within the block
-            SampleContext trackContext = overallContext; // Copy relevant parts
+            SampleContext trackContext = overallContext;
             trackContext.numSamplesToReadFromSource = numSamplesToReadForThisTrackInBlock;
-            trackContext.readStartInOutputTimeline = readStartInOutputTimeline; // When this track's contribution starts in the output timeline
-            trackContext.trackMixStartSamples = trackMixStartSamples;           // Start of this track in overall mix
+            trackContext.readStartInOutputTimeline = readStartInOutputTimeline;
+            trackContext.trackMixStartSamples = trackMixStartSamples;
             trackContext.trackFileEffectiveDurationSamples = trackFileEffectiveDurationSamples;
 
-            // This function now takes the already-read sourceTrackBlock data
             return applyMixTrackSpecs(mixTrackDef, trackContext, masterOutputBlock, sourceTrackBlock);
         }
 

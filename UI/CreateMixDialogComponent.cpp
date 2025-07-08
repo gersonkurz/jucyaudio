@@ -187,10 +187,9 @@ namespace jucyaudio
             database::MixInfo newMixInfo{};
             newMixInfo.name = mixNameStd;
             std::vector<database::MixTrack> resultingMixTracks;
-            // Using the default crossfade duration from IMixManager's createAndSaveAutoMix
-            // Or pass a specific one: database::Duration_t crossfadeDuration{5000};
+
             bool mixDefined =
-                ::jucyaudio::database::theTrackLibrary.getMixManager().createAndSaveAutoMix(m_tracksForMix, newMixInfo, resultingMixTracks /*, crossfadeDuration (optional) */);
+                ::jucyaudio::database::theTrackLibrary.getMixManager().createAndSaveAutoMix(m_tracksForMix, newMixInfo, resultingMixTracks);
 
             if (!mixDefined || newMixInfo.mixId == -1)
             {

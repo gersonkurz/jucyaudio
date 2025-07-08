@@ -115,7 +115,9 @@ CREATE TABLE IF NOT EXISTS WorkingSetTracks(
 CREATE TABLE IF NOT EXISTS Mixes(
     mix_id INTEGER PRIMARY KEY AUTOINCREMENT,
     name  TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    timestamp INTEGER
+    timestamp INTEGER,
+    track_count INTEGER,
+    total_length INTEGER
 );)SQL",
 
         R"SQL(
@@ -123,16 +125,9 @@ CREATE TABLE IF NOT EXISTS MixTracks(
     mix_id INTEGER NOT NULL,
     track_id INTEGER NOT NULL,
     order_in_mix INTEGER,
-    silence_start INTEGER,
-    fade_in_start INTEGER,
-    fade_in_end INTEGER,
-    fade_out_start INTEGER,
-    fade_out_end INTEGER,
-    cutoff_time INTEGER,
-    volume_at_start INTEGER,
-    volume_at_end INTEGER,
+    envelopePoints TEXT, -- JSON encoded envelope points
     mix_start_time INTEGER,
-    crossfade_duration INTEGER,
+    mix_end_time INTEGER,
     PRIMARY KEY(mix_id, track_id),
     FOREIGN KEY(mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE,
     FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE

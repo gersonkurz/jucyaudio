@@ -657,17 +657,34 @@ namespace jucyaudio
             {
                 const auto index = std::distance(mixTracks.begin(), it);
                 auto startTimeOfNextTrack = it->mixStartTime; // Start time of the track to be removed
+                mixInfo.totalDuration -= it->mixEndTime - it->mixStartTime;
                 mixTracks.erase(it);
-
-                // Now index points to the element that came after the removed one
-                for (std::size_t i = index; i < mixTracks.size(); ++i)
+                if (mixInfo.numberOfTracks > 0)
                 {
-                    auto &track{mixTracks[i]}; // Reference to the track at index i
-                    assert(track.orderInMix > 1);
-                    --track.orderInMix;
-                    const auto temp{startTimeOfNextTrack};
-                    startTimeOfNextTrack = track.mixStartTime;
-                    track.mixStartTime = temp;
+                    --mixInfo.numberOfTracks;
+                    if (index < mixTracks.size())
+                    {
+                        // If the removed track was not the last one, we need to
+                        // adjust the start times of subsequent tracks
+                        spdlog::info("Adjusting start times for tracks after removed track at index {}", index);
+                        // Now index points to the element that came after the removed one
+                        for (std::size_t i = index; i < mixTracks.size(); ++i)
+                        {
+                            auto &track{mixTracks[i]}; // Reference to the track at index i
+                            assert(track.orderInMix > 1);
+                            --track.orderInMix;
+                            const auto temp{startTimeOfNextTrack};
+                            startTimeOfNextTrack = track.mixStartTime;
+                            const auto trackDuration = track.mixEndTime - track.mixStartTime;
+                            track.mixStartTime = temp;
+                            track.mixEndTime = temp + trackDuration;
+                            mixInfo.totalDuration = track.mixEndTime;
+                        }
+                    }
+                    else
+                    {
+                        spdlog::info("Removed track was the last one in the mix, no adjustment needed YET");
+                    }
                 }
             }
 

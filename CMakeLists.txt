@@ -14,7 +14,16 @@ FetchContent_Declare(
     GIT_TAG 8.0.8
     GIT_SHALLOW TRUE
 )
-FetchContent_MakeAvailable(JUCE)
+
+# Add nlohmann/json
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.3
+    GIT_SHALLOW TRUE
+)
+
+FetchContent_MakeAvailable(JUCE nlohmann_json)
 
 # Platform-specific library paths and includes
 if(WIN32)
@@ -28,7 +37,7 @@ if(WIN32)
     set(PTHREADS_LIB_PATH "C:/Projects/jucyaudio_deps_win32_x64/pthreads-w32/lib")
     set(FFTW_LIB_PATH "C:/Projects/jucyaudio_deps_win32_x64/fftw")
     set(LIBSNDFILE_LIB_PATH "C:/Projects/jucyaudio_deps_win32_x64/libsndfile/lib")
-    set(FFMPEG_LIB_PATH "C:/Projects/jucyaudio_deps_win32_x64/ffmpeg/lib")  # Adjust path as needed
+    set(FFMPEG_LIB_PATH "C:/Projects/jucyaudio_deps_win32_x64/ffmpeg/lib")
 
     
     set(AUBIO_INCLUDE_PATH "C:/Projects/jucyaudio_deps_win32_x64/aubio/include")
@@ -314,6 +323,9 @@ if(WIN32)
         
         # Binary resources
         jucyaudio_assets
+
+        # nlohmann/json
+        nlohmann_json::nlohmann_json
         
         # External libraries (Windows)
         ${AUBIO_LIBRARY}
@@ -342,6 +354,9 @@ else()
         
         # Binary resources
         jucyaudio_assets
+
+        # nlohmann/json
+        nlohmann_json::nlohmann_json
         
         # External libraries (macOS/Linux)
         ${AUBIO_LIBRARY}

@@ -64,8 +64,8 @@ namespace jucyaudio
             // @return True if the auto-mix was successfully created and saved, false otherwise.
             virtual bool createAndSaveAutoMix(const std::vector<TrackInfo> &trackInfos,
                                               /*in/out*/ MixInfo &mixInfo,
-                                              /*out*/ std::vector<MixTrack> &resultingTracks,
-                                              const Duration_t defaultCrossfadeDuration = Duration_t{30000} // Default 5s
+                                              /*out*/ std::vector<MixTrack> &resultingTracks, 
+                                                const Duration_t defaultCrossfadeDuration = Duration_t{5000}
                                               ) const = 0;
 
             // @brief Remove a specific track from a mix.

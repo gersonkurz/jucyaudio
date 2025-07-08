@@ -5,12 +5,56 @@
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/StringWriter.h>
+#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
+
+using json = nlohmann::json;
 
 namespace
 {
     using namespace jucyaudio;
     using namespace jucyaudio::database;
+
+    // to_json
+    void envelopePointToJson(json &j, const EnvelopePoint &ep)
+    {
+        j = json{{"time_ms", ep.time.count()}, // store as integer (milliseconds)
+                 {"volume", ep.volume}};
+    }
+
+    // from_json
+    void envelopePointFromJson(const json &j, EnvelopePoint &ep)
+    {
+        ep.time = Duration_t{j.at("time_ms").get<int64_t>()};
+        ep.volume = j.at("volume").get<Volume_t>();
+    }
+
+    std::string envelopePointsToJson(const std::vector<EnvelopePoint> &points)
+    {
+        json j;
+        for (const auto &point : points)
+        {
+            json pointJson;
+            envelopePointToJson(pointJson, point);
+            j.push_back(pointJson);
+        }
+        return j.dump(); // Convert to JSON string
+    }
+
+    std::vector<EnvelopePoint> envelopePointsFromJson(const std::string &jsonString)
+    {
+        std::vector<EnvelopePoint> points;
+        if (jsonString.empty())
+            return points; // Return empty vector if input is empty
+        json j = json::parse(jsonString);
+        for (const auto &pointJson : j)
+        {
+            EnvelopePoint point;
+            envelopePointFromJson(pointJson, point);
+            points.push_back(point);
+        }
+        return points;
+    }
 
     MixInfo mixInfoFromStatement(const SqliteStatement &stmt)
     {
@@ -33,16 +77,9 @@ namespace
         info.mixId = stmt.getInt64(col++);
         info.trackId = stmt.getInt64(col++);
         info.orderInMix = stmt.getInt32(col++);
-        info.silenceStart = durationFromInt64(stmt.getInt64(col++));
-        info.fadeInStart = durationFromInt64(stmt.getInt64(col++));
-        info.fadeInEnd = durationFromInt64(stmt.getInt64(col++));
-        info.fadeOutStart = durationFromInt64(stmt.getInt64(col++));
-        info.fadeOutEnd = durationFromInt64(stmt.getInt64(col++));
-        info.cutoffTime = durationFromInt64(stmt.getInt64(col++));
-        info.volumeAtStart = stmt.getInt64(col++);
-        info.volumeAtEnd = stmt.getInt64(col++);
+        info.envelopePoints = envelopePointsFromJson(stmt.getText(col++));
         info.mixStartTime = durationFromInt64(stmt.getInt64(col++));
-        info.crossfadeDuration = durationFromInt64(stmt.getInt64(col++));
+        info.mixEndTime = durationFromInt64(stmt.getInt64(col++));
         return info;
     }
 
@@ -52,16 +89,9 @@ namespace
         ok &= stmt.addParam(info.mixId);   // For the WHERE mix_id = AND
         ok &= stmt.addParam(info.trackId); // track_id = ?
         ok &= stmt.addParam(info.orderInMix);
-        ok &= stmt.addParam(durationToInt64(info.silenceStart));
-        ok &= stmt.addParam(durationToInt64(info.fadeInStart));
-        ok &= stmt.addParam(durationToInt64(info.fadeInEnd));
-        ok &= stmt.addParam(durationToInt64(info.fadeOutStart));
-        ok &= stmt.addParam(durationToInt64(info.fadeOutEnd));
-        ok &= stmt.addParam(durationToInt64(info.cutoffTime));
-        ok &= stmt.addParam(info.volumeAtStart);
-        ok &= stmt.addParam(info.volumeAtEnd);
+        ok &= stmt.addParam(envelopePointsToJson(info.envelopePoints));
         ok &= stmt.addParam(durationToInt64(info.mixStartTime));
-        ok &= stmt.addParam(durationToInt64(info.crossfadeDuration));
+        ok &= stmt.addParam(durationToInt64(info.mixEndTime));
 
         if (!ok)
         {
@@ -81,10 +111,9 @@ namespace jucyaudio
     m.mix_id,
     m.name,
     m.timestamp as created,
-    COUNT(mt.track_id) as track_count,
-    MAX(mt.mix_start_time + mt.cutoff_time) as total_length
+    m.track_count,
+    m.total_length
 FROM Mixes m
-LEFT JOIN MixTracks mt ON m.mix_id = mt.mix_id
 )SQL";
 
             StringWriter output;
@@ -192,21 +221,33 @@ LEFT JOIN MixTracks mt ON m.mix_id = mt.mix_id
             if (SqliteTransaction transaction{m_db})
             {
                 mixInfo.timestamp = std::chrono::system_clock::now();
+                mixInfo.numberOfTracks = static_cast<int64_t>(tracks.size());
+                if (tracks.empty())
+                {
+                    mixInfo.totalDuration = Duration_t::zero();
+                }
+                else
+                {
+                    const auto lastTrack{tracks.back()};
+                    mixInfo.totalDuration = lastTrack.mixEndTime;
+                }
 
                 // if mixId is not 0, the mix already exists, so we update it - by first removing all existing data
                 if (mixInfo.mixId)
                 {
                     if (!transaction.execute("DELETE FROM MixTracks WHERE mix_id = ?;", mixInfo.mixId) ||
-                        !transaction.execute("UPDATE Mixes SET name=?, timestamp=? WHERE mix_id=?", mixInfo.name, timestampToInt64(mixInfo.timestamp),
-                                             mixInfo.mixId))
+                        !transaction.execute("UPDATE Mixes SET name=?, timestamp=?, track_count=?, total_length=? WHERE mix_id=?", mixInfo.name,
+                                             timestampToInt64(mixInfo.timestamp), mixInfo.mixId, mixInfo.numberOfTracks,
+                                             durationToInt64(mixInfo.totalDuration)))
                     {
                         return transaction.rollback();
                     }
                 }
                 else
                 {
-                    if (!transaction.execute("INSERT INTO Mixes (name, timestamp) VALUES (?, ?)", mixInfo.name, timestampToInt64(mixInfo.timestamp)))
-                    {
+                    if (!transaction.execute("INSERT INTO Mixes (name, timestamp, track_count, total_length) VALUES (?, ?, ?, ?)", mixInfo.name,
+                                             timestampToInt64(mixInfo.timestamp), mixInfo.numberOfTracks, durationToInt64(mixInfo.totalDuration)))
+                    {   
                         return transaction.rollback();
                     }
                     mixInfo.mixId = m_db.getLastInsertRowId(); // Get the new mix ID
@@ -216,10 +257,8 @@ LEFT JOIN MixTracks mt ON m.mix_id = mt.mix_id
                 for (auto &track : tracks)
                 {
                     track.mixId = mixInfo.mixId;
-                    SqliteStatement stmt_insert{m_db,
-                                                "INSERT INTO MixTracks (mix_id,track_id,order_in_mix,silence_start,fade_in_start,fade_in_end,"
-                                                "fade_out_start,fade_out_end,cutoff_time,volume_at_start,volume_at_end,mix_start_time,crossfade_duration) "
-                                                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"};
+                    SqliteStatement stmt_insert{m_db, "INSERT INTO MixTracks (mix_id,track_id,order_in_mix,envelopePoints,mix_start_time, mix_end_time) "
+                                                      "VALUES (?,?,?,?,?,?)"};
                     bindMixTrackToStatement(stmt_insert, track);
                     if (!stmt_insert.execute())
                     {
@@ -253,6 +292,8 @@ LEFT JOIN MixTracks mt ON m.mix_id = mt.mix_id
             assert(resultingTracks.empty() && "resultingTracks should be empty before creating a new mix");
             assert(!trackInfos.empty() && "trackInfos should not be empty when creating a new mix");
 
+            mixInfo.numberOfTracks = static_cast<int64_t>(trackInfos.size());
+
             const auto minimumExpectedSongLength = 2 * defaultCrossfadeDuration; // Minimum length for a track to be suitable for mixing
             spdlog::debug("Creating new mix with {} tracks, minimum expected song length: {}", trackInfos.size(), durationToString(minimumExpectedSongLength));
 
@@ -270,18 +311,26 @@ LEFT JOIN MixTracks mt ON m.mix_id = mt.mix_id
                     continue;
                 }
 
-                MixTrack mixTrack;
+                MixTrack mixTrack{};
                 mixTrack.mixId = mixInfo.mixId;
                 mixTrack.trackId = trackInfo.trackId;
                 mixTrack.orderInMix = orderInMix++;
-                mixTrack.silenceStart = Duration_t::zero();
-                mixTrack.fadeInStart = Duration_t::zero();
-                mixTrack.fadeInEnd = defaultCrossfadeDuration;
-                mixTrack.fadeOutStart = trackInfo.duration - defaultCrossfadeDuration;
-                mixTrack.fadeOutEnd = trackInfo.duration;
-                mixTrack.cutoffTime = trackInfo.duration;
-                mixTrack.volumeAtStart = 1 * VOLUME_NORMALIZATION;
-                mixTrack.volumeAtEnd = 1 * VOLUME_NORMALIZATION;
+
+                // Create envelope points with smooth fade curve
+                // Time values are relative to track start (0 = beginning of track)
+                const auto fadeInMidpoint = Duration_t{2000};                       // 2 seconds
+                const auto fadeOutMidpoint = trackInfo.duration - Duration_t{2000}; // 2 seconds before end
+
+                mixTrack.envelopePoints = {
+                    {Duration_t{0}, Volume_t{200}},                                        // Start at 20% (200/1000)
+                    {fadeInMidpoint, Volume_t{700}},                                       // 2s: 70% (700/1000)
+                    {defaultCrossfadeDuration, VOLUME_NORMALIZATION},                      // 5s: 100% (1000/1000)
+                    {trackInfo.duration - defaultCrossfadeDuration, VOLUME_NORMALIZATION}, // duration-5s: 100%
+                    {fadeOutMidpoint, Volume_t{700}},                                      // duration-2s: 70%
+                    {trackInfo.duration, Volume_t{200}}                                    // End at 20%
+                };
+
+                // Calculate mix start time with crossfade overlap
                 if (totalDuration >= defaultCrossfadeDuration)
                 {
                     mixTrack.mixStartTime = totalDuration - defaultCrossfadeDuration;
@@ -290,11 +339,11 @@ LEFT JOIN MixTracks mt ON m.mix_id = mt.mix_id
                 {
                     mixTrack.mixStartTime = Duration_t::zero();
                 }
-
-                mixTrack.crossfadeDuration = defaultCrossfadeDuration;
+                mixTrack.mixEndTime = mixTrack.mixStartTime + trackInfo.duration;
                 resultingTracks.emplace_back(mixTrack);
-                totalDuration = mixTrack.mixStartTime + trackInfo.duration;
+                totalDuration = mixTrack.mixEndTime;
             }
+            mixInfo.totalDuration = totalDuration;
 
             // ok, this is the definition; store it in the database
             return createOrUpdateMix(mixInfo, resultingTracks);

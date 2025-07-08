@@ -132,90 +132,54 @@ namespace jucyaudio
 
         void MixTrackComponent::drawVolumeEnvelope(juce::Graphics &g, juce::Rectangle<int> area)
         {
+            if (m_mixTrack.envelopePoints.empty())
+            {
+                // No envelope data - just draw a flat line at full volume
+                g.setColour(juce::Colours::yellow.withAlpha(0.8f));
+                float fullVolumeY = area.getY() + (area.getHeight() * 0.2f); // 80% up from bottom
+                g.drawHorizontalLine(juce::roundToInt(fullVolumeY), area.getX(), area.getRight());
+                return;
+            }
+
             juce::Path volumePath;
-
-            // Calculate key time points (all relative to track start)
             const auto trackDuration = std::chrono::duration<double>(m_trackInfo.duration).count();
-            const auto fadeInStart = std::chrono::duration<double>(m_mixTrack.fadeInStart).count();
-            const auto fadeInEnd = std::chrono::duration<double>(m_mixTrack.fadeInEnd).count();
-            const auto fadeOutStart = std::chrono::duration<double>(m_mixTrack.fadeOutStart).count();
-            const auto fadeOutEnd = std::chrono::duration<double>(m_mixTrack.fadeOutEnd).count();
 
-            // Convert volumes to 0-1 range for rendering
-            const float volStart = m_mixTrack.volumeAtStart / float(database::VOLUME_NORMALIZATION);
-            const float volEnd = m_mixTrack.volumeAtEnd / float(database::VOLUME_NORMALIZATION);
+            // Start the path
+            bool pathStarted = false;
 
-            // Calculate Y positions
-            const float silenceY = area.getBottom(); // 0% volume = bottom of area
-            const float volStartY = area.getBottom() - (volStart * area.getHeight());
-            const float volEndY = area.getBottom() - (volEnd * area.getHeight());
-
-            // Start the path at track beginning (at silence)
-            volumePath.startNewSubPath(area.getX(), silenceY);
-
-            // Phase 1: Pre-fade-in (silence until fade-in starts)
-            if (fadeInStart > 0.0)
+            for (size_t i = 0; i < m_mixTrack.envelopePoints.size(); ++i)
             {
-                float fadeInStartX = area.getX() + (fadeInStart / trackDuration) * area.getWidth();
-                volumePath.lineTo(fadeInStartX, silenceY);
-            }
+                const auto &point = m_mixTrack.envelopePoints[i];
 
-            // Phase 2: Fade-in (0% to volumeAtStart%)
-            if (fadeInEnd > fadeInStart)
-            {
-                float fadeInStartX = area.getX() + (fadeInStart / trackDuration) * area.getWidth();
-                float fadeInEndX = area.getX() + (fadeInEnd / trackDuration) * area.getWidth();
+                // Convert time to X position (relative to track start)
+                const double timeInSeconds = std::chrono::duration<double>(point.time).count();
+                const float x = area.getX() + (timeInSeconds / trackDuration) * area.getWidth();
 
-                // If fadeInStart was 0, we're already at the right position
-                if (fadeInStart > 0.0)
+                // Convert volume to Y position (0% = bottom, 100% = top)
+                const float volumePercent = point.volume / float(database::VOLUME_NORMALIZATION);
+                const float y = area.getBottom() - (volumePercent * area.getHeight());
+
+                if (!pathStarted)
                 {
-                    volumePath.lineTo(fadeInStartX, silenceY); // Stay at silence until fade starts
+                    volumePath.startNewSubPath(x, y);
+                    pathStarted = true;
                 }
-                volumePath.lineTo(fadeInEndX, volStartY); // Ramp up to volumeAtStart
-            }
-            else
-            {
-                // No fade-in, jump directly to volume level
-                volumePath.lineTo(area.getX(), volStartY);
-            }
+                else
+                {
+                    volumePath.lineTo(x, y);
+                }
 
-            // Phase 3: Sustain period (volumeAtStart to volumeAtEnd - usually flat)
-            if (fadeOutStart > fadeInEnd)
-            {
-                float fadeOutStartX = area.getX() + (fadeOutStart / trackDuration) * area.getWidth();
-                volumePath.lineTo(fadeOutStartX, volEndY); // Sustain at volumeAtEnd level
-            }
-
-            // Phase 4: Fade-out (volumeAtEnd to 0%)
-            if (fadeOutEnd > fadeOutStart)
-            {
-                float fadeOutStartX = area.getX() + (fadeOutStart / trackDuration) * area.getWidth();
-                float fadeOutEndX = area.getX() + (fadeOutEnd / trackDuration) * area.getWidth();
-
-                // Make sure we're at the sustain level at fade-out start
-                volumePath.lineTo(fadeOutStartX, volEndY);
-                // Fade down to silence
-                volumePath.lineTo(fadeOutEndX, silenceY);
-            }
-            else
-            {
-                // No fade-out, maintain level to end
-                volumePath.lineTo(area.getRight(), volEndY);
-            }
-
-            // Phase 5: Post-fade-out (silence to track end)
-            if (fadeOutEnd < trackDuration)
-            {
-                volumePath.lineTo(area.getRight(), silenceY);
+                // Optional: Draw envelope point markers
+                g.setColour(juce::Colours::orange);
+                g.fillEllipse(x - 2, y - 2, 4, 4);
             }
 
             // Draw the envelope line
             g.setColour(juce::Colours::yellow.withAlpha(0.8f));
             g.strokePath(volumePath, juce::PathStrokeType(2.0f));
 
-            // Optional: Add debug logging for the envelope shape
-            spdlog::debug("Track {}: fadeIn[{:.1f}-{:.1f}s], sustain[{:.1f}-{:.1f}s], fadeOut[{:.1f}-{:.1f}s], volStart={:.1f}%, volEnd={:.1f}%",
-                          m_mixTrack.trackId, fadeInStart, fadeInEnd, fadeInEnd, fadeOutStart, fadeOutStart, fadeOutEnd, volStart * 100, volEnd * 100);
+            // Debug logging for the envelope shape
+            spdlog::debug("Track {}: {} envelope points, duration={:.1f}s", m_mixTrack.trackId, m_mixTrack.envelopePoints.size(), trackDuration);
         }
 
         void MixTrackComponent::changeListenerCallback(juce::ChangeBroadcaster *source)

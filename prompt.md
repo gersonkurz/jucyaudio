@@ -82,12 +82,6 @@
 
 This is the prioritized list of tasks for the `MixEditorComponent` that we will be working on next.
 
-The big one is: 
-
-*   **Repositioning:** Allow horizontal sliding and full drag-and-drop reordering of tracks.
-
-The others are necessary, too, but less exciting:
-
 *   **Trimming:** Allow non-destructive trimming of a track's start/end points by dragging handles.
 *   **Playback Engine:** Implement the audible playback of the mix sequence.
 *   **Information Display:** Add UI elements for total mix length, rulers, etc.
