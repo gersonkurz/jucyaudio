@@ -280,7 +280,6 @@ LEFT JOIN MixTracks mt ON m.mix_id = mt.mix_id
                 mixTrack.fadeOutStart = trackInfo.duration - defaultCrossfadeDuration;
                 mixTrack.fadeOutEnd = trackInfo.duration;
                 mixTrack.cutoffTime = trackInfo.duration;
-                // TBD: need to understand better volume normalization - Gemini, how should we handle this?
                 mixTrack.volumeAtStart = 1 * VOLUME_NORMALIZATION;
                 mixTrack.volumeAtEnd = 1 * VOLUME_NORMALIZATION;
                 if (totalDuration >= defaultCrossfadeDuration)

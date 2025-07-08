@@ -28,6 +28,7 @@ namespace jucyaudio
 
             void changeListenerCallback(juce::ChangeBroadcaster *source) override;
             bool isSelected() const;
+            void drawVolumeEnvelope(juce::Graphics &g, juce::Rectangle<int> area);
         
         private:
             void mouseDown(const juce::MouseEvent &event) override;

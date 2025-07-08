@@ -82,14 +82,14 @@
 
 This is the prioritized list of tasks for the `MixEditorComponent` that we will be working on next.
 
-*   **Tier 1 (Core Interaction & Navigation):**
-    *   **Zooming:** Implement Ctrl+MouseWheel zooming on the timeline.
-    *   **Selection:** Implement a selection model with clear visual feedback (e.g., highlighting) for the selected track on the timeline.
-*   **Tier 2 (Editing & Visuals):**
-    *   **Deletion:** Implement track removal via the Delete key.
-    *   **Volume Envelopes:** Visualize the pre-calculated volume and fade envelopes on top of the waveforms.
-    *   **Trimming:** Allow non-destructive trimming of a track's start/end points by dragging handles.
-*   **Tier 3 (Advanced Features):**
-    *   **Playback Engine:** Implement the audible playback of the mix sequence.
-    *   **Repositioning:** Allow horizontal sliding and full drag-and-drop reordering of tracks.
-    *   **Information Display:** Add UI elements for total mix length, rulers, etc.
+The big one is: 
+
+*   **Repositioning:** Allow horizontal sliding and full drag-and-drop reordering of tracks.
+
+The others are necessary, too, but less exciting:
+
+*   **Trimming:** Allow non-destructive trimming of a track's start/end points by dragging handles.
+*   **Playback Engine:** Implement the audible playback of the mix sequence.
+*   **Information Display:** Add UI elements for total mix length, rulers, etc.
+*   **Volume Envelope Editing:** Interactive editing of fade points and curves.
+
