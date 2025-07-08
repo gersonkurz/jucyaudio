@@ -84,8 +84,7 @@ namespace jucyaudio
         bool SqliteDatabase::open(std::string_view filename)
         {
             close();
-            int rc = sqlite3_open_v2(filename.data(), &m_db,
-                                     SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, // NOMUTEX if handling threading externally
+            int rc = sqlite3_open_v2(filename.data(), &m_db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX,
                                      nullptr);
 
             if (rc != SQLITE_OK)
