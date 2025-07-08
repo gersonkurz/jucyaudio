@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(jucyaudio VERSION 0.2.0)
+project(jucyaudio VERSION 0.3.0)
 
 # C++20 requirement
 set(CMAKE_CXX_STANDARD 20)
@@ -11,7 +11,7 @@ include(FetchContent)
 FetchContent_Declare(
     JUCE
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG 8.0.7
+    GIT_TAG 8.0.8
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(JUCE)
@@ -109,8 +109,8 @@ endif()
 # Create the main application
 juce_add_gui_app(jucyaudio
     PRODUCT_NAME "jucyaudio"
-    BUNDLE_ID "com.yourcompany.jucyaudio"
-    VERSION 1.0.0
+    BUNDLE_ID "com.p-nand-q.jucyaudio"
+    VERSION 0.3.0
 )
 
 # Platform-specific deployment target
