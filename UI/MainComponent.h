@@ -83,6 +83,8 @@ namespace jucyaudio
 
             void requestPlayOrPlaySelection();
             void syncPlaybackUIToControllerState();
+            void playFileFromPosition(const juce::File &audioFile, double startPosition);
+            void seekToTimelinePosition(double timePosition);
 
             // menu management --------------------------------
             bool onShowScanDialog();

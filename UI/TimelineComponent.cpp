@@ -82,21 +82,95 @@ namespace jucyaudio
             }
         }
 
+        void TimelineComponent::playFromPosition(double timePosition)
+        {
+            // For now, play the first track that covers this time position
+            // Later this could play the entire mix from this position
+            for (const auto &view : m_trackViews)
+            {
+                const auto startTime = std::chrono::duration<double>(view.mixTrackData->mixStartTime).count();
+                const auto endTime = startTime + std::chrono::duration<double>(view.trackInfoData->duration).count();
+
+                if (timePosition >= startTime && timePosition <= endTime)
+                {
+                    // Calculate offset within the track
+                    double trackOffset = timePosition - startTime;
+
+                    juce::File audioFile(view.trackInfoData->filepath.string());
+                    if (onPlaybackRequested)
+                    {
+                        onPlaybackRequested(audioFile, trackOffset);
+                    }
+                    break;
+                }
+            }
+        }
+
+        void TimelineComponent::playSelectedTrackFromPosition(double timePosition)
+        {
+            if (!m_selectedTrack)
+                return;
+
+            // Find the corresponding track data
+            for (const auto &view : m_trackViews)
+            {
+                if (view.component.get() == m_selectedTrack)
+                {
+                    const auto startTime = std::chrono::duration<double>(view.mixTrackData->mixStartTime).count();
+                    double trackOffset = timePosition - startTime;
+
+                    // Clamp to valid range
+                    trackOffset = juce::jlimit(0.0, std::chrono::duration<double>(view.trackInfoData->duration).count(), trackOffset);
+
+                    juce::File audioFile(view.trackInfoData->filepath.string());
+                    if (onPlaybackRequested)
+                    {
+                        onPlaybackRequested(audioFile, trackOffset);
+                    }
+                    break;
+                }
+            }
+        }
+
         void TimelineComponent::mouseDown(const juce::MouseEvent &event)
         {
             if (event.mods.isLeftButtonDown())
             {
-                // Only handle this if we didn't click on a track
-                // (Track components will handle their own clicks)
+                double clickTime = event.position.x / m_pixelsPerSecond;
+                spdlog::info("Timeline clicked at time: {:.2f}s", clickTime);
+
+                setCurrentTimePosition(clickTime);
+
                 MixTrackComponent *clickedTrack = getTrackAtPosition(event.position.toInt());
-                if (!clickedTrack)
+                setSelectedTrack(clickedTrack);
+
+                if (event.getNumberOfClicks() == 2)
                 {
-                    // Clicked in empty space - move playhead and clear selection
-                    double clickTime = event.position.x / m_pixelsPerSecond;
-                    setCurrentTimePosition(clickTime);
-                    setSelectedTrack(nullptr);
-                    repaint();
+                    spdlog::info("Double-click detected - requesting playback");
+                    if (clickedTrack)
+                    {
+                        playSelectedTrackFromPosition(clickTime);
+                    }
+                    else
+                    {
+                        playFromPosition(clickTime);
+                    }
                 }
+                else if (event.getNumberOfClicks() == 1)
+                {
+                    spdlog::info("Single-click detected - checking seek callback");
+                    if (onSeekRequested)
+                    {
+                        spdlog::info("Calling seek callback with time: {:.2f}", clickTime);
+                        onSeekRequested(clickTime);
+                    }
+                    else
+                    {
+                        spdlog::warn("onSeekRequested callback is null!");
+                    }
+                }
+
+                repaint();
             }
         }
 

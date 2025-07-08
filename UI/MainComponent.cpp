@@ -25,9 +25,9 @@ namespace jucyaudio
         MainViewType determineType(const database::INavigationNode *node)
         {
             const auto nodePath{getNodePath(node)};
-            if(nodePath.size() >= 3)
+            if (nodePath.size() >= 3)
             {
-                if(nodePath[1]->getName() == getMixesRootNodeName())
+                if (nodePath[1]->getName() == getMixesRootNodeName())
                 {
                     return MainViewType::MixEditor;
                 }
@@ -350,7 +350,7 @@ namespace jucyaudio
             // Optionally fill the main background if child components don't
             // cover everything or if there are gaps.
             const auto backgroundColour = getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId);
-            //spdlog::info("MainComponent::paint - juce::ResizableWindow::backgroundColourId colour: '#{}'", backgroundColour.toString().toStdString());
+            // spdlog::info("MainComponent::paint - juce::ResizableWindow::backgroundColourId colour: '#{}'", backgroundColour.toString().toStdString());
             g.fillAll(backgroundColour);
         }
 
@@ -450,7 +450,7 @@ namespace jucyaudio
             if (dataViewWidth < 0)
                 dataViewWidth = 0; // Prevent negative width
 
-            //m_currentMainViewComponent->setBounds(dataViewX, centralArea.getY(), dataViewWidth, centralArea.getHeight());
+            // m_currentMainViewComponent->setBounds(dataViewX, centralArea.getY(), dataViewWidth, centralArea.getHeight());
             m_dataViewComponent.setBounds(dataViewX, centralArea.getY(), dataViewWidth, centralArea.getHeight());
             m_mixEditorComponent.setBounds(dataViewX, centralArea.getY(), dataViewWidth, centralArea.getHeight());
         }
@@ -564,10 +564,10 @@ namespace jucyaudio
             {
                 const auto newViewType{determineType(m_currentSelectedDataNode)};
 
-                if(currentViewType != newViewType)
+                if (currentViewType != newViewType)
                 {
                     m_currentMainViewComponent->setVisible(false);
-                    if(newViewType == MainViewType::MixEditor)
+                    if (newViewType == MainViewType::MixEditor)
                     {
                         m_currentMainViewComponent = &m_mixEditorComponent;
                         m_currentMainView = MainViewType::MixEditor;
@@ -589,6 +589,20 @@ namespace jucyaudio
                 if (m_currentMainView == MainViewType::MixEditor)
                 {
                     m_mixEditorComponent.loadMix(m_currentSelectedDataNode->getUniqueId()); // Load the mix data
+                    
+                    // Set up playback callback
+                    m_mixEditorComponent.setPlaybackCallback(
+                        [this](const juce::File &audioFile, double startPosition)
+                        {
+                            this->playFileFromPosition(audioFile, startPosition);
+                        });
+
+                    // Set up seek callback for live position changes
+                    m_mixEditorComponent.setSeekCallback(
+                        [this](double timePosition)
+                        {
+                            this->seekToTimelinePosition(timePosition);
+                        });
                 }
                 else
                 {
@@ -611,6 +625,39 @@ namespace jucyaudio
             }
             syncPlaybackUIToControllerState(); // Update play button enable
                                                // state
+        }
+
+        void MainComponent::seekToTimelinePosition(double timePosition)
+        {
+            spdlog::info("seekToTimelinePosition called with time: {:.2f}", timePosition);
+            spdlog::info("Current playback state: {}", static_cast<int>(m_playbackController.getCurrentState()));
+
+            if (m_playbackController.getCurrentState() == PlaybackController::State::Playing ||
+                m_playbackController.getCurrentState() == PlaybackController::State::Paused)
+            {
+                spdlog::info("Seeking active playback to position: {:.2f}", timePosition);
+                m_playbackController.seek(timePosition);
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Seeking to " + juce::String(timePosition, 1) + "s", false);
+            }
+            else
+            {
+                spdlog::info("No active playback - just updating visual position");
+            }
+        }
+
+        void MainComponent::playFileFromPosition(const juce::File &audioFile, double startPosition)
+        {
+            if (audioFile.existsAsFile())
+            {
+                m_mainPlaybackAndStatusPanel.setStatusMessage(
+                    getSafeDisplayText("Playing: " + audioFile.getFileName() + " from " + juce::String(startPosition, 1) + "s"), false);
+
+                if (!m_playbackController.loadAndPlayFileFromPosition(audioFile, startPosition))
+                {
+                    m_mainPlaybackAndStatusPanel.setStatusMessage(getSafeDisplayText("Error playing: " + audioFile.getFileName()), true);
+                }
+            }
+            syncPlaybackUIToControllerState();
         }
 
         void MainComponent::handleFilterChange(const juce::String &newFilterText)
@@ -1159,6 +1206,13 @@ namespace jucyaudio
                     return;
                 }
             }
+            if (m_currentMainView == MainViewType::MixEditor)
+            {
+                // In Mix Editor, play from current playhead position
+                auto *timeline = &m_mixEditorComponent.getTimeline(); // You'll need to add this getter
+                timeline->playFromPosition(timeline->getCurrentTimePosition());
+                return;
+            }
 
             // Fallback: if nothing selected, resume current playback if paused
             if (m_playbackController.getCurrentState() == PlaybackController::State::Paused)
@@ -1214,7 +1268,7 @@ namespace jucyaudio
         {
             using namespace config;
 
-            if(m_currentMainView == MainViewType::MixEditor)
+            if (m_currentMainView == MainViewType::MixEditor)
             {
                 m_mainPlaybackAndStatusPanel.setStatusMessage("Column configuration not available in Mix Editor view.", true);
                 return false;

@@ -33,6 +33,7 @@ namespace jucyaudio
             void prepareToPlay(int samplesPerBlockExpected, double sampleRate);
             void getNextAudioBlock(const juce::AudioSourceChannelInfo &bufferToFill);
             void releaseResources();
+            bool loadAndPlayFileFromPosition(const juce::File &audioFile, double startPositionSeconds);
 
             // --- Playback Control Methods ---
             // Returns true if loading was successful and playback started/is starting.

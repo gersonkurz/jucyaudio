@@ -281,6 +281,17 @@ namespace jucyaudio
                 return false;
             }
         }
+
+        bool PlaybackController::loadAndPlayFileFromPosition(const juce::File &audioFile, double startPositionSeconds)
+        {
+            if (!loadAndPlayFile(audioFile))
+                return false;
+
+            // Seek to the desired position after loading
+            seek(startPositionSeconds);
+            return true;
+        }
+
         void PlaybackController::play()
         {
             if (m_currentAudioFileSource == nullptr)

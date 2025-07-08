@@ -37,19 +37,35 @@ namespace jucyaudio
         {
             if (event.mods.isLeftButtonDown())
             {
-                // Tell the timeline that this track was selected
                 if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
                 {
                     timeline->setSelectedTrack(this);
 
-                    // Also set playhead position based on where we clicked within the track
+                    // Calculate the time position within the track
                     auto localClick = event.position;
                     auto trackBounds = getBounds();
                     double clickTime = (trackBounds.getX() + localClick.x) / timeline->getPixelsPerSecond();
                     timeline->setCurrentTimePosition(clickTime);
+
+                    spdlog::info("Track clicked at local x: {:.1f}, global time: {:.2f}s", localClick.x, clickTime);
+
+                    // Both single-click and double-click do the same thing:
+                    // Play this track from the clicked position
+                    if (timeline->onPlaybackRequested)
+                    {
+                        // Calculate offset within this specific track
+                        const auto startTime = std::chrono::duration<double>(m_mixTrack.mixStartTime).count();
+                        double trackOffset = clickTime - startTime;
+                        trackOffset = juce::jlimit(0.0, std::chrono::duration<double>(m_trackInfo.duration).count(), trackOffset);
+
+                        spdlog::info("Playing track from offset: {:.2f}s", trackOffset);
+                        juce::File audioFile(m_trackInfo.filepath.string());
+                        timeline->onPlaybackRequested(audioFile, trackOffset);
+                    }
                 }
             }
         }
+                
         void MixTrackComponent::resized()
         {
             auto bounds = getLocalBounds();

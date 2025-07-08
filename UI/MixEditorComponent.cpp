@@ -23,6 +23,16 @@ namespace jucyaudio
             addAndMakeVisible(m_viewport);
         }
 
+        void MixEditorComponent::setPlaybackCallback(std::function<void(const juce::File &, double)> callback)
+        {
+            m_timeline.onPlaybackRequested = callback;
+        }
+
+        void MixEditorComponent::setSeekCallback(std::function<void(double)> callback)
+        {
+            m_timeline.onSeekRequested = callback;
+        }
+
         void MixEditorComponent::paint(juce::Graphics &g)
         {
             g.fillAll(getLookAndFeel().findColour(juce::ListBox::backgroundColourId).darker());

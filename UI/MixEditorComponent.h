@@ -23,6 +23,13 @@ namespace jucyaudio
             void resized() override;
 
             void loadMix(MixId mixId);
+            void setPlaybackCallback(std::function<void(const juce::File &, double)> callback);
+            void setSeekCallback(std::function<void(double)> callback);
+
+            auto &getTimeline()
+            {
+                return m_timeline;
+            }
 
         private:
             juce::AudioFormatManager m_formatManager;

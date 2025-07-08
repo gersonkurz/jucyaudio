@@ -29,6 +29,10 @@ namespace jucyaudio
             }
             void setSelectedTrack(MixTrackComponent *track);
             void setCurrentTimePosition(double timeInSeconds);
+            void playFromPosition(double timePosition);
+            void playSelectedTrackFromPosition(double timePosition);
+            std::function<void(const juce::File &, double)> onPlaybackRequested;
+            std::function<void(double)> onSeekRequested;
 
         private:
             void paint(juce::Graphics &g) override;
