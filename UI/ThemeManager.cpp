@@ -81,6 +81,7 @@ namespace jucyaudio
                 return std::nullopt;
             }
         }
+
         void ThemeManager::initialize(const std::filesystem::path &themesFolderPath, const std::string& currentThemeName)
         {
             m_availableThemes.clear();

@@ -9,23 +9,6 @@ namespace jucyaudio
     {
         using namespace database; // For convenience, we use the database namespace here
 
-// A small helper for error logging or assertions if a node is not set
-#define CHECK_CURRENT_NODE(returnValue)                                                                                                                        \
-    if (!m_currentNode)                                                                                                                                        \
-    {                                                                                                                                                          \
-        /* juce::Logger::writeToLog("DataViewComponent: m_currentNode is null."); */                                                                           \
-        /* JUCE_ASSERT_FALSE; */                                                                                                                               \
-        return returnValue;                                                                                                                                    \
-    }
-
-#define CHECK_CURRENT_NODE_VOID                                                                                                                                \
-    if (!m_currentNode)                                                                                                                                        \
-    {                                                                                                                                                          \
-        /* juce::Logger::writeToLog("DataViewComponent: m_currentNode is null."); */                                                                           \
-        /* JUCE_ASSERT_FALSE; */                                                                                                                               \
-        return;                                                                                                                                                \
-    }
-
         DataViewComponent::DataViewComponent()
             : m_tableListBox{juce::String{}, this}
         {
@@ -45,7 +28,7 @@ namespace jucyaudio
         void DataViewComponent::timerCallback()
         {
             // This method is called automatically by the JUCE message thread every 2 seconds.
-            if(m_currentNode)
+            if (m_currentNode)
             {
                 // If the current node is set, we can refresh the view.
                 m_currentNode->refreshCache(true);
@@ -87,8 +70,6 @@ namespace jucyaudio
 
         void DataViewComponent::updateTableColumns()
         {
-            CHECK_CURRENT_NODE_VOID;
-
             m_tableListBox.getHeader().removeAllColumns();
             if (columns::get(m_currentNode, m_currentDataColumns))
             {
@@ -217,8 +198,6 @@ namespace jucyaudio
 
         void DataViewComponent::paintCell(juce::Graphics &g, int rowNumber, int columnId, int width, int height, bool rowIsSelected)
         {
-            CHECK_CURRENT_NODE_VOID;
-
             // columns are 1-based in the TableListBoxModel, so we need to adjust
             const int dataColumnIndex = columnId - 1;
 
@@ -258,7 +237,6 @@ namespace jucyaudio
 
         void DataViewComponent::sortOrderChanged(int newSortColumnId, bool isForwards)
         {
-            CHECK_CURRENT_NODE_VOID;
             const int dataColumnIndex = newSortColumnId - 1;
 
             if (dataColumnIndex >= 0 && static_cast<size_t>(dataColumnIndex) < m_currentDataColumns.size())
@@ -276,7 +254,6 @@ namespace jucyaudio
 
         int DataViewComponent::getColumnAutoSizeWidth(int columnId)
         {
-            CHECK_CURRENT_NODE(100);
             const int dataColumnIndex = columnId - 1;
             if (dataColumnIndex < 0 || static_cast<size_t>(dataColumnIndex) >= m_currentDataColumns.size())
             {
@@ -290,8 +267,6 @@ namespace jucyaudio
         {
             if (e.mods.isRightButtonDown())
             {
-                CHECK_CURRENT_NODE_VOID;
-
                 const auto &availableActions{m_currentNode->getRowActions(static_cast<RowIndex_t>(rowNumber))};
                 if (!availableActions.empty())
                 {
@@ -315,7 +290,6 @@ namespace jucyaudio
 
         void DataViewComponent::cellDoubleClicked(int rowNumber, [[maybe_unused]] int columnId, const juce::MouseEvent &e)
         {
-            CHECK_CURRENT_NODE_VOID;
             const auto &availableActions{m_currentNode->getRowActions(static_cast<RowIndex_t>(rowNumber))};
             if (!availableActions.empty())
             {

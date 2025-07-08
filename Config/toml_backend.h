@@ -3,6 +3,7 @@
 #include <toml++/toml.hpp>
 #include <spdlog/spdlog.h>
 #include <source_location>
+#include <filesystem>
 
 namespace jucyaudio
 {

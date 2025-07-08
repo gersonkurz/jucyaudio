@@ -1,6 +1,7 @@
 #include <Database/BackgroundTasks/BpmAnalysis.h>
 #include <Database/TrackLibrary.h>
 #include <Utils/AssortedUtils.h>
+#include <Utils/UiUtils.h>
 #include <aubio/aubio.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
@@ -332,7 +333,7 @@ namespace jucyaudio
                     }
                 };
 
-                AudioMetadata analyzeAudioFile(const std::string &filepath)
+                AudioMetadata analyzeAudioFile(const std::filesystem::path &filepath)
                 {
                     AudioMetadata metadata;
 
@@ -341,17 +342,17 @@ namespace jucyaudio
                     formatManager.registerBasicFormats();
 
                     // Load the audio file
-                    juce::File audioFile(filepath);
+                    juce::File audioFile{ui::jucePathFromFs(filepath)};
                     if (!audioFile.existsAsFile())
                     {
-                        spdlog::error("Audio file does not exist: {}", filepath);
+                        spdlog::error("Audio file does not exist: {}", pathToString(filepath));
                         return metadata;
                     }
 
                     std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(audioFile));
                     if (!reader)
                     {
-                        spdlog::error("Could not create audio format reader for: {}", filepath);
+                        spdlog::error("Could not create audio format reader for: {}", pathToString(filepath));
                         return metadata;
                     }
 
@@ -366,10 +367,10 @@ namespace jucyaudio
                     // Perform analysis
                     metadata = AudioAnalyzer::analyze(audioBuffer, sampleRate);
 
-                    juce::Logger::writeToLog("Analysis complete for: " + filepath);
-                    juce::Logger::writeToLog("BPM: " + juce::String(metadata.bpm));
-                    juce::Logger::writeToLog("Has Intro: " + juce::String(metadata.hasIntro ? "Yes" : "No"));
-                    juce::Logger::writeToLog("Has Outro: " + juce::String(metadata.hasOutro ? "Yes" : "No"));
+                    spdlog::info("Analysis complete for: {}", pathToString(filepath));
+                    spdlog::info("BPM: {}", metadata.bpm);
+                    spdlog::info("Has Intro: {}", metadata.hasIntro);
+                    spdlog::info("Has Outro: {}", metadata.hasOutro);
 
                     return metadata;
                 }

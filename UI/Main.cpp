@@ -7,18 +7,6 @@
 #include <spdlog/sinks/msvc_sink.h>
 #include <spdlog/spdlog.h>
 
-#if _WIN32 // Or specific MSVC checks
-#pragma comment(lib, "aubio.lib")
-#pragma comment(lib, "pthreadVC2.lib")
-#pragma comment(lib, "libfftw3f-3.lib")
-#pragma comment(lib, "libsndfile-1.lib") // Or sndfile.lib
-#pragma comment(lib, "avcodec.lib")
-#pragma comment(lib, "avformat.lib")
-#pragma comment(lib, "avutil.lib")
-#pragma comment(lib, "swresample.lib")
-#pragma comment(lib, "libmp3lame.lib")
-// Add any other direct dependencies of these if needed
-#endif
 
 /*
 - Database: Disgintuish Node-level actions from track-level actions
@@ -132,7 +120,6 @@ namespace jucyaudio
 
             std::filesystem::path getThemesDirectoryPath() const
             {
-                return "/Users/gersonkurz/development/jucyaudio/jucyaudio/Themes";
                 // This gets the directory containing the executable or the .app bundle
                 auto appFile = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
 
@@ -184,7 +171,7 @@ namespace jucyaudio
                 // Create the settings file in the same directory
                 g_strConfigFilename = appDataDir.getChildFile("settings.toml").getFullPathName().toStdString();
 
-                juce::Logger::writeToLog("Properties file location: " + g_strConfigFilename);
+                spdlog::info("Properties file location: {}", g_strConfigFilename);
             }
 
             void setupLogging()

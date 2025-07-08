@@ -6,14 +6,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Find or fetch JUCE
-find_package(PkgConfig REQUIRED)
 include(FetchContent)
 
-# Option 1: Use local JUCE installation
-# set(JUCE_ROOT "/Users/gersonkurz/development/JUCE")
-# find_package(JUCE CONFIG REQUIRED)
-
-# Option 2: Fetch JUCE from GitHub (recommended)
 FetchContent_Declare(
     JUCE
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
@@ -22,28 +16,109 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(JUCE)
 
-# Find external libraries
-find_library(AUBIO_LIBRARY aubio PATHS /Users/gersonkurz/development/aubio_install_macos/lib)
-find_library(SPDLOG_LIBRARY spdlog PATHS /Users/gersonkurz/development/spdlog/build)
-find_library(TAGLIB_LIBRARY tag PATHS /Users/gersonkurz/development/taglib_install/lib)
-find_library(MP3LAME_LIBRARY mp3lame PATHS /opt/homebrew/lib)
+# Platform-specific library paths and includes
+if(WIN32)
+    # Windows paths from jucer file
+    set(AUBIO_LIB_PATH "C:/Projects/aubio/lib")
+    set(SPDLOG_LIB_PATH_DEBUG "C:/Projects/spdlog/out/install/x64-Debug/lib")
+    set(SPDLOG_LIB_PATH_RELEASE "C:/Projects/spdlog/out/build/x64-Release")
+    set(TAGLIB_LIB_PATH_DEBUG "C:/Projects/taglib/out/install/x64-Debug/lib")
+    set(TAGLIB_LIB_PATH_RELEASE "C:/Projects/taglib/out/install/x64-Release/lib")
+    set(LAME_LIB_PATH "C:/Projects/lame-3.100")
+    set(PTHREADS_LIB_PATH "C:/Projects/pthreads-w32/lib")
+    set(FFTW_LIB_PATH "C:/Projects/fftw")
+    set(LIBSNDFILE_LIB_PATH "C:/Projects/libsndfile-1.2.2-win64/lib")
+    set(FFMPEG_LIB_PATH "C:/Projects/ffmpeg-7.1.1-full_build-shared/lib")  # Adjust path as needed
 
-# Include directories
-set(EXTERNAL_INCLUDES
-    /Users/gersonkurz/development/aubio_install_macos/include
-    /Users/gersonkurz/development/spdlog/include
-    /Users/gersonkurz/development/taglib_install/include
-    /Users/gersonkurz/development/tomlplusplus-master/include
-    /opt/homebrew/include
-)
+    
+    set(AUBIO_INCLUDE_PATH "C:/Projects/aubio/include")
+    set(SPDLOG_INCLUDE_PATH_DEBUG "C:/Projects/spdlog/out/install/x64-Debug/include")
+    set(SPDLOG_INCLUDE_PATH_RELEASE "C:/Projects/spdlog/out/install/x64-Release/include")
+    set(TAGLIB_INCLUDE_PATH_DEBUG "C:/Projects/taglib/out/install/x64-Debug/include")
+    set(TAGLIB_INCLUDE_PATH_RELEASE "C:/Projects/taglib/out/install/x64-Release/include")
+    set(LAME_INCLUDE_PATH "C:/Projects/lame-3.100/include")
+    set(TOMLPLUSPLUS_INCLUDE_PATH "C:/Projects/tomlplusplus/include")
+    set(PTHREADS_INCLUDE_PATH "C:/Projects/pthreads-w32/include")
+    set(FFTW_INCLUDE_PATH "C:/Projects/fftw")
+    set(LIBSNDFILE_INCLUDE_PATH "C:/Projects/libsndfile-1.2.2-win64/include")
+    set(FFMPEG_INCLUDE_PATH "C:/Projects/ffmpeg-7.1.1-full_build-shared/include")
+    
+    # Use debug or release paths based on build type
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(SPDLOG_LIB_PATH ${SPDLOG_LIB_PATH_DEBUG})
+        set(TAGLIB_LIB_PATH ${TAGLIB_LIB_PATH_DEBUG})
+        set(SPDLOG_INCLUDE_PATH ${SPDLOG_INCLUDE_PATH_DEBUG})
+        set(TAGLIB_INCLUDE_PATH ${TAGLIB_INCLUDE_PATH_DEBUG})
+    else()
+        set(SPDLOG_LIB_PATH ${SPDLOG_LIB_PATH_RELEASE})
+        set(TAGLIB_LIB_PATH ${TAGLIB_LIB_PATH_RELEASE})
+        set(SPDLOG_INCLUDE_PATH ${SPDLOG_INCLUDE_PATH_RELEASE})
+        set(TAGLIB_INCLUDE_PATH ${TAGLIB_INCLUDE_PATH_RELEASE})
+    endif()
+    
+    # Find libraries on Windows
+    find_library(AUBIO_LIBRARY aubio PATHS ${AUBIO_LIB_PATH} REQUIRED)
+    find_library(SPDLOG_LIBRARY spdlog PATHS ${SPDLOG_LIB_PATH} REQUIRED)
+    find_library(TAGLIB_LIBRARY tag PATHS ${TAGLIB_LIB_PATH} REQUIRED)
+    find_library(PTHREADS_LIBRARY pthreadVC2 PATHS ${PTHREADS_LIB_PATH} REQUIRED)
+    find_library(LAME_LIBRARY mp3lame PATHS ${LAME_LIB_PATH} REQUIRED)
+    find_library(FFTW3F_LIBRARY libfftw3f-3 PATHS ${FFTW_LIB_PATH} REQUIRED)
+    find_library(FFTW3_LIBRARY libfftw3-3 PATHS ${FFTW_LIB_PATH})
+    find_library(LIBSNDFILE_LIBRARY libsndfile-1 PATHS ${LIBSNDFILE_LIB_PATH} REQUIRED)
+    
+    # Find FFmpeg libraries
+    find_library(AVCODEC_LIBRARY avcodec PATHS ${FFMPEG_LIB_PATH} REQUIRED)
+    find_library(AVFORMAT_LIBRARY avformat PATHS ${FFMPEG_LIB_PATH} REQUIRED)
+    find_library(AVUTIL_LIBRARY avutil PATHS ${FFMPEG_LIB_PATH} REQUIRED)
+    find_library(SWRESAMPLE_LIBRARY swresample PATHS ${FFMPEG_LIB_PATH} REQUIRED)
+    find_library(LAME_LIBRARY libmp3lame PATHS ${LAME_LIB_PATH} REQUIRED)
+
+    # Windows external includes
+    set(EXTERNAL_INCLUDES
+        ${AUBIO_INCLUDE_PATH}
+        ${SPDLOG_INCLUDE_PATH}
+        ${TAGLIB_INCLUDE_PATH}
+        ${LAME_INCLUDE_PATH}
+        ${TOMLPLUSPLUS_INCLUDE_PATH}
+        ${PTHREADS_INCLUDE_PATH}
+        ${FFTW_INCLUDE_PATH}
+        ${LIBSNDFILE_INCLUDE_PATH}
+        ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    
+    # Find pkg-config only on non-Windows platforms
+else()
+    find_package(PkgConfig REQUIRED)
+    
+    # macOS/Linux paths (original)
+    find_library(AUBIO_LIBRARY aubio PATHS /Users/gersonkurz/development/aubio_install_macos/lib)
+    find_library(SPDLOG_LIBRARY spdlog PATHS /Users/gersonkurz/development/spdlog/build)
+    find_library(TAGLIB_LIBRARY tag PATHS /Users/gersonkurz/development/taglib_install/lib)
+    find_library(MP3LAME_LIBRARY mp3lame PATHS /opt/homebrew/lib)
+    
+    # macOS/Linux external includes
+    set(EXTERNAL_INCLUDES
+        /Users/gersonkurz/development/aubio_install_macos/include
+        /Users/gersonkurz/development/spdlog/include
+        /Users/gersonkurz/development/taglib_install/include
+        /Users/gersonkurz/development/tomlplusplus-master/include
+        /opt/homebrew/include
+    )
+endif()
 
 # Create the main application
 juce_add_gui_app(jucyaudio
     PRODUCT_NAME "jucyaudio"
     BUNDLE_ID "com.yourcompany.jucyaudio"
     VERSION 1.0.0
-    MACOS_DEPLOYMENT_TARGET 15.0
 )
+
+# Platform-specific deployment target
+if(APPLE)
+    set_target_properties(jucyaudio PROPERTIES
+        MACOS_DEPLOYMENT_TARGET 15.0
+    )
+endif()
 
 # Add all source files
 target_sources(jucyaudio PRIVATE
@@ -221,31 +296,62 @@ juce_add_binary_data(jucyaudio_assets
         Assets/volume_up.svg
 )
 
-# Link everything together
-target_link_libraries(jucyaudio PRIVATE
-    # JUCE modules
-    juce::juce_audio_basics
-    juce::juce_audio_devices
-    juce::juce_audio_formats
-    juce::juce_audio_processors
-    juce::juce_audio_utils
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_events
-    juce::juce_graphics
-    juce::juce_gui_basics
-    juce::juce_gui_extra
-    
-    # Binary resources
-    jucyaudio_assets
-    
-    # External libraries
-    ${AUBIO_LIBRARY}
-    ${SPDLOG_LIBRARY}
-    ${TAGLIB_LIBRARY}
-    ${MP3LAME_LIBRARY}
-    z  # zlib
-)
+# Platform-specific library linking
+if(WIN32)
+    target_link_libraries(jucyaudio PRIVATE
+        # JUCE modules
+        juce::juce_audio_basics
+        juce::juce_audio_devices
+        juce::juce_audio_formats
+        juce::juce_audio_processors
+        juce::juce_audio_utils
+        juce::juce_core
+        juce::juce_data_structures
+        juce::juce_events
+        juce::juce_graphics
+        juce::juce_gui_basics
+        juce::juce_gui_extra
+        
+        # Binary resources
+        jucyaudio_assets
+        
+        # External libraries (Windows)
+        ${AUBIO_LIBRARY}
+        ${SPDLOG_LIBRARY}
+        ${TAGLIB_LIBRARY}
+        ${PTHREADS_LIBRARY}
+        ${LAME_LIBRARY}
+        ${FFTW3F_LIBRARY}
+        ${LIBSNDFILE_LIBRARY}
+
+    )
+else()
+    target_link_libraries(jucyaudio PRIVATE
+        # JUCE modules
+        juce::juce_audio_basics
+        juce::juce_audio_devices
+        juce::juce_audio_formats
+        juce::juce_audio_processors
+        juce::juce_audio_utils
+        juce::juce_core
+        juce::juce_data_structures
+        juce::juce_events
+        juce::juce_graphics
+        juce::juce_gui_basics
+        juce::juce_gui_extra
+        
+        # Binary resources
+        jucyaudio_assets
+        
+        # External libraries (macOS/Linux)
+        ${AUBIO_LIBRARY}
+        ${SPDLOG_LIBRARY}
+        ${TAGLIB_LIBRARY}
+        ${MP3LAME_LIBRARY}
+        
+        z  # zlib
+    )
+endif()
 
 # Include directories
 target_include_directories(jucyaudio PRIVATE
@@ -253,20 +359,43 @@ target_include_directories(jucyaudio PRIVATE
     ${EXTERNAL_INCLUDES}
 )
 
-# Preprocessor definitions
-target_compile_definitions(jucyaudio PRIVATE
-    JUCE_WEB_BROWSER=0
-    JUCE_USE_CURL=0
-    JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:jucyaudio,JUCE_PRODUCT_NAME>"
-    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:jucyaudio,JUCE_VERSION>"
-    JUCE_MODAL_LOOPS_PERMITTED=1
-    JUCE_STRICT_REFCOUNTEDPOINTER=1
-    JUCE_USE_MP3AUDIOFORMAT=1
-    SPDLOG_COMPILED_LIB
-    TAGLIB_STATIC
-    PROJECT_NAME="${PROJECT_NAME}"
-    PROJECT_VERSION="${PROJECT_VERSION}"
-)
+# Platform-specific preprocessor definitions
+if(WIN32)
+    target_compile_definitions(jucyaudio PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:jucyaudio,JUCE_PRODUCT_NAME>"
+        JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:jucyaudio,JUCE_VERSION>"
+        JUCE_MODAL_LOOPS_PERMITTED=1
+        JUCE_STRICT_REFCOUNTEDPOINTER=1
+        JUCE_USE_MP3AUDIOFORMAT=1
+        SPDLOG_COMPILED_LIB
+        SPDLOG_USE_STD_FORMAT
+        SPDLOG_MSVC_UTF8
+        TAGLIB_STATIC
+        PROJECT_NAME="${PROJECT_NAME}"
+        PROJECT_VERSION="${PROJECT_VERSION}"
+    )
+    
+    # Windows-specific compiler flags
+    target_compile_options(jucyaudio PRIVATE
+        /utf-8
+    )
+else()
+    target_compile_definitions(jucyaudio PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:jucyaudio,JUCE_PRODUCT_NAME>"
+        JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:jucyaudio,JUCE_VERSION>"
+        JUCE_MODAL_LOOPS_PERMITTED=1
+        JUCE_STRICT_REFCOUNTEDPOINTER=1
+        JUCE_USE_MP3AUDIOFORMAT=1
+        SPDLOG_COMPILED_LIB
+        TAGLIB_STATIC
+        PROJECT_NAME="${PROJECT_NAME}"
+        PROJECT_VERSION="${PROJECT_VERSION}"
+    )
+endif()
 
 # Platform-specific settings
 if(APPLE)
@@ -275,7 +404,7 @@ if(APPLE)
     )
 endif()
 
-# Compiler flags
+# Compiler flags for non-Windows platforms
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(jucyaudio PRIVATE
         -Wall
@@ -287,8 +416,9 @@ endif()
 
 # Special handling for sqlite3.c to avoid warnings
 set_source_files_properties(Database/Sqlite/sqlite3.c PROPERTIES
-    COMPILE_FLAGS "-w"  # Disable warnings for sqlite3.c
+    COMPILE_FLAGS "$<IF:$<PLATFORM_ID:Windows>,-w,-w>"
 )
+
 # --- Post-Build Step: Copy Resources (Modern Approach) ---
 
 # Define a variable for the source directory for clarity
