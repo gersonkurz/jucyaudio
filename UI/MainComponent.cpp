@@ -1148,27 +1148,27 @@ namespace jucyaudio
 
         void MainComponent::requestPlayOrPlaySelection()
         {
-            // If a file is already loaded and paused, just play.
+            // Always try to play the currently selected track
+            if (m_currentMainView == MainViewType::DataView && m_dataViewComponent.getNumSelectedRows() > 0)
+            {
+                // Get the first selected row and play it
+                auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
+                if (!selectedRows.empty())
+                {
+                    playDataRow(selectedRows[0]); // This loads and plays the new track
+                    return;
+                }
+            }
+
+            // Fallback: if nothing selected, resume current playback if paused
             if (m_playbackController.getCurrentState() == PlaybackController::State::Paused)
             {
                 m_playbackController.play();
                 return;
             }
-            // If something is playing, this might toggle to pause, or do
-            // nothing. PlaybackController::play() handles "play if loaded and
-            // not playing". If nothing is loaded, try to play current
-            // selection.
 
-            if (m_playbackController.getCurrentFilepath().isEmpty() || m_playbackController.getCurrentState() == PlaybackController::State::Stopped)
-            {
-
-                m_playbackController.play(); // Will play if a track is loaded/paused.
-            }
-            else
-            {
-                m_playbackController.play(); // Play if loaded/paused, or resume.
-            }
-            syncPlaybackUIToControllerState();
+            // No selection and nothing to resume
+            m_mainPlaybackAndStatusPanel.setStatusMessage("No track selected to play.", true);
         }
 
         bool MainComponent::onShowScanDialog()

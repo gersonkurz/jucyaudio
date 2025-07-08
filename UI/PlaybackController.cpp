@@ -156,11 +156,12 @@ namespace jucyaudio
 
         void PlaybackController::getNextAudioBlock(const juce::AudioSourceChannelInfo &bufferToFill)
         {
-            if (m_currentAudioFileSource == nullptr || (m_currentState != State::Playing && m_currentState != State::Starting))
+            if (m_currentAudioFileSource == nullptr || m_currentState == State::Stopped || m_currentState == State::Paused)
             {
                 bufferToFill.clearActiveBufferRegion();
                 return;
             }
+            // Now Starting and Playing both allow audio through
             m_audioTransportSource.getNextAudioBlock(bufferToFill);
         }
 
