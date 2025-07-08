@@ -86,7 +86,7 @@ GROUP BY ws.ws_id, ws.name)SQL";
                         output.append(" ASC");
                 }
             }
-            const auto sql_statement = output.as_string();
+            const auto sql_statement = output.asString();
             spdlog::debug("Executing SQL statement to get mixes: {}",
                          sql_statement);
             std::vector<WorkingSetInfo> workingSets;

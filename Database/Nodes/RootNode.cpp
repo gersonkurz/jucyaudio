@@ -18,7 +18,7 @@ namespace jucyaudio
     {
         INavigationNode *RootNode::get(const std::string &name) const
         {
-            const auto tokens{split_string(name, "/", true)};
+            const auto tokens{splitString(name, "/", true)};
             const BaseNode *pNode{this};
             for (uint32_t tokenIndex = 0; tokenIndex < tokens.size();
                  ++tokenIndex)

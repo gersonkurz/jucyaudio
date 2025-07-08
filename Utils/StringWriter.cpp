@@ -112,7 +112,7 @@ namespace jucyaudio
         }
     }
 
-    char *StringWriter::ensure_free_space(size_t space_needed)
+    char *StringWriter::ensureFreeSpace(size_t space_needed)
     {
         const size_t space_total = m_write_position + space_needed;
 

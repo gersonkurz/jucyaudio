@@ -25,7 +25,7 @@ namespace jucyaudio
                     {
                         writer.append(" AND (");
                     }
-                    writer.append_formatted("title LIKE ?{} OR artist_name LIKE ?{} OR album_title LIKE ?{} OR filepath LIKE ?{})",
+                    writer.appendFormatted("title LIKE ?{} OR artist_name LIKE ?{} OR album_title LIKE ?{} OR filepath LIKE ?{})",
                                             m_searchTermIndex, m_searchTermIndex, m_searchTermIndex, m_searchTermIndex, m_searchTermIndex);
                     ++m_searchTermIndex;
                 }
@@ -41,7 +41,7 @@ namespace jucyaudio
                 {
                     writer.append(" AND ");
                 }
-                writer.append_formatted("filepath LIKE ?{}", m_searchTermIndex); // Assuming pathFilter is a string with
+                writer.appendFormatted("filepath LIKE ?{}", m_searchTermIndex); // Assuming pathFilter is a string with
                 ++m_searchTermIndex;
             }
             if (trackQueryArgs.workingSetId)
@@ -55,7 +55,7 @@ namespace jucyaudio
                 {
                     writer.append(" AND ");
                 }
-                writer.append_formatted("track_id IN (SELECT track_id FROM WorkingSetTracks WHERE ws_id = ?{})", m_searchTermIndex);
+                writer.appendFormatted("track_id IN (SELECT track_id FROM WorkingSetTracks WHERE ws_id = ?{})", m_searchTermIndex);
                 ++m_searchTermIndex;
             }
             if (trackQueryArgs.mixId)
@@ -69,7 +69,7 @@ namespace jucyaudio
                 {
                     writer.append(" AND ");
                 }
-                writer.append_formatted("track_id IN (SELECT track_id FROM MixTracks WHERE mix_id = ?{})", m_searchTermIndex);
+                writer.appendFormatted("track_id IN (SELECT track_id FROM MixTracks WHERE mix_id = ?{})", m_searchTermIndex);
                 ++m_searchTermIndex;
             }
         }
@@ -106,7 +106,7 @@ namespace jucyaudio
             {
                 writer.append(")"); // Close the WHERE clause if it was opened
             }
-            const auto sqlStatement = writer.as_string();
+            const auto sqlStatement = writer.asString();
             if (!m_stmt.bindStatement(sqlStatement))
             {
                 spdlog::error("Failed to bind count statement: {}", sqlStatement);
@@ -147,7 +147,7 @@ namespace jucyaudio
             addOrderByClause(writer, trackQueryArgs);
             if (trackQueryArgs.usePaging)
             {
-                writer.append_formatted(" LIMIT {} OFFSET {}", QUERY_PAGE_SIZE, trackQueryArgs.offset);
+                writer.appendFormatted(" LIMIT {} OFFSET {}", QUERY_PAGE_SIZE, trackQueryArgs.offset);
             }
             return finalizeStatement(writer, trackQueryArgs);
         }
@@ -156,7 +156,7 @@ namespace jucyaudio
         {
             m_searchTermIndex = 1;
             StringWriter writer;
-            writer.append_formatted("INSERT INTO WorkingSetTracks (ws_id, track_id) SELECT ?{}, track_id FROM (SELECT track_id FROM Tracks", m_searchTermIndex);
+            writer.appendFormatted("INSERT INTO WorkingSetTracks (ws_id, track_id) SELECT ?{}, track_id FROM (SELECT track_id FROM Tracks", m_searchTermIndex);
             ++m_searchTermIndex;
             addWhereClause(writer, trackQueryArgs); // no sort order, because we're adding this into a new table
             return finalizeStatement(writer, trackQueryArgs, wsId);

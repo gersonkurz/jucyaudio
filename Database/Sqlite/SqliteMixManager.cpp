@@ -173,7 +173,7 @@ FROM Mixes m
                         output.append(" ASC");
                 }
             }
-            const auto sql_statement = output.as_string();
+            const auto sql_statement = output.asString();
             spdlog::debug("Executing SQL statement to get mixes: {}", sql_statement);
             std::vector<MixInfo> mixes;
             SqliteStatement stmt{m_db};

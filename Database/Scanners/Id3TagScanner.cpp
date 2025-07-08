@@ -46,10 +46,10 @@ namespace jucyaudio
                 if (!genreFromTaglib.isEmpty())
                 {
                     const auto combinedGenreString = genreFromTaglib.to8Bit(true);
-                    const auto genreNames = split_string(combinedGenreString, ";,/|"); // Using your splitter idea
+                    const auto genreNames = splitString(combinedGenreString, ";,/|"); // Using your splitter idea
                     for (const auto &genreNameWithSpaces : genreNames)
                     {
-                        const auto genreName{trim_to_string(genreNameWithSpaces)};
+                        const auto genreName{trimToString(genreNameWithSpaces)};
                         if (!genreName.empty())
                         {
                             const auto tagId = m_tagManager.getOrCreateTagId(genreName, true /* create if missing */);

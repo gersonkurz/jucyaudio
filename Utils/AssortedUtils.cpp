@@ -1,14 +1,11 @@
 #include <Database/Includes/Constants.h>
 #include <Utils/AssortedUtils.h>
 #include <cassert>
-#include <iomanip> // For std::put_time
 #include <ranges>
-#include <sstream> // For std::ostringstream
 
 namespace jucyaudio
 {
 
-    
     std::string durationToString(const Duration_t &d)
     {
         using namespace std::chrono;
@@ -47,8 +44,7 @@ namespace jucyaudio
         return oss.str();
     }
 
-
-     std::string durationToString(const Timestamp_t &tp, const std::string &format)
+    std::string durationToString(const Timestamp_t &tp, const std::string &format)
     {
         if (tp == Timestamp_t{})
         { // Check for default/uninitialized
@@ -68,7 +64,7 @@ namespace jucyaudio
         return oss.str();
     }
 
-    std::vector<std::string> split_string(std::string_view svtext, std::string_view svseparators, bool handle_quotation_marks)
+    std::vector<std::string> splitString(std::string_view svtext, std::string_view svseparators, bool handle_quotation_marks)
     {
         assert(!svseparators.empty());
         std::vector<std::string> result;
