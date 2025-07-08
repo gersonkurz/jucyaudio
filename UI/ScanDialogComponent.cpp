@@ -329,7 +329,7 @@ namespace jucyaudio
                     if (m_folderDatabase.addFolder(fi))
                     {
                         loadFolders(); // Reload from DB to get fresh list &
-                                       // stats
+                        
                     }
                     else
                     {
@@ -438,7 +438,11 @@ namespace jucyaudio
                     spdlog::error("ScanFoldersTask: Exception during scan: {}", e.what());
                 }
                 theBackgroundTaskService.resume();
-                m_updateUiCallback();
+                juce::MessageManager::callAsync(
+                    [updateCallback = m_updateUiCallback]()
+                    {
+                        juce::Timer::callAfterDelay(100, updateCallback); // Small delay
+                    });
             }
 
         private:
@@ -476,6 +480,7 @@ namespace jucyaudio
         {
             m_folderDatabase.getFolders(m_folders);
             m_folderListTable.updateContent();
+            m_folderListTable.repaint();
             m_deleteFolderButton.setEnabled(m_folderListTable.getNumSelectedRows() > 0);
         }
 
