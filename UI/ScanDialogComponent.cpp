@@ -51,6 +51,12 @@ namespace jucyaudio
 
             addAndMakeVisible(m_forceRescanCheckbox);
             m_forceRescanCheckbox.setButtonText("Force Rescan"); // Or just global "Force Rescan"
+            m_forceRescanCheckbox.setToggleState(false, juce::dontSendNotification);
+
+            // Add the new checkbox
+            addAndMakeVisible(m_scanAllCheckbox);
+            m_scanAllCheckbox.setButtonText("Scan All Folders");
+            m_scanAllCheckbox.setToggleState(false, juce::dontSendNotification);
 
             // --- Folder List Table Setup ---
             addAndMakeVisible(m_folderListTable);
@@ -74,6 +80,7 @@ namespace jucyaudio
 
             // --- Initial State & Data Load ---
             loadFolders(); // Populate the table
+            m_foldersAtDialogOpen = m_folders;
         }
 
         ScanDialogComponent::~ScanDialogComponent()
@@ -167,6 +174,8 @@ namespace jucyaudio
             m_deleteFolderButton.setBounds(leftButtonPanel.removeFromTop(buttonHeight));
             leftButtonPanel.removeFromTop(vMargin);
             m_forceRescanCheckbox.setBounds(leftButtonPanel.removeFromTop(buttonHeight));
+            leftButtonPanel.removeFromTop(vMargin);
+            m_scanAllCheckbox.setBounds(leftButtonPanel.removeFromTop(buttonHeight));
 
             area.removeFromLeft(10);
 
@@ -451,11 +460,49 @@ namespace jucyaudio
             bool m_bForceRescan;
         };
 
+        std::vector<database::FolderInfo> ScanDialogComponent::getNewlyAddedFolders() const
+        {
+            std::vector<database::FolderInfo> newFolders;
+
+            for (const auto &currentFolder : m_folders)
+            {
+                // Check if this folder was in the original list
+                bool wasInOriginalList = std::any_of(m_foldersAtDialogOpen.begin(), m_foldersAtDialogOpen.end(),
+                                                     [&](const auto &originalFolder)
+                                                     {
+                                                         return originalFolder.folderId == currentFolder.folderId;
+                                                     });
+
+                if (!wasInOriginalList)
+                {
+                    newFolders.push_back(currentFolder);
+                }
+            }
+
+            return newFolders;
+        }
+
         void ScanDialogComponent::scanLibrary()
         {
-            const auto folderInfosToScan{(m_folderListTable.getNumSelectedRows() > 0) ? getSelectedFolderInfos() : m_folders};
+            std::vector<FolderInfo> foldersToScan;
 
-            if (folderInfosToScan.empty())
+            if (m_folderListTable.getNumSelectedRows() > 0)
+            {
+                // User selected specific folders - use those
+                foldersToScan = getSelectedFolderInfos();
+            }
+            else if (m_scanAllCheckbox.getToggleState())
+            {
+                // "Scan All" is checked - scan everything
+                foldersToScan = m_folders;
+            }
+            else
+            {
+                // Default: only scan newly added folders
+                foldersToScan = getNewlyAddedFolders();
+            }
+
+            if (foldersToScan.empty())
             {
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "No Folders", "Please add / select folders to scan first.");
             }
@@ -470,7 +517,7 @@ namespace jucyaudio
                         });
                 };
                 const bool force = m_forceRescanCheckbox.getToggleState();
-                auto *task = new ScanFoldersTask{folderInfosToScan, force, updateUiCallback};
+                auto *task = new ScanFoldersTask{foldersToScan, force, updateUiCallback};
                 TaskDialog::launch("Scanning in progress", task, 500, this);
                 task->release(REFCOUNT_DEBUG_ARGS);
             }

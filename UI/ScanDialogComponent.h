@@ -46,6 +46,7 @@ namespace jucyaudio
             void selectedRowsChanged(int lastRowSelected) override;
             bool keyPressed(const juce::KeyPress &key) override;
             bool removeFolderAndAssociatedTracks(const database::FolderInfo &folderInfo);
+            std::vector<database::FolderInfo> getNewlyAddedFolders() const;
 
             database::IFolderDatabase &m_folderDatabase;
             juce::LookAndFeel_V4 m_lookAndFeel;
@@ -55,6 +56,8 @@ namespace jucyaudio
             juce::TextButton m_editFolderButton; // For later
             juce::TextButton m_deleteFolderButton;
             juce::ToggleButton m_forceRescanCheckbox;
+            juce::ToggleButton m_scanAllCheckbox;
+            std::vector<database::FolderInfo> m_foldersAtDialogOpen;
             juce::TableListBox m_folderListTable;
             std::vector<database::FolderInfo>
                 m_folders; // Data for the folder list table
