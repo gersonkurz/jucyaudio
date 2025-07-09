@@ -655,7 +655,7 @@ namespace jucyaudio
 
             if (it != mixTracks.end())
             {
-                const auto index = std::distance(mixTracks.begin(), it);
+                const auto index = static_cast<size_t>(std::distance(mixTracks.begin(), it));
                 auto startTimeOfNextTrack = it->mixStartTime; // Start time of the track to be removed
                 mixInfo.totalDuration -= it->mixEndTime - it->mixStartTime;
                 mixTracks.erase(it);

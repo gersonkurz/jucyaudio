@@ -54,7 +54,7 @@ namespace jucyaudio
             void mouseDown(const juce::MouseEvent &event) override;
             void recalculateLayout();
             void maintainViewportPosition(double timeAtMouse, int mouseX);
-            void paintOverChildren(juce::Graphics &g);
+            void paintOverChildren(juce::Graphics &g) override;
 
         private:
             // A helper struct to manage UI components and their model data together.
