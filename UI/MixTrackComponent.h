@@ -29,8 +29,20 @@ namespace jucyaudio
             void changeListenerCallback(juce::ChangeBroadcaster *source) override;
             bool isSelected() const;
             void drawVolumeEnvelope(juce::Graphics &g, juce::Rectangle<int> area);
-            
+
+            std::function<void(TrackId, const std::vector<database::EnvelopePoint>&)> onEnvelopeChanged;
+
         private:
+            std::optional<size_t> hitTestEnvelopePoint(juce::Point<int> mousePos) const;
+            juce::Point<int> envelopePointToScreenPosition(const database::EnvelopePoint &point) const;
+            database::EnvelopePoint screenPositionToEnvelopePoint(juce::Point<int> screenPos) const;
+            void constrainEnvelopePoint(size_t pointIndex, database::EnvelopePoint &point) const;
+            void mouseDown(const juce::MouseEvent &event) override;
+            void mouseDrag(const juce::MouseEvent &event) override;
+            void mouseUp(const juce::MouseEvent &event) override;
+            void mouseMove(const juce::MouseEvent &event) override;
+            void setTopLeftPositionWithLogging(int newX, int newY);
+
             // Custom constrainer that only allows horizontal movement
             class HorizontalOnlyConstrainer : public juce::ComponentBoundsConstrainer
             {
@@ -54,22 +66,30 @@ namespace jucyaudio
             private:
                 int m_lockedY = 0;
             };
-            void mouseDown(const juce::MouseEvent &event) override;
-            void mouseDrag(const juce::MouseEvent &event) override;
-            void mouseUp(const juce::MouseEvent &event) override;
-            void setTopLeftPositionWithLogging(int newX, int newY);
 
             const database::MixTrack &m_mixTrack;
             const database::TrackInfo &m_trackInfo;
             juce::AudioThumbnail m_thumbnail;
             juce::Label m_infoLabel;
             juce::ComponentDragger m_dragger;
-            HorizontalOnlyConstrainer m_constrainer; 
+            HorizontalOnlyConstrainer m_constrainer;
 
             bool m_isDragging = false;
             juce::Point<int> m_dragStartPosition;
             int m_originalTrackX = 0;
 
+            enum class EnvelopePointState
+            {
+                Normal,
+                Hovered,
+                Selected
+            };
+
+            std::optional<size_t> m_selectedEnvelopePointIndex;
+            std::optional<size_t> m_hoveredEnvelopePointIndex;
+            bool m_isDraggingEnvelopePoint = false;
+            juce::Point<int> m_envelopePointDragStart;
+            database::EnvelopePoint m_originalEnvelopePoint;
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixTrackComponent)
         };
     } // namespace ui

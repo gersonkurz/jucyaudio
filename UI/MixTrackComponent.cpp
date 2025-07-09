@@ -28,7 +28,7 @@ namespace jucyaudio
             m_thumbnail.setSource(new juce::FileInputSource(juce::File(trackInfo.filepath.string())));
             m_thumbnail.addChangeListener(this);
 
-                // Set up drag constraints for horizontal-only movement
+            // Set up drag constraints for horizontal-only movement
             m_constrainer.setMinimumOnscreenAmounts(0xffffff, 0xffffff, 0xffffff, 0xffffff);
 
             // Restrict to horizontal movement only by setting fixed Y position
@@ -45,6 +45,24 @@ namespace jucyaudio
         {
             if (event.mods.isLeftButtonDown())
             {
+                // FIRST: Check for envelope point hits (highest priority)
+                if (auto hitPointIndex = hitTestEnvelopePoint(event.position.toInt()))
+                {
+                    m_selectedEnvelopePointIndex = hitPointIndex;
+                    m_isDraggingEnvelopePoint = true;
+                    m_envelopePointDragStart = event.position.toInt();
+                    m_originalEnvelopePoint = m_mixTrack.envelopePoints[*hitPointIndex];
+
+                    // Ensure track is selected but don't start track dragging
+                    if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                    {
+                        timeline->setSelectedTrack(this);
+                    }
+
+                    repaint();
+                    return; // Early exit - don't process track selection/dragging
+                }
+
                 if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
                 {
                     timeline->setSelectedTrack(this);
@@ -70,18 +88,27 @@ namespace jucyaudio
                             timeline->onPlaybackRequested(audioFile, trackOffset);
                         }
                     }
-                    // Single-click behavior will be handled in mouseUp if no drag occurred
+                    else if (event.getNumberOfClicks() == 1)
+                    {
+                        // **FIX: Initialize drag state here**
+                        m_originalTrackX = getX();
+                        int currentY = getY();
+                        m_constrainer.setLockedY(currentY);
+
+                        // Tell ComponentDragger where the drag started
+                        m_dragger.startDraggingComponent(this, event);
+
+                        // Single-click behavior will be handled in mouseUp if no drag occurred
+                    }
                 }
             }
         }
-
 
         void MixTrackComponent::resized()
         {
             auto bounds = getLocalBounds();
             // Place the label in the top section
             m_infoLabel.setBounds(bounds.removeFromTop(textSectionHeight).reduced(4, 0));
-
         }
 
         // In MixTrackComponent.cpp
@@ -144,39 +171,52 @@ namespace jucyaudio
             juce::Path volumePath;
             const auto trackDuration = std::chrono::duration<double>(m_trackInfo.duration).count();
 
-            // Start the path
+            // Build the envelope path by connecting all points
             bool pathStarted = false;
-
             for (size_t i = 0; i < m_mixTrack.envelopePoints.size(); ++i)
             {
                 const auto &point = m_mixTrack.envelopePoints[i];
-
-                // Convert time to X position (relative to track start)
-                const double timeInSeconds = std::chrono::duration<double>(point.time).count();
-                const float x = area.getX() + (timeInSeconds / trackDuration) * area.getWidth();
-
-                // Convert volume to Y position (0% = bottom, 100% = top)
-                const float volumePercent = point.volume / float(database::VOLUME_NORMALIZATION);
-                const float y = area.getBottom() - (volumePercent * area.getHeight());
+                auto screenPos = envelopePointToScreenPosition(point);
 
                 if (!pathStarted)
                 {
-                    volumePath.startNewSubPath(x, y);
+                    volumePath.startNewSubPath(screenPos.x, screenPos.y);
                     pathStarted = true;
                 }
                 else
                 {
-                    volumePath.lineTo(x, y);
+                    volumePath.lineTo(screenPos.x, screenPos.y);
                 }
-
-                // Optional: Draw envelope point markers
-                g.setColour(juce::Colours::orange);
-                g.fillEllipse(x - 2, y - 2, 4, 4);
             }
 
-            // Draw the envelope line
+            // Draw the envelope line FIRST (so points appear on top)
             g.setColour(juce::Colours::yellow.withAlpha(0.8f));
             g.strokePath(volumePath, juce::PathStrokeType(2.0f));
+
+            // Draw envelope points with different states ON TOP of the line
+            for (size_t i = 0; i < m_mixTrack.envelopePoints.size(); ++i)
+            {
+                const auto &point = m_mixTrack.envelopePoints[i];
+                auto screenPos = envelopePointToScreenPosition(point);
+
+                // Choose color based on state
+                juce::Colour pointColor = juce::Colours::orange;
+                float pointSize = 4.0f;
+
+                if (m_selectedEnvelopePointIndex == i)
+                {
+                    pointColor = juce::Colours::yellow;
+                    pointSize = 6.0f;
+                }
+                else if (m_hoveredEnvelopePointIndex == i)
+                {
+                    pointColor = juce::Colours::orange.brighter();
+                    pointSize = 5.0f;
+                }
+
+                g.setColour(pointColor);
+                g.fillEllipse(screenPos.x - pointSize / 2, screenPos.y - pointSize / 2, pointSize, pointSize);
+            }
 
             // Debug logging for the envelope shape
             spdlog::debug("Track {}: {} envelope points, duration={:.1f}s", m_mixTrack.trackId, m_mixTrack.envelopePoints.size(), trackDuration);
@@ -207,18 +247,25 @@ namespace jucyaudio
 
         void MixTrackComponent::mouseDrag(const juce::MouseEvent &event)
         {
-            if (event.mods.isLeftButtonDown())
+            if (m_isDraggingEnvelopePoint && m_selectedEnvelopePointIndex.has_value())
+            {
+                auto newPoint = screenPositionToEnvelopePoint(event.position.toInt());
+                constrainEnvelopePoint(*m_selectedEnvelopePointIndex, newPoint);
+
+                // Update the envelope point
+                const_cast<database::MixTrack &>(m_mixTrack).envelopePoints[*m_selectedEnvelopePointIndex] = newPoint;
+
+                repaint();
+                return;
+            }
+
+            if (event.mods.isLeftButtonDown() && !m_isDraggingEnvelopePoint)
             {
                 if (!m_isDragging)
                 {
                     m_isDragging = true;
-                    m_originalTrackX = getX();
 
-                    // Lock the constrainer to the current Y position
-                    int currentY = getY();
-                    m_constrainer.setLockedY(currentY);
-
-                    spdlog::info("DRAG_START: Track {}, originalX={}, locking Y to {}", m_mixTrack.trackId, m_originalTrackX, currentY);
+                    spdlog::info("DRAG_START: Track {}, originalX={}, locking Y to {}", m_mixTrack.trackId, m_originalTrackX, getY());
 
                     if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
                     {
@@ -226,7 +273,7 @@ namespace jucyaudio
                     }
                 }
 
-                // Use JUCE's ComponentDragger with our horizontal-only constrainer
+                // Use JUCE's ComponentDragger - it now knows the original mouse position
                 m_dragger.dragComponent(this, event, &m_constrainer);
 
                 // Log the result
@@ -243,6 +290,18 @@ namespace jucyaudio
 
         void MixTrackComponent::mouseUp(const juce::MouseEvent &event)
         {
+            if (m_isDraggingEnvelopePoint)
+            {
+                // Notify of envelope change
+                if (onEnvelopeChanged)
+                {
+                    onEnvelopeChanged(m_mixTrack.trackId, m_mixTrack.envelopePoints);
+                }
+
+                m_isDraggingEnvelopePoint = false;
+                return;
+            }
+
             if (m_isDragging)
             {
                 spdlog::info("Finished dragging track ID: {}", m_mixTrack.trackId);
@@ -258,6 +317,122 @@ namespace jucyaudio
             }
         }
 
+        void MixTrackComponent::mouseMove(const juce::MouseEvent &event)
+        {
+            auto hoveredPoint = hitTestEnvelopePoint(event.position.toInt());
+
+            if (hoveredPoint != m_hoveredEnvelopePointIndex)
+            {
+                m_hoveredEnvelopePointIndex = hoveredPoint;
+                repaint();
+            }
+
+            // Update cursor
+            if (hoveredPoint.has_value())
+            {
+                setMouseCursor(juce::MouseCursor::PointingHandCursor);
+            }
+            else
+            {
+                setMouseCursor(juce::MouseCursor::NormalCursor);
+            }
+        }
+
+        // Add these implementations to MixTrackComponent.cpp
+
+        std::optional<size_t> MixTrackComponent::hitTestEnvelopePoint(juce::Point<int> mousePos) const
+        {
+            if (m_mixTrack.envelopePoints.empty())
+                return std::nullopt;
+
+            constexpr int HIT_RADIUS = 8; // Slightly larger than visual point for easier clicking
+
+            auto bounds = getLocalBounds();
+            auto waveformArea = bounds.removeFromBottom(waveformSectionHeight);
+
+            for (size_t i = 0; i < m_mixTrack.envelopePoints.size(); ++i)
+            {
+                auto pointScreenPos = envelopePointToScreenPosition(m_mixTrack.envelopePoints[i]);
+
+                // Only test points within the waveform area
+                if (waveformArea.contains(pointScreenPos))
+                {
+                    if (mousePos.getDistanceFrom(pointScreenPos) <= HIT_RADIUS)
+                    {
+                        return i;
+                    }
+                }
+            }
+
+            return std::nullopt;
+        }
+
+        juce::Point<int> MixTrackComponent::envelopePointToScreenPosition(const database::EnvelopePoint &point) const
+        {
+            auto bounds = getLocalBounds();
+            auto waveformArea = bounds.removeFromBottom(waveformSectionHeight);
+
+            const auto trackDuration = std::chrono::duration<double>(m_trackInfo.duration).count();
+            const double timeInSeconds = std::chrono::duration<double>(point.time).count();
+
+            // Convert time to X position (relative to track start)
+            const float x = waveformArea.getX() + (timeInSeconds / trackDuration) * waveformArea.getWidth();
+
+            // Convert volume to Y position (0% = bottom, 100% = top)
+            const float volumePercent = point.volume / float(database::VOLUME_NORMALIZATION);
+            const float y = waveformArea.getBottom() - (volumePercent * waveformArea.getHeight());
+
+            return juce::Point<int>(juce::roundToInt(x), juce::roundToInt(y));
+        }
+
+        database::EnvelopePoint MixTrackComponent::screenPositionToEnvelopePoint(juce::Point<int> screenPos) const
+        {
+            auto bounds = getLocalBounds();
+            auto waveformArea = bounds.removeFromBottom(waveformSectionHeight);
+
+            const auto trackDuration = std::chrono::duration<double>(m_trackInfo.duration).count();
+
+            // Convert X position to time
+            const float relativeX = (screenPos.x - waveformArea.getX()) / float(waveformArea.getWidth());
+            const double timeInSeconds = juce::jlimit(0.0, trackDuration, relativeX * trackDuration);
+
+            // Convert Y position to volume
+            const float relativeY = (waveformArea.getBottom() - screenPos.y) / float(waveformArea.getHeight());
+            const float volumePercent = juce::jlimit(0.0f, 1.0f, relativeY);
+
+            database::EnvelopePoint result;
+            result.time = std::chrono::milliseconds(static_cast<int64_t>(timeInSeconds * 1000));
+            result.volume = static_cast<Volume_t>(volumePercent * database::VOLUME_NORMALIZATION);
+
+            return result;
+        }
+
+        void MixTrackComponent::constrainEnvelopePoint(size_t pointIndex, database::EnvelopePoint &point) const
+        {
+            if (pointIndex >= m_mixTrack.envelopePoints.size())
+                return;
+
+            // Volume constraints (0% to 100%)
+            point.volume = juce::jlimit(Volume_t(0), database::VOLUME_NORMALIZATION, point.volume);
+
+            // Time constraints: maintain ordering between adjacent points
+            if (pointIndex > 0)
+            {
+                const auto &prevPoint = m_mixTrack.envelopePoints[pointIndex - 1];
+                point.time = std::max(point.time, prevPoint.time);
+            }
+
+            if (pointIndex < m_mixTrack.envelopePoints.size() - 1)
+            {
+                const auto &nextPoint = m_mixTrack.envelopePoints[pointIndex + 1];
+                point.time = std::min(point.time, nextPoint.time);
+            }
+
+            // Ensure time is within track bounds
+            const auto trackDuration = m_trackInfo.duration;
+            point.time = std::min(point.time, trackDuration);
+            point.time = std::max(point.time, std::chrono::milliseconds(0));
+        }
 
     } // namespace ui
 } // namespace jucyaudio
