@@ -1329,12 +1329,17 @@ namespace jucyaudio
             scanDialog->onDialogClosed = [this]()
             {
                 spdlog::info("MainComponent: ScanDialogComponent closed");
-                if (m_currentMainView == MainViewType::MixEditor)
+                
+                // Refresh the Folders node in the navigation panel
+                if (auto foldersRootNode = m_rootNavigationNode->getFoldersRootNode())
                 {
+                    m_navigationPanel.refreshNode(foldersRootNode);
+                    foldersRootNode->release(REFCOUNT_DEBUG_ARGS);
                 }
-                else
+                
+                // If we are in DataView, we refresh it.
+                if (m_currentMainView == MainViewType::DataView)
                 {
-                    // If we are in DataView, we refresh it.
                     m_dataViewComponent.refreshView();
                 }
 
