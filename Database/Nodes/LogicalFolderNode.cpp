@@ -1,7 +1,9 @@
 #include <Database/Nodes/LogicalFolderNode.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
+#include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <spdlog/spdlog.h>
 
 namespace jucyaudio
@@ -109,6 +111,21 @@ namespace jucyaudio
                     spdlog::warn("LogicalFolderNode::getChildren - Initial error iterating directory {}: {}", m_thisFolderPath.string(), ec.message());
                     return false;
                 }
+
+                // Sort children by name (case-insensitive, Unicode-aware)
+                std::sort(outChildren.begin(), outChildren.end(), 
+                    [](const INavigationNode* a, const INavigationNode* b) {
+                        std::string nameA = a->getName();
+                        std::string nameB = b->getName();
+                        
+                        // Convert to lowercase for case-insensitive comparison
+                        std::transform(nameA.begin(), nameA.end(), nameA.begin(), 
+                            [](unsigned char c) { return std::tolower(c); });
+                        std::transform(nameB.begin(), nameB.end(), nameB.begin(), 
+                            [](unsigned char c) { return std::tolower(c); });
+                        
+                        return nameA < nameB;
+                    });
             }
             catch (const std::filesystem::filesystem_error &e)
             {
