@@ -1330,10 +1330,17 @@ namespace jucyaudio
             {
                 spdlog::info("MainComponent: ScanDialogComponent closed");
                 
-                // Refresh the Folders node in the navigation panel
-                if (auto foldersRootNode = m_rootNavigationNode->getFoldersRootNode())
+                // Force the Folders node to refresh its cache to pick up new folders
+                if (const auto foldersRootNode = m_rootNavigationNode->getFoldersRootNode())
                 {
-                    m_navigationPanel.refreshNode(foldersRootNode);
+                    foldersRootNode->refreshCache(true); // true = flush cache
+                    
+                    // Find the tree item and trigger a visual update
+                    if (auto* treeItem = m_navigationPanel.findTreeViewItemForNode(foldersRootNode))
+                    {
+                        treeItem->treeHasChanged();
+                    }
+                    
                     foldersRootNode->release(REFCOUNT_DEBUG_ARGS);
                 }
                 

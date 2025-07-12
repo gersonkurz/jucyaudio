@@ -76,14 +76,3 @@
 
 6.  **"Create Mix" Workflow Refactored:** The user workflow is now more powerful. "Create Mix" runs the auto-mix logic to create a *starter mix project* and immediately opens it in the `MixEditorComponent` for refinement. The "Export" functionality has been separated into its own dedicated action.
 
----
-
-## Current Roadmap / Future Work
-
-This is the prioritized list of tasks for the `MixEditorComponent` that we will be working on next.
-
-*   **Trimming:** Allow non-destructive trimming of a track's start/end points by dragging handles.
-*   **Playback Engine:** Implement the audible playback of the mix sequence.
-*   **Information Display:** Add UI elements for total mix length, rulers, etc.
-*   **Volume Envelope Editing:** Interactive editing of fade points and curves.
-
