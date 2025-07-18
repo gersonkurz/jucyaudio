@@ -147,6 +147,8 @@ target_sources(jucyaudio PRIVATE
     Audio/ExportMixImplementation.h
     Audio/ExportMixToMp3.cpp
     Audio/ExportMixToMp3.h
+    Audio/ExportMixToM3U.cpp
+    Audio/ExportMixToM3U.h
     Audio/ExportMixToWav.cpp
     Audio/ExportMixToWav.h
     Audio/MixExporter.cpp

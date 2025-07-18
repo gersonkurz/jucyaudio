@@ -1150,7 +1150,7 @@ namespace jucyaudio
             const auto title{std::format("Export Mix '{}' As...", mixInfo.name)};
             // Store the FileChooser in a member unique_ptr to keep it alive
             m_activeFileChooser =
-                std::make_unique<juce::FileChooser>(title, juce::File::getSpecialLocation(juce::File::userMusicDirectory), "*.mp3;*.wav", true, false, this);
+                std::make_unique<juce::FileChooser>(title, juce::File::getSpecialLocation(juce::File::userMusicDirectory), "*.mp3;*.wav;*.m3u", true, false, this);
 
             int chooserFlags =
                 juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting;

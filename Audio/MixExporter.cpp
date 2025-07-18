@@ -11,6 +11,7 @@
 #include <Audio/ExportMixImplementation.h>
 #include <Audio/ExportMixToWav.h>
 #include <Audio/ExportMixToMp3.h>
+#include <Audio/ExportMixToM3U.h>
 #include <Audio/MixExporter.h>
 #include <Database/Includes/Constants.h>
 #include <Database/Includes/IMixManager.h>
@@ -32,9 +33,18 @@ namespace jucyaudio
         bool MixExporter::exportMixToFile(MixId mixId, const std::filesystem::path &targetFilePath,
                                           MixExporterProgressCallback progressCallback) const
         {
+            const auto targetExtension{getLowercaseExtension(targetFilePath)};
+            
+            // Handle M3U export separately (doesn't use ExportMixImplementation)
+            if (targetExtension == ".m3u")
+            {
+                ExportMixToM3U m3uExporter;
+                return m3uExporter.exportMix(mixId, targetFilePath, progressCallback);
+            }
+
+            // Handle audio format exports
             ExportMixImplementation *implementation = nullptr;
 
-            const auto targetExtension{getLowercaseExtension(targetFilePath)};
             if (targetExtension == ".mp3")
             {
                 implementation = new ExportMp3MixImplementation{mixId, targetFilePath, progressCallback};
