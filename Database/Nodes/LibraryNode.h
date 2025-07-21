@@ -47,6 +47,7 @@ namespace jucyaudio
         private:
             mutable std::vector<TrackInfo> m_tracks;
             mutable bool m_bCacheInitialized{false};
+            mutable int64_t m_cachedRowCount{-1};
 
         protected:
             mutable TrackQueryArgs m_queryArgs;

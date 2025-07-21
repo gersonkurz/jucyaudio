@@ -85,7 +85,16 @@ namespace jucyaudio
 
         bool LibraryNode::getNumberOfRows(int64_t &outCount) const
         {
-            outCount = theTrackLibrary.getTotalTrackCount(m_queryArgs);
+            const auto start{std::chrono::high_resolution_clock::now()};
+            if (m_cachedRowCount == -1)
+            {
+                m_cachedRowCount = theTrackLibrary.getTotalTrackCount(m_queryArgs);
+            }
+            outCount = m_cachedRowCount;
+            const auto end{std::chrono::high_resolution_clock::now()};
+            const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
+            if (duration.count() > 100)
+                spdlog::info("LibraryNode::getNumberOfRows took {} us", duration.count());
             return true;
         }
 
@@ -93,6 +102,7 @@ namespace jucyaudio
         {
             m_queryArgs.sortBy = sortOrders;
             m_bCacheInitialized = false;
+            m_cachedRowCount = -1;
             return true;
         }
 
@@ -105,6 +115,7 @@ namespace jucyaudio
         {
             m_queryArgs.searchTerms = searchTerms;
             m_bCacheInitialized = false;
+            m_cachedRowCount = -1;
             return true;
         }
 
@@ -115,6 +126,7 @@ namespace jucyaudio
 
         std::string LibraryNode::getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const
         {
+            const auto start{std::chrono::high_resolution_clock::now()};
             const auto track{getTrackInfoForRow(rowIndex)};
             if (track == nullptr)
             {
@@ -160,10 +172,15 @@ namespace jucyaudio
                 spdlog::warn("Invalid column index {} for LibraryRow", index);
                 return "";
             }
+            const auto end{std::chrono::high_resolution_clock::now()};
+            const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
+            if (duration.count() > 100)
+                spdlog::info("LibraryNode::getCellText for row {} took {} us", rowIndex, duration.count());
         }
 
         const TrackInfo *LibraryNode::getTrackInfoForRow(RowIndex_t rowIndex) const
         {
+            const auto start{std::chrono::high_resolution_clock::now()};
             if (rowIndex < 0)
             {
                 spdlog::warn("Row index {} is negative, returning nullptr", rowIndex);
@@ -173,12 +190,16 @@ namespace jucyaudio
             const auto refreshCache = !m_bCacheInitialized || (rowIndex < m_queryArgs.offset) || (rowIndex >= m_queryArgs.offset + QUERY_PAGE_SIZE);
             if (refreshCache)
             {
+                const auto startGetTracks{std::chrono::high_resolution_clock::now()};
                 volatile auto temp = rowIndex / QUERY_PAGE_SIZE;
                 m_queryArgs.offset = temp * QUERY_PAGE_SIZE;
                 // we should maybe switch the limit from a variable to a constant: this is an implementation detail
                 // callers of our library shouldn't need to know about this
                 m_tracks = theTrackLibrary.getTracks(m_queryArgs);
                 m_bCacheInitialized = true;
+                const auto endGetTracks{std::chrono::high_resolution_clock::now()};
+                const auto durationGetTracks{std::chrono::duration_cast<std::chrono::milliseconds>(endGetTracks - startGetTracks)};
+                spdlog::info("LibraryNode::getTrackInfoForRow cache refresh took {} ms", durationGetTracks.count());
             }
             const auto targetIndex = rowIndex - m_queryArgs.offset;
             if (targetIndex >= m_tracks.size())
@@ -186,6 +207,10 @@ namespace jucyaudio
                 spdlog::warn("Target index {} is out of bounds for the current track cache size {}", targetIndex, m_tracks.size());
                 return nullptr;
             }
+            const auto end{std::chrono::high_resolution_clock::now()};
+            const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
+            if (duration.count() > 100)
+                spdlog::info("LibraryNode::getTrackInfoForRow for row {} took {} us", rowIndex, duration.count());
             return &m_tracks[targetIndex];
         }
 
@@ -197,6 +222,10 @@ namespace jucyaudio
             {
                 m_tracks = theTrackLibrary.getTracks(m_queryArgs);
                 m_bCacheInitialized = true;
+                if (flushCache)
+                {
+                    m_cachedRowCount = -1;
+                }
             }
         }
 

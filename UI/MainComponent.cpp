@@ -549,6 +549,7 @@ namespace jucyaudio
         // --- Handler Method Stubs / Basic Logic ---
         void MainComponent::handleNodeSelection(INavigationNode *selectedNode) // selectedNode is retained by caller (NavPanel)
         {
+            const auto start{std::chrono::high_resolution_clock::now()};
             if (m_currentSelectedDataNode == selectedNode)
             {
                 if (selectedNode)
@@ -622,6 +623,12 @@ namespace jucyaudio
                     m_dataViewComponent.setCurrentNode(m_currentSelectedDataNode); // DataView updates its content source
                     m_dataViewComponent.refreshView();                             // Tell DataView to redraw
                 }
+                int64_t totalTracks = 0;
+                if (m_currentSelectedDataNode->getTotalTrackCount(totalTracks))
+                {
+                    m_mainPlaybackAndStatusPanel.setStatusMessage(
+                        std::format("{} tracks in '{}'", totalTracks, m_currentSelectedDataNode->getName()), false);
+                }
             }
             else
             {
@@ -635,9 +642,13 @@ namespace jucyaudio
                     m_dataViewComponent.setCurrentNode(nullptr);
                     m_dataViewComponent.refreshView();
                 }
+                m_mainPlaybackAndStatusPanel.setStatusMessage("", false);
             }
             syncPlaybackUIToControllerState(); // Update play button enable
                                                // state
+            const auto end{std::chrono::high_resolution_clock::now()};
+            const auto duration{std::chrono::duration_cast<std::chrono::milliseconds>(end - start)};
+            spdlog::info("MainComponent::handleNodeSelection took {} ms", duration.count());
         }
 
         void MainComponent::removeTrackFromMix(TrackId trackId)

@@ -17,24 +17,24 @@ namespace jucyaudio
             m_tableListBox.setOutlineThickness(1);
             m_tableListBox.setHeaderHeight(30);
             m_tableListBox.setMultipleSelectionEnabled(true);
-            startTimer(2000);
+            // startTimer(2000);
         }
 
         DataViewComponent::~DataViewComponent()
         {
-            stopTimer();
+            // stopTimer();
         }
 
         void DataViewComponent::timerCallback()
         {
             // This method is called automatically by the JUCE message thread every 2 seconds.
-            if (m_currentNode)
-            {
-                // If the current node is set, we can refresh the view.
-                m_currentNode->refreshCache(true);
-                m_tableListBox.updateContent();
-                m_tableListBox.repaint();
-            }
+            // if (m_currentNode)
+            // {
+            //     // If the current node is set, we can refresh the view.
+            //     m_currentNode->refreshCache(true);
+            //     m_tableListBox.updateContent();
+            //     m_tableListBox.repaint();
+            // }
         }
         void DataViewComponent::resized()
         {
@@ -43,6 +43,7 @@ namespace jucyaudio
 
         void DataViewComponent::setCurrentNode(INavigationNode *node, bool refresh)
         {
+            const auto start{std::chrono::high_resolution_clock::now()};
             if ((m_currentNode == node) && !refresh)
             {
                 return;
@@ -61,6 +62,9 @@ namespace jucyaudio
             }
 
             m_tableListBox.updateContent();
+            const auto end{std::chrono::high_resolution_clock::now()};
+            const auto duration{std::chrono::duration_cast<std::chrono::milliseconds>(end - start)};
+            spdlog::info("DataViewComponent::setCurrentNode took {} ms", duration.count());
         }
 
         void DataViewComponent::refreshView()
@@ -90,6 +94,7 @@ namespace jucyaudio
 
         int DataViewComponent::getNumRows()
         {
+            const auto start{std::chrono::high_resolution_clock::now()};
             if (!m_currentNode)
             {
                 return 0;
@@ -97,6 +102,10 @@ namespace jucyaudio
             int64_t count = 0;
             if (m_currentNode->getNumberOfRows(count))
             {
+                const auto end{std::chrono::high_resolution_clock::now()};
+                const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
+                if (duration.count() > 100)
+                    spdlog::info("DataViewComponent::getNumRows took {} us", duration.count());
                 return static_cast<int>(count);
             }
             return 0;
@@ -198,6 +207,7 @@ namespace jucyaudio
 
         void DataViewComponent::paintCell(juce::Graphics &g, int rowNumber, int columnId, int width, int height, bool rowIsSelected)
         {
+            const auto start{std::chrono::high_resolution_clock::now()};
             // columns are 1-based in the TableListBoxModel, so we need to adjust
             const int dataColumnIndex = columnId - 1;
 
@@ -233,6 +243,10 @@ namespace jucyaudio
 
             g.setFont(juce::Font{juce::FontOptions{}.withHeight(static_cast<float>(height) * 0.7f)});
             g.drawText(textToDisplay, 2, 0, width - 4, height, justification, true);
+            const auto end{std::chrono::high_resolution_clock::now()};
+            const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
+            if (duration.count() > 100)
+                spdlog::info("DataViewComponent::paintCell for row {} took {} us", rowNumber, duration.count());
         }
 
         void DataViewComponent::sortOrderChanged(int newSortColumnId, bool isForwards)
