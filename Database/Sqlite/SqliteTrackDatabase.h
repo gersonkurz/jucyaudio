@@ -84,6 +84,15 @@ namespace jucyaudio
             DbResult updateTrackTags(TrackId trackId, const std::vector<TagId>& tagIds) override;
             std::vector<TagId> getTrackTags(TrackId trackId) const override;
             std::vector<TagId> getAllTags() const override;
+            
+            DbResult buildVirtualFolders(
+                std::function<void(float /*progress*/, const std::string& /*status*/)> progressCallback = nullptr) override;
+            
+            // Virtual Folder queries
+            std::vector<VirtualFolderInfo> getVirtualFolderChildren(int64_t parentId) const override;
+            std::optional<VirtualFolderInfo> getVirtualFolderInfo(int64_t folderId) const override;
+            std::vector<TrackInfo> getTracksInVirtualFolder(int64_t folderId) const override;
+            bool virtualFolderHasChildren(int64_t folderId) const override;
 
 
         private:

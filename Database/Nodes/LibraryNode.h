@@ -22,6 +22,9 @@ namespace jucyaudio
             LibraryNode(INavigationNode *root, const std::string& name = "");
             ~LibraryNode() override;
 
+        protected:
+            bool prepareToShowData() override;
+            
         private:
             
             // INavigationNode interface
@@ -31,7 +34,6 @@ namespace jucyaudio
             bool getNumberOfRows(int64_t &outCount) const override;
             std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const override;
             const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;
-            bool prepareToShowData() override;
             void dataNoLongerShowing() override;
             const DataActions &getNodeActions() const override;
             const DataActions &getRowActions(RowIndex_t rowIndex) const override;

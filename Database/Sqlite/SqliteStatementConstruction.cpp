@@ -72,6 +72,20 @@ namespace jucyaudio
                 writer.appendFormatted("track_id IN (SELECT track_id FROM MixTracks WHERE mix_id = ?{})", m_searchTermIndex);
                 ++m_searchTermIndex;
             }
+            if (trackQueryArgs.virtualFolderId.has_value())
+            {
+                if (!bWhereAdded)
+                {
+                    writer.append(" WHERE ");
+                    bWhereAdded = true;
+                }
+                else
+                {
+                    writer.append(" AND ");
+                }
+                writer.appendFormatted("filepath LIKE (SELECT full_path || '%' FROM VirtualFolders WHERE folder_id = ?{})", m_searchTermIndex);
+                ++m_searchTermIndex;
+            }
         }
 
         void SqliteStatementConstruction::addOrderByClause(StringWriter &writer, const TrackQueryArgs &trackQueryArgs)
@@ -134,6 +148,10 @@ namespace jucyaudio
             if (trackQueryArgs.mixId)
             {
                 m_stmt.addParam(trackQueryArgs.mixId);
+            }
+            if (trackQueryArgs.virtualFolderId.has_value())
+            {
+                m_stmt.addParam(trackQueryArgs.virtualFolderId.value());
             }
             return true;
         }

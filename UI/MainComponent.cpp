@@ -235,6 +235,11 @@ namespace jucyaudio
                                                {
                                                    onShowMaintenanceDialog();
                                                }},
+                                              {"Build Virtual Folders...", "...",
+                                               [&]()
+                                               {
+                                                   onBuildVirtualFolders();
+                                               }},
                                               {"-"},
                                               {"Exit",
                                                "...",
@@ -1476,6 +1481,70 @@ namespace jucyaudio
             TaskDialog::launch("Database Maintenance", task, {}, this);
             task->release(REFCOUNT_DEBUG_ARGS);
             return true;
+        }
+
+        bool MainComponent::onBuildVirtualFolders()
+        {
+            class BuildVirtualFoldersTask final : public ILongRunningTask
+            {
+            public:
+                BuildVirtualFoldersTask()
+                    : ILongRunningTask{"Building Virtual Folders", false}
+                {
+                }
+
+                void run(ProgressCallback progressCb, CompletionCallback completionCb, [[maybe_unused]] std::atomic<bool> &shouldCancel) override
+                {
+                    // Get the track database
+                    auto* trackDb{theTrackLibrary.getTrackDatabase()};
+                    if (!trackDb)
+                    {
+                        completionCb(false, "Failed to access track database.");
+                        return;
+                    }
+
+                    // Build virtual folders with progress callback
+                    auto result{trackDb->buildVirtualFolders(
+                        [progressCb](float progress, const std::string& status) {
+                            if (progressCb)
+                            {
+                                progressCb(progress, status);
+                            }
+                        }
+                    )};
+
+                    if (result.isOk())
+                    {
+                        completionCb(true, "Virtual folders built successfully.");
+                    }
+                    else
+                    {
+                        completionCb(false, std::format("Failed to build virtual folders: {}", result.errorMessage));
+                    }
+                }
+            };
+
+            // Show confirmation dialog
+            const int result{juce::AlertWindow::showYesNoCancelBox(
+                juce::AlertWindow::QuestionIcon,
+                "Build Virtual Folders",
+                "This will analyze all tracks in your library and build virtual folders for fast navigation.\n\n"
+                "This is a one-time operation that may take a few minutes for large libraries.\n\n"
+                "Do you want to continue?",
+                "Yes",
+                "No",
+                "",
+                this)};
+
+            if (result == 1) // Yes
+            {
+                auto *task = new BuildVirtualFoldersTask{};
+                TaskDialog::launch("Building Virtual Folders", task, {}, this);
+                task->release(REFCOUNT_DEBUG_ARGS);
+                return true;
+            }
+
+            return false;
         }
 
     } // namespace ui

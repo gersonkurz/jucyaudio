@@ -6,8 +6,10 @@
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/StringWriter.h>
+#include <algorithm> // For std::reverse
 #include <cassert> // For assert
 #include <ranges>
+#include <unordered_map>
 #include <spdlog/spdlog.h>
 
 namespace
@@ -132,6 +134,33 @@ CREATE TABLE IF NOT EXISTS MixTracks(
     FOREIGN KEY(mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE,
     FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
 );)SQL",
+        
+        // Virtual Folders for efficient folder navigation
+        R"SQL(
+CREATE TABLE IF NOT EXISTS VirtualFolders (
+    folder_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_id INTEGER,
+    folder_name TEXT NOT NULL,
+    full_path TEXT NOT NULL UNIQUE,
+    depth INTEGER NOT NULL,
+    
+    -- Cached statistics
+    direct_track_count INTEGER DEFAULT 0,
+    total_track_count INTEGER DEFAULT 0,
+    direct_size_bytes INTEGER DEFAULT 0,
+    total_size_bytes INTEGER DEFAULT 0,
+    
+    -- Metadata
+    last_updated INTEGER,
+    
+    FOREIGN KEY (parent_id) REFERENCES VirtualFolders(folder_id) ON DELETE CASCADE
+);)SQL",
+        "CREATE INDEX IF NOT EXISTS idx_vf_parent ON VirtualFolders(parent_id);",
+        "CREATE INDEX IF NOT EXISTS idx_vf_path ON VirtualFolders(full_path);",
+        "CREATE INDEX IF NOT EXISTS idx_vf_depth ON VirtualFolders(depth);",
+        
+        // Index to speed up filepath LIKE queries
+        "CREATE INDEX IF NOT EXISTS idx_tracks_filepath ON Tracks(filepath);",
     };
 
     TrackInfo trackInfoFromStatement(const SqliteStatement &stmt)
@@ -953,6 +982,27 @@ namespace jucyaudio
             if (!isOpen())
                 return -1; // Indicate error
             m_lastErrorMessage.clear();
+            
+            // Optimization: If we're querying for a virtual folder, use the cached count
+            if (args.virtualFolderId.has_value() && 
+                args.searchTerms.empty() && 
+                !args.pathFilter.has_value() && 
+                args.workingSetId == 0 && 
+                args.mixId == 0)
+            {
+                // Use the cached count from VirtualFolders table
+                SqliteStatement stmt{m_db, 
+                    "SELECT direct_track_count FROM VirtualFolders WHERE folder_id = ?;"};
+                stmt.addParam(args.virtualFolderId.value());
+                
+                if (stmt.getNextResult())
+                {
+                    return stmt.getInt32(0);
+                }
+                return 0;
+            }
+            
+            // Fall back to the generic count query for complex filters
             SqliteStatement stmt{m_db};
             SqliteStatementConstruction stmtConstruction{stmt};
             if (!stmtConstruction.createCountStatement(args))
@@ -1086,6 +1136,336 @@ namespace jucyaudio
                 m_lastErrorMessage = m_db.getLastError();
             }
             return tags;
+        }
+
+        DbResult SqliteTrackDatabase::buildVirtualFolders(
+            std::function<void(float /*progress*/, const std::string& /*status*/)> progressCallback)
+        {
+            if (!isOpen())
+            {
+                return DbResult::failure(DbResultStatus::ErrorConnection, "Database not open");
+            }
+
+            spdlog::info("Starting virtual folder building process");
+            
+            // Begin transaction for better performance
+            SqliteTransaction transaction{m_db};
+            if (!transaction)
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB, "Failed to start transaction");
+            }
+
+            try
+            {
+                // Clear existing virtual folders (if any)
+                if (!m_db.execute("DELETE FROM VirtualFolders;"))
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to clear existing virtual folders");
+                }
+
+                // Get total track count for progress reporting
+                SqliteStatement countStmt{m_db, "SELECT COUNT(*) FROM Tracks;"};
+                countStmt.getNextResult();
+                const int totalTracks{static_cast<int>(countStmt.getInt64(0))};
+                
+                if (totalTracks == 0)
+                {
+                    spdlog::info("No tracks in database, nothing to process");
+                    return DbResult::success();
+                }
+
+                // Map to track folder IDs by path
+                std::unordered_map<std::string, int64_t> folderPathToId;
+                int64_t nextFolderId{1};
+                
+                // Get all tracks with their paths
+                SqliteStatement trackStmt{m_db, "SELECT track_id, filepath, filesize_bytes FROM Tracks ORDER BY filepath;"};
+                if (!trackStmt.isValid())
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to prepare track query");
+                }
+
+                int processedTracks{0};
+                
+                while (trackStmt.getNextResult())
+                {
+                    const auto trackId{trackStmt.getInt64(0)};
+                    const auto filepath{trackStmt.getText(1)};
+                    const auto filesize{trackStmt.getInt64(2)};
+                    
+                    // Parse the path to extract folder hierarchy
+                    std::filesystem::path trackPath{filepath};
+                    std::filesystem::path parentPath{trackPath.parent_path()};
+                    
+                    // Build folder hierarchy from root to immediate parent
+                    std::vector<std::filesystem::path> pathComponents;
+                    std::filesystem::path currentPath{parentPath};
+                    
+                    while (!currentPath.empty() && currentPath != currentPath.root_path())
+                    {
+                        pathComponents.push_back(currentPath);
+                        currentPath = currentPath.parent_path();
+                    }
+                    
+                    // Process folders from root to leaf
+                    std::reverse(pathComponents.begin(), pathComponents.end());
+                    
+                    int64_t parentId{0}; // NULL parent for root folders
+                    int depth{0};
+                    
+                    for (const auto& folderPath : pathComponents)
+                    {
+                        const std::string pathStr{pathToString(folderPath)};
+                        
+                        // Check if folder already exists
+                        auto it{folderPathToId.find(pathStr)};
+                        if (it == folderPathToId.end())
+                        {
+                            // Create new folder entry
+                            const std::string folderName{folderPath.filename().string()};
+                            
+                            SqliteStatement insertStmt{m_db, 
+                                "INSERT INTO VirtualFolders (parent_id, folder_name, full_path, depth, last_updated) "
+                                "VALUES (?, ?, ?, ?, ?);"};
+                            
+                            if (parentId == 0)
+                            {
+                                insertStmt.addParam(nullptr); // NULL parent
+                            }
+                            else
+                            {
+                                insertStmt.addParam(parentId);
+                            }
+                            
+                            insertStmt.addParam(folderName);
+                            insertStmt.addParam(pathStr);
+                            insertStmt.addParam(depth);
+                            insertStmt.addParam(std::chrono::system_clock::now().time_since_epoch().count());
+                            
+                            if (!insertStmt.execute())
+                            {
+                                return DbResult::failure(DbResultStatus::ErrorDB, 
+                                    std::format("Failed to insert folder: {}", pathStr));
+                            }
+                            
+                            const auto folderId{m_db.getLastInsertRowId()};
+                            folderPathToId[pathStr] = folderId;
+                            parentId = folderId;
+                        }
+                        else
+                        {
+                            parentId = it->second;
+                        }
+                        
+                        depth++;
+                    }
+                    
+                    // Update track with its immediate parent folder ID
+                    if (parentId > 0)
+                    {
+                        SqliteStatement updateTrackStmt{m_db, 
+                            "UPDATE Tracks SET virtual_folder_id = ? WHERE track_id = ?;"};
+                        updateTrackStmt.addParam(parentId);
+                        updateTrackStmt.addParam(trackId);
+                        
+                        if (!updateTrackStmt.execute())
+                        {
+                            spdlog::warn("Failed to update track {} with virtual folder", trackId);
+                        }
+                        
+                        // Update direct statistics for the immediate parent folder
+                        SqliteStatement updateStatsStmt{m_db,
+                            "UPDATE VirtualFolders SET "
+                            "direct_track_count = direct_track_count + 1, "
+                            "direct_size_bytes = direct_size_bytes + ? "
+                            "WHERE folder_id = ?;"};
+                        updateStatsStmt.addParam(filesize);
+                        updateStatsStmt.addParam(parentId);
+                        updateStatsStmt.execute();
+                    }
+                    
+                    processedTracks++;
+                    
+                    // Report progress
+                    if (progressCallback && (processedTracks % 100 == 0 || processedTracks == totalTracks))
+                    {
+                        float progress{static_cast<float>(processedTracks) / static_cast<float>(totalTracks)};
+                        progressCallback(progress, 
+                            std::format("Processing track {} of {}", processedTracks, totalTracks));
+                    }
+                }
+                
+                // Now calculate total statistics (including subfolders)
+                // This needs to be done bottom-up
+                if (progressCallback)
+                {
+                    progressCallback(0.9f, "Calculating folder statistics...");
+                }
+                
+                // Get max depth
+                SqliteStatement maxDepthStmt{m_db, "SELECT MAX(depth) FROM VirtualFolders;"};
+                maxDepthStmt.getNextResult();
+                const int maxDepth{static_cast<int>(maxDepthStmt.getInt64(0))};
+                
+                // Process from deepest level up to root
+                for (int currentDepth{maxDepth}; currentDepth >= 0; --currentDepth)
+                {
+                    SqliteStatement updateTotalsStmt{m_db,
+                        "UPDATE VirtualFolders AS parent SET "
+                        "total_track_count = parent.direct_track_count + "
+                        "  COALESCE((SELECT SUM(child.total_track_count) FROM VirtualFolders AS child "
+                        "   WHERE child.parent_id = parent.folder_id), 0), "
+                        "total_size_bytes = parent.direct_size_bytes + "
+                        "  COALESCE((SELECT SUM(child.total_size_bytes) FROM VirtualFolders AS child "
+                        "   WHERE child.parent_id = parent.folder_id), 0) "
+                        "WHERE parent.depth = ?;"};
+                    updateTotalsStmt.addParam(currentDepth);
+                    
+                    if (!updateTotalsStmt.execute())
+                    {
+                        spdlog::warn("Failed to update totals for depth {}", currentDepth);
+                    }
+                }
+                
+                // Commit transaction
+                if (!transaction.commit())
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit transaction");
+                }
+                
+                if (progressCallback)
+                {
+                    progressCallback(1.0f, "Virtual folder building completed");
+                }
+                
+                // Report summary
+                SqliteStatement folderCountStmt{m_db, "SELECT COUNT(*) FROM VirtualFolders;"};
+                folderCountStmt.getNextResult();
+                const int folderCount{static_cast<int>(folderCountStmt.getInt64(0))};
+                
+                spdlog::info("Virtual folder building completed: {} folders created from {} tracks", 
+                    folderCount, totalTracks);
+                
+                return DbResult::success();
+            }
+            catch (const std::exception& e)
+            {
+                spdlog::error("Exception during virtual folder building: {}", e.what());
+                transaction.rollback();
+                return DbResult::failure(DbResultStatus::ErrorGeneric, e.what());
+            }
+        }
+
+        std::vector<VirtualFolderInfo> SqliteTrackDatabase::getVirtualFolderChildren(int64_t parentId) const
+        {
+            std::vector<VirtualFolderInfo> children;
+            
+            if (!isOpen())
+            {
+                spdlog::error("Database not open in getVirtualFolderChildren");
+                return children;
+            }
+
+            SqliteStatement stmt{m_db};
+            
+            if (parentId == -1)
+            {
+                // Get root folders
+                stmt.bindStatement(
+                    "SELECT folder_id, parent_id, folder_name, full_path, depth, "
+                    "direct_track_count, total_track_count, direct_size_bytes, total_size_bytes "
+                    "FROM VirtualFolders WHERE parent_id IS NULL ORDER BY folder_name COLLATE NOCASE;");
+            }
+            else
+            {
+                // Get children of specific folder
+                stmt.bindStatement(
+                    "SELECT folder_id, parent_id, folder_name, full_path, depth, "
+                    "direct_track_count, total_track_count, direct_size_bytes, total_size_bytes "
+                    "FROM VirtualFolders WHERE parent_id = ? ORDER BY folder_name COLLATE NOCASE;");
+                stmt.addParam(parentId);
+            }
+
+            while (stmt.getNextResult())
+            {
+                VirtualFolderInfo info{};
+                info.folderId = stmt.getInt64(0);
+                info.parentId = stmt.isNull(1) ? -1 : stmt.getInt64(1);
+                info.folderName = stmt.getText(2);
+                info.fullPath = stmt.getText(3);
+                info.depth = static_cast<int>(stmt.getInt64(4));
+                info.directTrackCount = static_cast<int>(stmt.getInt64(5));
+                info.totalTrackCount = static_cast<int>(stmt.getInt64(6));
+                info.directSizeBytes = stmt.getInt64(7);
+                info.totalSizeBytes = stmt.getInt64(8);
+                
+                children.push_back(info);
+            }
+
+            return children;
+        }
+
+        std::optional<VirtualFolderInfo> SqliteTrackDatabase::getVirtualFolderInfo(int64_t folderId) const
+        {
+            if (!isOpen())
+            {
+                spdlog::error("Database not open in getVirtualFolderInfo");
+                return std::nullopt;
+            }
+
+            SqliteStatement stmt{m_db,
+                "SELECT folder_id, parent_id, folder_name, full_path, depth, "
+                "direct_track_count, total_track_count, direct_size_bytes, total_size_bytes "
+                "FROM VirtualFolders WHERE folder_id = ?;"};
+            stmt.addParam(folderId);
+
+            if (stmt.getNextResult())
+            {
+                VirtualFolderInfo info{};
+                info.folderId = stmt.getInt64(0);
+                info.parentId = stmt.isNull(1) ? -1 : stmt.getInt64(1);
+                info.folderName = stmt.getText(2);
+                info.fullPath = stmt.getText(3);
+                info.depth = static_cast<int>(stmt.getInt64(4));
+                info.directTrackCount = static_cast<int>(stmt.getInt64(5));
+                info.totalTrackCount = static_cast<int>(stmt.getInt64(6));
+                info.directSizeBytes = stmt.getInt64(7);
+                info.totalSizeBytes = stmt.getInt64(8);
+                
+                return info;
+            }
+
+            return std::nullopt;
+        }
+
+        std::vector<TrackInfo> SqliteTrackDatabase::getTracksInVirtualFolder(int64_t folderId) const
+        {
+            // Use the existing getTracks method with virtualFolderId filter
+            TrackQueryArgs args;
+            args.virtualFolderId = folderId;
+            args.usePaging = false;  // Get all tracks in the folder
+            args.sortBy = {{.columnName = "title", .descending = false}};
+            
+            return getTracks(args);
+        }
+
+        bool SqliteTrackDatabase::virtualFolderHasChildren(int64_t folderId) const
+        {
+            if (!isOpen())
+            {
+                spdlog::error("Database not open in virtualFolderHasChildren");
+                return false;
+            }
+
+            SqliteStatement stmt{m_db, "SELECT COUNT(*) FROM VirtualFolders WHERE parent_id = ?;"};
+            stmt.addParam(folderId);
+
+            if (stmt.getNextResult())
+            {
+                return stmt.getInt64(0) > 0;
+            }
+
+            return false;
         }
     } // namespace database
 } // namespace jucyaudio

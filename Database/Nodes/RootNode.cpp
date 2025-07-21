@@ -1,5 +1,6 @@
 #include <Database/Nodes/LibraryNode.h>
 #include <Database/Nodes/LogicalFolderNode.h>
+#include <Database/Nodes/VirtualFoldersOverview.h>
 #include <Database/Nodes/MixNode.h>
 #include <Database/Nodes/MixesOverview.h>
 #include <Database/Nodes/RootNode.h>
@@ -54,9 +55,8 @@ namespace jucyaudio
             : BaseNode{nullptr, "Root"}
         {
             m_children.emplace_back(new LibraryNode{this});
-            m_children.emplace_back(new TypedContainerNode<LogicalFolderNode>{
-                this, getFoldersRootNodeName(),
-                &LogicalFolderNode::createChildren});
+            // Use VirtualFoldersOverview instead of filesystem-based folders
+            m_children.emplace_back(new VirtualFoldersOverview{this});
             m_children.emplace_back(
                 new TypedOverviewNode<WorkingSetInfo, WorkingSetNode>{
                     this, getWorkingSetsRootNodeName(),

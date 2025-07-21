@@ -21,6 +21,7 @@ namespace jucyaudio
             WorkingSetId workingSetId{0};
             MixId mixId{0};
             bool usePaging{true};
+            std::optional<int64_t> virtualFolderId;  // Filter by virtual folder ID
         };
 
     } // namespace database
