@@ -89,6 +89,13 @@ namespace jucyaudio
 
             virtual bool getNumberOfRows(int64_t &outCount) const = 0;
 
+            /// @brief Get the total track count including all descendant nodes.
+            /// For folder nodes, this returns the recursive count of all tracks in subfolders.
+            /// For other nodes, this typically returns the same value as getNumberOfRows().
+            /// @param outCount Reference to store the total track count.
+            /// @return True if the count was successfully retrieved, false otherwise.
+            virtual bool getTotalTrackCount(int64_t &outCount) const = 0;
+
             virtual const TrackQueryArgs *getQueryArgs() const = 0;
 
             virtual std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const = 0;

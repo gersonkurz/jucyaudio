@@ -21,6 +21,11 @@ namespace jucyaudio
             // Override prepareToShowData to set our folder filter
             bool prepareToShowData() override;
             
+            // Override getTotalTrackCount to return recursive count
+            bool getTotalTrackCount(int64_t &outCount) const override;
+            
+            int64_t getFolderId() const { return m_folderId; }
+            
         private:
             int64_t m_folderId;
         };

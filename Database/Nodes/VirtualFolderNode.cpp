@@ -48,5 +48,25 @@ namespace jucyaudio
             return LibraryNode::prepareToShowData();
         }
 
+        bool VirtualFolderNode::getTotalTrackCount(int64_t &outCount) const
+        {
+            auto* trackDb{theTrackLibrary.getTrackDatabase()};
+            if (!trackDb)
+            {
+                outCount = 0;
+                return false;
+            }
+
+            auto totalCount{trackDb->getVirtualFolderTotalTrackCount(m_folderId)};
+            if (totalCount.has_value())
+            {
+                outCount = totalCount.value();
+                return true;
+            }
+
+            outCount = 0;
+            return false;
+        }
+
     } // namespace database
 } // namespace jucyaudio

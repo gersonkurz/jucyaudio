@@ -21,6 +21,9 @@ namespace jucyaudio
             virtual bool createWorkingSetFromQuery(
                 const TrackQueryArgs &args, std::string_view name,
                 WorkingSetInfo &newWorkingSet) const = 0;
+            virtual bool createWorkingSetFromVirtualFolder(
+                int64_t folderId, std::string_view name,
+                WorkingSetInfo &newWorkingSet, bool recursive = true) const = 0;
             virtual bool createWorkingSetFromTrackIds(
                 const std::vector<TrackId> &trackIds, std::string_view name,
                 WorkingSetInfo &newWorkingSet) const = 0;

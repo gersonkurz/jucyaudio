@@ -136,6 +136,62 @@ GROUP BY ws.ws_id, ws.name)SQL";
             return false;
         }
 
+        bool SqliteWorkingSetManager::createWorkingSetFromVirtualFolder(
+            int64_t folderId, std::string_view name,
+            WorkingSetInfo &newWorkingSet, bool recursive) const
+        {
+            if (SqliteTransaction transaction{m_db})
+            {
+                // todo: name-uniqueness should be checked by SQL
+                newWorkingSet.name = name;
+                newWorkingSet.timestamp = std::chrono::system_clock::now();
+                newWorkingSet.id = 0;
+
+                if (transaction.execute("INSERT INTO WorkingSets (name, "
+                                        "timestamp) VALUES (?, ?);",
+                        name, timestampToInt64(newWorkingSet.timestamp)))
+                {
+                    newWorkingSet.id =
+                        m_db.getLastInsertRowId(); // Get the new working set ID
+
+                    // Build recursive CTE to get all tracks in folder and subfolders
+                    if (recursive)
+                    {
+                        const char* recursiveQuery = R"(
+                            WITH RECURSIVE folder_tree AS (
+                                SELECT folder_id FROM VirtualFolders WHERE folder_id = ?
+                                UNION ALL
+                                SELECT vf.folder_id 
+                                FROM VirtualFolders vf
+                                INNER JOIN folder_tree ft ON vf.parent_id = ft.folder_id
+                            )
+                            INSERT INTO WorkingSetTracks (ws_id, track_id)
+                            SELECT ?, track_id 
+                            FROM Tracks 
+                            WHERE virtual_folder_id IN (SELECT folder_id FROM folder_tree);
+                        )";
+                        
+                        if (transaction.execute(recursiveQuery, folderId, newWorkingSet.id))
+                        {
+                            return transaction.commit();
+                        }
+                    }
+                    else
+                    {
+                        // Non-recursive: only tracks in this specific folder
+                        if (transaction.execute(
+                                "INSERT INTO WorkingSetTracks (ws_id, track_id) "
+                                "SELECT ?, track_id FROM Tracks WHERE virtual_folder_id = ?;",
+                                newWorkingSet.id, folderId))
+                        {
+                            return transaction.commit();
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
         bool SqliteWorkingSetManager::createWorkingSetFromTrackIds(
             const std::vector<TrackId> &trackIds, std::string_view name,
             WorkingSetInfo &newWorkingSet) const

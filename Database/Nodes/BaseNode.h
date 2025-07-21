@@ -47,6 +47,7 @@ namespace jucyaudio
             std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const override;
             const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;
             bool getNumberOfRows(int64_t &outCount) const override;
+            bool getTotalTrackCount(int64_t &outCount) const override;
             bool prepareToShowData() override;
             void dataNoLongerShowing() override;
             const std::vector<DataColumn> &getColumns() const override;

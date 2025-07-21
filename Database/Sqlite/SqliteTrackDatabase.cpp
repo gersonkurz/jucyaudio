@@ -1438,6 +1438,26 @@ namespace jucyaudio
             return std::nullopt;
         }
 
+        std::optional<int64_t> SqliteTrackDatabase::getVirtualFolderTotalTrackCount(int64_t folderId) const
+        {
+            if (!isOpen())
+            {
+                spdlog::error("Database not open in getVirtualFolderTotalTrackCount");
+                return std::nullopt;
+            }
+
+            SqliteStatement stmt{m_db,
+                "SELECT total_track_count FROM VirtualFolders WHERE folder_id = ?;"};
+            stmt.addParam(folderId);
+
+            if (stmt.getNextResult())
+            {
+                return stmt.getInt64(0);
+            }
+
+            return std::nullopt;
+        }
+
         std::vector<TrackInfo> SqliteTrackDatabase::getTracksInVirtualFolder(int64_t folderId) const
         {
             // Use the existing getTracks method with virtualFolderId filter

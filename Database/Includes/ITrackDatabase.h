@@ -186,6 +186,11 @@ namespace jucyaudio
             /// @param folderId The folder ID to query
             /// @return Vector of tracks in the folder
             virtual std::vector<TrackInfo> getTracksInVirtualFolder(int64_t folderId) const = 0;
+
+            /// @brief Get the total track count for a virtual folder (including all subfolders)
+            /// @param folderId The folder ID to query
+            /// @return Total track count including all descendants, or nullopt on error
+            virtual std::optional<int64_t> getVirtualFolderTotalTrackCount(int64_t folderId) const = 0;
             
             /// @brief Check if a virtual folder has any subfolders
             /// @param folderId The folder ID to check

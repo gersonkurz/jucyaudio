@@ -69,10 +69,15 @@
 
 4.  **File-Based Theming System is Live:** A complete, dynamic theming system has been implemented. Users can switch between different looks (`.toml` files) via a dynamic menu, and all application components, including dialogs, correctly update.
 
-5.  **`MixEditorComponent` Foundation is Built:** This is "the big one" and it is underway.
-    *   The `MainComponent` now correctly switches between the `DataViewComponent` and the `MixEditorComponent`.
+5.  **`MixEditorComponent` is Functional:** The mix editor is now fully implemented.
+    *   The `MainComponent` correctly switches between the `DataViewComponent` and the `MixEditorComponent`.
     *   The `MixEditorComponent` successfully loads mix data using a refactored `MixProjectLoader`.
-    *   The `TimelineComponent` can now **visually render a static mix**. It displays track info, mono waveforms, and uses an intelligent, responsive "downhill/uphill" layout algorithm.
+    *   The `TimelineComponent` can now **visually render and edit mixes**. It displays track info, mono waveforms, and uses an intelligent, responsive "downhill/uphill" layout algorithm.
+    *   Interactive timeline editing is supported with drag-and-drop functionality for repositioning tracks.
 
 6.  **"Create Mix" Workflow Refactored:** The user workflow is now more powerful. "Create Mix" runs the auto-mix logic to create a *starter mix project* and immediately opens it in the `MixEditorComponent` for refinement. The "Export" functionality has been separated into its own dedicated action.
+
+7.  **Virtual Folders Optimized:** The folder browsing system has been converted to a virtual folder structure with pre-calculated recursive track counts for improved performance.
+
+8.  **Working Set Creation Enhanced:** Fixed issue where creating working sets from folders with only subfolders would fail. Added recursive track collection support for virtual folders via a new `createWorkingSetFromVirtualFolder` method that uses SQLite's recursive CTE capabilities.
 

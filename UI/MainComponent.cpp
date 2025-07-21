@@ -3,6 +3,7 @@
 #include <Database/BackgroundTasks/BpmAnalysis.h>
 #include <Database/Nodes/MixNode.h>
 #include <Database/Nodes/RootNode.h>
+#include <Database/Nodes/VirtualFolderNode.h>
 #include <UI/ColumnConfiguratorDialog.h>
 #include <UI/CreateMixDialogComponent.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
@@ -419,7 +420,7 @@ namespace jucyaudio
 
             int bottomPanelHeight = m_mainPlaybackAndStatusPanel.isVisible() ? m_mainPlaybackAndStatusPanel.getHeight() : 0;
             if (bottomPanelHeight == 0 && m_mainPlaybackAndStatusPanel.isVisible())
-                bottomPanelHeight = 50; // Default
+                bottomPanelHeight = 54; // Default
 
             m_dynamicToolbar.setBounds(bounds.removeFromTop(toolbarHeight));
             m_mainPlaybackAndStatusPanel.setBounds(bounds.removeFromBottom(bottomPanelHeight));
@@ -1050,7 +1051,7 @@ namespace jucyaudio
         bool MainComponent::createWorkingSetFromNode(const INavigationNode *node)
         {
             int64_t trackCount;
-            if (!node->getNumberOfRows(trackCount))
+            if (!node->getTotalTrackCount(trackCount))
             {
                 m_mainPlaybackAndStatusPanel.setStatusMessage("Error retrieving track count from node.", true);
                 return false;
@@ -1084,8 +1085,24 @@ namespace jucyaudio
         {
             assert(node != nullptr);
             WorkingSetInfo workingSetInfo;
-            onCommonCreateWorkingSetCallback(
-                theTrackLibrary.getWorkingSetManager().createWorkingSetFromQuery(*node->getQueryArgs(), name.toStdString(), workingSetInfo), workingSetInfo);
+            
+            // Check if this is a VirtualFolderNode
+            if (const auto* virtualFolderNode = dynamic_cast<const database::VirtualFolderNode*>(node))
+            {
+                // Use the new recursive method for virtual folders
+                onCommonCreateWorkingSetCallback(
+                    theTrackLibrary.getWorkingSetManager().createWorkingSetFromVirtualFolder(
+                        virtualFolderNode->getFolderId(), name.toStdString(), workingSetInfo, true), 
+                    workingSetInfo);
+            }
+            else
+            {
+                // Use the standard query-based method for other nodes
+                onCommonCreateWorkingSetCallback(
+                    theTrackLibrary.getWorkingSetManager().createWorkingSetFromQuery(
+                        *node->getQueryArgs(), name.toStdString(), workingSetInfo), 
+                    workingSetInfo);
+            }
         }
 
         // helper method

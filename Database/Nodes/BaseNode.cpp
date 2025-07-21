@@ -85,6 +85,12 @@ namespace jucyaudio
             return true;  // Assume success
         }
 
+        bool BaseNode::getTotalTrackCount(int64_t &outCount) const
+        {
+            // Default implementation: for most nodes, total track count equals row count
+            return getNumberOfRows(outCount);
+        }
+
         std::string BaseNode::getCellText([[maybe_unused]] RowIndex_t rowIndex, [[maybe_unused]] ColumnIndex_t index) const
         {
             return {};

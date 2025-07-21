@@ -92,6 +92,7 @@ namespace jucyaudio
             std::vector<VirtualFolderInfo> getVirtualFolderChildren(int64_t parentId) const override;
             std::optional<VirtualFolderInfo> getVirtualFolderInfo(int64_t folderId) const override;
             std::vector<TrackInfo> getTracksInVirtualFolder(int64_t folderId) const override;
+            std::optional<int64_t> getVirtualFolderTotalTrackCount(int64_t folderId) const override;
             bool virtualFolderHasChildren(int64_t folderId) const override;
 
 
