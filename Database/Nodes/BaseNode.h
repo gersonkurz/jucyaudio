@@ -59,6 +59,7 @@ namespace jucyaudio
             void refreshCache(bool flushCache = false) const override
             {
             }
+            std::vector<TrackId> getAllTrackIds() const override;
 
         private:
             INavigationNode *const m_parent;

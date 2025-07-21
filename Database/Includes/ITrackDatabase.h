@@ -113,6 +113,7 @@ namespace jucyaudio
             virtual std::optional<TrackInfo> getTrackByFilepath(const std::filesystem::path &filepath) const = 0;
 
             virtual std::vector<TrackInfo> getTracks(const TrackQueryArgs &args) const = 0;
+            virtual std::vector<TrackId> getTrackIds(const TrackQueryArgs &args) const = 0;
             virtual int getTotalTrackCount(const TrackQueryArgs &baseFilters) const = 0;
 
             // Specific updates, often user-driven or for quick filesystem checks
@@ -127,6 +128,9 @@ namespace jucyaudio
 
             // Performs a targeted update of only the BPM for a given track.
             virtual DbResult updateTrackBpm(TrackId trackId, const AudioMetadata& am) = 0;
+
+            // Performs a batched, transactional update of BPM data for multiple tracks.
+            virtual DbResult updateTrackBpm(const std::vector<std::pair<TrackId, AudioMetadata>>& results) = 0;
 
             // Used during rescans to update basic file info before deciding on full re-analysis
             virtual DbResult updateTrackFilesystemInfo(TrackId trackId, Timestamp_t lastModified, std::uintmax_t filesize) = 0;

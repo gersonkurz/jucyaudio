@@ -1,6 +1,7 @@
 #include <Config/toml_backend.h>
 #include <Database/BackgroundService.h>
 #include <Database/BackgroundTasks/BpmAnalysis.h>
+#include <Database/BackgroundTasks/BpmAnalysisTask.h>
 #include <Database/Nodes/MixNode.h>
 #include <Database/Nodes/RootNode.h>
 #include <Database/Nodes/VirtualFolderNode.h>
@@ -825,6 +826,9 @@ namespace jucyaudio
             case DataAction::ExportMix:
                 onExportMix(selectedNode);
                 break;
+            case DataAction::RunBpmAnalysis:
+                onRunBpmAnalysis(selectedNode);
+                break;
             case DataAction::None:
             default:
                 break;
@@ -845,6 +849,9 @@ namespace jucyaudio
             case DataAction::CreateMix:
                 createMix();
                 break;
+            case DataAction::RunBpmAnalysis:
+                onRunBpmAnalysisForSelectedRows();
+                break;
             case DataAction::RemoveMix:
             case DataAction::ExportMix:
                 spdlog::warn("Unsupported action '{}' for row {}. This should not happen.", static_cast<int>(action), rowIndex);
@@ -863,6 +870,42 @@ namespace jucyaudio
                 break;
             }
         }
+
+        void MainComponent::onRunBpmAnalysis(database::INavigationNode* node)
+        {
+            if (!node)
+                return;
+
+            auto trackIds = node->getAllTrackIds();
+            if (trackIds.empty())
+            {
+                m_mainPlaybackAndStatusPanel.setStatusMessage("No tracks to analyze.", true);
+                return;
+            }
+
+            auto* task = new database::background_tasks::BpmAnalysisTask(std::move(trackIds));
+            TaskDialog::launch("BPM Analysis", task, 500, this, [this]() {
+                m_dataViewComponent.refreshView();
+            });
+            task->release(REFCOUNT_DEBUG_ARGS);
+        }
+
+        void MainComponent::onRunBpmAnalysisForSelectedRows()
+        {
+            auto trackIds = m_dataViewComponent.getSelectedTrackIds();
+            if (trackIds.empty())
+            {
+                m_mainPlaybackAndStatusPanel.setStatusMessage("No tracks selected for analysis.", true);
+                return;
+            }
+
+            auto* task = new database::background_tasks::BpmAnalysisTask(std::move(trackIds));
+            TaskDialog::launch("BPM Analysis", task, 500, this, [this]() {
+                m_dataViewComponent.refreshView();
+            });
+            task->release(REFCOUNT_DEBUG_ARGS);
+        }
+
         // --- Action Execution Method Stubs ---
         void MainComponent::playDataRow(RowIndex_t rowIndex)
         {

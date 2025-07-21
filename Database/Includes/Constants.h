@@ -199,7 +199,8 @@ namespace jucyaudio
             Delete,           ///< Remove the item from database (with confirmation)
             CreateMix,        ///< Create a new DJ mix from selected tracks
             RemoveMix,        ///< Remove an existing mix
-            ExportMix         ///< Export mix to audio file
+            ExportMix,        ///< Export mix to audio file
+            RunBpmAnalysis    ///< Run BPM analysis on selected items
         };
 
         /**

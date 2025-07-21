@@ -760,47 +760,80 @@ namespace jucyaudio
 
         DbResult SqliteTrackDatabase::updateTrackBpm(TrackId trackId, const AudioMetadata &am)
         {
+            // This implementation now just calls the batch update for a single item.
+            std::vector<std::pair<TrackId, AudioMetadata>> results;
+            results.emplace_back(trackId, am);
+            return updateTrackBpm(results);
+        }
+
+        DbResult SqliteTrackDatabase::updateTrackBpm(const std::vector<std::pair<TrackId, AudioMetadata>>& results)
+        {
             if (!isOpen())
             {
                 return DbResult::failure(DbResultStatus::ErrorConnection, "DB not open for update.");
             }
-            m_lastErrorMessage.clear();
-            std::string sql = "UPDATE Tracks SET bpm=?, intro_end=?, outro_start=? WHERE track_id = ?;";
-            SqliteStatement stmt{m_db, sql};
-
-            if (!stmt.isValid())
+            if (results.empty())
             {
-                m_lastErrorMessage = "Prepare failed for updateTrackBpm(): " + m_db.getLastError();
-                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
-            }
-            stmt.addParam(static_cast<int64_t>(am.bpm * 100)); // Store as integer
-            if (am.hasIntro)
-            {
-                stmt.addParam(static_cast<int64_t>(am.introEnd * 1000));
-            }
-            else
-            {
-                stmt.addNullParam(); // Use null if no intro end
-            }
-            if (am.hasOutro)
-            {
-                stmt.addParam(static_cast<int64_t>(am.outroStart * 1000));
-            }
-            else
-            {
-                stmt.addNullParam(); // Use null if no intro end
-            }
-            stmt.addParam(trackId);
-
-            if (stmt.execute())
-            {
-                // Check sqlite3_changes(m_db.getInternalHandle()) if you need
-                // to confirm rows affected
-                spdlog::debug("updateTrackBpm for track_id: {}", trackId);
                 return DbResult::success();
             }
-            m_lastErrorMessage = "Execute failed for updateTrackBpm(): " + m_db.getLastError();
-            return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+            m_lastErrorMessage.clear();
+
+            if (SqliteTransaction transaction{ m_db })
+            {
+                SqliteStatement stmt{m_db, "UPDATE Tracks SET bpm=?, intro_end=?, outro_start=? WHERE track_id = ?;"};
+                if (!stmt.isValid())
+                {
+                    m_lastErrorMessage = "Prepare failed for updateTrackBpm(): " + m_db.getLastError();
+                    transaction.rollback();
+                    return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                }
+
+                for (const auto &[trackId, am] : results)
+                {
+                    stmt.reset();
+                    stmt.addParam(static_cast<int64_t>(am.bpm * 100)); // Store as integer
+                    if (am.hasIntro)
+                    {
+                        stmt.addParam(static_cast<int64_t>(am.introEnd * 1000));
+                    }
+                    else
+                    {
+                        stmt.addNullParam();
+                    }
+                    if (am.hasOutro)
+                    {
+                        stmt.addParam(static_cast<int64_t>(am.outroStart * 1000));
+                    }
+                    else
+                    {
+                        stmt.addNullParam();
+                    }
+                    stmt.addParam(trackId);
+
+                    if (!stmt.execute())
+                    {
+                        m_lastErrorMessage = "Execute failed for updateTrackBpm() on track " + std::to_string(trackId) + ": " + m_db.getLastError();
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                    }
+                }
+
+                if (!transaction.commit())
+                {
+                    m_lastErrorMessage = "Failed to commit transaction for batch BPM update: " + m_db.getLastError();
+                    return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                }
+
+                spdlog::debug("Batch updated BPM for {} tracks.", results.size());
+                return DbResult::success();
+            }
+            else
+            {
+                m_lastErrorMessage = "Failed to begin transaction for batch BPM update: " + m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+            }
+
+            
         }
 
         DbResult SqliteTrackDatabase::updateTrackRating(TrackId trackId, int rating)
@@ -975,6 +1008,45 @@ namespace jucyaudio
             }
             m_db.execute("DROP TABLE " + tempTableName + ";");
             m_db.execute("COMMIT;");
+        }
+
+        std::vector<TrackId> SqliteTrackDatabase::getTrackIds(const TrackQueryArgs &args) const
+        {
+            if (!isOpen())
+                return {};
+            m_lastErrorMessage.clear();
+
+            std::vector<TrackId> results;
+            SqliteStatement stmt{m_db};
+            SqliteStatementConstruction stmtConstruction{stmt};
+            
+            // Create a modified query args to only select the track_id
+            TrackQueryArgs id_args = args;
+            id_args.columns = {"track_id"};
+            id_args.usePaging = false; // Ensure we get all IDs
+
+            if (!stmtConstruction.createSelectStatement(id_args))
+            {
+                m_lastErrorMessage = "Failed to create select statement for getTrackIds: " + m_db.getLastError();
+                return results; // Return empty vector on failure
+            }
+
+            if (stmt.isValid())
+            {
+                while (stmt.getNextResult())
+                {
+                    results.push_back(stmt.getInt64(0));
+                }
+            }
+            else
+            {
+                m_lastErrorMessage = m_db.getLastError();
+            }
+            if (!m_db.getLastError().empty() && m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
+            {
+                m_lastErrorMessage = m_db.getLastError();
+            }
+            return results;
         }
 
         int SqliteTrackDatabase::getTotalTrackCount(const TrackQueryArgs &args) const

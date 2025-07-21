@@ -6,7 +6,7 @@ namespace jucyaudio
     namespace database
     {
         SqliteStatement::SqliteStatement(SqliteDatabase &db, std::string_view statement)
-            : m_lock(db.getMutex()),
+            : m_lock{db.getMutex()},
               m_db{db},
               m_statement{nullptr},
               m_param_index{1},
@@ -17,12 +17,24 @@ namespace jucyaudio
         }
 
         SqliteStatement::SqliteStatement(SqliteDatabase &db)
-            : m_lock(db.getMutex()),
+            : m_lock{db.getMutex()},
               m_db{db},
               m_statement{nullptr},
               m_param_index{1},
               m_done{false}
         {
+        }
+
+        void SqliteStatement::reset()
+        {
+            if (m_statement)
+            {
+                sqlite3_reset(m_statement);
+                sqlite3_clear_bindings(m_statement);
+                m_param_index = 1;
+                m_done = false;
+                m_copy_of_string_args.clear();
+            }
         }
 
         bool SqliteStatement::bindStatement(std::string_view statement)

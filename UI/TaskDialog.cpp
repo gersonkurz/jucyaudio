@@ -17,8 +17,9 @@ namespace jucyaudio
             const int DEFAULT_DIALOG_HEIGHT = 180;
         } // namespace
 
-        TaskDialog::TaskDialog(ILongRunningTask *task, std::optional<int> autoCloseOnSuccessDelayMs)
+        TaskDialog::TaskDialog(ILongRunningTask *task, std::function<void()> onCompletion, std::optional<int> autoCloseOnSuccessDelayMs)
             : m_task{task}, // Store raw pointer
+              m_onCompletion{std::move(onCompletion)},
               m_autoCloseOnSuccessDelayMs{autoCloseOnSuccessDelayMs},
               // Use taskName from the task object for the title label
               m_titleLabel{"title", task ? juce::String(task->m_taskName) : "Processing Task"},
@@ -75,6 +76,10 @@ namespace jucyaudio
 
         TaskDialog::~TaskDialog()
         {
+            if (m_onCompletion)
+            {
+                m_onCompletion();
+            }
             setLookAndFeel(nullptr);
             spdlog::info("TaskDialog destructor called for task: {}", m_task ? m_task->m_taskName : "UNKNOWN_OR_NULL");
             stopTimer(); // Stop any JUCE timers associated with this component
@@ -388,7 +393,7 @@ namespace jucyaudio
 
         // Static launcher method in TaskDialog.cpp
         void TaskDialog::launch(const juce::String &windowTitle, ILongRunningTask *taskToRun, std::optional<int> autoCloseOnSuccessDelayMs,
-                                juce::Component *parentToCenterOn, std::function<void(juce::DialogWindow::LaunchOptions &)> settingsCustomizer)
+                                juce::Component *parentToCenterOn, std::function<void()> onCompletion)
         {
             spdlog::info("TaskDialog::launchDialog called with title '{}', taskToRun: {}, autoCloseDelay: {}, parent: {}", windowTitle.toStdString(),
                          taskToRun ? taskToRun->m_taskName : "nullptr",
@@ -402,7 +407,7 @@ namespace jucyaudio
                 return;
             }
 
-            auto *dialogComp = new TaskDialog(taskToRun, autoCloseOnSuccessDelayMs);
+            auto *dialogComp = new TaskDialog(taskToRun, std::move(onCompletion), autoCloseOnSuccessDelayMs);
 
             juce::DialogWindow::LaunchOptions optionsToUse; // Create our local options
 
@@ -418,19 +423,6 @@ namespace jucyaudio
             // Default escape key behavior based on our dialog's button
             bool allowEscapeBasedOnButton = (dialogComp->m_actionButton.getButtonText() == "Close");
             optionsToUse.escapeKeyTriggersCloseButton = allowEscapeBasedOnButton;
-
-            // --- If a customizer function is provided, let it modify the options ---
-            if (settingsCustomizer)
-            {
-                settingsCustomizer(optionsToUse);
-
-                // Also re-assert escape key logic if it's critical
-                if (!allowEscapeBasedOnButton && optionsToUse.escapeKeyTriggersCloseButton)
-                {
-                    optionsToUse.escapeKeyTriggersCloseButton = false; // Our button state takes precedence
-                    spdlog::info("TaskDialog: Customizer enabled escape for non-Close button; reverted.");
-                }
-            }
 
             // Now use the launchAsync() member of the configured LaunchOptions object.
             optionsToUse.launchAsync();

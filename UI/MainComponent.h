@@ -105,6 +105,9 @@ namespace jucyaudio
             void onMixCreatedCallback(bool success, const database::MixInfo& mixInfo);
             bool onHandleCreateWorkingSetDialog(int64_t trackCount, std::function<void(const juce::String &)> callback);
 
+            void onRunBpmAnalysis(database::INavigationNode* node);
+            void onRunBpmAnalysisForSelectedRows();
+
             audio::AudioLibrary m_audioLibrary;
             juce::ApplicationCommandManager &m_commandManager;
 

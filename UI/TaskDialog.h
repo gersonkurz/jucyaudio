@@ -17,6 +17,7 @@ namespace jucyaudio
         public:
             // TaskDialog will retain the task. Caller should release if they also held a ref.
             TaskDialog(database::ILongRunningTask *task, // Takes a raw pointer, will retain
+                       std::function<void()> onCompletion = nullptr,
                        std::optional<int> autoCloseOnSuccessDelayMs = std::nullopt);
             ~TaskDialog() override;
 
@@ -31,7 +32,7 @@ namespace jucyaudio
             static void launch(const juce::String &windowTitle,
                                database::ILongRunningTask *taskToRun, // Caller ensures task exists, dialog retains
                                std::optional<int> autoCloseOnSuccessDelayMs = std::nullopt, juce::Component *parentToCenterOn = nullptr,
-                               std::function<void(juce::DialogWindow::LaunchOptions &)> settingsCustomizer = nullptr);
+                               std::function<void()> onCompletion = nullptr);
 
         private:
             void startTask();
@@ -40,6 +41,7 @@ namespace jucyaudio
             void closeDialog(int modalReturnValue);
 
             database::ILongRunningTask *m_task; // Retained pointer
+            std::function<void()> m_onCompletion;
             std::optional<int> m_autoCloseOnSuccessDelayMs;
             bool m_waitingForAutoClose = false;
             juce::LookAndFeel_V4 m_lookAndFeel; // Custom LookAndFeel instance

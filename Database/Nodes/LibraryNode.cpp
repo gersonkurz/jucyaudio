@@ -27,9 +27,9 @@ namespace jucyaudio
     namespace database
     {
 
-        const DataActions LibraryNodeActions{DataAction::CreateWorkingSet, DataAction::ShowDetails, DataAction::CreateMix};
+        const DataActions LibraryNodeActions{DataAction::CreateWorkingSet, DataAction::ShowDetails, DataAction::CreateMix, DataAction::RunBpmAnalysis};
         const DataActions LibraryRowActions{DataAction::Play,        DataAction::CreateWorkingSet, DataAction::CreateMix,
-                                            DataAction::ShowDetails, DataAction::EditMetadata,     DataAction::Delete};
+                                            DataAction::ShowDetails, DataAction::EditMetadata,     DataAction::Delete, DataAction::RunBpmAnalysis};
         const std::vector<DataColumn> LibraryColumns = {
             DataColumn{(ColumnIndex_t)Column::Title, "title", "Title", 200, ColumnAlignment::Left, ColumnDataTypeHint::String},
             DataColumn{(ColumnIndex_t)Column::Artist, "artist_name", "Artist", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
@@ -241,6 +241,12 @@ namespace jucyaudio
 
         void LibraryNode::dataNoLongerShowing()
         {
+        }
+
+        std::vector<TrackId> LibraryNode::getAllTrackIds() const
+        {
+            // This will delegate to a new method in the database layer
+            return theTrackLibrary.getTrackDatabase()->getTrackIds(m_queryArgs);
         }
 
     } // namespace database

@@ -191,6 +191,11 @@ namespace jucyaudio
             return NoActionsPossible;
         }
 
+        std::vector<TrackId> BaseNode::getAllTrackIds() const
+        {
+            return {}; // Default implementation returns an empty list
+        }
+
         NodePath getNodePath(const INavigationNode *targetNode)
         {
             NodePath path;

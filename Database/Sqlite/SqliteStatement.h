@@ -37,6 +37,7 @@ namespace jucyaudio
             bool bindStatement(std::string_view statement);
 
         public:
+            void reset();
             bool addNullParam();
             bool addParam(std::string_view text);
             bool addParam(int64_t value);

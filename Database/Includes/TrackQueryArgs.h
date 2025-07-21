@@ -14,6 +14,7 @@ namespace jucyaudio
 
         struct TrackQueryArgs
         {
+            std::vector<std::string> columns;
             std::vector<std::string> searchTerms;
             std::vector<SortOrderInfo> sortBy;
             RowIndex_t offset{0};

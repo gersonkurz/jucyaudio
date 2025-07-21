@@ -245,8 +245,8 @@ namespace jucyaudio
             g.drawText(textToDisplay, 2, 0, width - 4, height, justification, true);
             const auto end{std::chrono::high_resolution_clock::now()};
             const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
-            if (duration.count() > 100)
-                spdlog::info("DataViewComponent::paintCell for row {} took {} us", rowNumber, duration.count());
+            //if (duration.count() > 100)
+            //    spdlog::info("DataViewComponent::paintCell for row {} took {} us", rowNumber, duration.count());
         }
 
         void DataViewComponent::sortOrderChanged(int newSortColumnId, bool isForwards)

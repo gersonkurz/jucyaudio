@@ -160,7 +160,23 @@ namespace jucyaudio
         {
             m_searchTermIndex = 1;
             StringWriter writer;
-            writer.append("SELECT * FROM Tracks");
+            writer.append("SELECT ");
+            if (trackQueryArgs.columns.empty())
+            {
+                writer.append("*");
+            }
+            else
+            {
+                for (size_t i = 0; i < trackQueryArgs.columns.size(); ++i)
+                {
+                    writer.append(trackQueryArgs.columns[i]);
+                    if (i < trackQueryArgs.columns.size() - 1)
+                    {
+                        writer.append(", ");
+                    }
+                }
+            }
+            writer.append(" FROM Tracks");
             addWhereClause(writer, trackQueryArgs);
             addOrderByClause(writer, trackQueryArgs);
             if (trackQueryArgs.usePaging)

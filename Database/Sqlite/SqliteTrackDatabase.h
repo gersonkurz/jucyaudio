@@ -46,6 +46,7 @@ namespace jucyaudio
             std::optional<TrackInfo> getTrackByFilepath(const std::filesystem::path &filepath) const override;
 
             std::vector<TrackInfo> getTracks(const TrackQueryArgs &args) const override;
+            std::vector<TrackId> getTrackIds(const TrackQueryArgs &args) const override;
             int getTotalTrackCount(const TrackQueryArgs &baseFilters) const override;
             int getTotalTrackCount() const // Without filters, but with cache
             {
@@ -71,6 +72,7 @@ namespace jucyaudio
             std::optional<TrackInfo> getNextTrackForBpmAnalysis() const override;
 
             DbResult updateTrackBpm(TrackId trackId, const AudioMetadata& am) override;
+            DbResult updateTrackBpm(const std::vector<std::pair<TrackId, AudioMetadata>>& results) override;
 
             ITagManager &getTagManager() override;
             const ITagManager &getTagManager() const override;

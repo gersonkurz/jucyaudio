@@ -122,6 +122,13 @@ namespace jucyaudio
 
             virtual bool setSearchTerms(const std::vector<std::string> &searchTerms) = 0;
             virtual std::vector<std::string> getCurrentSearchTerms() const = 0;
+
+            /// @brief Get all track IDs for the current node's query.
+            /// This method retrieves all track IDs that match the current filter, sort, and other query parameters for the node.
+            /// It is used for operations that need to act on the entire set of tracks represented by the node,
+            /// such as running a batch analysis.
+            /// @return A vector of TrackIds.
+            virtual std::vector<TrackId> getAllTrackIds() const = 0;
         };
 
     } // namespace database

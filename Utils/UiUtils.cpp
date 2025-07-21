@@ -32,6 +32,8 @@ namespace jucyaudio
                 return "Edit";
             case database::DataAction::Delete:
                 return "Delete";
+            case database::DataAction::RunBpmAnalysis:
+                return "Run BPM Analysis";
             default:
                 return "Unknown Action";
             }

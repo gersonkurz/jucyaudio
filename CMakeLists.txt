@@ -176,6 +176,10 @@ target_sources(jucyaudio PRIVATE
     # Background Tasks
     Database/BackgroundTasks/BpmAnalysis.cpp
     Database/BackgroundTasks/BpmAnalysis.h
+    Database/BackgroundTasks/BpmAnalysisTask.cpp
+    Database/BackgroundTasks/BpmAnalysisTask.h
+    Database/BackgroundTasks/AudioAnalysis.cpp
+    Database/BackgroundTasks/AudioAnalysis.h
     
     # Database includes
     UI/ILongRunningTask.h
