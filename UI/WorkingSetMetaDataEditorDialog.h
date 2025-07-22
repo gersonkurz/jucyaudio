@@ -22,7 +22,7 @@ namespace jucyaudio
              * @brief Callback function type for when the dialog is closed.
              * @param nameChanged True if the name was changed and saved, false otherwise.
              */
-            using OnDialogFinished = std::function<void(bool nameChanged)>;
+            using OnDialogFinished = std::function<void(bool nameChanged, std::string_view newName)>;
 
             /**
              * @brief Construct a new Working Set Meta Data Editor Dialog object

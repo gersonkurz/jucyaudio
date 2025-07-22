@@ -94,7 +94,8 @@ namespace jucyaudio
         {
             if (m_onFinishedCallback)
             {
-                m_onFinishedCallback(changed);
+                const auto newName = m_nameEditor.getText().toStdString();
+                m_onFinishedCallback(changed, newName);
             }
 
             if (auto *parent = findParentComponentOfClass<juce::DialogWindow>())

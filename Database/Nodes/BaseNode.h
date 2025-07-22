@@ -60,10 +60,15 @@ namespace jucyaudio
             {
             }
             std::vector<TrackId> getAllTrackIds() const override;
+            void rename(std::string_view newName)
+            {
+                m_name = newName;
+            }
 
         private:
             INavigationNode *const m_parent;
-            const std::string m_name;
+            // no longer const to support renaming
+            std::string m_name;
             mutable std::atomic<int32_t> m_refCount;
 
          protected:

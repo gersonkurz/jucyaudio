@@ -24,10 +24,16 @@ namespace jucyaudio
                 return m_queryArgs.workingSetId;
             }
 
+            void rename(std::string_view newName)
+            {
+                m_workingSetInfo.name = newName;
+                BaseNode::rename(newName);
+            }
+
             static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
 
         private:
-            const WorkingSetInfo m_workingSetInfo;
+            WorkingSetInfo m_workingSetInfo;
         };
     } // namespace database
 } // namespace jucyaudio

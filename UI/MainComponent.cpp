@@ -1246,21 +1246,15 @@ namespace jucyaudio
                 const auto wsInfo = wsNode->getWorkingSetInfo();
 
                 auto *dialog =
-                    new WorkingSetMetaDataEditorDialog{wsInfo, [this, wsNode](bool nameChanged)
+                    new WorkingSetMetaDataEditorDialog{wsInfo, [this, wsNode](bool nameChanged, std::string_view newName)
                                                        {
                                                            if (nameChanged)
                                                            {
-                                                               if (const auto workingSetsRootNode = m_rootNavigationNode->getWorkingSetsRootNode())
+                                                               spdlog::info("Working set name changed to: {}", newName);
+                                                               wsNode->rename(newName);
+                                                               if (auto navTreeItem = m_navigationPanel.findTreeViewItemForNode(wsNode))
                                                                {
-                                                                   workingSetsRootNode->refreshCache(true); // true = flush cache
-
-                                                                   // Find the tree item and trigger a visual update
-                                                                   if (auto *treeItem = m_navigationPanel.findTreeViewItemForNode(workingSetsRootNode))
-                                                                   {
-                                                                       treeItem->treeHasChanged();
-                                                                   }
-
-                                                                   workingSetsRootNode->release(REFCOUNT_DEBUG_ARGS);
+                                                                   navTreeItem->getOwnerView()->repaint();
                                                                }
                                                            }
                                                        }};
