@@ -2,11 +2,11 @@
 #include <Database/BackgroundService.h>
 #include <Database/BackgroundTasks/BpmAnalysis.h>
 #include <Database/BackgroundTasks/BpmAnalysisTask.h>
-#include <Database/Nodes/MixNode.h>
-#include <Database/Nodes/WorkingSetNode.h>
-#include <Database/Nodes/RootNode.h>
 #include <Database/Includes/MixInfo.h>
+#include <Database/Nodes/MixNode.h>
+#include <Database/Nodes/RootNode.h>
 #include <Database/Nodes/VirtualFolderNode.h>
+#include <Database/Nodes/WorkingSetNode.h>
 #include <UI/ColumnConfiguratorDialog.h>
 #include <UI/CreateMixDialogComponent.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
@@ -14,9 +14,9 @@
 #include <UI/MainComponent.h>
 #include <UI/ScanDialogComponent.h>
 #include <UI/TaskDialog.h>
+#include <UI/WorkingSetMetaDataEditorDialog.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
-#include <UI/WorkingSetMetaDataEditorDialog.h>
 #ifndef JUCE_WINDOWS
 #include <unistd.h>
 #endif
@@ -67,16 +67,17 @@ namespace jucyaudio
             {
                 spdlog::info("TrackLibrary initialised successfully by "
                              "MainComponent for DB: {}",
-                             dbPath.string());
+                    dbPath.string());
             }
             else
             {
                 spdlog::error("TrackLibrary FAILED to initialise from "
                               "MainComponent. Error: {}",
-                              theTrackLibrary.getLastError());
-                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Engine Error",
-                                                       "TrackLibrary failed to initialize.\nDB Path: " + dbJuceFile.getFullPathName() +
-                                                           "\nError: " + juce::String(theTrackLibrary.getLastError()));
+                    theTrackLibrary.getLastError());
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                    "Engine Error",
+                    "TrackLibrary failed to initialize.\nDB Path: " + dbJuceFile.getFullPathName() +
+                        "\nError: " + juce::String(theTrackLibrary.getLastError()));
             }
 
             // --- Add and make visible all child components ---
@@ -225,40 +226,46 @@ namespace jucyaudio
             auto &menuManager = getManager();
 
             // 1. Define static menus
-            menuManager.registerMenu("File", {// The lambda captures `this` from MainComponent, keeping logic and state together.
-                                              {"Scan Folders...",
-                                               "...",
-                                               [&]()
-                                               {
-                                                   onShowScanDialog();
-                                               },
-                                               {{'s', juce::ModifierKeys::commandModifier}},
-                                               {}},
-                                              {"-"},
-                                              {"Database Maintenance...", "...",
-                                               [&]()
-                                               {
-                                                   onShowMaintenanceDialog();
-                                               }},
-                                              {"Build Virtual Folders...", "...",
-                                               [&]()
-                                               {
-                                                   onBuildVirtualFolders();
-                                               }},
-                                              {"-"},
-                                              {"Exit",
-                                               "...",
-                                               [&]()
-                                               {
-                                                   juce::JUCEApplication::getInstance()->systemRequestedQuit();
-                                               },
-                                               {{'q', juce::ModifierKeys::commandModifier}},
-                                               {}}});
+            menuManager.registerMenu("File",
+                {// The lambda captures `this` from MainComponent, keeping logic and state together.
+                    {"Scan Folders...",
+                        "...",
+                        [&]()
+                        {
+                            onShowScanDialog();
+                        },
+                        {{'s', juce::ModifierKeys::commandModifier}},
+                        {}},
+                    {"-"},
+                    {"Database Maintenance...",
+                        "...",
+                        [&]()
+                        {
+                            onShowMaintenanceDialog();
+                        }},
+                    {"Build Virtual Folders...",
+                        "...",
+                        [&]()
+                        {
+                            onBuildVirtualFolders();
+                        }},
+                    {"-"},
+                    {"Exit",
+                        "...",
+                        [&]()
+                        {
+                            juce::JUCEApplication::getInstance()->systemRequestedQuit();
+                        },
+                        {{'q', juce::ModifierKeys::commandModifier}},
+                        {}}});
 
-            menuManager.registerMenu("View", {{"Configure Columns...", "...", [&]()
-                                               {
-                                                   onShowConfigureColumnsDialog();
-                                               }}});
+            menuManager.registerMenu("View",
+                {{"Configure Columns...",
+                    "...",
+                    [&]()
+                    {
+                        onShowConfigureColumnsDialog();
+                    }}});
 
             // 2. Define dynamic theme submenu
             std::vector<MenuItem> themeItems;
@@ -283,13 +290,14 @@ namespace jucyaudio
             menuManager.addSubMenu("View", "Theme", themeItems);
 
             menuManager.registerMenu("Help",
-                                     {
-                                         {"About...", "...",
-                                          [&]()
-                                          {
-                                              onShowAboutDialog();
-                                          }},
-                                     });
+                {
+                    {"About...",
+                        "...",
+                        [&]()
+                        {
+                            onShowAboutDialog();
+                        }},
+                });
 
             // 3. After defining everything, tell the presenter to register the commands with JUCE
             registerCommands();
@@ -630,8 +638,7 @@ namespace jucyaudio
                 int64_t totalTracks = 0;
                 if (m_currentSelectedDataNode->getTotalTrackCount(totalTracks))
                 {
-                    m_mainPlaybackAndStatusPanel.setStatusMessage(
-                        std::format("{} tracks in '{}'", totalTracks, m_currentSelectedDataNode->getName()), false);
+                    m_mainPlaybackAndStatusPanel.setStatusMessage(std::format("{} tracks in '{}'", totalTracks, m_currentSelectedDataNode->getName()), false);
                 }
             }
             else
@@ -663,7 +670,7 @@ namespace jucyaudio
             MixId mixId = m_currentSelectedDataNode->getUniqueId();
             spdlog::info("Soft-deleting track {} from mix {}", trackId, mixId);
 
-            auto* mixManager = &theTrackLibrary.getMixManager();
+            auto *mixManager = &theTrackLibrary.getMixManager();
             if (mixManager->removeTrackFromMix(mixId, trackId))
             {
                 m_mainPlaybackAndStatusPanel.setStatusMessage("Track removed from mix.", false);
@@ -832,7 +839,7 @@ namespace jucyaudio
             }
         }
 
-        void MainComponent::onRunBpmAnalysis(INavigationNode* node)
+        void MainComponent::onRunBpmAnalysis(INavigationNode *node)
         {
             if (!node)
                 return;
@@ -844,10 +851,15 @@ namespace jucyaudio
                 return;
             }
 
-            auto* task = new background_tasks::BpmAnalysisTask(std::move(trackIds));
-            TaskDialog::launch("BPM Analysis", task, 500, this, [this]() {
-                m_dataViewComponent.refreshView();
-            });
+            auto *task = new background_tasks::BpmAnalysisTask(std::move(trackIds));
+            TaskDialog::launch("BPM Analysis",
+                task,
+                500,
+                this,
+                [this]()
+                {
+                    m_dataViewComponent.refreshView();
+                });
             task->release(REFCOUNT_DEBUG_ARGS);
         }
 
@@ -860,10 +872,15 @@ namespace jucyaudio
                 return;
             }
 
-            auto* task = new background_tasks::BpmAnalysisTask(std::move(trackIds));
-            TaskDialog::launch("BPM Analysis", task, 500, this, [this]() {
-                m_dataViewComponent.refreshView();
-            });
+            auto *task = new background_tasks::BpmAnalysisTask(std::move(trackIds));
+            TaskDialog::launch("BPM Analysis",
+                task,
+                500,
+                this,
+                [this]()
+                {
+                    m_dataViewComponent.refreshView();
+                });
             task->release(REFCOUNT_DEBUG_ARGS);
         }
 
@@ -890,15 +907,15 @@ namespace jucyaudio
                 if (!m_playbackController.loadAndPlayFile(audioFile))
                 {
                     m_mainPlaybackAndStatusPanel.setStatusMessage(getSafeDisplayText("Error playing: " + audioFile.getFileName()), true);
-                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Playback Error",
-                                                           "Cannot play file:\n" + audioFile.getFullPathName());
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Playback Error", "Cannot play file:\n" + audioFile.getFullPathName());
                 }
             }
             else
             {
                 m_mainPlaybackAndStatusPanel.setStatusMessage("Cannot play: " + std::to_string(track->trackId) + " (No path)", true);
-                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Playback Error",
-                                                       "Cannot find audio file for: " + std::to_string(track->trackId));
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon, "Playback Error", "Cannot find audio file for: " + std::to_string(track->trackId));
             }
             syncPlaybackUIToControllerState();
         }
@@ -949,7 +966,7 @@ namespace jucyaudio
                 return;
             }
             std::reverse(selectedRows.begin(),
-                         selectedRows.end()); // Reverse to delete from end to start
+                selectedRows.end()); // Reverse to delete from end to start
 
             juce::String message;
             std::string okButtonText;
@@ -973,31 +990,32 @@ namespace jucyaudio
                 {
                     message = std::format("Are you sure you want to delete the "
                                           "selected {} working-sets?",
-                                          selectedRows.size());
+                        selectedRows.size());
                     okButtonText = "Delete Working Sets";
                 }
                 else
                 {
                     message = std::format("Are you sure you want to delete the "
                                           "selected {} mixes?",
-                                          selectedRows.size());
+                        selectedRows.size());
                     okButtonText = "Delete Mixes";
                 }
             }
             const auto node = m_currentSelectedDataNode;
 
             juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon, // Icon type
-                                               "Confirm Deletion",             // Window title
-                                               message,
-                                               okButtonText,                        // OK button text (can be "OK", "Delete", etc.)
-                                               "Cancel",                            // Cancel button text
-                                               nullptr,                             // Parent component (optional, nullptr for desktop)
-                                               juce::ModalCallbackFunction::create( // Callback
-                                                   [this, selectedRows,
-                                                    node](int result) // Capture necessary data
-                                                   {
-                                                       onDeleteSelectedRows(selectedRows, node, result);
-                                                   }));
+                "Confirm Deletion",                                            // Window title
+                message,
+                okButtonText,                        // OK button text (can be "OK", "Delete", etc.)
+                "Cancel",                            // Cancel button text
+                nullptr,                             // Parent component (optional, nullptr for desktop)
+                juce::ModalCallbackFunction::create( // Callback
+                    [this,
+                        selectedRows,
+                        node](int result) // Capture necessary data
+                    {
+                        onDeleteSelectedRows(selectedRows, node, result);
+                    }));
         }
 
         bool MainComponent::createWorkingSet()
@@ -1028,10 +1046,10 @@ namespace jucyaudio
         bool MainComponent::createWorkingSetFromTrackIds(std::vector<TrackId> trackIds)
         {
             return onHandleCreateWorkingSetDialog(static_cast<int64_t>(trackIds.size()),
-                                                  [this, trackIds](const juce::String &name)
-                                                  {
-                                                      onCreateWorkingSetFromTrackIdsCallback(name, trackIds);
-                                                  });
+                [this, trackIds](const juce::String &name)
+                {
+                    onCreateWorkingSetFromTrackIdsCallback(name, trackIds);
+                });
         }
 
         void MainComponent::onCommonCreateWorkingSetCallback(bool success, const WorkingSetInfo &workingSetInfo)
@@ -1059,8 +1077,8 @@ namespace jucyaudio
         void MainComponent::onCreateWorkingSetFromTrackIdsCallback(const juce::String &name, std::vector<TrackId> trackIds)
         {
             WorkingSetInfo workingSetInfo;
-            onCommonCreateWorkingSetCallback(theTrackLibrary.getWorkingSetManager().createWorkingSetFromTrackIds(trackIds, name.toStdString(), workingSetInfo),
-                                             workingSetInfo);
+            onCommonCreateWorkingSetCallback(
+                theTrackLibrary.getWorkingSetManager().createWorkingSetFromTrackIds(trackIds, name.toStdString(), workingSetInfo), workingSetInfo);
         }
 
         bool MainComponent::createWorkingSetFromNode(const INavigationNode *node)
@@ -1072,10 +1090,10 @@ namespace jucyaudio
                 return false;
             }
             return onHandleCreateWorkingSetDialog(trackCount,
-                                                  [this, node](const juce::String &name)
-                                                  {
-                                                      onCreateWorkingSetFromNodeCallback(name, node);
-                                                  });
+                [this, node](const juce::String &name)
+                {
+                    onCreateWorkingSetFromNodeCallback(name, node);
+                });
         }
 
         bool MainComponent::onHandleCreateWorkingSetDialog(int64_t trackCount, OnCreateWorkingSetCallback callback)
@@ -1100,22 +1118,20 @@ namespace jucyaudio
         {
             assert(node != nullptr);
             WorkingSetInfo workingSetInfo;
-            
+
             // Check if this is a VirtualFolderNode
-            if (const auto* virtualFolderNode = dynamic_cast<const VirtualFolderNode*>(node))
+            if (const auto *virtualFolderNode = dynamic_cast<const VirtualFolderNode *>(node))
             {
                 // Use the new recursive method for virtual folders
-                onCommonCreateWorkingSetCallback(
-                    theTrackLibrary.getWorkingSetManager().createWorkingSetFromVirtualFolder(
-                        virtualFolderNode->getFolderId(), name.toStdString(), workingSetInfo, true), 
+                onCommonCreateWorkingSetCallback(theTrackLibrary.getWorkingSetManager().createWorkingSetFromVirtualFolder(
+                                                     virtualFolderNode->getFolderId(), name.toStdString(), workingSetInfo, true),
                     workingSetInfo);
             }
             else
             {
                 // Use the standard query-based method for other nodes
                 onCommonCreateWorkingSetCallback(
-                    theTrackLibrary.getWorkingSetManager().createWorkingSetFromQuery(
-                        *node->getQueryArgs(), name.toStdString(), workingSetInfo), 
+                    theTrackLibrary.getWorkingSetManager().createWorkingSetFromQuery(*node->getQueryArgs(), name.toStdString(), workingSetInfo),
                     workingSetInfo);
             }
         }
@@ -1142,7 +1158,6 @@ namespace jucyaudio
             return result;
         }
 
-        
         void MainComponent::onExportMix(INavigationNode *selectedNode)
         {
             assert(selectedNode != nullptr && "Selected node should not be null in onExportMix()");
@@ -1151,17 +1166,17 @@ namespace jucyaudio
             const auto mixInfo{mixNode->getMixInfo()};
 
             const auto title{std::format("Export Mix '{}' As...", mixInfo.name)};
-            m_activeFileChooser =
-                std::make_unique<juce::FileChooser>(title, juce::File::getSpecialLocation(juce::File::userMusicDirectory), "*.mp3;*.wav;*.m3u", true, false, this);
+            m_activeFileChooser = std::make_unique<juce::FileChooser>(
+                title, juce::File::getSpecialLocation(juce::File::userMusicDirectory), "*.mp3;*.wav;*.m3u", true, false, this);
 
             int chooserFlags =
                 juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting;
 
             m_activeFileChooser->launchAsync(chooserFlags,
-                                             [this, mixInfo](const juce::FileChooser &chooser)
-                                             {
-                                                 this->onExportMixFileChooserModalDismissed(chooser, mixInfo);
-                                             });
+                [this, mixInfo](const juce::FileChooser &chooser)
+                {
+                    this->onExportMixFileChooserModalDismissed(chooser, mixInfo);
+                });
         }
 
         class FinalizeAndExportTask : public ILongRunningTask
@@ -1179,7 +1194,11 @@ namespace jucyaudio
             {
                 // Step 1: Finalize the mix (prune working set, update status)
                 progressCb(-1, "Finalizing mix...");
-                if (shouldCancel) { completionCb(false, "Cancelled before finalization."); return; }
+                if (shouldCancel)
+                {
+                    completionCb(false, "Cancelled before finalization.");
+                    return;
+                }
 
                 if (!theTrackLibrary.getMixManager().finalizeMix(m_mixInfo.mixId))
                 {
@@ -1189,7 +1208,11 @@ namespace jucyaudio
 
                 // Step 2: Export the audio (using existing logic)
                 progressCb(-1, "Exporting audio...");
-                if (shouldCancel) { completionCb(false, "Cancelled before export."); return; }
+                if (shouldCancel)
+                {
+                    completionCb(false, "Cancelled before export.");
+                    return;
+                }
                 /*
                 auto activeTracks = theTrackLibrary.getMixManager().getMixTracks(m_mixInfo.mixId);
                 if (activeTracks.empty())
@@ -1198,11 +1221,13 @@ namespace jucyaudio
                     return;
                 }
                 */
-                if(m_exporter.exportMixToFile(m_mixInfo.mixId, m_outputPath, 
-                    [&](float progress, const std::string& message) {
-                        progressCb(static_cast<int>(progress * 100.0f), message);
-                        return !shouldCancel.load();
-                    }))
+                if (m_exporter.exportMixToFile(m_mixInfo.mixId,
+                        m_outputPath,
+                        [&](float progress, const std::string &message)
+                        {
+                            progressCb(static_cast<int>(progress * 100.0f), message);
+                            return !shouldCancel.load();
+                        }))
                 {
                     completionCb(true, "Mix successfully finalized and exported.");
                 }
@@ -1217,7 +1242,6 @@ namespace jucyaudio
             const audio::IMixExporter &m_exporter;
             const std::filesystem::path m_outputPath;
         };
-
 
         void MainComponent::onExportMixFileChooserModalDismissed(const juce::FileChooser &chooser, MixInfo mixInfo)
         {
@@ -1238,26 +1262,25 @@ namespace jucyaudio
             task->release(REFCOUNT_DEBUG_ARGS);
         }
 
-
         void MainComponent::onEditMetadata(INavigationNode *selectedNode)
         {
-            if (auto* wsNode = dynamic_cast<WorkingSetNode*>(selectedNode))
+            if (auto *wsNode = dynamic_cast<WorkingSetNode *>(selectedNode))
             {
                 const auto wsInfo = wsNode->getWorkingSetInfo();
 
-                auto *dialog =
-                    new WorkingSetMetaDataEditorDialog{wsInfo, [this, wsNode](bool nameChanged, std::string_view newName)
-                                                       {
-                                                           if (nameChanged)
-                                                           {
-                                                               spdlog::info("Working set name changed to: {}", newName);
-                                                               wsNode->rename(newName);
-                                                               if (auto navTreeItem = m_navigationPanel.findTreeViewItemForNode(wsNode))
-                                                               {
-                                                                   navTreeItem->getOwnerView()->repaint();
-                                                               }
-                                                           }
-                                                       }};
+                auto *dialog = new WorkingSetMetaDataEditorDialog{wsInfo,
+                    [this, wsNode](bool nameChanged, std::string_view newName)
+                    {
+                        if (nameChanged)
+                        {
+                            spdlog::info("Working set name changed to: {}", newName);
+                            wsNode->rename(newName);
+                            if (auto navTreeItem = m_navigationPanel.findTreeViewItemForNode(wsNode))
+                            {
+                                navTreeItem->getOwnerView()->repaint();
+                            }
+                        }
+                    }};
 
                 juce::DialogWindow::LaunchOptions launchOptions;
                 launchOptions.content.setOwned(dialog);
@@ -1282,19 +1305,20 @@ namespace jucyaudio
             const auto workingSetInfo{workingSetNode->getWorkingSetInfo()};
 
             juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon, // Icon type
-                                               "Question",                     // Window title
-                                               std::format("Are you sure you want to delete the working-set {}?", workingSetInfo.name),
-                                               "Delete Mix",                        // OK button text (can be "OK", "Delete", etc.)
-                                               "Cancel",                            // Cancel button text
-                                               nullptr,                             // Parent component (optional, nullptr for desktop)
-                                               juce::ModalCallbackFunction::create( // Callback
-                                                   [this, workingSetInfo,
-                                                    workingSetNode](int result) // Capture necessary data
-                                                   {
-                                                       onDoRemoveWorkingSet(workingSetNode, workingSetInfo, result);
-                                                   }));
+                "Question",                                                    // Window title
+                std::format("Are you sure you want to delete the working-set {}?", workingSetInfo.name),
+                "Delete Mix",                        // OK button text (can be "OK", "Delete", etc.)
+                "Cancel",                            // Cancel button text
+                nullptr,                             // Parent component (optional, nullptr for desktop)
+                juce::ModalCallbackFunction::create( // Callback
+                    [this,
+                        workingSetInfo,
+                        workingSetNode](int result) // Capture necessary data
+                    {
+                        onDoRemoveWorkingSet(workingSetNode, workingSetInfo, result);
+                    }));
         }
-        
+
         void MainComponent::onDoRemoveWorkingSet(INavigationNode *selectedNode, const WorkingSetInfo &workingSetToDelete, int result)
         {
             if (result == 1)
@@ -1309,8 +1333,9 @@ namespace jucyaudio
                 else
                 {
                     spdlog::error("Failed to remove working-set ID: {} [{}]", workingSetToDelete.id, workingSetToDelete.name);
-                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Deletion Failed",
-                                                           std::format("Could not remove the working-set '{}' from the database.", workingSetToDelete.name));
+                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                        "Deletion Failed",
+                        std::format("Could not remove the working-set '{}' from the database.", workingSetToDelete.name));
                 }
             }
             else // User clicked "Cancel" (result == 0) or closed the dialog
@@ -1320,7 +1345,6 @@ namespace jucyaudio
             }
         }
 
-
         void MainComponent::onRemoveMix(INavigationNode *selectedNode)
         {
             assert(selectedNode != nullptr && "Selected node should not be null in onRemoveMix()");
@@ -1329,17 +1353,18 @@ namespace jucyaudio
             const auto mixInfo{mixNode->getMixInfo()};
 
             juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon, // Icon type
-                                               "Question",                     // Window title
-                                               std::format("Are you sure you want to delete the mix {}?", mixInfo.name),
-                                               "Delete Mix",                        // OK button text (can be "OK", "Delete", etc.)
-                                               "Cancel",                            // Cancel button text
-                                               nullptr,                             // Parent component (optional, nullptr for desktop)
-                                               juce::ModalCallbackFunction::create( // Callback
-                                                   [this, mixInfo,
-                                                    mixNode](int result) // Capture necessary data
-                                                   {
-                                                       onDoRemoveMix(mixNode, mixInfo, result);
-                                                   }));
+                "Question",                                                    // Window title
+                std::format("Are you sure you want to delete the mix {}?", mixInfo.name),
+                "Delete Mix",                        // OK button text (can be "OK", "Delete", etc.)
+                "Cancel",                            // Cancel button text
+                nullptr,                             // Parent component (optional, nullptr for desktop)
+                juce::ModalCallbackFunction::create( // Callback
+                    [this,
+                        mixInfo,
+                        mixNode](int result) // Capture necessary data
+                    {
+                        onDoRemoveMix(mixNode, mixInfo, result);
+                    }));
         }
 
         void MainComponent::onDoRemoveMix(INavigationNode *selectedNode, const MixInfo &mixToDelete, int result)
@@ -1356,8 +1381,9 @@ namespace jucyaudio
                 else
                 {
                     spdlog::error("Failed to remove mix ID: {} [{}]", mixToDelete.mixId, mixToDelete.name);
-                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Deletion Failed",
-                                                           std::format("Could not remove the mix '{}' from the database.", mixToDelete.name));
+                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                        "Deletion Failed",
+                        std::format("Could not remove the mix '{}' from the database.", mixToDelete.name));
                 }
             }
             else // User clicked "Cancel" (result == 0) or closed the dialog
@@ -1366,7 +1392,6 @@ namespace jucyaudio
                 m_mainPlaybackAndStatusPanel.setStatusMessage("Mix deletion cancelled.", false);
             }
         }
-
 
         void MainComponent::createMix()
         {
@@ -1384,9 +1409,7 @@ namespace jucyaudio
             // Capture the source working set ID from the current node
             const WorkingSetId source_ws_id = m_currentSelectedDataNode->getUniqueId();
 
-            std::vector<TrackInfo> selectedTracks{
-                m_dataViewComponent.getSelectedTracks()
-            };
+            std::vector<TrackInfo> selectedTracks{m_dataViewComponent.getSelectedTracks()};
             if (selectedTracks.size() <= 1)
             {
                 selectedTracks = getAllTracks(m_currentSelectedDataNode);
@@ -1398,11 +1421,13 @@ namespace jucyaudio
                 return;
             }
 
-            auto *dialog = new ui::CreateMixDialogComponent(m_audioLibrary, selectedTracks, source_ws_id,
-                                                            [this](bool success, const MixInfo &mixInfo)
-                                                            {
-                                                                onMixCreatedCallback(success, mixInfo);
-                                                            });
+            auto *dialog = new ui::CreateMixDialogComponent(m_audioLibrary,
+                selectedTracks,
+                source_ws_id,
+                [this](bool success, const MixInfo &mixInfo)
+                {
+                    onMixCreatedCallback(success, mixInfo);
+                });
 
             juce::DialogWindow::LaunchOptions launchOptions;
             launchOptions.content.setOwned(dialog);
@@ -1478,21 +1503,21 @@ namespace jucyaudio
             scanDialog->onDialogClosed = [this]()
             {
                 spdlog::info("MainComponent: ScanDialogComponent closed");
-                
+
                 // Force the Folders node to refresh its cache to pick up new folders
                 if (const auto foldersRootNode = m_rootNavigationNode->getFoldersRootNode())
                 {
                     foldersRootNode->refreshCache(true); // true = flush cache
-                    
+
                     // Find the tree item and trigger a visual update
-                    if (auto* treeItem = m_navigationPanel.findTreeViewItemForNode(foldersRootNode))
+                    if (auto *treeItem = m_navigationPanel.findTreeViewItemForNode(foldersRootNode))
                     {
                         treeItem->treeHasChanged();
                     }
-                    
+
                     foldersRootNode->release(REFCOUNT_DEBUG_ARGS);
                 }
-                
+
                 // If we are in DataView, we refresh it.
                 if (m_currentMainView == MainViewType::DataView)
                 {
@@ -1509,10 +1534,11 @@ namespace jucyaudio
 
         bool MainComponent::onShowAboutDialog()
         {
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "About jucyaudio",
-                                                   "jucyaudio - MP3 Player and Mixer\nVersion 0.1.0 "
-                                                   "(Dev)\n\n(c) 2025 Your Name",
-                                                   "OK");
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                "About jucyaudio",
+                "jucyaudio - MP3 Player and Mixer\nVersion 0.1.0 "
+                "(Dev)\n\n(c) 2025 Your Name",
+                "OK");
 
             return true;
         }
@@ -1640,7 +1666,7 @@ namespace jucyaudio
                 void run(ProgressCallback progressCb, CompletionCallback completionCb, [[maybe_unused]] std::atomic<bool> &shouldCancel) override
                 {
                     // Get the track database
-                    auto* trackDb{theTrackLibrary.getTrackDatabase()};
+                    auto *trackDb{theTrackLibrary.getTrackDatabase()};
                     if (!trackDb)
                     {
                         completionCb(false, "Failed to access track database.");
@@ -1649,13 +1675,13 @@ namespace jucyaudio
 
                     // Build virtual folders with progress callback
                     auto result{trackDb->buildVirtualFolders(
-                        [progressCb](float progress, const std::string& status) {
+                        [progressCb](float progress, const std::string &status)
+                        {
                             if (progressCb)
                             {
                                 progressCb(progress, status);
                             }
-                        }
-                    )};
+                        })};
 
                     if (result.isOk())
                     {
@@ -1669,8 +1695,7 @@ namespace jucyaudio
             };
 
             // Show confirmation dialog
-            const int result{juce::AlertWindow::showYesNoCancelBox(
-                juce::AlertWindow::QuestionIcon,
+            const int result{juce::AlertWindow::showYesNoCancelBox(juce::AlertWindow::QuestionIcon,
                 "Build Virtual Folders",
                 "This will analyze all tracks in your library and build virtual folders for fast navigation.\n\n"
                 "This is a one-time operation that may take a few minutes for large libraries.\n\n"

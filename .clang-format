@@ -4,6 +4,10 @@ BasedOnStyle: Microsoft  # Microsoft style already puts braces on new lines
 BreakBeforeBraces: Allman  # This is the key setting - "Allman" style puts all braces on new lines
 IndentWidth: 4
 ColumnLimit: 160
+ContinuationIndentWidth: 4
+AlignAfterOpenBracket: DontAlign
+BinPackArguments: false
+BinPackParameters: false
 AccessModifierOffset: -4  # Align access modifiers with class definition
 Standard: c++20  # or whatever C++ standard you're using
 # Prefer C++11 braced list initialization style
@@ -11,6 +15,7 @@ Standard: c++20  # or whatever C++ standard you're using
 # This is the important setting for your question:
 Language: Cpp
 AllowShortLambdasOnASingleLine: Empty
+LambdaBodyIndentation: Signature
 PackConstructorInitializers: Never
 NamespaceIndentation: All
 BraceWrapping:
