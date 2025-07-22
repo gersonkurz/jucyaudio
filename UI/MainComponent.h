@@ -34,7 +34,7 @@ namespace jucyaudio
         extern std::string g_strConfigFilename;
         class MainComponent : public juce::AudioAppComponent, public MenuPresenter, public juce::Timer, public juce::ChangeListener
         {
-        public:
+        public:            
             MainComponent(juce::ApplicationCommandManager &commandManager);
             ~MainComponent() override;
 
@@ -104,6 +104,9 @@ namespace jucyaudio
             void onCommonCreateWorkingSetCallback(bool success, const database::WorkingSetInfo &workingSetInfo);
             void onMixCreatedCallback(bool success, const database::MixInfo& mixInfo);
             bool onHandleCreateWorkingSetDialog(int64_t trackCount, std::function<void(const juce::String &)> callback);
+
+            void onRemoveWorkingSet(database::INavigationNode *node);
+            void onDoRemoveWorkingSet(INavigationNode *selectedNode, const database::WorkingSetInfo &workingSetToDelete, int result);
 
             void onRunBpmAnalysis(database::INavigationNode* node);
             void onRunBpmAnalysisForSelectedRows();

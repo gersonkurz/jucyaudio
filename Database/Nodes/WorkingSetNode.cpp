@@ -10,7 +10,8 @@ namespace jucyaudio
     {
 
         WorkingSetNode::WorkingSetNode(INavigationNode *parent, const WorkingSetInfo &workingSet)
-            : LibraryNode{parent, workingSet.name} // Call base constructor
+            : LibraryNode{parent, workingSet.name},
+              m_workingSetInfo{workingSet} // Call base constructor
         {
             m_queryArgs.workingSetId = workingSet.id;
         }

@@ -194,6 +194,7 @@ namespace jucyaudio
             None,             ///< No action available/selected
             Play,             ///< Start playback of the selected item(s)
             CreateWorkingSet, ///< Create a new working set from selected items
+            RemoveWorkingSet, ///< Remove an existing working set
             ShowDetails,      ///< Display detailed information in a separate view
             EditMetadata,     ///< Open metadata editor for the item
             Delete,           ///< Remove the item from database (with confirmation)

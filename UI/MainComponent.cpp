@@ -3,6 +3,7 @@
 #include <Database/BackgroundTasks/BpmAnalysis.h>
 #include <Database/BackgroundTasks/BpmAnalysisTask.h>
 #include <Database/Nodes/MixNode.h>
+#include <Database/Nodes/WorkingSetNode.h>
 #include <Database/Nodes/RootNode.h>
 #include <Database/Nodes/VirtualFolderNode.h>
 #include <UI/ColumnConfiguratorDialog.h>
@@ -24,7 +25,7 @@ namespace jucyaudio
 
     namespace ui
     {
-        MainViewType determineType(const database::INavigationNode *node)
+        MainViewType determineType(const INavigationNode *node)
         {
             const auto nodePath{getNodePath(node)};
             if (nodePath.size() >= 3)
@@ -304,18 +305,18 @@ namespace jucyaudio
             setAudioChannels(0, 2); // Output only
 
             // Setup the background service (assuming it's a member m_backgroundService)
-            database::theBackgroundTaskService.start();
+            theBackgroundTaskService.start();
 
             // Create and register our new BPM analysis task.
             // Note: the service will retain() the task, so we can release our initial reference.
-            auto *bpmTask = new database::background_tasks::BpmAnalysis{};
-            database::theBackgroundTaskService.registerTask(bpmTask);
+            auto *bpmTask = new background_tasks::BpmAnalysis{};
+            theBackgroundTaskService.registerTask(bpmTask);
             bpmTask->release(REFCOUNT_DEBUG_ARGS);
         }
 
         MainComponent::~MainComponent()
         {
-            database::theBackgroundTaskService.stop();
+            theBackgroundTaskService.stop();
 #if JUCE_MAC
             juce::MenuBarModel::setMacMainMenu(nullptr);
 #endif
@@ -780,6 +781,10 @@ namespace jucyaudio
             case DataAction::RunBpmAnalysis:
                 onRunBpmAnalysis(selectedNode);
                 break;
+            case DataAction::RemoveWorkingSet:
+                onRemoveWorkingSet(selectedNode);
+                break;
+
             case DataAction::None:
             default:
                 break;
@@ -822,7 +827,7 @@ namespace jucyaudio
             }
         }
 
-        void MainComponent::onRunBpmAnalysis(database::INavigationNode* node)
+        void MainComponent::onRunBpmAnalysis(INavigationNode* node)
         {
             if (!node)
                 return;
@@ -834,7 +839,7 @@ namespace jucyaudio
                 return;
             }
 
-            auto* task = new database::background_tasks::BpmAnalysisTask(std::move(trackIds));
+            auto* task = new background_tasks::BpmAnalysisTask(std::move(trackIds));
             TaskDialog::launch("BPM Analysis", task, 500, this, [this]() {
                 m_dataViewComponent.refreshView();
             });
@@ -850,7 +855,7 @@ namespace jucyaudio
                 return;
             }
 
-            auto* task = new database::background_tasks::BpmAnalysisTask(std::move(trackIds));
+            auto* task = new background_tasks::BpmAnalysisTask(std::move(trackIds));
             TaskDialog::launch("BPM Analysis", task, 500, this, [this]() {
                 m_dataViewComponent.refreshView();
             });
@@ -1092,7 +1097,7 @@ namespace jucyaudio
             WorkingSetInfo workingSetInfo;
             
             // Check if this is a VirtualFolderNode
-            if (const auto* virtualFolderNode = dynamic_cast<const database::VirtualFolderNode*>(node))
+            if (const auto* virtualFolderNode = dynamic_cast<const VirtualFolderNode*>(node))
             {
                 // Use the new recursive method for virtual folders
                 onCommonCreateWorkingSetCallback(
@@ -1132,41 +1137,7 @@ namespace jucyaudio
             return result;
         }
 
-        void MainComponent::onDoRemoveMix(INavigationNode *selectedNode, const MixInfo &mixToDelete, int result)
-        {
-            if (result == 1) // User clicked "Delete Mix" (OK button)
-            {
-                spdlog::info("User confirmed deletion for mix ID: {} [{}]", mixToDelete.mixId, mixToDelete.name);
-                const bool removed = theTrackLibrary.getMixManager().removeMix(mixToDelete.mixId);
-                if (removed)
-                {
-                    m_mainPlaybackAndStatusPanel.setStatusMessage(std::format("Mix {} successfully removed.", mixToDelete.name), false);
-                    // TODO: Refresh the NavigationPanel to remove the mix from
-                    // the list This might involve telling NavigationPanel its
-                    // root node or relevant part is dirty and it needs to
-                    // rebuild its items. For example:
-                    // m_navigationPanel.refreshMixes(); or
-                    // m_navigationPanel.refreshNode(parentNodeOfMixes); Or if
-                    // INavigationNode can notify its parent of changes:
-                    //   parentNodeOfMixes->notifySubtreeChanged();
-                    // Simplest might be to re-set the root node if your tree
-                    // isn't too deep/complex to rebuild.
-                    m_navigationPanel.removeNodeFromTree(selectedNode); // Assuming you implement such a method
-                }
-                else
-                {
-                    spdlog::error("Failed to remove mix ID: {} [{}]", mixToDelete.mixId, mixToDelete.name);
-                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Deletion Failed",
-                                                           std::format("Could not remove the mix '{}' from the database.", mixToDelete.name));
-                }
-            }
-            else // User clicked "Cancel" (result == 0) or closed the dialog
-            {
-                spdlog::info("User cancelled deletion for mix ID: {} [{}]", mixToDelete.mixId, mixToDelete.name);
-                m_mainPlaybackAndStatusPanel.setStatusMessage("Mix deletion cancelled.", false);
-            }
-        }
-
+        
         void MainComponent::onExportMix(INavigationNode *selectedNode)
         {
             assert(selectedNode != nullptr && "Selected node should not be null in onExportMix()");
@@ -1243,7 +1214,7 @@ namespace jucyaudio
         };
 
 
-        void MainComponent::onExportMixFileChooserModalDismissed(const juce::FileChooser &chooser, database::MixInfo mixInfo)
+        void MainComponent::onExportMixFileChooserModalDismissed(const juce::FileChooser &chooser, MixInfo mixInfo)
         {
             const juce::File chosenFile = chooser.getResult();
             m_activeFileChooser.reset();
@@ -1261,6 +1232,53 @@ namespace jucyaudio
             TaskDialog::launch("Finalize & Export", task, 500, this);
             task->release(REFCOUNT_DEBUG_ARGS);
         }
+
+        void MainComponent::onRemoveWorkingSet(INavigationNode *selectedNode)
+        {
+            assert(selectedNode != nullptr && "Selected node should not be null in onRemoveWorkingSet()");
+
+            const auto workingSetNode{static_cast<WorkingSetNode *>(selectedNode)};
+            const auto workingSetInfo{workingSetNode->getWorkingSetInfo()};
+
+            juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon, // Icon type
+                                               "Question",                     // Window title
+                                               std::format("Are you sure you want to delete the working-set {}?", workingSetInfo.name),
+                                               "Delete Mix",                        // OK button text (can be "OK", "Delete", etc.)
+                                               "Cancel",                            // Cancel button text
+                                               nullptr,                             // Parent component (optional, nullptr for desktop)
+                                               juce::ModalCallbackFunction::create( // Callback
+                                                   [this, workingSetInfo,
+                                                    workingSetNode](int result) // Capture necessary data
+                                                   {
+                                                       onDoRemoveWorkingSet(workingSetNode, workingSetInfo, result);
+                                                   }));
+        }
+        
+        void MainComponent::onDoRemoveWorkingSet(INavigationNode *selectedNode, const WorkingSetInfo &workingSetToDelete, int result)
+        {
+            if (result == 1)
+            {
+                spdlog::info("User confirmed deletion for working-set ID: {} [{}]", workingSetToDelete.id, workingSetToDelete.name);
+                const bool removed = theTrackLibrary.getWorkingSetManager().removeWorkingSet(workingSetToDelete.id);
+                if (removed)
+                {
+                    m_mainPlaybackAndStatusPanel.setStatusMessage(std::format("Working-Set {} successfully removed.", workingSetToDelete.name), false);
+                    m_navigationPanel.removeNodeFromTree(selectedNode); // Assuming you implement such a method
+                }
+                else
+                {
+                    spdlog::error("Failed to remove working-set ID: {} [{}]", workingSetToDelete.id, workingSetToDelete.name);
+                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Deletion Failed",
+                                                           std::format("Could not remove the working-set '{}' from the database.", workingSetToDelete.name));
+                }
+            }
+            else // User clicked "Cancel" (result == 0) or closed the dialog
+            {
+                spdlog::info("User cancelled deletion for working-set ID: {} [{}]", workingSetToDelete.id, workingSetToDelete.name);
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Working-set deletion cancelled.", false);
+            }
+        }
+
 
         void MainComponent::onRemoveMix(INavigationNode *selectedNode)
         {
@@ -1282,6 +1300,32 @@ namespace jucyaudio
                                                        onDoRemoveMix(mixNode, mixInfo, result);
                                                    }));
         }
+
+        void MainComponent::onDoRemoveMix(INavigationNode *selectedNode, const MixInfo &mixToDelete, int result)
+        {
+            if (result == 1)
+            {
+                spdlog::info("User confirmed deletion for mix ID: {} [{}]", mixToDelete.mixId, mixToDelete.name);
+                const bool removed = theTrackLibrary.getMixManager().removeMix(mixToDelete.mixId);
+                if (removed)
+                {
+                    m_mainPlaybackAndStatusPanel.setStatusMessage(std::format("Mix {} successfully removed.", mixToDelete.name), false);
+                    m_navigationPanel.removeNodeFromTree(selectedNode); // Assuming you implement such a method
+                }
+                else
+                {
+                    spdlog::error("Failed to remove mix ID: {} [{}]", mixToDelete.mixId, mixToDelete.name);
+                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Deletion Failed",
+                                                           std::format("Could not remove the mix '{}' from the database.", mixToDelete.name));
+                }
+            }
+            else // User clicked "Cancel" (result == 0) or closed the dialog
+            {
+                spdlog::info("User cancelled deletion for mix ID: {} [{}]", mixToDelete.mixId, mixToDelete.name);
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Mix deletion cancelled.", false);
+            }
+        }
+
 
         void MainComponent::createMix()
         {

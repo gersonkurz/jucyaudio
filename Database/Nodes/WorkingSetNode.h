@@ -14,12 +14,20 @@ namespace jucyaudio
             explicit WorkingSetNode(INavigationNode *parent, const WorkingSetInfo& workingSet);
             ~WorkingSetNode() override = default;
 
+            const auto& getWorkingSetInfo() const
+            {
+                return m_workingSetInfo;
+            }
+
             int64_t getUniqueId() const override
             {
                 return m_queryArgs.workingSetId;
             }
 
             static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
+
+        private:
+            const WorkingSetInfo m_workingSetInfo;
         };
     } // namespace database
 } // namespace jucyaudio

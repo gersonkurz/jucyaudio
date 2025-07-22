@@ -27,7 +27,7 @@ namespace jucyaudio
     namespace database
     {
 
-        const DataActions LibraryNodeActions{DataAction::CreateWorkingSet, DataAction::ShowDetails, DataAction::CreateMix, DataAction::RunBpmAnalysis};
+        const DataActions LibraryNodeActions{DataAction::CreateWorkingSet, DataAction::ShowDetails, DataAction::CreateMix, DataAction::RunBpmAnalysis, DataAction::RemoveWorkingSet};
         const DataActions LibraryRowActions{DataAction::Play,        DataAction::CreateWorkingSet, DataAction::CreateMix,
                                             DataAction::ShowDetails, DataAction::EditMetadata,     DataAction::Delete, DataAction::RunBpmAnalysis};
         const std::vector<DataColumn> LibraryColumns = {
