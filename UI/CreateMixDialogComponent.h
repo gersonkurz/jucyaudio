@@ -39,7 +39,9 @@ namespace jucyaudio
             using OnMixCreatedAndExportedCallback = std::function<void(bool /*success*/, const database::MixInfo & /*newMixInfo */)>;
 
             CreateMixDialogComponent(audio::AudioLibrary &audioLibrary, 
-                                     const std::vector<database::TrackInfo> &tracksForMix, OnMixCreatedAndExportedCallback onOkCallback);
+                                     const std::vector<database::TrackInfo> &tracksForMix,
+                                     WorkingSetId source_ws_id,
+                                     OnMixCreatedAndExportedCallback onOkCallback);
             ~CreateMixDialogComponent() override;
 
             void paint(juce::Graphics &g) override;
@@ -66,6 +68,7 @@ namespace jucyaudio
 
             audio::AudioLibrary &m_audioLibrary;
             std::vector<database::TrackInfo> m_tracksForMix; // Store as reference
+            WorkingSetId m_source_ws_id;
             OnMixCreatedAndExportedCallback m_onOkCallback;
 
             // *** Member to hold the FileChooser during async operation ***

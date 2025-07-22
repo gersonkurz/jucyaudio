@@ -119,7 +119,10 @@ CREATE TABLE IF NOT EXISTS Mixes(
     name  TEXT NOT NULL UNIQUE COLLATE NOCASE,
     timestamp INTEGER,
     track_count INTEGER,
-    total_length INTEGER
+    total_length INTEGER,
+    source_ws_id INTEGER,
+    status TEXT DEFAULT 'New',
+    FOREIGN KEY(source_ws_id) REFERENCES WorkingSets(ws_id)
 );)SQL",
 
         R"SQL(
@@ -130,6 +133,7 @@ CREATE TABLE IF NOT EXISTS MixTracks(
     envelopePoints TEXT, -- JSON encoded envelope points
     mix_start_time INTEGER,
     mix_end_time INTEGER,
+    is_active INTEGER DEFAULT 1,
     PRIMARY KEY(mix_id, track_id),
     FOREIGN KEY(mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE,
     FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
@@ -532,17 +536,47 @@ namespace jucyaudio
 
         DbResult SqliteTrackDatabase::runMigrations()
         {
-            // ... (Full implementation from before if needed, or keep as stub)
-            // ...
-            spdlog::debug("Running DB migrations (currently a stub). Current "
-                          "schema version: {}",
-                          getDBSchemaVersion());
-            // Example:
-            // int currentVersion = getDBSchemaVersion();
-            // if (currentVersion < REQUIRED_SCHEMA_VERSION_2) { /* apply v2
-            // changes */ setDBSchemaVersion(2); } if (currentVersion <
-            // REQUIRED_SCHEMA_VERSION_3) { /* apply v3 changes */
-            // setDBSchemaVersion(3); }
+            if (!isOpen())
+                return DbResult::failure(DbResultStatus::ErrorConnection, "Database not open.");
+
+            int currentVersion = getDBSchemaVersion();
+            spdlog::info("Current DB schema version: {}", currentVersion);
+
+            if (currentVersion < 2)
+            {
+                spdlog::info("Migrating database from version 1 to 2...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    if (!m_db.execute("ALTER TABLE Mixes ADD COLUMN source_ws_id INTEGER REFERENCES WorkingSets(ws_id);") ||
+                        !m_db.execute("ALTER TABLE Mixes ADD COLUMN status TEXT DEFAULT 'New';") ||
+                        !m_db.execute("ALTER TABLE MixTracks ADD COLUMN is_active INTEGER DEFAULT 1;"))
+                    {
+                        m_lastErrorMessage = "Failed to alter tables for V2 schema: " + m_db.getLastError();
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                    }
+
+                    if (auto result = setDBSchemaVersion(2); !result.isOk())
+                    {
+                        m_lastErrorMessage = "Failed to update schema version to 2: " + result.errorMessage;
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated database to version 2.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+
+                
+            }
+
             return DbResult::success();
         }
 

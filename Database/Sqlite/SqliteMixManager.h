@@ -25,9 +25,11 @@ namespace jucyaudio
             bool createAndSaveAutoMix(const std::vector<TrackInfo> &trackInfos,
                                       /*in/out*/ MixInfo &mixInfo,
                                       /*out*/ std::vector<MixTrack> &resultingTracks,
+                                      WorkingSetId source_ws_id,
                                       const Duration_t defaultCrossfadeDuration = Duration_t{5000}
                                       ) const override;
             bool removeTrackFromMix(MixId mixId, TrackId trackId) const override;
+            bool finalizeMix(MixId mixId) const override;
 
         private:
             database::SqliteDatabase &m_db;

@@ -44,9 +44,12 @@ namespace jucyaudio
 
 
         CreateMixDialogComponent::CreateMixDialogComponent(audio::AudioLibrary &audioLibrary,
-                                                           const std::vector<database::TrackInfo> &tracksForMix, OnMixCreatedAndExportedCallback onOkCallback)
+                                                           const std::vector<database::TrackInfo> &tracksForMix,
+                                                           WorkingSetId source_ws_id,
+                                                           OnMixCreatedAndExportedCallback onOkCallback)
             : m_audioLibrary{audioLibrary},
               m_tracksForMix{tracksForMix}, // Store reference
+              m_source_ws_id{source_ws_id},
               m_onOkCallback{std::move(onOkCallback)},
               m_titleLabel{"titleLabel", "Create Mix"},
               m_countLabel{"countLabel", ""},
@@ -189,7 +192,7 @@ namespace jucyaudio
             std::vector<database::MixTrack> resultingMixTracks;
 
             bool mixDefined =
-                ::jucyaudio::database::theTrackLibrary.getMixManager().createAndSaveAutoMix(m_tracksForMix, newMixInfo, resultingMixTracks);
+                ::jucyaudio::database::theTrackLibrary.getMixManager().createAndSaveAutoMix(m_tracksForMix, newMixInfo, resultingMixTracks, m_source_ws_id);
 
             if (!mixDefined || newMixInfo.mixId == -1)
             {

@@ -73,32 +73,12 @@ namespace jucyaudio
         {
 #if defined(_WIN32)
             const auto &u8str = path.u8string();
-            return juce::String(juce::CharPointer_UTF8(reinterpret_cast<const char *>(u8str.c_str())));
+            return juce::CharPointer_UTF8(reinterpret_cast<const char *>(u8str.c_str()));
 #else
-            return juce::String(juce::CharPointer_UTF8(path.string().c_str()));
+            return juce::String::fromUTF8(path.string().c_str());
 #endif
         }
 
-        juce::String formatWithThousandsSeparator(int number)
-        {
-            juce::String str(std::abs(number));
-            juce::String result;
-
-            int digitCount = 0;
-            for (int i = str.length() - 1; i >= 0; --i)
-            {
-                if (digitCount > 0 && digitCount % 3 == 0)
-                    result = "." + result;
-
-                result = str[i] + result;
-                digitCount++;
-            }
-
-            if (number < 0)
-                result = "-" + result;
-
-            return result;
-        }
-
+       
     }
 }

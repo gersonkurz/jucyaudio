@@ -65,6 +65,7 @@ namespace jucyaudio
             virtual bool createAndSaveAutoMix(const std::vector<TrackInfo> &trackInfos,
                                               /*in/out*/ MixInfo &mixInfo,
                                               /*out*/ std::vector<MixTrack> &resultingTracks, 
+                                                WorkingSetId source_ws_id,
                                                 const Duration_t defaultCrossfadeDuration = Duration_t{5000}
                                               ) const = 0;
 
@@ -73,6 +74,11 @@ namespace jucyaudio
             // @param trackId The ID of the track to remove from the mix.
             // @return True if the track was successfully removed from the mix, false otherwise.            
             virtual bool removeTrackFromMix(MixId mixId, TrackId trackId) const = 0;
+
+            // @brief Finalize a mix, prune the source working set, and prepare for export.
+            // @param mixId The ID of the mix to finalize.
+            // @return True if the operation was successful, false otherwise.
+            virtual bool finalizeMix(MixId mixId) const = 0;
         };
 
     } // namespace database

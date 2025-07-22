@@ -12,7 +12,7 @@
 #include <functional>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <Database/BackgroundService.h>
-
+#include <Utils/UiUtils.h>
 
 namespace jucyaudio
 {
@@ -132,7 +132,9 @@ namespace jucyaudio
                 const size_t batchSize = 100;
                 const size_t loadQueueMaxSize = numWorkerThreads * 2;
 
-                spdlog::info("Starting BPM analysis for {} tracks using {} worker threads and 1 reader thread.", totalTracks, numWorkerThreads);
+                spdlog::info("Starting BPM analysis for {} tracks using {} worker threads and 1 reader thread.", 
+                    ui::formatStandardStringNumber(totalTracks),
+                             ui::formatStandardStringNumber(numWorkerThreads));
 
                 // --- Data Structures for Producer-Consumer pattern ---
                 struct LoadedAudio {
@@ -164,39 +166,57 @@ namespace jucyaudio
                     for (const auto& trackInfo : tracksToProcess) {
                         if (shouldCancel) break;
 
-                        juce::File audioFile{ui::jucePathFromFs(trackInfo.filepath)};
-                        std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(audioFile));
+                        try
+                        {
+                            spdlog::info("Loading audio for track ID: {} ({})", trackInfo.trackId, pathToString(trackInfo.filepath));
+                            juce::File audioFile{ui::jucePathFromFs(trackInfo.filepath)};
+                            std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(audioFile));
 
-                        if (reader) {
-                            const double totalDurationSeconds = reader->lengthInSamples / reader->sampleRate;
-                            const double analysisDurationSeconds = 60.0;
-                            int64_t startSample = 0;
-                            int numSamplesToRead = static_cast<int>(reader->lengthInSamples);
+                            if (reader) {
+                                const double totalDurationSeconds = reader->lengthInSamples / reader->sampleRate;
+                                const double analysisDurationSeconds = 60.0;
+                                int64_t startSample = 0;
+                                int numSamplesToRead = static_cast<int>(reader->lengthInSamples);
 
-                            if (totalDurationSeconds > analysisDurationSeconds)
-                            {
-                                startSample = static_cast<int64_t>(((totalDurationSeconds / 2.0) - (analysisDurationSeconds / 2.0)) * reader->sampleRate);
-                                numSamplesToRead = static_cast<int>(analysisDurationSeconds * reader->sampleRate);
-                                if (startSample + numSamplesToRead > reader->lengthInSamples)
+                                if (totalDurationSeconds > analysisDurationSeconds)
                                 {
-                                    numSamplesToRead = static_cast<int>(reader->lengthInSamples - startSample);
+                                    startSample = static_cast<int64_t>(((totalDurationSeconds / 2.0) - (analysisDurationSeconds / 2.0)) * reader->sampleRate);
+                                    numSamplesToRead = static_cast<int>(analysisDurationSeconds * reader->sampleRate);
+                                    if (startSample + numSamplesToRead > reader->lengthInSamples)
+                                    {
+                                        numSamplesToRead = static_cast<int>(reader->lengthInSamples - startSample);
+                                    }
                                 }
+                                
+                                auto buffer = std::make_unique<juce::AudioBuffer<float>>(
+                                    static_cast<int>(reader->numChannels),
+                                    numSamplesToRead
+                                );
+                                reader->read(buffer.get(), 0, numSamplesToRead, startSample, true, true);
+                                
+                                {
+                                    std::unique_lock<std::mutex> lock(loadMutex);
+                                    loadCv.wait(lock, [&]{ return loadQueue.size() < loadQueueMaxSize || shouldCancel; });
+                                    if (shouldCancel) break;
+                                    loadQueue.push({trackInfo.trackId, std::move(buffer), reader->sampleRate});
+                                }
+                                loadCv.notify_one();
                             }
-                            
-                            auto buffer = std::make_unique<juce::AudioBuffer<float>>(
-                                static_cast<int>(reader->numChannels),
-                                numSamplesToRead
-                            );
-                            reader->read(buffer.get(), 0, numSamplesToRead, startSample, true, true);
-                            
+                            else
                             {
-                                std::unique_lock<std::mutex> lock(loadMutex);
-                                loadCv.wait(lock, [&]{ return loadQueue.size() < loadQueueMaxSize || shouldCancel; });
-                                if (shouldCancel) break;
-                                loadQueue.push({trackInfo.trackId, std::move(buffer), reader->sampleRate});
+                                spdlog::error("Failed to create reader for track ID {}", trackInfo.trackId);
                             }
-                            loadCv.notify_one();
                         }
+                        catch (const std::exception& e)
+                        {
+                            spdlog::error("Exception reading audio for track ID {}: {}", trackInfo.trackId, e.what());
+                        }
+                        catch (...)
+                        {
+                            spdlog::error("Unknown exception reading audio for track ID {}", trackInfo.trackId);
+                        }
+
+                        spdlog::info("Done with track ID: {} ({})", trackInfo.trackId, pathToString(trackInfo.filepath));
                     }
                     readerFinished = true;
                     loadCv.notify_all(); // Wake up any waiting workers to let them finish
@@ -222,10 +242,13 @@ namespace jucyaudio
                             loadCv.notify_one(); // Notify reader thread that there's space in the queue
 
                             if (loaded) {
+                                spdlog::info("Analyzing audio for track ID: {}", loaded->trackId);
                                 AudioMetadata am = analyzeAudioBuffer(*loaded->buffer, loaded->sampleRate);
+                                spdlog::info("Done analyzing audio for track ID: {}", loaded->trackId);
                                 {
                                     std::lock_guard<std::mutex> lock(resultsMutex);
                                     resultsQueue.push({loaded->trackId, am});
+                                    spdlog::info("Pushed audio for track ID: {}", loaded->trackId);
                                 }
                                 analysisCompletedCount++;
                                 resultsCv.notify_one();
@@ -262,7 +285,9 @@ namespace jucyaudio
                     }
                     
                     int progressPercent = static_cast<int>((static_cast<float>(tracksWritten) / totalTracks) * 100.0f);
-                    std::string status = std::format("Analyzed {} / {} tracks...", tracksWritten, totalTracks);
+                    const auto status{std::format("Analyzed {} / {} tracks...", 
+                         ui::formatStandardStringNumber(tracksWritten), 
+                         ui::formatStandardStringNumber(totalTracks))};
                     progressCb(progressPercent, status);
                     
                     if (tracksWritten == totalTracks) break;
@@ -277,12 +302,15 @@ namespace jucyaudio
 
                 if (tracksWritten < totalTracks)
                 {
-                    std::string finalStatus = std::format("Cancelled after analyzing {} / {} tracks.", tracksWritten, totalTracks);
+                    std::string finalStatus = std::format("Cancelled after analyzing {} / {} tracks.", 
+                         ui::formatStandardStringNumber(tracksWritten), 
+                         ui::formatStandardStringNumber(totalTracks));
                     completionCb(false, finalStatus);
                 }
                 else
                 {
-                    std::string finalStatus = std::format("Successfully analyzed {} tracks.", totalTracks);
+                    std::string finalStatus = std::format("Successfully analyzed {} tracks.", 
+                         ui::formatStandardStringNumber(totalTracks));
                     progressCb(100, finalStatus);
                     completionCb(true, finalStatus);
                 }

@@ -299,6 +299,11 @@ target_sources(jucyaudio PRIVATE
     UI/TimelineComponent.h
 )
 
+# Add Windows-specific manifest
+if(WIN32)
+    target_sources(jucyaudio PRIVATE app.manifest)
+endif()
+
 # Add binary resources (SVG files)
 juce_add_binary_data(jucyaudio_assets
     SOURCES

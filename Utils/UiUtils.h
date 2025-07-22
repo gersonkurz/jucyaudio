@@ -61,7 +61,37 @@ namespace jucyaudio
          * @note Handles negative numbers correctly by preserving the minus sign
          * @example formatWithThousandsSeparator(1234567) returns "1.234.567"
          */
-        juce::String formatWithThousandsSeparator(int number);
+        template <typename T> T formatStringTypeWithThousandsSeparator(int number)
+        {
+            const std::string str{std::to_string(std::abs(number))};
+            std::string result;
+
+            int digitCount = 0;
+            for (int i = static_cast<int>(str.length()) - 1; i >= 0; --i)
+            {
+                if (digitCount > 0 && digitCount % 3 == 0)
+                    result = '.' + result;
+
+                result = str[i] + result;
+                ++digitCount;
+            }
+
+            if (number < 0)
+                result = '-' + result;
+
+            return T{result};
+        }
+
+        inline juce::String formatJuceStringNumber(int number)
+        {
+            return formatStringTypeWithThousandsSeparator<juce::String>(number);
+        }
+
+        inline std::string formatStandardStringNumber(int number)
+        {
+            return formatStringTypeWithThousandsSeparator<std::string>(number);
+        }
+
 
         /**
          * @brief Converts a JUCE string path to std::filesystem::path

@@ -657,69 +657,20 @@ namespace jucyaudio
             if (!m_currentSelectedDataNode)
                 return;
 
-            spdlog::info("Removing track {} from mix data model", trackId);
-
-            // Get the mix ID from the current node
             MixId mixId = m_currentSelectedDataNode->getUniqueId();
+            spdlog::info("Soft-deleting track {} from mix {}", trackId, mixId);
 
-            auto mixManager{&theTrackLibrary.getMixManager()};
-            auto mixInfo{mixManager->getMix(mixId)};
-            auto mixTracks{mixManager->getMixTracks(mixId)};
-            auto it = std::find_if(mixTracks.begin(), mixTracks.end(),
-                                   [trackId](const MixTrack &item)
-                                   {
-                                       return item.trackId == trackId;
-                                   });
-
-            if (it != mixTracks.end())
+            auto* mixManager = &theTrackLibrary.getMixManager();
+            if (mixManager->removeTrackFromMix(mixId, trackId))
             {
-                const auto index = static_cast<size_t>(std::distance(mixTracks.begin(), it));
-                auto startTimeOfNextTrack = it->mixStartTime; // Start time of the track to be removed
-                mixInfo.totalDuration -= it->mixEndTime - it->mixStartTime;
-                mixTracks.erase(it);
-                if (mixInfo.numberOfTracks > 0)
-                {
-                    --mixInfo.numberOfTracks;
-                    if (index < mixTracks.size())
-                    {
-                        // If the removed track was not the last one, we need to
-                        // adjust the start times of subsequent tracks
-                        spdlog::info("Adjusting start times for tracks after removed track at index {}", index);
-                        // Now index points to the element that came after the removed one
-                        for (std::size_t i = index; i < mixTracks.size(); ++i)
-                        {
-                            auto &track{mixTracks[i]}; // Reference to the track at index i
-                            assert(track.orderInMix > 1);
-                            --track.orderInMix;
-                            const auto temp{startTimeOfNextTrack};
-                            startTimeOfNextTrack = track.mixStartTime;
-                            const auto trackDuration = track.mixEndTime - track.mixStartTime;
-                            track.mixStartTime = temp;
-                            track.mixEndTime = temp + trackDuration;
-                            mixInfo.totalDuration = track.mixEndTime;
-                        }
-                    }
-                    else
-                    {
-                        spdlog::info("Removed track was the last one in the mix, no adjustment needed YET");
-                    }
-                }
-            }
-
-            // Remove from the database/data model
-            if (mixManager->createOrUpdateMix(mixInfo, mixTracks))
-            {
-                m_mainPlaybackAndStatusPanel.setStatusMessage("Track removed from mix", false);
-
-                // Refresh the mix data in the editor
-                // This will reload the mix without the deleted track
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Track removed from mix.", false);
+                // Refresh the mix editor to show the change
                 m_mixEditorComponent.loadMix(mixId);
-                m_mixEditorComponent.forceRefresh();
             }
             else
             {
-                m_mainPlaybackAndStatusPanel.setStatusMessage("Failed to remove track from mix", true);
-                spdlog::error("Failed to remove track {} from mix {}", trackId, mixId);
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Failed to remove track from mix.", true);
+                spdlog::error("Failed to soft-delete track {} from mix {}", trackId, mixId);
             }
         }
 
@@ -1224,29 +1175,77 @@ namespace jucyaudio
             const auto mixInfo{mixNode->getMixInfo()};
 
             const auto title{std::format("Export Mix '{}' As...", mixInfo.name)};
-            // Store the FileChooser in a member unique_ptr to keep it alive
             m_activeFileChooser =
                 std::make_unique<juce::FileChooser>(title, juce::File::getSpecialLocation(juce::File::userMusicDirectory), "*.mp3;*.wav;*.m3u", true, false, this);
 
             int chooserFlags =
                 juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting;
 
-            // Use std::bind (or a small capturing lambda) to call our member function
-            // We need to pass mixId and mixName to the callback.
             m_activeFileChooser->launchAsync(chooserFlags,
-                                             // This lambda is small and just forwards to the member function, passing captured state.
-                                             // It is copyable.
                                              [this, mixInfo](const juce::FileChooser &chooser)
                                              {
                                                  this->onExportMixFileChooserModalDismissed(chooser, mixInfo);
                                              });
         }
 
+        class FinalizeAndExportTask : public ILongRunningTask
+        {
+        public:
+            FinalizeAndExportTask(const MixInfo &mixInfo, const audio::IMixExporter &exporter, const std::filesystem::path &outputPath)
+                : ILongRunningTask("Finalizing and Exporting Mix", true),
+                  m_mixInfo(mixInfo),
+                  m_exporter(exporter),
+                  m_outputPath(outputPath)
+            {
+            }
+
+            void run(ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel) override
+            {
+                // Step 1: Finalize the mix (prune working set, update status)
+                progressCb(-1, "Finalizing mix...");
+                if (shouldCancel) { completionCb(false, "Cancelled before finalization."); return; }
+
+                if (!theTrackLibrary.getMixManager().finalizeMix(m_mixInfo.mixId))
+                {
+                    completionCb(false, "Failed to finalize the mix in the database.");
+                    return;
+                }
+
+                // Step 2: Export the audio (using existing logic)
+                progressCb(-1, "Exporting audio...");
+                if (shouldCancel) { completionCb(false, "Cancelled before export."); return; }
+                /*
+                auto activeTracks = theTrackLibrary.getMixManager().getMixTracks(m_mixInfo.mixId);
+                if (activeTracks.empty())
+                {
+                    completionCb(false, "No active tracks in the mix to export.");
+                    return;
+                }
+                */
+                if(m_exporter.exportMixToFile(m_mixInfo.mixId, m_outputPath, 
+                    [&](float progress, const std::string& message) {
+                        progressCb(static_cast<int>(progress * 100.0f), message);
+                        return !shouldCancel.load();
+                    }))
+                {
+                    completionCb(true, "Mix successfully finalized and exported.");
+                }
+                else
+                {
+                    completionCb(false, "Unable to export mix to file: " + m_outputPath.string());
+                }
+            }
+
+        private:
+            MixInfo m_mixInfo;
+            const audio::IMixExporter &m_exporter;
+            const std::filesystem::path m_outputPath;
+        };
+
+
         void MainComponent::onExportMixFileChooserModalDismissed(const juce::FileChooser &chooser, database::MixInfo mixInfo)
         {
             const juce::File chosenFile = chooser.getResult();
-
-            // Release the FileChooser now that its job is done
             m_activeFileChooser.reset();
 
             if (chosenFile == juce::File{}) // User cancelled
@@ -1255,10 +1254,11 @@ namespace jucyaudio
             }
 
             std::filesystem::path targetExportPath = chosenFile.getFullPathName().toStdString();
-            spdlog::info("Exporting mix ID: {} (Name: '{}') to: {}", mixInfo.mixId, mixInfo.name, pathToString(targetExportPath));
+            spdlog::info("Finalizing and exporting mix ID: {} (Name: '{}') to: {}", mixInfo.mixId, mixInfo.name, pathToString(targetExportPath));
 
-            auto *task = new CreateMixTask(mixInfo, m_audioLibrary.getMixExporter(), targetExportPath);
-            TaskDialog::launch("Mix Creation In Progress", task, 500, this);
+            //(const MixInfo &mixInfo, audio::MixExporter &exporter, const std::filesystem::path &outputPath)
+            auto *task = new FinalizeAndExportTask(mixInfo, m_audioLibrary.getMixExporter(), targetExportPath);
+            TaskDialog::launch("Finalize & Export", task, 500, this);
             task->release(REFCOUNT_DEBUG_ARGS);
         }
 
@@ -1295,47 +1295,35 @@ namespace jucyaudio
                 m_mainPlaybackAndStatusPanel.setStatusMessage("Cannot create mix in Mix Editor view.", true);
                 return;
             }
+
+            // Capture the source working set ID from the current node
+            const WorkingSetId source_ws_id = m_currentSelectedDataNode->getUniqueId();
+
             std::vector<TrackInfo> selectedTracks{
-                m_dataViewComponent.getSelectedTracks() // Assuming DataView has a method
-                                                        // to get selected tracks
+                m_dataViewComponent.getSelectedTracks()
             };
             if (selectedTracks.size() <= 1)
             {
-                // assume we want the full node - this is a heuristic only; at
-                // some point we would want to get the information on the mode
-                // directly from the UI. Good for now...
                 selectedTracks = getAllTracks(m_currentSelectedDataNode);
             }
 
-            // In MainComponent.cpp, inside createMix() method, after getting
-            // selectedTracks :
             if (selectedTracks.empty())
-            { // Or selectedTracks.size() < 2 for a meaningful mix
+            {
                 m_mainPlaybackAndStatusPanel.setStatusMessage("Not enough tracks selected to create a mix.", true);
                 return;
             }
-            // Capture necessary data for the callback BEFORE selectedTracks is
-            // moved. If the callback needs the original track IDs for cleanup,
-            // get them now.
-            std::vector<TrackId> trackIdsForCleanup;
-            for (const auto &trackInfo : selectedTracks)
-            {
-                trackIdsForCleanup.push_back(trackInfo.trackId);
-            }
 
-            // The CreateMixDialogComponent will be managed by
-            // DialogWindow::LaunchOptions
-            auto *dialog = new ui::CreateMixDialogComponent(m_audioLibrary, selectedTracks,
+            auto *dialog = new ui::CreateMixDialogComponent(m_audioLibrary, selectedTracks, source_ws_id,
                                                             [this](bool success, const MixInfo &mixInfo)
                                                             {
                                                                 onMixCreatedCallback(success, mixInfo);
                                                             });
 
             juce::DialogWindow::LaunchOptions launchOptions;
-            launchOptions.content.setOwned(dialog); // DialogWindow takes ownership
+            launchOptions.content.setOwned(dialog);
             launchOptions.dialogTitle = "Create Auto-Mix";
             launchOptions.escapeKeyTriggersCloseButton = true;
-            launchOptions.resizable = false; // Or true if you prefer
+            launchOptions.resizable = false;
             launchOptions.launchAsync();
         }
 

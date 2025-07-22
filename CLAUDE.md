@@ -59,7 +59,64 @@
 
 ## Project Status Highlights (as of our last session)
 
-**This section summarizes the major progress that has led to the current state of the project.**
+**This file is used to keep track of the prompts and the general context of the project.
+
+## Session 1: BPM Analysis Optimization
+
+**Objective:** Improve the performance of the BPM analysis feature, which was underutilizing CPU resources.
+
+**Initial State:** A `BpmAnalysisTask` was created to run analysis in the background, but it was slow and inefficient.
+
+**Work Done:**
+
+1.  **Identified Bottlenecks:** Through analysis of the code and logs, we identified several key issues:
+    *   **Database Contention:** The initial multi-threaded approach caused severe database locking as many threads tried to read and write to SQLite simultaneously.
+    *   **I/O Bottleneck:** The architecture was reading files one by one within the worker threads, making the process I/O-bound, especially on an HDD, and leaving the CPU idle.
+    *   **Inefficient Analysis:** The code was reading and analyzing the *entire* audio file for every track, which is unnecessary for BPM detection.
+    *   **Redundant Work:** The task was processing all tracks passed to it, even if they already had BPM data.
+
+2.  **Implemented Solutions:**
+    *   **Producer-Consumer Pattern:** Refactored the task to use a dedicated reader thread (the producer) that loads audio data into a bounded, thread-safe queue. A pool of worker threads (the consumers) now pulls from this queue, ensuring the disk can read ahead sequentially while the CPUs remain saturated with data to process.
+    *   **Batched Database Writes:** Implemented a dedicated writer mechanism. Worker threads push analysis *results* to a separate queue. The main task thread collects these results in batches and writes them to the database in a single transaction, dramatically reducing database overhead.
+    *   **Optimized Audio Reading:** The reader thread was modified to only read a 60-second segment from the middle of each audio file, significantly reducing I/O and the amount of data passed to the analysis algorithm.
+    *   **Pre-filtering:** The task now begins by querying the database to build a list of only those tracks that actually require analysis, skipping redundant work.
+    *   **Code Cleanup:** Implemented `SqliteStatement::reset()` to allow prepared statements to be reused efficiently in loops and removed verbose logging from the core analysis functions to clean up the output.
+
+**Outcome:** The BPM analysis is now significantly faster and makes much more effective use of CPU resources, processing multiple tracks per second.
+
+## Session 2: "Finalize & Export" Workflow
+
+**Objective:** Implement a robust workflow to automate the cleanup of a `Working Set` after a `Mix Project` created from it is finalized and exported.
+
+**Work Done:**
+
+1.  **Database Migration (Schema V1 -> V2):**
+    *   To avoid data loss on the existing database, a migration path was implemented in `SqliteTrackDatabase::runMigrations()`.
+    *   The migration checks the current schema version and, if it's V1, executes `ALTER TABLE` statements within a transaction to add the new columns.
+    *   The schema version is then updated to `2`.
+
+2.  **Schema & Data Model Updates:**
+    *   **`Mixes` Table:** Added `source_ws_id` (to link back to the origin `WorkingSet`) and `status` (e.g., 'New', 'Finalized').
+    *   **`MixTracks` Table:** Added `is_active` to enable non-destructive "soft deletes".
+    *   Updated the C++ data models (`MixInfo`, `MixTrack`) to match the new schema.
+
+3.  **Soft Delete Implementation:**
+    *   Modified `SqliteMixManager::removeTrackFromMix` to `UPDATE` the `is_active` flag to `0` instead of performing a hard `DELETE`.
+    *   Updated `getMixTracks` to only retrieve tracks where `is_active = 1`, ensuring the UI and export logic only see active tracks.
+
+4.  **"Finalize & Export" Logic:**
+    *   Created a new transactional function, `SqliteMixManager::finalizeMix`, which contains the core backend logic:
+        *   It checks if the mix `status` is 'New'.
+        *   It identifies all tracks (both active and inactive) that were part of the mix creation.
+        *   It prunes these tracks from the source `Working Set` referenced by `source_ws_id`.
+        *   It updates the mix `status` to 'Finalized'.
+    *   Integrated this logic into the UI by creating a new `FinalizeAndExportTask` that is triggered by the "Export" button. This task calls `finalizeMix` and then proceeds with the audio export.
+
+5.  **Connecting the Workflow:**
+    *   Updated the `CreateMixDialogComponent` and its underlying logic (`createAndSaveAutoMix`) to accept and store the `source_ws_id` when a mix is first created from a working set.
+
+**Outcome:** The user workflow is now seamless. When a user exports a mix for the first time, the source working set is automatically cleaned up, and the mix is marked as complete, eliminating a tedious and error-prone manual step.
+**
 
 1.  **Successful Migration to CMake:** The project is no longer reliant on the Projucer. The entire build is managed by a clean `CMakeLists.txt` file, making it more robust and portable.
 

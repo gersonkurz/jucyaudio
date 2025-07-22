@@ -265,7 +265,7 @@ namespace jucyaudio
                                                         // string for others
                 break;
             case FolderTableColumnIDs::FileCount:
-                text = folderInfo.isValid() ? formatWithThousandsSeparator(folderInfo.numFiles) : "?";
+                text = folderInfo.isValid() ? formatJuceStringNumber(folderInfo.numFiles) : "?";
                 break;
             case FolderTableColumnIDs::TotalSize:
                 text = folderInfo.isValid() ? juce::File::descriptionOfSizeInBytes(folderInfo.totalSizeBytes) : "?";
