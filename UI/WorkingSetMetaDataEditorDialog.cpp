@@ -40,6 +40,10 @@ namespace jucyaudio
                 closeDialog(false);
             };
 
+            m_saveButton.setClickingTogglesState(true);
+            m_saveButton.addShortcut(juce::KeyPress(juce::KeyPress::returnKey));
+            m_nameEditor.onReturnKey = [this] { m_saveButton.triggerClick(); };
+
             setSize(300, 200);
         }
 
