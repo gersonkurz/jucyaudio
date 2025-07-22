@@ -111,6 +111,8 @@ namespace jucyaudio
             void onRunBpmAnalysis(database::INavigationNode* node);
             void onRunBpmAnalysisForSelectedRows();
 
+            void onEditMetadata(database::INavigationNode *node);
+
             audio::AudioLibrary m_audioLibrary;
             juce::ApplicationCommandManager &m_commandManager;
 

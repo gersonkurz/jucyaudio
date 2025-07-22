@@ -297,6 +297,8 @@ target_sources(jucyaudio PRIVATE
     UI/MixTrackComponent.h
     UI/TimelineComponent.cpp
     UI/TimelineComponent.h
+    UI/WorkingSetMetaDataEditorDialog.cpp
+    UI/WorkingSetMetaDataEditorDialog.h
 )
 
 # Add Windows-specific manifest

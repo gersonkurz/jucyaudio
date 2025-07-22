@@ -27,6 +27,7 @@ namespace jucyaudio
             virtual bool createWorkingSetFromTrackIds(
                 const std::vector<TrackId> &trackIds, std::string_view name,
                 WorkingSetInfo &newWorkingSet) const = 0;
+            virtual bool renameWorkingSet(WorkingSetId workingSetId, std::string_view name) const = 0;
             virtual bool addToWorkingSet(
                 WorkingSetId workingSetId,
                 const std::vector<TrackId> &trackIds) = 0;

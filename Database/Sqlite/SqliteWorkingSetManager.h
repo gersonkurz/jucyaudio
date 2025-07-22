@@ -33,6 +33,7 @@ namespace jucyaudio
                                  const std::vector<TrackId> &trackIds) override;
             bool addToWorkingSet(WorkingSetId workingSetId,
                                  TrackId trackId) override;
+            bool renameWorkingSet(WorkingSetId workingSetId, std::string_view name) const override;
             bool removeFromWorkingSet(
                 WorkingSetId workingSetId,
                 const std::vector<TrackId> &trackIds) override;

@@ -262,6 +262,19 @@ GROUP BY ws.ws_id, ws.name)SQL";
             return false;
         }
 
+        bool SqliteWorkingSetManager::renameWorkingSet(WorkingSetId workingSetId, std::string_view name) const
+        {
+            if (SqliteTransaction transaction{m_db})
+            {
+                if (transaction.execute("UPDATE WorkingSets SET name=? WHERE ws_id=?;", name, workingSetId))
+                {
+                    return transaction.commit();
+                }
+                return transaction.commit();
+            }
+            return false;
+        }
+
         bool SqliteWorkingSetManager::removeFromWorkingSet(
             WorkingSetId workingSetId, const std::vector<TrackId> &trackIds)
         {

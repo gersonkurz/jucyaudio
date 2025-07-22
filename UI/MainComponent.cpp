@@ -5,6 +5,7 @@
 #include <Database/Nodes/MixNode.h>
 #include <Database/Nodes/WorkingSetNode.h>
 #include <Database/Nodes/RootNode.h>
+#include <Database/Includes/MixInfo.h>
 #include <Database/Nodes/VirtualFolderNode.h>
 #include <UI/ColumnConfiguratorDialog.h>
 #include <UI/CreateMixDialogComponent.h>
@@ -15,6 +16,7 @@
 #include <UI/TaskDialog.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
+#include <UI/WorkingSetMetaDataEditorDialog.h>
 #ifndef JUCE_WINDOWS
 #include <unistd.h>
 #endif
@@ -778,6 +780,9 @@ namespace jucyaudio
             case DataAction::ExportMix:
                 onExportMix(selectedNode);
                 break;
+            case DataAction::EditMetadata:
+                onEditMetadata(selectedNode);
+                break;
             case DataAction::RunBpmAnalysis:
                 onRunBpmAnalysis(selectedNode);
                 break;
@@ -1228,9 +1233,51 @@ namespace jucyaudio
             spdlog::info("Finalizing and exporting mix ID: {} (Name: '{}') to: {}", mixInfo.mixId, mixInfo.name, pathToString(targetExportPath));
 
             //(const MixInfo &mixInfo, audio::MixExporter &exporter, const std::filesystem::path &outputPath)
-            auto *task = new FinalizeAndExportTask(mixInfo, m_audioLibrary.getMixExporter(), targetExportPath);
+            auto *task = new FinalizeAndExportTask{mixInfo, m_audioLibrary.getMixExporter(), targetExportPath};
             TaskDialog::launch("Finalize & Export", task, 500, this);
             task->release(REFCOUNT_DEBUG_ARGS);
+        }
+
+
+        void MainComponent::onEditMetadata(INavigationNode *selectedNode)
+        {
+            if (auto* wsNode = dynamic_cast<WorkingSetNode*>(selectedNode))
+            {
+                const auto wsInfo = wsNode->getWorkingSetInfo();
+
+                auto *dialog =
+                    new WorkingSetMetaDataEditorDialog{wsInfo, [this, wsNode](bool nameChanged)
+                                                       {
+                                                           if (nameChanged)
+                                                           {
+                                                               if (const auto workingSetsRootNode = m_rootNavigationNode->getWorkingSetsRootNode())
+                                                               {
+                                                                   workingSetsRootNode->refreshCache(true); // true = flush cache
+
+                                                                   // Find the tree item and trigger a visual update
+                                                                   if (auto *treeItem = m_navigationPanel.findTreeViewItemForNode(workingSetsRootNode))
+                                                                   {
+                                                                       treeItem->treeHasChanged();
+                                                                   }
+
+                                                                   workingSetsRootNode->release(REFCOUNT_DEBUG_ARGS);
+                                                               }
+                                                           }
+                                                       }};
+
+                juce::DialogWindow::LaunchOptions launchOptions;
+                launchOptions.content.setOwned(dialog);
+                launchOptions.dialogTitle = "Working Set Details";
+                launchOptions.componentToCentreAround = this;
+                launchOptions.escapeKeyTriggersCloseButton = true;
+                launchOptions.resizable = false;
+                launchOptions.launchAsync();
+            }
+            else
+            {
+                // Handle other node types here if needed in the future
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Details not available for this item.", true);
+            }
         }
 
         void MainComponent::onRemoveWorkingSet(INavigationNode *selectedNode)
