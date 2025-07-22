@@ -3,6 +3,7 @@
 #include <Utils/AssortedUtils.h>
 #include <cassert>
 #include <spdlog/spdlog.h>
+
 namespace jucyaudio
 {
     // anonymous namespace: defines are only valid in this translation unit
@@ -27,10 +28,15 @@ namespace jucyaudio
     namespace database
     {
 
-        const DataActions LibraryNodeActions{DataAction::CreateWorkingSet, DataAction::EditMetadata, DataAction::CreateMix, DataAction::RunBpmAnalysis,
-                                             DataAction::RemoveWorkingSet};
-        const DataActions LibraryRowActions{DataAction::Play,        DataAction::CreateWorkingSet, DataAction::CreateMix,
-                                            DataAction::ShowDetails, DataAction::EditMetadata,     DataAction::Delete, DataAction::RunBpmAnalysis};
+        const DataActions LibraryNodeActions{
+            DataAction::CreateWorkingSet, DataAction::EditMetadata, DataAction::CreateMix, DataAction::RunBpmAnalysis, DataAction::RemoveWorkingSet};
+        const DataActions LibraryRowActions{DataAction::Play,
+            DataAction::CreateWorkingSet,
+            DataAction::CreateMix,
+            DataAction::ShowDetails,
+            DataAction::EditMetadata,
+            DataAction::Delete,
+            DataAction::RunBpmAnalysis};
         const std::vector<DataColumn> LibraryColumns = {
             DataColumn{(ColumnIndex_t)Column::Title, "title", "Title", 200, ColumnAlignment::Left, ColumnDataTypeHint::String},
             DataColumn{(ColumnIndex_t)Column::Artist, "artist_name", "Artist", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},

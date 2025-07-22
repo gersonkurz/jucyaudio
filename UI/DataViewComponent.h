@@ -21,6 +21,30 @@ namespace jucyaudio
         // Alias for the row action callback function type
         using RowActionCallback = std::function<void(RowIndex_t rowNumber, DataAction action, const juce::Point<int> &screenPosition)>;
 
+        // Custom TableListBox that forwards Ctrl+wheel events to parent
+        class ScalableTableListBox : public juce::TableListBox
+        {
+        public:
+            using juce::TableListBox::TableListBox;
+            
+            void mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel) override
+            {
+                if (event.mods.isCommandDown())
+                {
+                    // Forward to parent for scaling
+                    if (auto* parent = getParentComponent())
+                    {
+                        parent->mouseWheelMove(event.getEventRelativeTo(parent), wheel);
+                    }
+                }
+                else
+                {
+                    // Normal scrolling
+                    TableListBox::mouseWheelMove(event, wheel);
+                }
+            }
+        };
+        
         class DataViewComponent : public juce::Component, private juce::TableListBoxModel, private juce::Timer
         {
         public:
@@ -28,6 +52,7 @@ namespace jucyaudio
             ~DataViewComponent() override;
 
             void resized() override;
+            void mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel) override;
 
             void setCurrentNode(INavigationNode *node, bool refresh = false);
             auto getCurrentNode() const
@@ -66,9 +91,16 @@ namespace jucyaudio
 
             void updateTableColumns();
 
-            juce::TableListBox m_tableListBox;
+            ScalableTableListBox m_tableListBox;
             INavigationNode *m_currentNode{nullptr};
             std::vector<database::DataColumnWithIndex> m_currentDataColumns;
+            
+            // Font size management
+            float m_fontScale{1.0f};
+            static constexpr float MIN_FONT_SCALE = 0.5f;
+            static constexpr float MAX_FONT_SCALE = 2.0f;
+            static constexpr float FONT_SCALE_STEP = 0.1f;
+            void updateFontSize();
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DataViewComponent)
         };

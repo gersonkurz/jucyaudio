@@ -17,6 +17,10 @@ namespace jucyaudio
             m_tableListBox.setOutlineThickness(1);
             m_tableListBox.setHeaderHeight(30);
             m_tableListBox.setMultipleSelectionEnabled(true);
+            
+            // Table will forward Ctrl+wheel events to us
+            
+            updateFontSize();
             // startTimer(2000);
         }
 
@@ -39,6 +43,46 @@ namespace jucyaudio
         void DataViewComponent::resized()
         {
             m_tableListBox.setBounds(getLocalBounds());
+        }
+        
+        void DataViewComponent::mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel)
+        {
+            // Check if Ctrl (or Cmd on Mac) is held
+            if (event.mods.isCommandDown())
+            {
+                // Adjust font scale based on wheel delta
+                if (wheel.deltaY > 0)
+                {
+                    m_fontScale = juce::jmin(m_fontScale + FONT_SCALE_STEP, MAX_FONT_SCALE);
+                }
+                else if (wheel.deltaY < 0)
+                {
+                    m_fontScale = juce::jmax(m_fontScale - FONT_SCALE_STEP, MIN_FONT_SCALE);
+                }
+                
+                spdlog::info("DataView: Font scale changed to {:.1f}x", m_fontScale);
+                
+                updateFontSize();
+                m_tableListBox.updateContent();
+                m_tableListBox.repaint();
+            }
+            else
+            {
+                // Pass through to normal scrolling
+                Component::mouseWheelMove(event, wheel);
+            }
+        }
+        
+        void DataViewComponent::updateFontSize()
+        {
+            const int baseRowHeight = 22;
+            const int scaledRowHeight = static_cast<int>(baseRowHeight * m_fontScale);
+            m_tableListBox.setRowHeight(scaledRowHeight);
+            
+            // Also scale the header height
+            const int baseHeaderHeight = 30;
+            const int scaledHeaderHeight = static_cast<int>(baseHeaderHeight * m_fontScale);
+            m_tableListBox.setHeaderHeight(scaledHeaderHeight);
         }
 
         void DataViewComponent::setCurrentNode(INavigationNode *node, bool refresh)
@@ -241,7 +285,9 @@ namespace jucyaudio
             else if (columnDef.column->alignment == ColumnAlignment::Right)
                 justification = juce::Justification::centredRight;
 
-            g.setFont(juce::Font{juce::FontOptions{}.withHeight(static_cast<float>(height) * 0.7f)});
+            // Use the scaled font size
+            const float baseFontSize = 14.0f;
+            g.setFont(juce::Font{juce::FontOptions{}.withHeight(baseFontSize * m_fontScale)});
             g.drawText(textToDisplay, 2, 0, width - 4, height, justification, true);
             const auto end{std::chrono::high_resolution_clock::now()};
             const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};

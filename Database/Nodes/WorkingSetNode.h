@@ -24,6 +24,8 @@ namespace jucyaudio
                 return m_queryArgs.workingSetId;
             }
 
+            const DataActions &getNodeActions() const override;
+
             void rename(std::string_view newName)
             {
                 m_workingSetInfo.name = newName;
