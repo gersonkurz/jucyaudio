@@ -100,11 +100,11 @@ namespace jucyaudio
                     if (m_progressCb && (filesProcessedThisSession % 25 == 0))
                     {
                         auto relativePath = currentParentDirectory.getRelativePathFrom(scanDir);
-                        m_progressCb(-1, std::format("Scanned {:L} files, currently in {}", filesProcessedThisSession, relativePath.toStdString()));
+                        m_progressCb(-1, std::format("Scanned {:L} files, currently in {}", filesProcessedThisSession, std::string(relativePath.toUTF8())));
                     }
 
                     // Convert JUCE path back to std::filesystem::path for DB and model logic.
-                    const std::filesystem::path filePath(file.getFullPathName().toStdString());
+                    const std::filesystem::path filePath(std::filesystem::u8path(file.getFullPathName().toUTF8().getAddress()));
                     spdlog::debug("Processing: {}", pathToString(filePath));
 
                     // --- ALL YOUR PROVEN FILE-PROCESSING LOGIC, NOW FED BY JUCE::FILE ---
