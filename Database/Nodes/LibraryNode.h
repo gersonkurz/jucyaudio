@@ -24,6 +24,7 @@ namespace jucyaudio
 
         protected:
             bool prepareToShowData() override;
+            bool setSortOrder(const std::vector<SortOrderInfo> &sortOrders) override;
             
         private:
             
@@ -39,7 +40,6 @@ namespace jucyaudio
             const DataActions &getRowActions(RowIndex_t rowIndex) const override;
             bool setSearchTerms(const std::vector<std::string> &searchTerms) override;
             std::vector<std::string> getCurrentSearchTerms() const override;
-            bool setSortOrder(const std::vector<SortOrderInfo> &sortOrders) override;
             std::vector<SortOrderInfo> getCurrentSortOrder() const override;
             const TrackQueryArgs *getQueryArgs() const override;
             void refreshCache(bool flushCache = false) const override;

@@ -575,6 +575,39 @@ namespace jucyaudio
                 }
 
                 
+                currentVersion = 2; // Update for next check
+            }
+            
+            if (currentVersion < 3)
+            {
+                spdlog::info("Migrating database from version 2 to 3...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Add sort_order column to WorkingSets table for persistent sort configuration
+                    if (!m_db.execute("ALTER TABLE WorkingSets ADD COLUMN sort_order TEXT;"))
+                    {
+                        m_lastErrorMessage = "Failed to add sort_order column to WorkingSets table: " + m_db.getLastError();
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                    }
+                    
+                    if (auto result = setDBSchemaVersion(3); !result.isOk())
+                    {
+                        m_lastErrorMessage = "Failed to update schema version to 3: " + result.errorMessage;
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                    }
+                    
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated database to version 3.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
             }
 
             return DbResult::success();

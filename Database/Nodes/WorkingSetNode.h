@@ -31,6 +31,10 @@ namespace jucyaudio
                 m_workingSetInfo.name = newName;
                 BaseNode::rename(newName);
             }
+            
+            // Override to persist sort order to database
+            bool setSortOrder(const std::vector<SortOrderInfo> &sortOrders) override;
+            std::vector<SortOrderInfo> getCurrentSortOrder() const override;
 
             static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
 

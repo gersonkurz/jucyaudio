@@ -235,6 +235,7 @@ namespace jucyaudio
             Timestamp_t timestamp;     ///< Creation or last modification time
             int64_t track_count;       ///< Number of tracks in the working set
             Duration_t total_duration; ///< Combined duration of all tracks
+            std::vector<SortOrderInfo> sortOrder; ///< Saved sort order for this working set
         };
 
     } // namespace database

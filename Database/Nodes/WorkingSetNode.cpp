@@ -1,6 +1,7 @@
 // Database/Nodes/WorkingSetNode.cpp
 #include <Utils/AssortedUtils.h>
 #include <Database/Nodes/WorkingSetNode.h>
+#include <Database/TrackLibrary.h>
 #include <cassert>
 #include <spdlog/spdlog.h>
 
@@ -21,6 +22,34 @@ namespace jucyaudio
         const DataActions &WorkingSetNode::getNodeActions() const
         {
             return LibraryNodeActions;
+        }
+        
+        bool WorkingSetNode::setSortOrder(const std::vector<SortOrderInfo> &sortOrders)
+        {
+            // First call the base class implementation to update the query args
+            if (!LibraryNode::setSortOrder(sortOrders))
+            {
+                return false;
+            }
+            
+            // Update our local copy
+            m_workingSetInfo.sortOrder = sortOrders;
+            
+            // Persist to database
+            if (!theTrackLibrary.getWorkingSetManager().updateSortOrder(m_workingSetInfo.id, sortOrders))
+            {
+                spdlog::error("Failed to persist sort order for working set {}", m_workingSetInfo.id);
+                return false;
+            }
+            
+            spdlog::info("Persisted sort order for working set {} ({})", m_workingSetInfo.id, m_workingSetInfo.name);
+            return true;
+        }
+        
+        std::vector<SortOrderInfo> WorkingSetNode::getCurrentSortOrder() const
+        {
+            // Return the saved sort order from our working set info
+            return m_workingSetInfo.sortOrder;
         }
 
         void WorkingSetNode::createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children)

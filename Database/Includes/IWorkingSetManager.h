@@ -39,6 +39,13 @@ namespace jucyaudio
             virtual bool removeFromWorkingSet(WorkingSetId workingSetId,
                                               TrackId trackId) = 0;
             virtual bool removeWorkingSet(WorkingSetId workingSetId) = 0;
+            
+            /// @brief Update the sort order for a working set
+            /// @param workingSetId The working set to update
+            /// @param sortOrder The new sort order configuration
+            /// @return true if successful, false otherwise
+            virtual bool updateSortOrder(WorkingSetId workingSetId, 
+                                        const std::vector<SortOrderInfo>& sortOrder) = 0;
         };
 
     } // namespace database

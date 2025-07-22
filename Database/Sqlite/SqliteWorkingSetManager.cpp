@@ -5,6 +5,7 @@
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/Sqlite/SqliteWorkingSetManager.h>
 #include <Utils/AssortedUtils.h>
+#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 namespace
@@ -19,6 +20,32 @@ namespace
         info.id = stmt.getInt64(col++);
         info.name = stmt.getText(col++);
         info.timestamp = timestampFromInt64(stmt.getInt64(col++));
+        
+        // Parse sort_order JSON if present
+        if (!stmt.isNull(col))
+        {
+            const std::string sortOrderJson = stmt.getText(col);
+            if (!sortOrderJson.empty())
+            {
+                try
+                {
+                    auto json = nlohmann::json::parse(sortOrderJson);
+                    for (const auto& item : json)
+                    {
+                        SortOrderInfo sortInfo;
+                        sortInfo.columnName = item["column"].get<std::string>();
+                        sortInfo.descending = item["descending"].get<bool>();
+                        info.sortOrder.push_back(sortInfo);
+                    }
+                }
+                catch (const std::exception& e)
+                {
+                    spdlog::warn("Failed to parse sort_order JSON for working set {}: {}", info.id, e.what());
+                }
+            }
+        }
+        col++;
+        
         info.track_count = stmt.getInt64(col++);
         info.total_duration = durationFromInt64(stmt.getInt64(col++));
         return info;
@@ -37,12 +64,13 @@ namespace jucyaudio
     ws.ws_id,
     ws.name,
     ws.timestamp,
+    ws.sort_order,
     COUNT(wst.track_id) as track_count,
     SUM(t.duration) as total_duration
 FROM WorkingSets ws
 LEFT JOIN WorkingSetTracks wst ON ws.ws_id = wst.ws_id
 LEFT JOIN Tracks t ON wst.track_id = t.track_id
-GROUP BY ws.ws_id, ws.name)SQL";
+GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
 
             StringWriter output;
             output.append(BASE_STMT);
@@ -329,6 +357,50 @@ GROUP BY ws.ws_id, ws.name)SQL";
                 }
             }
             return false;
+        }
+        
+        bool SqliteWorkingSetManager::updateSortOrder(
+            WorkingSetId workingSetId,
+            const std::vector<SortOrderInfo>& sortOrder)
+        {
+            // Convert sort order to JSON
+            nlohmann::json jsonArray = nlohmann::json::array();
+            for (const auto& sort : sortOrder)
+            {
+                nlohmann::json sortObj;
+                sortObj["column"] = sort.columnName;
+                sortObj["descending"] = sort.descending;
+                jsonArray.push_back(sortObj);
+            }
+            
+            const std::string sortOrderJson = jsonArray.empty() ? "" : jsonArray.dump();
+            
+            SqliteStatement stmt{m_db, "UPDATE WorkingSets SET sort_order = ? WHERE ws_id = ?;"};
+            if (!stmt.isValid())
+            {
+                spdlog::error("Failed to prepare updateSortOrder statement: {}", m_db.getLastError());
+                return false;
+            }
+            
+            // Bind parameters - use null for empty sort order
+            if (sortOrderJson.empty())
+            {
+                stmt.addNullParam();
+            }
+            else
+            {
+                stmt.addParam(sortOrderJson);
+            }
+            stmt.addParam(workingSetId);
+            
+            if (!stmt.execute())
+            {
+                spdlog::error("Failed to update sort order for working set {}: {}", 
+                             workingSetId, m_db.getLastError());
+                return false;
+            }
+            
+            return true;
         }
 
     } // namespace database
