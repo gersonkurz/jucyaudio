@@ -15,7 +15,7 @@ namespace jucyaudio
          * This component displays statistics about a working set (track count, total duration, creation date)
          * and allows the user to rename it.
          */
-        class WorkingSetMetaDataEditorDialog : public juce::Component
+        class WorkingSetMetaDataEditorDialog : public juce::Component, private juce::Timer
         {
         public:
             /**
@@ -35,6 +35,8 @@ namespace jucyaudio
 
             void paint(juce::Graphics &g) override;
             void resized() override;
+            void parentHierarchyChanged() override;
+            void timerCallback() override;
 
         private:
             //==============================================================================
@@ -43,6 +45,7 @@ namespace jucyaudio
             OnDialogFinished m_onFinishedCallback;
 
             // UI Components
+            juce::Label m_titleLabel;
             juce::Label m_nameLabel;
             juce::TextEditor m_nameEditor;
 

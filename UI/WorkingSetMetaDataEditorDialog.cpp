@@ -9,9 +9,14 @@ namespace jucyaudio
         WorkingSetMetaDataEditorDialog::WorkingSetMetaDataEditorDialog(const database::WorkingSetInfo &workingSetInfo, OnDialogFinished onFinishedCallback)
             : m_workingSetInfo{workingSetInfo},
               m_onFinishedCallback{std::move(onFinishedCallback)},
+              m_titleLabel{"titleLabel", "Working Set Details"},
               m_saveButton{"Save"},
               m_cancelButton{"Cancel"}
         {
+            // Title Label
+            m_titleLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(20.0f)}.boldened());
+            m_titleLabel.setJustificationType(juce::Justification::left);
+            
             // Name Editor
             m_nameLabel.setText("Name:", juce::dontSendNotification);
             m_nameEditor.setText(m_workingSetInfo.name);
@@ -24,6 +29,7 @@ namespace jucyaudio
             m_statsLabel.setText("Statistics:", juce::dontSendNotification);
             m_statsValueLabel.setText(statsText, juce::dontSendNotification);
 
+            addAndMakeVisible(m_titleLabel);
             addAndMakeVisible(m_nameLabel);
             addAndMakeVisible(m_nameEditor);
             addAndMakeVisible(m_statsLabel);
@@ -43,8 +49,9 @@ namespace jucyaudio
             m_saveButton.setClickingTogglesState(true);
             m_saveButton.addShortcut(juce::KeyPress(juce::KeyPress::returnKey));
             m_nameEditor.onReturnKey = [this] { m_saveButton.triggerClick(); };
+            m_nameEditor.onEscapeKey = [this] { closeDialog(false); };
 
-            setSize(300, 200);
+            setSize(300, 220);  // Slightly taller to accommodate title
         }
 
         void WorkingSetMetaDataEditorDialog::paint(juce::Graphics &g)
@@ -55,6 +62,11 @@ namespace jucyaudio
         void WorkingSetMetaDataEditorDialog::resized()
         {
             auto bounds = getLocalBounds().reduced(10);
+            
+            // Title label at the top
+            m_titleLabel.setBounds(bounds.removeFromTop(30));
+            bounds.removeFromTop(10);  // Add spacing after title
+            
             auto topArea = bounds.removeFromTop(80);
             auto buttonArea = bounds.removeFromBottom(30);
 
@@ -69,6 +81,32 @@ namespace jucyaudio
             m_saveButton.setBounds(buttonArea.removeFromRight(80));
             buttonArea.removeFromRight(10);
             m_cancelButton.setBounds(buttonArea.removeFromRight(80));
+        }
+        
+        void WorkingSetMetaDataEditorDialog::parentHierarchyChanged()
+        {
+            if (isShowing() && !isTimerRunning())
+            {
+                // Start a short timer to grab focus after the dialog window is active
+                startTimer(100);
+            }
+        }
+        
+        void WorkingSetMetaDataEditorDialog::timerCallback()
+        {
+            stopTimer();
+            if (auto* dialogWindow = findParentComponentOfClass<juce::DialogWindow>())
+            {
+                if (dialogWindow->isActiveWindow())
+                {
+                    m_nameEditor.grabKeyboardFocus();
+                }
+                else
+                {
+                    // If window isn't active yet, try again
+                    startTimer(50);
+                }
+            }
         }
 
         void WorkingSetMetaDataEditorDialog::saveChanges()
