@@ -50,10 +50,13 @@ namespace jucyaudio
               m_currentMainViewComponent{&m_dataViewComponent},
               m_verticalDivider{*this, true},
               m_playbackController{m_hiddenPlaybackToolbar},
-              m_enhancedPlayer{m_playbackController},
+              m_enhancedPlayer{m_playbackController, m_audioFormatManager, m_audioThumbnailCache},
               m_mainPlaybackAndStatusPanel{*this}
         {
             theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
+            
+            // Register audio formats
+            m_audioFormatManager.registerBasicFormats();
 
             // --- TrackLibrary Initialization (remains as is) ---
             juce::File appDataDir{juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("jucyaudioApp_Dev")};
@@ -714,6 +717,11 @@ namespace jucyaudio
                 {
                     m_mainPlaybackAndStatusPanel.setStatusMessage(getSafeDisplayText("Error playing: " + audioFile.getFileName()), true);
                 }
+                else
+                {
+                    // Load waveform when playback starts successfully
+                    m_enhancedPlayer.loadFile(audioFile);
+                }
             }
             syncPlaybackUIToControllerState();
         }
@@ -896,6 +904,11 @@ namespace jucyaudio
                     m_mainPlaybackAndStatusPanel.setStatusMessage(getSafeDisplayText("Error playing: " + audioFile.getFileName()), true);
                     juce::AlertWindow::showMessageBoxAsync(
                         juce::AlertWindow::WarningIcon, "Playback Error", "Cannot play file:\n" + audioFile.getFullPathName());
+                }
+                else
+                {
+                    // Load waveform when playback starts successfully
+                    m_enhancedPlayer.loadFile(audioFile);
                 }
             }
             else

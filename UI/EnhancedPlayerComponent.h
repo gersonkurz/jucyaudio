@@ -4,6 +4,7 @@
 #include <functional>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_audio_utils/juce_audio_utils.h>
 
 namespace jucyaudio
 {
@@ -15,10 +16,14 @@ namespace jucyaudio
          * Top row (70%): Transport controls and waveform display
          * Bottom row (30%): Repeat, shuffle, volume, and time displays
          */
-        class EnhancedPlayerComponent : public juce::Component, public juce::Timer
+        class EnhancedPlayerComponent : public juce::Component, 
+                                       public juce::Timer,
+                                       public juce::ChangeListener
         {
         public:
-            EnhancedPlayerComponent(PlaybackController &controller);
+            EnhancedPlayerComponent(PlaybackController &controller, 
+                                  juce::AudioFormatManager &formatManager,
+                                  juce::AudioThumbnailCache &thumbnailCache);
             ~EnhancedPlayerComponent() override;
 
             void paint(juce::Graphics &g) override;
@@ -26,7 +31,13 @@ namespace jucyaudio
 
             // Timer callback for updating UI
             void timerCallback() override;
+            
+            // ChangeListener callback for thumbnail loading
+            void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
+            // File loading
+            void loadFile(const juce::File& file);
+            
             // Callbacks for external control
             std::function<void()> onPreviousTrack;
             std::function<void()> onNextTrack;
@@ -49,6 +60,29 @@ namespace jucyaudio
             }
 
         private:
+            // Waveform Display Component
+            class WaveformDisplay : public juce::Component, public juce::ChangeListener
+            {
+            public:
+                WaveformDisplay(juce::AudioFormatManager& formatManager, 
+                              juce::AudioThumbnailCache& thumbnailCache);
+                ~WaveformDisplay() override;
+                
+                void paint(juce::Graphics& g) override;
+                void mouseDown(const juce::MouseEvent& event) override;
+                void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+                
+                void loadFile(const juce::File& file);
+                void setPlaybackPosition(double position);
+                
+                std::function<void(double)> onSeek;
+                
+            private:
+                juce::AudioThumbnail m_thumbnail;
+                double m_playbackPosition{0.0};
+                bool m_fileLoaded{false};
+            };
+            
             // Top row components
             juce::DrawableButton m_previousButton{"Previous", juce::DrawableButton::ImageFitted};
             juce::DrawableButton m_stopButton{"Stop", juce::DrawableButton::ImageFitted};
@@ -56,8 +90,8 @@ namespace jucyaudio
             juce::DrawableButton m_pauseButton{"Pause", juce::DrawableButton::ImageFitted};
             juce::DrawableButton m_nextButton{"Next", juce::DrawableButton::ImageFitted};
 
-            // Placeholder for waveform (Phase 2)
-            juce::Component m_waveformPlaceholder;
+            // Waveform display
+            WaveformDisplay m_waveformDisplay;
 
             // Bottom row components
             juce::TextButton m_repeatButton{juce::CharPointer_UTF8("\u27F2")};
@@ -69,6 +103,8 @@ namespace jucyaudio
 
             // Internal state
             PlaybackController &m_playbackController;
+            juce::AudioFormatManager &m_formatManager;
+            juce::AudioThumbnailCache &m_thumbnailCache;
             RepeatMode m_repeatMode{RepeatMode::Off};
             bool m_shuffleEnabled{false};
 

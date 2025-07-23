@@ -18,6 +18,7 @@
 #include <UI/ThemeManager.h>
 #include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_audio_utils/juce_audio_utils.h>
 
 namespace jucyaudio
 {
@@ -128,6 +129,10 @@ namespace jucyaudio
             MixEditorComponent m_mixEditorComponent;
 
             DividerComponent m_verticalDivider;
+            
+            // Audio components for waveform display
+            juce::AudioFormatManager m_audioFormatManager;
+            juce::AudioThumbnailCache m_audioThumbnailCache{10}; // Cache for 10 thumbnails
 
             PlaybackToolbarComponent m_hiddenPlaybackToolbar; // Hidden, just for PlaybackController
             PlaybackController m_playbackController;

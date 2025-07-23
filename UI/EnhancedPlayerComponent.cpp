@@ -7,12 +7,27 @@ namespace jucyaudio
 {
     namespace ui
     {
-        EnhancedPlayerComponent::EnhancedPlayerComponent(PlaybackController& controller)
-            : m_playbackController(controller)
+        EnhancedPlayerComponent::EnhancedPlayerComponent(PlaybackController& controller,
+                                                       juce::AudioFormatManager& formatManager,
+                                                       juce::AudioThumbnailCache& thumbnailCache)
+            : m_playbackController(controller),
+              m_formatManager(formatManager),
+              m_thumbnailCache(thumbnailCache),
+              m_waveformDisplay(formatManager, thumbnailCache)
         {
             loadButtonIcons();
             setupButtons();
             setupVolumeControl();
+            
+            // Set up waveform seek callback
+            m_waveformDisplay.onSeek = [this](double normalizedPosition) {
+                const auto length = m_playbackController.getLengthInSeconds();
+                if (length > 0.0)
+                {
+                    const double seekTime = normalizedPosition * length;
+                    m_playbackController.seek(seekTime);
+                }
+            };
             
             // Add all components
             addAndMakeVisible(m_previousButton);
@@ -20,7 +35,7 @@ namespace jucyaudio
             addAndMakeVisible(m_playButton);
             addAndMakeVisible(m_pauseButton);
             addAndMakeVisible(m_nextButton);
-            addAndMakeVisible(m_waveformPlaceholder);
+            addAndMakeVisible(m_waveformDisplay);
             
             addAndMakeVisible(m_repeatButton);
             addAndMakeVisible(m_shuffleButton);
@@ -49,13 +64,7 @@ namespace jucyaudio
             g.setColour(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
             g.drawHorizontalLine(topRowHeight, 0.0f, static_cast<float>(bounds.getWidth()));
             
-            // Temporary waveform placeholder background
-            g.setColour(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
-            g.fillRect(m_waveformPlaceholder.getBounds());
-            g.setColour(getLookAndFeel().findColour(juce::TextEditor::backgroundColourId));
-            g.drawRect(m_waveformPlaceholder.getBounds());
-            g.drawText("Waveform Display (Phase 2)", m_waveformPlaceholder.getBounds(), 
-                      juce::Justification::centred, true);
+            // Waveform is painted by the WaveformDisplay component itself
         }
         
         void EnhancedPlayerComponent::resized()
@@ -94,7 +103,7 @@ namespace jucyaudio
             m_nextButton.setEdgeIndent(iconInset);
             
             // Waveform takes remaining space
-            m_waveformPlaceholder.setBounds(topRow.reduced(4));
+            m_waveformDisplay.setBounds(topRow.reduced(4));
             
             // Bottom row layout
             bottomRow = bottomRow.reduced(4, 2);
@@ -129,6 +138,14 @@ namespace jucyaudio
         {
             updateTransportButtons();
             updateTimeDisplays();
+            
+            // Update waveform playback position
+            const auto length = m_playbackController.getLengthInSeconds();
+            if (length > 0.0)
+            {
+                const auto position = m_playbackController.getCurrentPositionSeconds();
+                m_waveformDisplay.setPlaybackPosition(position / length);
+            }
         }
         
         void EnhancedPlayerComponent::loadButtonIcons()
@@ -346,6 +363,130 @@ namespace jucyaudio
             else
             {
                 m_speakerIcon.setText("Vol+", juce::dontSendNotification);
+            }
+        }
+        
+        void EnhancedPlayerComponent::changeListenerCallback(juce::ChangeBroadcaster* source)
+        {
+            // Handle thumbnail changes if needed
+            repaint();
+        }
+        
+        void EnhancedPlayerComponent::loadFile(const juce::File& file)
+        {
+            m_waveformDisplay.loadFile(file);
+        }
+        
+        // WaveformDisplay implementation
+        EnhancedPlayerComponent::WaveformDisplay::WaveformDisplay(juce::AudioFormatManager& formatManager,
+                                                                 juce::AudioThumbnailCache& thumbnailCache)
+            : m_thumbnail(512, formatManager, thumbnailCache)
+        {
+            m_thumbnail.addChangeListener(this);
+        }
+        
+        EnhancedPlayerComponent::WaveformDisplay::~WaveformDisplay()
+        {
+            m_thumbnail.removeChangeListener(this);
+        }
+        
+        void EnhancedPlayerComponent::WaveformDisplay::paint(juce::Graphics& g)
+        {
+            auto bounds = getLocalBounds();
+            auto& lf = getLookAndFeel();
+            
+            // Background
+            g.setColour(lf.findColour(juce::TextEditor::backgroundColourId));
+            g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
+            
+            if (!m_fileLoaded)
+            {
+                g.setColour(lf.findColour(juce::Label::textColourId).withAlpha(0.5f));
+                g.drawText("No track loaded", bounds, juce::Justification::centred, false);
+                return;
+            }
+            
+            // Draw waveform in two colors - played portion and unplayed portion
+            const double totalLength = m_thumbnail.getTotalLength();
+            if (totalLength > 0)
+            {
+                auto waveformBounds = bounds.reduced(2);
+                
+                // Draw unplayed portion first (full waveform)
+                g.setColour(lf.findColour(juce::Slider::thumbColourId).withAlpha(0.5f));
+                m_thumbnail.drawChannel(g, waveformBounds,
+                                      0.0, totalLength,
+                                      0, 1.0f);
+                
+                // Draw played portion on top
+                if (m_playbackPosition > 0.0)
+                {
+                    const int playedWidth = static_cast<int>(waveformBounds.getWidth() * m_playbackPosition);
+                    auto playedBounds = waveformBounds.withWidth(playedWidth);
+                    
+                    g.saveState();
+                    g.reduceClipRegion(playedBounds);
+                    g.setColour(lf.findColour(juce::Slider::thumbColourId));
+                    m_thumbnail.drawChannel(g, waveformBounds,
+                                          0.0, totalLength,
+                                          0, 1.0f);
+                    g.restoreState();
+                }
+                
+                // Draw playhead line
+                if (m_playbackPosition > 0.0 && m_playbackPosition < 1.0)
+                {
+                    const int playheadX = waveformBounds.getX() + static_cast<int>(waveformBounds.getWidth() * m_playbackPosition);
+                    g.setColour(juce::Colours::white);
+                    g.drawVerticalLine(playheadX, waveformBounds.getY(), waveformBounds.getBottom());
+                }
+            }
+            
+            // Border
+            g.setColour(lf.findColour(juce::ComboBox::outlineColourId));
+            g.drawRoundedRectangle(bounds.toFloat().reduced(1), 4.0f, 1.0f);
+        }
+        
+        void EnhancedPlayerComponent::WaveformDisplay::mouseDown(const juce::MouseEvent& event)
+        {
+            if (!m_fileLoaded || !onSeek)
+                return;
+                
+            const double clickPosition = event.position.x / static_cast<double>(getWidth());
+            const double seekTime = juce::jlimit(0.0, 1.0, clickPosition);
+            onSeek(seekTime);
+        }
+        
+        void EnhancedPlayerComponent::WaveformDisplay::loadFile(const juce::File& file)
+        {
+            if (file.existsAsFile())
+            {
+                m_thumbnail.setSource(new juce::FileInputSource(file));
+                m_fileLoaded = true;
+                m_playbackPosition = 0.0;
+            }
+            else
+            {
+                m_thumbnail.clear();
+                m_fileLoaded = false;
+            }
+            repaint();
+        }
+        
+        void EnhancedPlayerComponent::WaveformDisplay::setPlaybackPosition(double position)
+        {
+            if (m_playbackPosition != position)
+            {
+                m_playbackPosition = juce::jlimit(0.0, 1.0, position);
+                repaint();
+            }
+        }
+        
+        void EnhancedPlayerComponent::WaveformDisplay::changeListenerCallback(juce::ChangeBroadcaster* source)
+        {
+            if (source == &m_thumbnail)
+            {
+                repaint();
             }
         }
     }
