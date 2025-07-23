@@ -7,6 +7,7 @@
 #include <Database/Sqlite/SqliteMixManager.h>
 #include <Database/Sqlite/SqliteFolderDatabase.h>
 #include <Database/Sqlite/SqliteWorkingSetManager.h>
+#include <Database/Sqlite/SqliteMarkerManager.h>
 #include <Database/Sqlite/sqlite3.h>
 #include <filesystem>
 #include <optional>
@@ -82,6 +83,9 @@ namespace jucyaudio
 
             IWorkingSetManager &getWorkingSetManager() override;
             const IWorkingSetManager &getWorkingSetManager() const override;
+            
+            IMarkerManager &getMarkerManager() override;
+            const IMarkerManager &getMarkerManager() const override;
 
             DbResult updateTrackTags(TrackId trackId, const std::vector<TagId>& tagIds) override;
             std::vector<TagId> getTrackTags(TrackId trackId) const override;
@@ -110,6 +114,7 @@ namespace jucyaudio
             mutable SqliteMixManager m_mixManager;
             mutable SqliteWorkingSetManager m_workingSetManager; // Working set manager instance
             mutable SqliteFolderDatabase m_folderDatabase; // Folder database instance
+            mutable SqliteMarkerManager m_markerManager; // Marker manager instance
             std::filesystem::path m_databaseFilePath; // Store the path
             mutable std::string m_lastErrorMessage;   // For getLastError()
 

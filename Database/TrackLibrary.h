@@ -5,6 +5,7 @@
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Includes/ITrackDatabase.h>
 #include <Database/Includes/IWorkingSetManager.h>
+#include <Database/Includes/IMarkerManager.h>
 #include <Database/Includes/TrackInfo.h>
 #include <Database/Includes/TrackQueryArgs.h>
 #include <Database/TrackScanner.h>
@@ -93,6 +94,11 @@ namespace jucyaudio
             IWorkingSetManager &getWorkingSetManager() const
             {
                 return m_database->getWorkingSetManager();
+            }
+            
+            IMarkerManager &getMarkerManager() const
+            {
+                return m_database->getMarkerManager();
             }
 
 

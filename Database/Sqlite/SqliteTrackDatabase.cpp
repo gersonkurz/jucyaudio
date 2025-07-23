@@ -295,6 +295,7 @@ namespace jucyaudio
               m_mixManager{m_db},
               m_workingSetManager{m_db},
               m_folderDatabase{m_db},
+              m_markerManager{m_db},
               m_databaseFilePath{},
               m_lastErrorMessage{},
               m_cachedTotalTrackCount{0},
@@ -351,6 +352,18 @@ namespace jucyaudio
         {
             assert(isOpen() && "Cannot get working-set manager when database is not open");
             return m_workingSetManager;
+        }
+        
+        IMarkerManager &SqliteTrackDatabase::getMarkerManager()
+        {
+            assert(isOpen() && "Cannot get marker manager when database is not open");
+            return m_markerManager;
+        }
+        
+        const IMarkerManager &SqliteTrackDatabase::getMarkerManager() const
+        {
+            assert(isOpen() && "Cannot get marker manager when database is not open");
+            return m_markerManager;
         }
 
         std::string SqliteTrackDatabase::getLastError() const
@@ -603,6 +616,55 @@ namespace jucyaudio
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
                     }
                     spdlog::info("Successfully migrated database to version 3.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                
+                currentVersion = 3; // Update for next check
+            }
+            
+            if (currentVersion < 4)
+            {
+                spdlog::info("Migrating database from version 3 to 4 - Adding TrackMarkers table...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Create TrackMarkers table
+                    if (!m_db.execute(R"SQL(
+                        CREATE TABLE IF NOT EXISTS TrackMarkers (
+                            marker_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            track_id INTEGER NOT NULL,
+                            position_ms INTEGER NOT NULL,
+                            comment TEXT NOT NULL,
+                            created_at INTEGER NOT NULL,
+                            updated_at INTEGER NOT NULL,
+                            color TEXT,
+                            emoji TEXT,
+                            FOREIGN KEY (track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
+                        );
+                    )SQL"))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create TrackMarkers table.");
+                    }
+                    
+                    // Create index for efficient track lookups
+                    if (!m_db.execute("CREATE INDEX IF NOT EXISTS idx_trackmarkers_track_id ON TrackMarkers (track_id);"))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create TrackMarkers index.");
+                    }
+                    
+                    // Update schema version
+                    if (auto result = setDBSchemaVersion(4); !result.isOk())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 4.");
+                    }
+                    
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated database to version 4.");
                 }
                 else
                 {

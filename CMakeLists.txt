@@ -189,6 +189,7 @@ target_sources(jucyaudio PRIVATE
     Database/Includes/IBackgroundTask.h
     Database/Includes/IFolderDatabase.h
     Database/Includes/IMixManager.h
+    Database/Includes/IMarkerManager.h
     Database/Includes/INavigationNode.h
     Database/Includes/IRefCounted.h
     Database/Includes/ITagManager.h
@@ -197,6 +198,7 @@ target_sources(jucyaudio PRIVATE
     Database/Includes/IWorkingSetManager.h
     Database/Includes/MixInfo.h
     Database/Includes/TrackInfo.h
+    Database/Includes/TrackMarker.h
     Database/Includes/TrackQueryArgs.h
     
     # SQLite files
@@ -209,6 +211,8 @@ target_sources(jucyaudio PRIVATE
     Database/Sqlite/SqliteFolderDatabase.h
     Database/Sqlite/SqliteMixManager.cpp
     Database/Sqlite/SqliteMixManager.h
+    Database/Sqlite/SqliteMarkerManager.cpp
+    Database/Sqlite/SqliteMarkerManager.h
     Database/Sqlite/SqliteStatement.cpp
     Database/Sqlite/SqliteStatement.h
     Database/Sqlite/SqliteStatementConstruction.cpp

@@ -36,6 +36,11 @@ namespace jucyaudio
             {
                 return sqlite3_last_insert_rowid(m_db);
             }
+            
+            int getChangesCount() const
+            {
+                return sqlite3_changes(m_db);
+            }
 
             SqliteDatabase(const SqliteDatabase &) = delete;
             SqliteDatabase &operator=(const SqliteDatabase &) = delete;

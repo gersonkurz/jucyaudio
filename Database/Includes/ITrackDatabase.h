@@ -5,6 +5,7 @@
 #include <Database/Includes/IMixManager.h>
 #include <Database/Includes/ITagManager.h>
 #include <Database/Includes/IWorkingSetManager.h>
+#include <Database/Includes/IMarkerManager.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
 #include <Database/Includes/TrackQueryArgs.h>
@@ -149,6 +150,9 @@ namespace jucyaudio
 
             virtual IWorkingSetManager &getWorkingSetManager() = 0;
             virtual const IWorkingSetManager &getWorkingSetManager() const = 0;
+            
+            virtual IMarkerManager &getMarkerManager() = 0;
+            virtual const IMarkerManager &getMarkerManager() const = 0;
 
             /// @brief Update the tags for a track.
             /// @param trackId track ID
