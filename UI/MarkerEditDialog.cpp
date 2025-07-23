@@ -126,13 +126,30 @@ namespace jucyaudio
         
         void MarkerEditDialog::parentHierarchyChanged()
         {
-            // When the dialog becomes visible, focus the text editor
-            if (isShowing())
+            if (isShowing() && !isTimerRunning())
             {
-                m_commentEditor.grabKeyboardFocus();
-                if (!m_isNewMarker)
+                // Start a short timer to grab focus after the dialog window is active
+                startTimer(100);
+            }
+        }
+        
+        void MarkerEditDialog::timerCallback()
+        {
+            stopTimer();
+            if (auto* dialogWindow = findParentComponentOfClass<juce::DialogWindow>())
+            {
+                if (dialogWindow->isActiveWindow())
                 {
-                    m_commentEditor.selectAll();
+                    m_commentEditor.grabKeyboardFocus();
+                    if (!m_isNewMarker)
+                    {
+                        m_commentEditor.selectAll();
+                    }
+                }
+                else
+                {
+                    // If window isn't active yet, try again
+                    startTimer(50);
                 }
             }
         }

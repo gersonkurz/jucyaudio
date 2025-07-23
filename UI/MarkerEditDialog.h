@@ -9,7 +9,7 @@ namespace jucyaudio
 {
     namespace ui
     {
-        class MarkerEditDialog : public juce::Component
+        class MarkerEditDialog : public juce::Component, private juce::Timer
         {
         public:
             MarkerEditDialog();
@@ -18,6 +18,7 @@ namespace jucyaudio
             void paint(juce::Graphics& g) override;
             void resized() override;
             void parentHierarchyChanged() override;
+            void timerCallback() override;
             
             // Set up for new marker
             void setupForNewMarker(std::chrono::milliseconds position);
