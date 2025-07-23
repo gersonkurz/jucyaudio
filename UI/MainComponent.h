@@ -13,6 +13,8 @@
 #include <UI/NavigationPanelComponent.h>
 #include <UI/MixEditorComponent.h>
 #include <UI/PlaybackController.h>
+#include <UI/PlaybackToolbarComponent.h>
+#include <UI/EnhancedPlayerComponent.h>
 #include <UI/ThemeManager.h>
 #include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -127,8 +129,9 @@ namespace jucyaudio
 
             DividerComponent m_verticalDivider;
 
-            PlaybackToolbarComponent m_playbackToolbar; // Direct member object
+            PlaybackToolbarComponent m_hiddenPlaybackToolbar; // Hidden, just for PlaybackController
             PlaybackController m_playbackController;
+            EnhancedPlayerComponent m_enhancedPlayer; // Direct member object
             MainPlaybackAndStatusComponent m_mainPlaybackAndStatusPanel;
             juce::LookAndFeel_V4 m_lookAndFeel;
 

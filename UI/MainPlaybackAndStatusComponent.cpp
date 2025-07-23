@@ -8,12 +8,10 @@ namespace jucyaudio
 
         MainPlaybackAndStatusComponent::MainPlaybackAndStatusComponent(MainComponent &owner)
             : m_ownerMainComponent{owner},
-              m_playbackToolbar{owner.m_playbackToolbar}
-        // m_playbackToolbar is default-constructed as a member
-        // m_statusLabel is default-constructed
+              m_player{owner.m_enhancedPlayer}
         {
             // Add and make visible the child components
-            addAndMakeVisible(m_playbackToolbar);
+            addAndMakeVisible(m_player);
 
             m_statusLabel.setText("", juce::dontSendNotification);
             m_statusLabel.setJustificationType(juce::Justification::centredLeft);
@@ -23,7 +21,7 @@ namespace jucyaudio
 
         MainPlaybackAndStatusComponent::~MainPlaybackAndStatusComponent()
         {
-            // Child components (m_playbackToolbar, m_statusLabel) are destroyed automatically
+            // Child components (m_player, m_statusLabel) are destroyed automatically
         }
 
         void MainPlaybackAndStatusComponent::paint(juce::Graphics &g)
@@ -39,40 +37,15 @@ namespace jucyaudio
         void MainPlaybackAndStatusComponent::resized()
         {
             auto bounds = getLocalBounds();
-            int padding = 5; // Padding around elements
+            const int padding = 5;
+            const int statusHeight = 25;
 
-            // Example layout:
-            // Status label on the left, playback toolbar takes the rest of the space.
-            // Or, playback toolbar at the top, status label at the bottom of this panel.
+            // Status label at the bottom
+            auto statusBounds = bounds.removeFromBottom(statusHeight);
+            m_statusLabel.setBounds(statusBounds.reduced(padding, 2));
 
-            // Let's try: PlaybackToolbar fills most of it, status label takes a small height at the bottom.
-            // This assumes PlaybackToolbarComponent is designed to look good with a certain height.
-            // The old MainComponent gave it 30px height.
-
-            int toolbarHeight = 30;                                               // Typical height for a compact toolbar
-            int statusLabelHeight = bounds.getHeight() - toolbarHeight - padding; // Remaining height for status, or fixed
-
-            if (statusLabelHeight < 15 && bounds.getHeight() > toolbarHeight) // Ensure some minimum if space allows
-            {
-                statusLabelHeight = 15;
-            }
-            else if (bounds.getHeight() <= toolbarHeight) // Not enough space for status label below
-            {
-                statusLabelHeight = 0;
-            }
-
-            // Playback toolbar at the top of this panel's area
-            m_playbackToolbar.setBounds(bounds.removeFromTop(toolbarHeight).reduced(padding, 0));
-
-            // Status label below it, if there's space
-            if (statusLabelHeight > 0)
-            {
-                m_statusLabel.setBounds(bounds.reduced(padding));
-            }
-            else
-            {
-                m_statusLabel.setBounds({}); // Collapse if no space
-            }
+            // Enhanced player takes the remaining space
+            m_player.setBounds(bounds);
 
             /*
             // Alternative layout: Status label on left, toolbar on right
@@ -105,7 +78,7 @@ namespace jucyaudio
         }
 
         // Optional getter, already in header:
-        // PlaybackToolbarComponent& MainPlaybackAndStatusComponent::getPlaybackToolbar() { return m_playbackToolbar; }
+        // EnhancedPlayerComponent& MainPlaybackAndStatusComponent::getPlayer() { return m_player; }
 
     } // namespace ui
 } // namespace jucyaudio

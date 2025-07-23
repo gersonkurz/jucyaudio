@@ -303,10 +303,11 @@ namespace jucyaudio
             {
                 changeState(State::Starting); // Indicate intent
                 m_audioTransportSource.start();
-                // State will change to Playing if successful, typically via MainComponent's ChangeListener on transport source,
-                // or we can directly set it here if start() is synchronous and reliable.
-                // For simplicity, let's assume MainComponent's ChangeListener on the transport source handles the Playing state update.
-                // changeState(State::Playing); // Or, MainComponent does this via its own PlaybackState enum
+                // If start() was successful, the transport will be playing.
+                if (m_audioTransportSource.isPlaying())
+                {
+                    changeState(State::Playing);
+                }
             }
         }
 

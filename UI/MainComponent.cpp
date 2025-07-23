@@ -49,7 +49,8 @@ namespace jucyaudio
               m_currentMainView{MainViewType::DataView},
               m_currentMainViewComponent{&m_dataViewComponent},
               m_verticalDivider{*this, true},
-              m_playbackController{m_playbackToolbar},
+              m_playbackController{m_hiddenPlaybackToolbar},
+              m_enhancedPlayer{m_playbackController},
               m_mainPlaybackAndStatusPanel{*this}
         {
             theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
@@ -119,31 +120,17 @@ namespace jucyaudio
                 handleNodeAction(selectedNode, dataAction);
             };
 
-            // Playback Toolbar (callbacks from
-            // m_mainPlaybackAndStatusPanel.getPlaybackToolbar())
-            auto &toolbar = m_mainPlaybackAndStatusPanel.getPlaybackToolbar();
-            toolbar.onPlayClicked = [this]
+            // Enhanced Player callbacks
+            m_enhancedPlayer.onPreviousTrack = [this]
             {
-                requestPlayOrPlaySelection();
+                // TODO: Implement previous track logic
+                spdlog::info("Previous track requested");
             };
-            toolbar.onPauseClicked = [this]
+
+            m_enhancedPlayer.onNextTrack = [this]
             {
-                m_playbackController.pause();
-            }; // Direct call
-            toolbar.onStopClicked = [this]
-            {
-                m_playbackController.stop();
-            }; // Direct call
-            toolbar.onPositionSeek = [this](double newNormalizedPosition)
-            {
-                if (m_playbackController.getLengthInSeconds() > 0)
-                {
-                    m_playbackController.seek(newNormalizedPosition);
-                }
-            };
-            toolbar.onVolumeChanged = [this](float newGain)
-            {
-                m_playbackController.setGain(newGain);
+                // TODO: Implement next track logic
+                spdlog::info("Next track requested");
             };
 
             // --- Initialize Navigation ---
@@ -432,7 +419,7 @@ namespace jucyaudio
 
             int bottomPanelHeight = m_mainPlaybackAndStatusPanel.isVisible() ? m_mainPlaybackAndStatusPanel.getHeight() : 0;
             if (bottomPanelHeight == 0 && m_mainPlaybackAndStatusPanel.isVisible())
-                bottomPanelHeight = 54; // Default
+                bottomPanelHeight = 120; // Increased for enhanced player
 
             m_dynamicToolbar.setBounds(bounds.removeFromTop(toolbarHeight));
             m_mainPlaybackAndStatusPanel.setBounds(bounds.removeFromBottom(bottomPanelHeight));
@@ -1617,7 +1604,7 @@ namespace jucyaudio
                 m_navigationPanel.sendLookAndFeelChange();
                 m_dataViewComponent.sendLookAndFeelChange();
                 m_mixEditorComponent.sendLookAndFeelChange();
-                m_playbackToolbar.sendLookAndFeelChange();
+                m_enhancedPlayer.sendLookAndFeelChange();
                 m_mainPlaybackAndStatusPanel.sendLookAndFeelChange();
                 m_dynamicToolbar.sendLookAndFeelChange();
 

@@ -269,6 +269,7 @@ target_sources(jucyaudio PRIVATE
     UI/NavigationPanelComponent.cpp
     UI/PlaybackController.cpp
     UI/PlaybackToolbarComponent.cpp
+    UI/EnhancedPlayerComponent.cpp
     UI/ScanDialogComponent.cpp
     UI/ColumnConfiguratorDialog.h
     UI/DynamicColumnManager.h
@@ -284,6 +285,7 @@ target_sources(jucyaudio PRIVATE
     UI/NavigationPanelComponent.h
     UI/PlaybackController.h
     UI/PlaybackToolbarComponent.h
+    UI/EnhancedPlayerComponent.h
     UI/ScanDialogComponent.h
     UI/ThemeManager.cpp
     UI/ThemeManager.h
@@ -320,6 +322,8 @@ juce_add_binary_data(jucyaudio_assets
         Assets/volume_down.svg
         Assets/volume_off.svg
         Assets/volume_up.svg
+        Assets/icons/skip_previous.svg
+        Assets/icons/skip_next.svg
 )
 
 # Platform-specific library linking

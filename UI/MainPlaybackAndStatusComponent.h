@@ -1,6 +1,6 @@
 #pragma once
 
-#include <UI/PlaybackToolbarComponent.h>
+#include <UI/EnhancedPlayerComponent.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_graphics/juce_graphics.h>
 
@@ -23,19 +23,19 @@ namespace jucyaudio
 
             void setStatusMessage(const juce::String &message, bool isError = false);
 
-            // Provide access to the toolbar for MainComponent to wire it up
-            PlaybackToolbarComponent &getPlaybackToolbar()
+            // Provide access to the player for MainComponent to wire it up
+            EnhancedPlayerComponent &getPlayer()
             {
-                return m_playbackToolbar;
+                return m_player;
             }
-            const PlaybackToolbarComponent &getPlaybackToolbar() const
+            const EnhancedPlayerComponent &getPlayer() const
             {
-                return m_playbackToolbar;
+                return m_player;
             }
 
         private:
             MainComponent &m_ownerMainComponent;
-            PlaybackToolbarComponent& m_playbackToolbar; 
+            EnhancedPlayerComponent& m_player; 
             juce::Label m_statusLabel;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainPlaybackAndStatusComponent)

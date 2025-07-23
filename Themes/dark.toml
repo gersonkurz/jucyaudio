@@ -17,6 +17,10 @@ name = "Jucy Dark"
 "TextButton::buttonOnColourId"             = "#FF61afef"
 "PopupMenu::highlightedBackgroundColourId" = "#FF2c313a"  # A slightly lighter dark for menu highlights
 
+
+"TextButton::textColourOffId"              = "#FFFFb2bf"  # Text color for buttons in "off" state
+"TextButton::textColourOnId"               = "#FFabFFFF"  # Text color for buttons in "on" state"
+
 # --- Inactive & Subtle Elements ---
 "ComboBox::backgroundColourId"             = "#FF3e4451"  # Inactive selection in TreeView
 "TreeView::linesColourId"                  = "#FF3e4451"  # The indent lines

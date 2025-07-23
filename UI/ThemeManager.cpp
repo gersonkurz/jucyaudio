@@ -9,6 +9,7 @@ namespace jucyaudio
         namespace
         {
 #define DECLARE_COLOUR_ID(name) {#name, juce::name},
+
             const std::unordered_map<std::string, int> colourNameMap
             {
                 DECLARE_COLOUR_ID(TreeView::backgroundColourId)
@@ -21,8 +22,11 @@ namespace jucyaudio
                 DECLARE_COLOUR_ID(ComboBox::backgroundColourId)
                 DECLARE_COLOUR_ID(TextEditor::backgroundColourId)
                 DECLARE_COLOUR_ID(TextEditor::outlineColourId)
+                
                 DECLARE_COLOUR_ID(TextButton::buttonColourId)
                 DECLARE_COLOUR_ID(TextButton::buttonOnColourId)
+                DECLARE_COLOUR_ID(TextButton::textColourOffId) 
+                DECLARE_COLOUR_ID(TextButton::textColourOnId)
 
                 DECLARE_COLOUR_ID(PopupMenu::backgroundColourId)
                 DECLARE_COLOUR_ID(PopupMenu::textColourId)
@@ -40,7 +44,6 @@ namespace jucyaudio
                 DECLARE_COLOUR_ID(Slider::trackColourId)
             };
         } // namespace
-
 
         std::optional<JucyTheme> ThemeManager::loadThemeFromFile(const std::filesystem::path &path)
         {
