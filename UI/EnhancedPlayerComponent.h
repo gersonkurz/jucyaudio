@@ -68,7 +68,9 @@ namespace jucyaudio
 
         private:
             // Waveform Display Component
-            class WaveformDisplay : public juce::Component, public juce::ChangeListener
+            class WaveformDisplay : public juce::Component, 
+                                     public juce::ChangeListener,
+                                     public juce::TooltipClient
             {
             public:
                 WaveformDisplay(juce::AudioFormatManager& formatManager, 
@@ -78,7 +80,11 @@ namespace jucyaudio
                 void paint(juce::Graphics& g) override;
                 void mouseDown(const juce::MouseEvent& event) override;
                 void mouseMove(const juce::MouseEvent& event) override;
+                void mouseExit(const juce::MouseEvent& event) override;
                 void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+                
+                // TooltipClient
+                juce::String getTooltip() override { return m_currentTooltip; }
                 
                 void loadFile(const juce::File& file);
                 void setPlaybackPosition(double position);
@@ -94,10 +100,12 @@ namespace jucyaudio
                 bool m_fileLoaded{false};
                 std::vector<database::TrackMarker> m_markers;
                 std::optional<size_t> m_hoveredMarkerIndex;
+                juce::String m_currentTooltip;
                 
                 // Helper to convert marker position to screen X coordinate
                 int markerPositionToScreenX(const database::TrackMarker& marker) const;
                 std::optional<size_t> hitTestMarker(juce::Point<int> pos) const;
+                juce::String formatMarkerPosition(std::chrono::milliseconds position) const;
             };
             
             // Top row components

@@ -607,11 +607,30 @@ namespace jucyaudio
                 m_hoveredMarkerIndex = newHoveredIndex;
                 repaint();
                 
-                // Update cursor
-                setMouseCursor(newHoveredIndex.has_value() ? 
-                    juce::MouseCursor::PointingHandCursor : 
-                    juce::MouseCursor::NormalCursor);
+                // Update cursor and tooltip
+                if (newHoveredIndex.has_value())
+                {
+                    setMouseCursor(juce::MouseCursor::PointingHandCursor);
+                    
+                    // Format tooltip with marker information
+                    const auto& marker = m_markers[*newHoveredIndex];
+                    const auto positionStr = formatMarkerPosition(marker.position);
+                    m_currentTooltip = positionStr + "\n" + marker.comment;
+                }
+                else
+                {
+                    setMouseCursor(juce::MouseCursor::NormalCursor);
+                    m_currentTooltip.clear();
+                }
             }
+        }
+        
+        void EnhancedPlayerComponent::WaveformDisplay::mouseExit(const juce::MouseEvent& event)
+        {
+            m_hoveredMarkerIndex.reset();
+            m_currentTooltip.clear();
+            setMouseCursor(juce::MouseCursor::NormalCursor);
+            repaint();
         }
         
         int EnhancedPlayerComponent::WaveformDisplay::markerPositionToScreenX(const database::TrackMarker& marker) const
@@ -639,6 +658,17 @@ namespace jucyaudio
             }
             
             return std::nullopt;
+        }
+        
+        juce::String EnhancedPlayerComponent::WaveformDisplay::formatMarkerPosition(std::chrono::milliseconds position) const
+        {
+            const auto totalSeconds = position.count() / 1000;
+            const auto minutes = totalSeconds / 60;
+            const auto seconds = totalSeconds % 60;
+            
+            return juce::String::formatted("%d:%02d", 
+                static_cast<int>(minutes), 
+                static_cast<int>(seconds));
         }
     }
 }

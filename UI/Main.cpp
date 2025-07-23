@@ -115,6 +115,7 @@ namespace jucyaudio
 
             private:
                 jucyaudio::ui::MainComponent *m_pMainComponent;
+                juce::TooltipWindow m_tooltipWindow{this, 700}; // 700ms delay before showing
                 JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainWindow)
             };
 
