@@ -2,6 +2,7 @@
 #include <Utils/UiUtils.h>
 #include <BinaryData.h>
 #include <spdlog/spdlog.h>
+#include <algorithm>
 
 namespace jucyaudio
 {
@@ -26,6 +27,28 @@ namespace jucyaudio
                 {
                     const double seekTime = normalizedPosition * length;
                     m_playbackController.seek(seekTime);
+                }
+            };
+            
+            // Set up marker callback
+            m_waveformDisplay.onMarkerClicked = [this](std::chrono::milliseconds position) {
+                if (m_currentTrackId && onMarkerAction)
+                {
+                    // Check if this is a new marker position or existing marker
+                    const auto& markers = m_waveformDisplay.getMarkers();
+                    const auto isNewMarker = std::none_of(markers.begin(), 
+                                                         markers.end(),
+                                                         [position](const auto& marker) {
+                                                             return marker.position == position;
+                                                         });
+                    spdlog::info("Marker action: trackId={}, position={}ms, isNew={}", 
+                        *m_currentTrackId, position.count(), isNewMarker);
+                    onMarkerAction(*m_currentTrackId, position, isNewMarker);
+                }
+                else
+                {
+                    spdlog::warn("Cannot handle marker action: trackId={}, callback set={}", 
+                        m_currentTrackId.has_value(), onMarkerAction != nullptr);
                 }
             };
             
@@ -372,9 +395,22 @@ namespace jucyaudio
             repaint();
         }
         
-        void EnhancedPlayerComponent::loadFile(const juce::File& file)
+        void EnhancedPlayerComponent::loadFile(const juce::File& file, std::optional<database::TrackId> trackId)
         {
             m_waveformDisplay.loadFile(file);
+            m_currentTrackId = trackId;
+            
+            // Clear markers if no track ID provided
+            if (!trackId)
+            {
+                m_waveformDisplay.setMarkers({});
+            }
+            // We'll load markers from the database when we connect it to MainComponent
+        }
+        
+        void EnhancedPlayerComponent::setMarkers(const std::vector<database::TrackMarker>& markers)
+        {
+            m_waveformDisplay.setMarkers(markers);
         }
         
         // WaveformDisplay implementation
@@ -436,9 +472,29 @@ namespace jucyaudio
                 // Draw playhead line
                 if (m_playbackPosition > 0.0 && m_playbackPosition < 1.0)
                 {
-                    const int playheadX = waveformBounds.getX() + static_cast<int>(waveformBounds.getWidth() * m_playbackPosition);
+                    const auto playheadX = waveformBounds.getX() + static_cast<int>(waveformBounds.getWidth() * m_playbackPosition);
                     g.setColour(juce::Colours::white);
                     g.drawVerticalLine(playheadX, waveformBounds.getY(), waveformBounds.getBottom());
+                }
+                
+                // Draw markers
+                for (size_t i = 0; i < m_markers.size(); ++i)
+                {
+                    const auto& marker = m_markers[i];
+                    const auto markerX = markerPositionToScreenX(marker);
+                    
+                    // Draw marker line
+                    const auto isHovered = m_hoveredMarkerIndex && *m_hoveredMarkerIndex == i;
+                    g.setColour(isHovered ? juce::Colours::yellow : juce::Colours::orange);
+                    g.drawVerticalLine(markerX, waveformBounds.getY(), waveformBounds.getBottom());
+                    
+                    // Draw marker triangle at top
+                    juce::Path triangle;
+                    const auto triangleSize = isHovered ? 8.0f : 6.0f;
+                    triangle.addTriangle(markerX - triangleSize/2, waveformBounds.getY(),
+                                       markerX + triangleSize/2, waveformBounds.getY(),
+                                       markerX, waveformBounds.getY() + triangleSize);
+                    g.fillPath(triangle);
                 }
             }
             
@@ -449,12 +505,58 @@ namespace jucyaudio
         
         void EnhancedPlayerComponent::WaveformDisplay::mouseDown(const juce::MouseEvent& event)
         {
-            if (!m_fileLoaded || !onSeek)
+            if (!m_fileLoaded)
+            {
+                spdlog::debug("WaveformDisplay::mouseDown - no file loaded");
                 return;
+            }
+            
+            spdlog::debug("WaveformDisplay::mouseDown - mods: Ctrl={}, Shift={}, Alt={}, Cmd={}", 
+                event.mods.isCtrlDown(), 
+                event.mods.isShiftDown(), 
+                event.mods.isAltDown(),
+                event.mods.isCommandDown());
                 
-            const double clickPosition = event.position.x / static_cast<double>(getWidth());
-            const double seekTime = juce::jlimit(0.0, 1.0, clickPosition);
-            onSeek(seekTime);
+            // Check if clicking on a marker
+            const auto markerHit = hitTestMarker(event.position.toInt());
+            if (markerHit)
+            {
+                spdlog::info("Clicked on marker {} at position {}ms", 
+                    *markerHit, m_markers[*markerHit].position.count());
+                if (onMarkerClicked)
+                {
+                    onMarkerClicked(m_markers[*markerHit].position);
+                }
+                return;
+            }
+            
+            // Check for Ctrl+Click to create marker (use isCtrlDown for Windows/Linux)
+            if (event.mods.isCtrlDown())
+            {
+                const double clickPosition = event.position.x / static_cast<double>(getWidth());
+                const auto positionMs = std::chrono::milliseconds(
+                    static_cast<int64_t>(clickPosition * m_thumbnail.getTotalLength() * 1000));
+                spdlog::info("Ctrl+Click detected at {}ms - creating marker", positionMs.count());
+                
+                if (onMarkerClicked)
+                {
+                    onMarkerClicked(positionMs);
+                }
+                else
+                {
+                    spdlog::warn("onMarkerClicked callback not set!");
+                }
+                return;
+            }
+            
+            // Normal click - seek
+            if (onSeek)
+            {
+                const double clickPosition = event.position.x / static_cast<double>(getWidth());
+                const double seekTime = juce::jlimit(0.0, 1.0, clickPosition);
+                spdlog::debug("Normal click - seeking to {}%", seekTime * 100);
+                onSeek(seekTime);
+            }
         }
         
         void EnhancedPlayerComponent::WaveformDisplay::loadFile(const juce::File& file)
@@ -488,6 +590,55 @@ namespace jucyaudio
             {
                 repaint();
             }
+        }
+        
+        void EnhancedPlayerComponent::WaveformDisplay::setMarkers(const std::vector<database::TrackMarker>& markers)
+        {
+            m_markers = markers;
+            m_hoveredMarkerIndex.reset();
+            repaint();
+        }
+        
+        void EnhancedPlayerComponent::WaveformDisplay::mouseMove(const juce::MouseEvent& event)
+        {
+            const auto newHoveredIndex = hitTestMarker(event.position.toInt());
+            if (newHoveredIndex != m_hoveredMarkerIndex)
+            {
+                m_hoveredMarkerIndex = newHoveredIndex;
+                repaint();
+                
+                // Update cursor
+                setMouseCursor(newHoveredIndex.has_value() ? 
+                    juce::MouseCursor::PointingHandCursor : 
+                    juce::MouseCursor::NormalCursor);
+            }
+        }
+        
+        int EnhancedPlayerComponent::WaveformDisplay::markerPositionToScreenX(const database::TrackMarker& marker) const
+        {
+            const auto totalLength = m_thumbnail.getTotalLength();
+            if (totalLength <= 0.0)
+                return 0;
+                
+            const auto markerSeconds = std::chrono::duration<double>(marker.position).count();
+            const auto normalizedPosition = markerSeconds / totalLength;
+            return static_cast<int>(getWidth() * normalizedPosition);
+        }
+        
+        std::optional<size_t> EnhancedPlayerComponent::WaveformDisplay::hitTestMarker(juce::Point<int> pos) const
+        {
+            constexpr auto hitRadius = 5;
+            
+            for (size_t i = 0; i < m_markers.size(); ++i)
+            {
+                const auto markerX = markerPositionToScreenX(m_markers[i]);
+                if (std::abs(pos.x - markerX) <= hitRadius)
+                {
+                    return i;
+                }
+            }
+            
+            return std::nullopt;
         }
     }
 }

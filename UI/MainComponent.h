@@ -147,6 +147,9 @@ namespace jucyaudio
             const int m_dividerThickness{5}; // << NEW: Thickness of the divider bar
 
             database::RootNode *m_rootNavigationNode{nullptr};
+            
+            // Marker handling
+            void showMarkerDialog(database::TrackId trackId, std::chrono::milliseconds position, bool isNewMarker);
             database::INavigationNode *m_currentSelectedDataNode{nullptr};
 
             enum CommandIDs

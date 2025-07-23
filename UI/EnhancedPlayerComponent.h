@@ -1,7 +1,10 @@
 #pragma once
 
 #include <UI/PlaybackController.h>
+#include <Database/Includes/TrackMarker.h>
+#include <Database/Includes/Constants.h>
 #include <functional>
+#include <optional>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -35,12 +38,16 @@ namespace jucyaudio
             // ChangeListener callback for thumbnail loading
             void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
-            // File loading
-            void loadFile(const juce::File& file);
+            // File loading (with optional track ID for marker loading)
+            void loadFile(const juce::File& file, std::optional<database::TrackId> trackId = std::nullopt);
+            
+            // Marker management
+            void setMarkers(const std::vector<database::TrackMarker>& markers);
             
             // Callbacks for external control
             std::function<void()> onPreviousTrack;
             std::function<void()> onNextTrack;
+            std::function<void(database::TrackId, std::chrono::milliseconds, bool isNewMarker)> onMarkerAction;
 
             // Repeat modes
             enum class RepeatMode
@@ -70,17 +77,27 @@ namespace jucyaudio
                 
                 void paint(juce::Graphics& g) override;
                 void mouseDown(const juce::MouseEvent& event) override;
+                void mouseMove(const juce::MouseEvent& event) override;
                 void changeListenerCallback(juce::ChangeBroadcaster* source) override;
                 
                 void loadFile(const juce::File& file);
                 void setPlaybackPosition(double position);
+                void setMarkers(const std::vector<database::TrackMarker>& markers);
+                const std::vector<database::TrackMarker>& getMarkers() const { return m_markers; }
                 
                 std::function<void(double)> onSeek;
+                std::function<void(std::chrono::milliseconds)> onMarkerClicked;
                 
             private:
                 juce::AudioThumbnail m_thumbnail;
                 double m_playbackPosition{0.0};
                 bool m_fileLoaded{false};
+                std::vector<database::TrackMarker> m_markers;
+                std::optional<size_t> m_hoveredMarkerIndex;
+                
+                // Helper to convert marker position to screen X coordinate
+                int markerPositionToScreenX(const database::TrackMarker& marker) const;
+                std::optional<size_t> hitTestMarker(juce::Point<int> pos) const;
             };
             
             // Top row components
@@ -107,6 +124,7 @@ namespace jucyaudio
             juce::AudioThumbnailCache &m_thumbnailCache;
             RepeatMode m_repeatMode{RepeatMode::Off};
             bool m_shuffleEnabled{false};
+            std::optional<database::TrackId> m_currentTrackId;
 
             // Helper methods
             void updateTransportButtons();

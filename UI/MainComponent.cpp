@@ -15,8 +15,11 @@
 #include <UI/ScanDialogComponent.h>
 #include <UI/TaskDialog.h>
 #include <UI/WorkingSetMetaDataEditorDialog.h>
+#include <UI/MarkerEditDialog.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
+#include <algorithm>
+#include <spdlog/spdlog.h>
 #ifndef JUCE_WINDOWS
 #include <unistd.h>
 #endif
@@ -134,6 +137,14 @@ namespace jucyaudio
             {
                 // TODO: Implement next track logic
                 spdlog::info("Next track requested");
+            };
+            
+            m_enhancedPlayer.onMarkerAction = [this](database::TrackId trackId, std::chrono::milliseconds position, bool isNewMarker)
+            {
+                spdlog::info("Marker action requested: track={}, position={}ms, isNew={}", 
+                    trackId, position.count(), isNewMarker);
+                
+                showMarkerDialog(trackId, position, isNewMarker);
             };
 
             // --- Initialize Navigation ---
@@ -908,7 +919,11 @@ namespace jucyaudio
                 else
                 {
                     // Load waveform when playback starts successfully
-                    m_enhancedPlayer.loadFile(audioFile);
+                    m_enhancedPlayer.loadFile(audioFile, track->trackId);
+                    
+                    // Load markers for this track
+                    const auto markers = theTrackLibrary.getMarkerManager().getMarkersForTrack(track->trackId);
+                    m_enhancedPlayer.setMarkers(markers);
                 }
             }
             else
@@ -1714,6 +1729,151 @@ namespace jucyaudio
             }
 
             return false;
+        }
+
+        void MainComponent::showMarkerDialog(database::TrackId trackId, std::chrono::milliseconds position, bool isNewMarker)
+        {
+            auto& markerManager = theTrackLibrary.getMarkerManager();
+            
+            // markerManager is a reference, so it's always valid
+            
+            auto* dialog = new MarkerEditDialog();
+            
+            if (isNewMarker)
+            {
+                // Set up for new marker
+                dialog->setupForNewMarker(position);
+                
+                dialog->onSave = [this, dialog, &markerManager, trackId, position]()
+                {
+                    const auto comment = dialog->getComment().toStdString();
+                    if (comment.empty())
+                    {
+                        m_mainPlaybackAndStatusPanel.setStatusMessage("Marker comment cannot be empty", true);
+                        return;
+                    }
+                    
+                    MarkerId newMarkerId;
+                    const auto result = markerManager.createMarker(trackId, position, comment, newMarkerId);
+                    
+                    if (result == MarkerResult::Success)
+                    {
+                        spdlog::info("Created marker {} for track {} at {}ms", newMarkerId, trackId, position.count());
+                        m_mainPlaybackAndStatusPanel.setStatusMessage("Marker created", false);
+                        
+                        // Reload markers in the player
+                        const auto markers = markerManager.getMarkersForTrack(trackId);
+                        m_enhancedPlayer.setMarkers(markers);
+                        
+                        // Close the dialog
+                        if (auto* window = dialog->findParentComponentOfClass<juce::DialogWindow>())
+                        {
+                            window->exitModalState(0);
+                        }
+                    }
+                    else
+                    {
+                        spdlog::error("Failed to create marker: result={}", static_cast<int>(result));
+                        m_mainPlaybackAndStatusPanel.setStatusMessage("Failed to create marker", true);
+                    }
+                };
+            }
+            else
+            {
+                // Find existing marker at this position
+                const auto markers = markerManager.getMarkersForTrack(trackId);
+                const auto markerIt = std::find_if(markers.begin(), markers.end(),
+                    [position](const auto& m) { return m.position == position; });
+                
+                if (markerIt == markers.end())
+                {
+                    spdlog::error("No marker found at position {}ms", position.count());
+                    delete dialog;
+                    return;
+                }
+                
+                const auto marker = *markerIt;
+                dialog->setupForExistingMarker(marker);
+                
+                // Save callback
+                dialog->onSave = [this, dialog, &markerManager, marker, trackId]()
+                {
+                    const auto newComment = dialog->getComment().toStdString();
+                    if (newComment.empty())
+                    {
+                        m_mainPlaybackAndStatusPanel.setStatusMessage("Marker comment cannot be empty", true);
+                        return;
+                    }
+                    
+                    const auto result = markerManager.updateMarker(marker.markerId, newComment);
+                    
+                    if (result == MarkerResult::Success)
+                    {
+                        spdlog::info("Updated marker {}", marker.markerId);
+                        m_mainPlaybackAndStatusPanel.setStatusMessage("Marker updated", false);
+                        
+                        // Reload markers in the player
+                        const auto markers = markerManager.getMarkersForTrack(trackId);
+                        m_enhancedPlayer.setMarkers(markers);
+                        
+                        // Close the dialog
+                        if (auto* window = dialog->findParentComponentOfClass<juce::DialogWindow>())
+                        {
+                            window->exitModalState(0);
+                        }
+                    }
+                    else
+                    {
+                        spdlog::error("Failed to update marker: result={}", static_cast<int>(result));
+                        m_mainPlaybackAndStatusPanel.setStatusMessage("Failed to update marker", true);
+                    }
+                };
+                
+                // Delete callback
+                dialog->onDelete = [this, dialog, &markerManager, marker, trackId]()
+                {
+                    const auto result = markerManager.deleteMarker(marker.markerId);
+                    
+                    if (result == MarkerResult::Success)
+                    {
+                        spdlog::info("Deleted marker {}", marker.markerId);
+                        m_mainPlaybackAndStatusPanel.setStatusMessage("Marker deleted", false);
+                        
+                        // Reload markers in the player
+                        const auto markers = markerManager.getMarkersForTrack(trackId);
+                        m_enhancedPlayer.setMarkers(markers);
+                        
+                        // Close the dialog
+                        if (auto* window = dialog->findParentComponentOfClass<juce::DialogWindow>())
+                        {
+                            window->exitModalState(0);
+                        }
+                    }
+                    else
+                    {
+                        spdlog::error("Failed to delete marker: result={}", static_cast<int>(result));
+                        m_mainPlaybackAndStatusPanel.setStatusMessage("Failed to delete marker", true);
+                    }
+                };
+            }
+            
+            // Cancel callback (common for both new and existing)
+            dialog->onCancel = [dialog]()
+            {
+                if (auto* window = dialog->findParentComponentOfClass<juce::DialogWindow>())
+                {
+                    window->exitModalState(0);
+                }
+            };
+            
+            // Show the dialog
+            juce::DialogWindow::LaunchOptions launchOptions;
+            launchOptions.content.setOwned(dialog);
+            launchOptions.dialogTitle = isNewMarker ? "New Marker" : "Edit Marker";
+            launchOptions.componentToCentreAround = this;
+            launchOptions.escapeKeyTriggersCloseButton = true;
+            launchOptions.resizable = false;
+            launchOptions.launchAsync();
         }
 
     } // namespace ui
