@@ -113,6 +113,7 @@ namespace jucyaudio
 
             void onRunBpmAnalysis(database::INavigationNode* node);
             void onRunBpmAnalysisForSelectedRows();
+            void showBadFilesDialog(const std::vector<database::TrackInfo>& badFiles);
 
             void onEditMetadata(database::INavigationNode *node);
 

@@ -11,6 +11,13 @@ namespace jucyaudio
 {
     namespace database
     {
+        enum class TrackStatus
+        {
+            Unknown,    // Never analyzed or played
+            Ok,         // Successfully played or analyzed
+            BadFormat   // Failed to decode/play
+        };
+        
         struct TrackInfo
         {
             TrackId trackId = -1;
@@ -58,6 +65,9 @@ namespace jucyaudio
             std::string internal_content_hash; // Optional
             std::string user_notes;
             bool is_missing = false; // True if file not found on disk during last scan
+            
+            // Track status for bad file detection
+            TrackStatus status = TrackStatus::Unknown;
         };
 
     } // namespace database

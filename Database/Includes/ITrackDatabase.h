@@ -122,6 +122,9 @@ namespace jucyaudio
             virtual DbResult updateTrackLikedStatus(TrackId trackId, int likedStatus) = 0;
             virtual DbResult incrementTrackPlayCount(TrackId trackId) = 0; // And update last_played
             virtual DbResult updateTrackUserNotes(TrackId trackId, const std::string &notes) = 0;
+            
+            // Update the status of a track (Unknown, Ok, BadFormat)
+            virtual DbResult updateTrackStatus(TrackId trackId, TrackStatus status) = 0;
 
             // Finds one track that has no BPM data and returns its info.
             // Returns std::nullopt if no such tracks are found.

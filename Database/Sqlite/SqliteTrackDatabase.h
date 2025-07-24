@@ -63,6 +63,7 @@ namespace jucyaudio
             DbResult updateTrackLikedStatus(TrackId trackId, int likedStatus) override;
             DbResult incrementTrackPlayCount(TrackId trackId) override;
             DbResult updateTrackUserNotes(TrackId trackId, const std::string &notes) override;
+            DbResult updateTrackStatus(TrackId trackId, TrackStatus status) override;
             DbResult updateTrackFilesystemInfo(TrackId trackId, Timestamp_t lastModified, std::uintmax_t filesize) override;
             DbResult setTrackPathMissing(TrackId trackId, bool isMissing) override;
 

@@ -862,9 +862,16 @@ namespace jucyaudio
                 task,
                 500,
                 this,
-                [this]()
+                [this, task]()
                 {
                     m_dataViewComponent.refreshView();
+                    
+                    // Check for bad files
+                    const auto& badFiles = task->getBadFiles();
+                    if (!badFiles.empty())
+                    {
+                        showBadFilesDialog(badFiles);
+                    }
                 });
             task->release(REFCOUNT_DEBUG_ARGS);
         }
@@ -883,11 +890,79 @@ namespace jucyaudio
                 task,
                 500,
                 this,
-                [this]()
+                [this, task]()
                 {
                     m_dataViewComponent.refreshView();
+                    
+                    // Check for bad files
+                    const auto& badFiles = task->getBadFiles();
+                    if (!badFiles.empty())
+                    {
+                        showBadFilesDialog(badFiles);
+                    }
                 });
             task->release(REFCOUNT_DEBUG_ARGS);
+        }
+        
+        void MainComponent::showBadFilesDialog(const std::vector<database::TrackInfo>& badFiles)
+        {
+            juce::String message = "The following files could not be analyzed due to unsupported decoder format:\n\n";
+            
+            for (const auto& track : badFiles)
+            {
+                message += juce::String(track.filepath.filename().string()) + juce::String("\n");
+            }
+            
+            message += "\nWould you like to remove these files from all working sets?\n";
+            message += "(They will remain in the library but marked as bad format,\n";
+            message += "and won't be included in future BPM analysis or playback)";
+            
+            juce::AlertWindow::showOkCancelBox(
+                juce::AlertWindow::WarningIcon,
+                "Bad Files Detected",
+                message,
+                "Remove from Working Sets",
+                "Keep in Working Sets",
+                this,
+                juce::ModalCallbackFunction::create(
+                    [this, badFiles](int result)
+                    {
+                        if (result == 1) // OK button clicked
+                        {
+                            // Collect track IDs
+                            std::vector<database::TrackId> badTrackIds;
+                            badTrackIds.reserve(badFiles.size());
+                            for (const auto& track : badFiles)
+                            {
+                                badTrackIds.push_back(track.trackId);
+                            }
+                            
+                            // Remove bad files from all working sets
+                            auto& wsManager = theTrackLibrary.getWorkingSetManager();
+                            const auto allWorkingSets = wsManager.getWorkingSets(database::TrackQueryArgs{});
+                            
+                            int removedCount = 0;
+                            for (const auto& ws : allWorkingSets)
+                            {
+                                // Try to remove all bad tracks from this working set
+                                // The method will ignore tracks that aren't in the set
+                                if (wsManager.removeFromWorkingSet(ws.id, badTrackIds))
+                                {
+                                    removedCount++;
+                                }
+                            }
+                            
+                            m_mainPlaybackAndStatusPanel.setStatusMessage(
+                                std::format("Marked {} bad files and removed from {} working sets", 
+                                    badFiles.size(), removedCount), false);
+                            
+                            // Refresh the view to show updated working sets
+                            m_dataViewComponent.refreshView();
+                            //m_navigationPanel.refreshCurrentNode();
+                        }
+                    }
+                )
+            );
         }
 
         // --- Action Execution Method Stubs ---
@@ -915,9 +990,21 @@ namespace jucyaudio
                     m_mainPlaybackAndStatusPanel.setStatusMessage(getSafeDisplayText("Error playing: " + audioFile.getFileName()), true);
                     juce::AlertWindow::showMessageBoxAsync(
                         juce::AlertWindow::WarningIcon, "Playback Error", "Cannot play file:\n" + audioFile.getFullPathName());
+                    
+                    // Update track status to bad_format if it wasn't already marked
+                    if (track->status != database::TrackStatus::BadFormat)
+                    {
+                        theTrackLibrary.getTrackDatabase()->updateTrackStatus(track->trackId, database::TrackStatus::BadFormat);
+                    }
                 }
                 else
                 {
+                    // Update track status to ok if it wasn't already marked
+                    if (track->status != database::TrackStatus::Ok)
+                    {
+                        theTrackLibrary.getTrackDatabase()->updateTrackStatus(track->trackId, database::TrackStatus::Ok);
+                    }
+                    
                     // Load waveform when playback starts successfully
                     m_enhancedPlayer.loadFile(audioFile, track->trackId);
                     

@@ -15,12 +15,15 @@ namespace jucyaudio
             public:
                 explicit BpmAnalysisTask(std::vector<TrackId> trackIds);
                 ~BpmAnalysisTask() override = default;
+                
+                const std::vector<TrackInfo>& getBadFiles() const { return m_badFiles; }
 
             private:
                 void run(ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel) override;
                 void runInternal(ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel);
 
                 std::vector<TrackId> m_trackIds;
+                std::vector<TrackInfo> m_badFiles; // Tracks that failed to decode
             };
         } // namespace background_tasks
     } // namespace database

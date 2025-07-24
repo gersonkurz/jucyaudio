@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS Tracks (
     internal_content_hash TEXT,
     user_notes TEXT,
     is_missing INTEGER DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'unknown',
     FOREIGN KEY (folder_id) REFERENCES Folders(folder_id) ON DELETE CASCADE
 );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_tracks_filepath ON Tracks (filepath);",
@@ -234,6 +235,20 @@ CREATE TABLE IF NOT EXISTS VirtualFolders (
             info.user_notes = stmt.getText(col);
         col++;
         info.is_missing = stmt.getInt32(col++) != 0;
+        
+        // Read status field
+        if (!stmt.isNull(col))
+        {
+            const auto statusStr = stmt.getText(col);
+            if (statusStr == "ok")
+                info.status = TrackStatus::Ok;
+            else if (statusStr == "bad_format")
+                info.status = TrackStatus::BadFormat;
+            else
+                info.status = TrackStatus::Unknown;
+        }
+        col++;
+        
         return info;
     }
 
@@ -270,6 +285,16 @@ CREATE TABLE IF NOT EXISTS VirtualFolders (
         ok &= stmt.addParam(info.internal_content_hash);
         ok &= stmt.addParam(info.user_notes);
         ok &= stmt.addParam(info.is_missing ? 1 : 0);
+        
+        // Add status field
+        std::string statusStr;
+        switch (info.status)
+        {
+            case TrackStatus::Unknown: statusStr = "unknown"; break;
+            case TrackStatus::Ok: statusStr = "ok"; break;
+            case TrackStatus::BadFormat: statusStr = "bad_format"; break;
+        }
+        ok &= stmt.addParam(statusStr);
 
         if (forUpdate)
         {
@@ -670,6 +695,49 @@ namespace jucyaudio
                 {
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
+                
+                currentVersion = 4; // Update for next check
+            }
+            
+            if (currentVersion < 5)
+            {
+                spdlog::info("Migrating database from version 4 to 5 - Adding status field to Tracks table...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Add status column to Tracks table
+                    if (!m_db.execute("ALTER TABLE Tracks ADD COLUMN status TEXT NOT NULL DEFAULT 'unknown';"))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to add status column to Tracks table.");
+                    }
+                    
+                    // Update existing tracks that have BPM data to 'ok' status
+                    if (!m_db.execute("UPDATE Tracks SET status = 'ok' WHERE bpm IS NOT NULL AND bpm > 0;"))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update existing track statuses.");
+                    }
+                    
+                    // Create index for efficient status lookups
+                    if (!m_db.execute("CREATE INDEX IF NOT EXISTS idx_tracks_status ON Tracks (status);"))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create status index.");
+                    }
+                    
+                    // Update schema version
+                    if (auto result = setDBSchemaVersion(5); !result.isOk())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 5.");
+                    }
+                    
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated database to version 5.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
             }
 
             return DbResult::success();
@@ -705,9 +773,9 @@ namespace jucyaudio
                                 duration, samplerate, channels, bitrate, codec_name,
                                 bpm, intro_end, outro_start, key_string, beat_locations_json,
                                 rating, liked_status, play_count, last_played,
-                                internal_content_hash, user_notes, is_missing) 
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
-        )SQL"; // 28 placeholders, is_missing defaults to 0 on insert
+                                internal_content_hash, user_notes, is_missing, status) 
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+        )SQL"; // 31 placeholders
 
                 SqliteStatement stmt{m_db, sql};
                 if (stmt.isValid() && bindTrackInfoToStatement(stmt, trackInfo, false) && stmt.execute())
@@ -726,9 +794,9 @@ namespace jucyaudio
                               duration=?, samplerate=?, channels=?, bitrate=?, codec_name=?,
                               bpm=?, intro_end=?, outro_start=?, key_string=?, beat_locations_json=?,
                               rating=?, liked_status=?, play_count=?, last_played=?,
-                              internal_content_hash=?, user_notes=?, is_missing=?
+                              internal_content_hash=?, user_notes=?, is_missing=?, status=?
             WHERE track_id = ?;
-        )SQL"; // 28 fields + 1 for track_id in WHERE
+        )SQL"; // 31 fields + 1 for track_id in WHERE
 
                 SqliteStatement stmt{m_db, sql};
                 if (stmt.isValid() && bindTrackInfoToStatement(stmt, trackInfo, true) && stmt.execute())
@@ -803,7 +871,8 @@ namespace jucyaudio
             std::string sql_priority1 = R"SQL(
                 SELECT T.* FROM Tracks T
                 JOIN MixTracks MT ON T.track_id = MT.track_id
-                WHERE T.bpm IS NULL OR T.bpm <= 0
+                WHERE (T.bpm IS NULL OR T.bpm <= 0)
+                AND T.status != 'bad_format'
                 LIMIT 1;
             )SQL";
 
@@ -814,7 +883,7 @@ namespace jucyaudio
             }
 
             // --- PRIORITY 2: Any other un-analyzed track ---
-            std::string sql_priority2 = "SELECT * FROM Tracks WHERE bpm IS NULL OR bpm <= 0 LIMIT 1;";
+            std::string sql_priority2 = "SELECT * FROM Tracks WHERE (bpm IS NULL OR bpm <= 0) AND status != 'bad_format' LIMIT 1;";
             SqliteStatement stmt2{m_db, sql_priority2};
             if (stmt2.getNextResult())
             {
@@ -986,6 +1055,23 @@ namespace jucyaudio
         DbResult SqliteTrackDatabase::updateTrackUserNotes(TrackId trackId, const std::string &notes)
         {
             return updateSingleTrackField<const std::string &>(trackId, "user_notes", notes,
+                                                               [](SqliteStatement &s, const std::string &val)
+                                                               {
+                                                                   return s.addParam(val);
+                                                               });
+        }
+
+        DbResult SqliteTrackDatabase::updateTrackStatus(TrackId trackId, TrackStatus status)
+        {
+            std::string statusStr;
+            switch (status)
+            {
+                case TrackStatus::Unknown: statusStr = "unknown"; break;
+                case TrackStatus::Ok: statusStr = "ok"; break;
+                case TrackStatus::BadFormat: statusStr = "bad_format"; break;
+            }
+            
+            return updateSingleTrackField<const std::string &>(trackId, "status", statusStr,
                                                                [](SqliteStatement &s, const std::string &val)
                                                                {
                                                                    return s.addParam(val);

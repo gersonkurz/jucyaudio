@@ -124,6 +124,13 @@ namespace jucyaudio
                     if (existingTrackOpt)
                     {
                         currentTrackInfo = *existingTrackOpt;
+                        
+                        // Skip files with bad_format status
+                        if (currentTrackInfo.status == TrackStatus::BadFormat)
+                        {
+                            spdlog::debug("Skipping bad format file: {}", pathToString(filePath));
+                            continue;
+                        }
 
                         auto db_last_modified_seconds =
                             std::chrono::duration_cast<std::chrono::seconds>(currentTrackInfo.last_modified_fs.time_since_epoch()).count();

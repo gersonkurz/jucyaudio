@@ -180,29 +180,34 @@ This document specifies the requirements for enhancing the JucyAudio player comp
 - Add playback mode buttons ✓
 - Add volume control and time displays ✓
 
-### Phase 1.5: Icon Integration and UI Polish (IN PROGRESS)
+### Phase 1.5: Icon Integration and UI Polish ✓ COMPLETED
 - Replace text labels with proper icon system (PNG/SVG icons) ✓ (transport controls only)
 - Implement proper icon loading and display for transport controls ✓
 - Add icons for repeat modes, shuffle, and volume ⚠️ (text placeholders remain)
 - Ensure proper scaling and theming support for icons ✓
 - Polish button sizes and spacing for better visual appearance ✓
+- Fix play/pause toggle logic ✓
 
-**Current Status:**
-- Transport controls use Material Design SVG icons
-- Icons display at 50% of button size for visual balance
-- Disabled buttons show with 70% opacity
-- **ISSUE:** Play/pause toggle logic needs fixing - pause only works once per track
+### Phase 2: Waveform Visualization ✓ COMPLETED
+- Implement waveform rendering ✓
+- Add two-color progress display ✓
+- Implement click-to-seek functionality ✓
 
-### Phase 2: Waveform Visualization
-- Implement waveform rendering
-- Add two-color progress display
-- Implement click-to-seek functionality
+### Phase 3: Marker System ✓ COMPLETED
+- Create database schema for markers ✓
+- Implement marker creation and display ✓
+- Add marker editing capabilities ✓
+- Implement persistence layer ✓
+- Add hover tooltips for markers ✓
 
-### Phase 3: Marker System
-- Create database schema for markers
-- Implement marker creation and display
-- Add marker editing capabilities
-- Implement persistence layer
+**Implementation Details:**
+- Database migration to version 4 with TrackMarkers table
+- Ctrl+Click to create markers at specific positions
+- Click existing markers to edit/delete
+- MarkerEditDialog with timer-based focus management
+- Tooltips show marker position (M:SS) and comment
+- Visual feedback with color change on hover
+- Full CRUD operations with real-time UI updates
 
 ### Phase 4: Mix Track Display
 - Implement mix detection
@@ -214,3 +219,34 @@ This document specifies the requirements for enhancing the JucyAudio player comp
 - Add animations and transitions
 - Implement error handling
 - Performance testing and optimization
+
+---
+
+## Current Implementation Status Summary
+
+### Completed Features:
+1. **Enhanced Two-Row Player Layout** - Transport controls in top row (70%), mode/volume controls in bottom row (30%)
+2. **Transport Controls** - Play, Pause, Stop, Previous, Next with Material Design SVG icons
+3. **Waveform Display** - Real-time rendering with played/unplayed portions, click-to-seek
+4. **Marker System** - Complete CRUD functionality with database persistence
+   - Ctrl+Click to create markers
+   - Click markers to edit/delete
+   - Hover tooltips showing position and comment
+   - Visual feedback (orange/yellow coloring)
+5. **Volume Control** - Slider with dynamic speaker icon
+6. **Time Display** - Current position and total duration
+7. **Repeat/Shuffle Controls** - Three repeat modes (Off, One, All) and shuffle toggle
+
+### Technical Architecture:
+- **Database**: SQLite schema version 4 with TrackMarkers table
+- **UI Components**: 
+  - EnhancedPlayerComponent (main player)
+  - WaveformDisplay (nested component with TooltipClient)
+  - MarkerEditDialog (modal dialog with timer-based focus)
+- **Integration**: TooltipWindow added to MainWindow for system-wide tooltip support
+
+### Known Limitations:
+- Repeat/shuffle icons still use text placeholders
+- Mix track display not yet implemented
+- No keyboard shortcuts for marker navigation
+- No marker export functionality

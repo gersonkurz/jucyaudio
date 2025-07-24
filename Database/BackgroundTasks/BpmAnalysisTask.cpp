@@ -157,6 +157,10 @@ namespace jucyaudio
                 std::atomic<bool> readerFinished = false;
                 std::atomic<size_t> analysisCompletedCount = 0;
                 std::atomic<size_t> successfulReads = 0;
+                
+                // Thread-safe collection of bad files
+                std::vector<TrackInfo> badFiles;
+                std::mutex badFilesMutex;
 
                 // --- Reader Thread ---
                 std::thread readerThread([&] {
@@ -204,16 +208,44 @@ namespace jucyaudio
                             }
                             else
                             {
-                                spdlog::error("Failed to create reader for track ID {}", trackInfo.trackId);
+                                spdlog::error("Failed to create reader for track ID {} ({})", 
+                                    trackInfo.trackId, audioFile.getFullPathName().toStdString());
+                                
+                                // Update track status to bad_format
+                                theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
+                                
+                                // Add to bad files list
+                                {
+                                    std::lock_guard<std::mutex> lock(badFilesMutex);
+                                    badFiles.push_back(trackInfo);
+                                }
                             }
                         }
                         catch (const std::exception& e)
                         {
                             spdlog::error("Exception reading audio for track ID {}: {}", trackInfo.trackId, e.what());
+                            
+                            // Update track status to bad_format
+                            theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
+                            
+                            // Add to bad files list
+                            {
+                                std::lock_guard<std::mutex> lock(badFilesMutex);
+                                badFiles.push_back(trackInfo);
+                            }
                         }
                         catch (...)
                         {
                             spdlog::error("Unknown exception reading audio for track ID {}", trackInfo.trackId);
+                            
+                            // Update track status to bad_format
+                            theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
+                            
+                            // Add to bad files list
+                            {
+                                std::lock_guard<std::mutex> lock(badFilesMutex);
+                                badFiles.push_back(trackInfo);
+                            }
                         }
                     }
                     readerFinished = true;
@@ -303,6 +335,12 @@ namespace jucyaudio
                 resultsCv.notify_all();
                 readerThread.join();
                 // ThreadPool destructor will join workers
+                
+                // Save bad files to the task
+                {
+                    std::lock_guard<std::mutex> lock(badFilesMutex);
+                    m_badFiles = std::move(badFiles);
+                }
 
                 size_t finalCount = successfulReads.load();
                 if (tracksWritten < finalCount && !shouldCancel)
@@ -316,8 +354,8 @@ namespace jucyaudio
                 {
                     std::string finalStatus = std::format("Successfully analyzed {} tracks.",
                                                           ui::formatStandardStringNumber(finalCount));
-                    if (finalCount < totalTracks) {
-                        finalStatus += std::format(" ({} files could not be read).", totalTracks - finalCount);
+                    if (!m_badFiles.empty()) {
+                        finalStatus += std::format(" ({} files could not be read).", m_badFiles.size());
                     }
                     progressCb(100, finalStatus);
                     completionCb(true, finalStatus);
