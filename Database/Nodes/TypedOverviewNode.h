@@ -27,8 +27,8 @@ namespace jucyaudio
                 TypedContainerNode<NODE_TYPE>::ClientCreationMethod clientCreationMethod,
                 NodeType nodeType,
                 // new things start here);
-                const std::string &typeNameForSingleObject,
-                const std::string &typeNameForMultipleObjects)
+                std::string_view typeNameForSingleObject,
+                std::string_view typeNameForMultipleObjects)
                 : TypedContainerNode<NODE_TYPE>{root, name, clientCreationMethod, nodeType, typeNameForSingleObject, typeNameForMultipleObjects}
             {
             }
@@ -155,7 +155,7 @@ namespace jucyaudio
 
                 // If this node is currently the one displayed in DataView,
                 // MainComponent needs to trigger DataView update. This could be
-                // done by MainComponent checking: if (m_currentSelectedDataNode
+                // done by MainComponent checking: if (m_currentNode
                 // == overviewNodeInstance) { m_dataView.updateContent(); } Or,
                 // TypedOverviewNode could have a callback/signal that it emits
                 // here. For now, let's assume MainComponent handles the

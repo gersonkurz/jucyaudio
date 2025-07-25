@@ -10,7 +10,7 @@ namespace jucyaudio
 
         // Helper to convert DataAction to a displayable string (simple version)
         // In a real app, this might be more sophisticated, perhaps with localization.
-        juce::String dataActionToString(database::DataAction action)
+        juce::String dataActionToString(database::DataAction action, database::INavigationNode* node)
         {
             switch (action)
             {
@@ -22,22 +22,20 @@ namespace jucyaudio
                 return "Create Working Set";
             case database::DataAction::CreateMix:
                 return "Create Mix";
-            case database::DataAction::RemoveMix:
-                return "Remove Mix";
-            case database::DataAction::RemoveWorkingSet:
-                return "Remove Working-Set";
+            case database::DataAction::Delete:
+                return std::format("Delete {}", node->m_refTypeNameForSingleObject);
             case database::DataAction::ExportMix:
                 return "Export Mix";
             case database::DataAction::ShowDetails:
                 return "Details";
             case database::DataAction::EditMetadata:
                 return "Edit Metadata";
-            case database::DataAction::Delete:
-                return "Delete";
+            case database::DataAction::RemoveTracks:
+                return "Remove Tracks";
             case database::DataAction::RunBpmAnalysis:
                 return "Run BPM Analysis";
             default:
-                return "Unknown Action";
+                return "dataActionToString()?";
             }
         }
 

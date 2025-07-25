@@ -194,21 +194,16 @@ namespace jucyaudio
             None,             ///< No action available/selected
             Play,             ///< Start playback of the selected item(s)
             CreateWorkingSet, ///< Create a new working set from selected items
-            RemoveWorkingSet, ///< Remove an existing working set
+            CreateMix,        ///< Create a new DJ mix from selected tracks
             ShowDetails,      ///< Display detailed information in a separate view
             EditMetadata,     ///< Open metadata editor for the item
-            Delete,           ///< Remove the item from database (with confirmation)
-            CreateMix,        ///< Create a new DJ mix from selected tracks
-            RemoveMix,        ///< Remove an existing mix
+            RemoveTracks,     ///< Remove selected tracks from a mix or working set
+            Delete,           ///< Delete the selected working set
             ExportMix,        ///< Export mix to audio file
             RunBpmAnalysis    ///< Run BPM analysis on selected items
         };
 
-        /**
-         * @brief Collection of available actions for a given context
-         * @note Used to specify which actions are available for specific
-         *       data items or UI contexts
-         */
+        // @brief Collection of data actions available in the application
         using DataActions = std::vector<DataAction>;
 
         /**
@@ -230,11 +225,11 @@ namespace jucyaudio
          */
         struct WorkingSetInfo
         {
-            WorkingSetId id;           ///< Unique database identifier
-            std::string name;          ///< User-defined name for the working set
-            Timestamp_t timestamp;     ///< Creation or last modification time
-            int64_t track_count;       ///< Number of tracks in the working set
-            Duration_t total_duration; ///< Combined duration of all tracks
+            WorkingSetId id;                      ///< Unique database identifier
+            std::string name;                     ///< User-defined name for the working set
+            Timestamp_t timestamp;                ///< Creation or last modification time
+            int64_t track_count;                  ///< Number of tracks in the working set
+            Duration_t total_duration;            ///< Combined duration of all tracks
             std::vector<SortOrderInfo> sortOrder; ///< Saved sort order for this working set
         };
 

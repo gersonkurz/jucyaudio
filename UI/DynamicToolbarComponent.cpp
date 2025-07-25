@@ -145,7 +145,7 @@ namespace jucyaudio
                         continue; // Skip "None" action
 
                     auto *button = m_actionButtons.add(new juce::TextButton{});
-                    button->setButtonText(dataActionToString(action));
+                    button->setButtonText(dataActionToString(action, m_currentNode));
                     // Capture 'action' by value for the lambda
                     button->onClick = [this, action]
                     {

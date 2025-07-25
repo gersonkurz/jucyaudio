@@ -84,7 +84,11 @@ namespace jucyaudio
             std::function<void(INavigationNode *, DataAction)> m_onNodeAction;
 
             // ---------------------------- new UI-related methods
-            bool setRootNode(INavigationNode *rootNode); // rootNode will be retained
+
+            // @brief Set the root node for this navigation panel and create the initial display
+            // @param rootNode The root node to set. This node will be retained.
+            // @return True if the root node was set successfully, false if a root node is already set.
+            bool setRootNode(INavigationNode *rootNode);
 
         private:
             juce::TreeView m_treeView;

@@ -18,16 +18,15 @@ namespace jucyaudio
         template <typename T> class TypedContainerNode : public BaseNode
         {
         public:
-            using ClientCreationMethod =
-                std::function<void(INavigationNode *, std::vector<INavigationNode *> &)>;
+            using ClientCreationMethod = std::function<void(INavigationNode *, std::vector<INavigationNode *> &)>;
 
-            explicit TypedContainerNode(
-                INavigationNode *root, std::string_view name,
+            explicit TypedContainerNode(INavigationNode *root,
+                std::string_view name,
                 ClientCreationMethod clientCreationMethod,
                 NodeType nodeType,
                 // new things start here);
-                const std::string &typeNameForSingleObject,
-                const std::string &typeNameForMultipleObjects)
+                std::string_view typeNameForSingleObject,
+                std::string_view typeNameForMultipleObjects)
                 : BaseNode{root, name, nodeType, typeNameForSingleObject, typeNameForMultipleObjects},
                   m_clientCreationMethod{clientCreationMethod}
             {
@@ -42,7 +41,7 @@ namespace jucyaudio
                 m_children.clear();
             }
 
-            INavigationNode* get(int64_t uniqueId) const override
+            INavigationNode *get(int64_t uniqueId) const override
             {
                 for (const auto child : m_children)
                 {
@@ -50,27 +49,24 @@ namespace jucyaudio
                     {
                         child->retain(REFCOUNT_DEBUG_ARGS);
                         return child;
-                    }                    
+                    }
                 }
                 return nullptr;
             }
 
             void refreshChildren() override
             {
-                spdlog::debug("Refreshing children for TypedContainerNode: {}",
-                             getName());
+                spdlog::debug("Refreshing children for TypedContainerNode: {}", getName());
 
                 if (m_children.empty())
                 {
                     spdlog::debug("No children to refresh, calling client "
-                                 "creation method.");
+                                  "creation method.");
                     m_clientCreationMethod(this, m_children);
                 }
                 else
                 {
-                    spdlog::debug(
-                        "Children already exist, using optimized variant");
-
+                    spdlog::debug("Children already exist, using optimized variant");
 
                     // we start by creating a temporary copy of the current children
                     // so that we can safely replace the m_children vector without
@@ -79,14 +75,13 @@ namespace jucyaudio
                     std::swap(m_children, tempNodes);
 
                     // now we create a lookup map for the existing children
-                    std::unordered_map<uint64_t, INavigationNode *>
-                        existingChildrenMap;
+                    std::unordered_map<uint64_t, INavigationNode *> existingChildrenMap;
                     for (auto child : tempNodes)
                     {
                         existingChildrenMap[child->getUniqueId()] = child;
                     }
 
-                    // m_children has the new list, tempNodes the old one. We assume the new list 
+                    // m_children has the new list, tempNodes the old one. We assume the new list
                     // is in the correct order.
 
                     // if a child has been removed, it needs to be released.
@@ -94,7 +89,7 @@ namespace jucyaudio
                     // if a child already existed before, we can reuse it.
                     //      - that means, we remove it from existingChildrenMap
                     // if a child is new, it needs to be added.
-                    //      - that means, it never was in existingChildrenMap 
+                    //      - that means, it never was in existingChildrenMap
                     std::vector<INavigationNode *> updatedChildren;
                     m_clientCreationMethod(this, m_children);
                     const auto maxIndex = m_children.size();
@@ -116,7 +111,7 @@ namespace jucyaudio
                             // Child is new, but the caller has already retained it: nothing to see here, move along
                         }
                     }
-                    for(const auto& [id, child] : existingChildrenMap)
+                    for (const auto &[id, child] : existingChildrenMap)
                     {
                         // Child was removed, release it
                         child->release(REFCOUNT_DEBUG_ARGS);
@@ -125,8 +120,28 @@ namespace jucyaudio
             }
 
         private:
-            bool expand(
-                std::vector<INavigationNode *> &outChildren) override
+            void nodeHasBeenDeleted(INavigationNode *node) override
+            {
+                // if the node exists in our children, we remove it
+                auto it = std::remove_if(m_children.begin(),
+                    m_children.end(),
+                    [node](INavigationNode *child)
+                    {
+                        return child->getUniqueId() == node->getUniqueId();
+                    });
+                if (it != m_children.end())
+                {
+                    spdlog::debug("Node {} has been deleted, removing from children.", node->getName());
+                    (*it)->release(REFCOUNT_DEBUG_ARGS); // Release the node before removing
+                    m_children.erase(it, m_children.end());
+                }
+                else
+                {
+                    spdlog::warn("Node {} not found in children, cannot remove.", node->getName());
+                }
+            }
+
+            bool expand(std::vector<INavigationNode *> &outChildren) override
             {
                 assert(outChildren.empty());
                 if (!m_children.empty())
@@ -153,8 +168,7 @@ namespace jucyaudio
 
             void refreshCache(bool flushCache = false) const override
             {
-                spdlog::debug("Refreshing cache for TypedContainerNode: {}",
-                             getName());
+                spdlog::debug("Refreshing cache for TypedContainerNode: {}", getName());
                 if (flushCache || m_children.empty())
                 {
                     auto pme = const_cast<TypedContainerNode<T> *>(this);

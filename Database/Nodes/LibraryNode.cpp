@@ -27,16 +27,17 @@ namespace jucyaudio
 
     namespace database
     {
+        const DataActions LibraryNodeActions{
+            DataAction::CreateWorkingSet, DataAction::EditMetadata, DataAction::CreateMix, DataAction::RunBpmAnalysis, DataAction::Delete};
 
-        const DataActions WorkingSetNodeActions{
-            DataAction::CreateWorkingSet, DataAction::EditMetadata, DataAction::CreateMix, DataAction::RunBpmAnalysis, DataAction::RemoveWorkingSet};
         const DataActions LibraryRowActions{DataAction::Play,
             DataAction::CreateWorkingSet,
             DataAction::CreateMix,
             DataAction::ShowDetails,
             DataAction::EditMetadata,
-            DataAction::Delete,
+            DataAction::RemoveTracks,
             DataAction::RunBpmAnalysis};
+
         const std::vector<DataColumn> LibraryColumns = {
             DataColumn{(ColumnIndex_t)Column::Title, "title", "Title", 200, ColumnAlignment::Left, ColumnDataTypeHint::String},
             DataColumn{(ColumnIndex_t)Column::Artist, "artist_name", "Artist", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
@@ -53,7 +54,7 @@ namespace jucyaudio
 
         const DataActions &LibraryNode::getNodeActions() const
         {
-            return WorkingSetNodeActions;
+            return LibraryNodeActions;
         }
 
         const DataActions &LibraryNode::getRowActions([[maybe_unused]] RowIndex_t rowIndex) const
@@ -72,8 +73,8 @@ namespace jucyaudio
             const std::string &name,
             NodeType nodeType,
             // new things start here);
-            const std::string &typeNameForSingleObject,
-            const std::string &typeNameForMultipleObjects)
+            std::string_view typeNameForSingleObject,
+            std::string_view typeNameForMultipleObjects)
             : BaseNode{root, name.empty() ? getLibraryRootNodeName() : name, nodeType, typeNameForSingleObject, typeNameForMultipleObjects},
               m_bCacheInitialized{false}
         {

@@ -9,13 +9,13 @@ namespace jucyaudio
 {
     namespace database
     {
-        const DataActions WorkingSetNodeActions{DataAction::EditMetadata, DataAction::CreateMix, DataAction::RunBpmAnalysis, DataAction::RemoveWorkingSet};
+        const DataActions WorkingSetNodeActions{DataAction::EditMetadata, DataAction::CreateMix, DataAction::RunBpmAnalysis, DataAction::Delete};
 
         const DataActions WorkingSetRowActions{DataAction::Play,
             DataAction::CreateMix,
             DataAction::ShowDetails,
             DataAction::EditMetadata,
-            DataAction::Delete,
+            DataAction::RemoveTracks,
             DataAction::RunBpmAnalysis};
 
         WorkingSetNode::WorkingSetNode(INavigationNode *parent, const WorkingSetInfo &workingSet)
@@ -33,6 +33,16 @@ namespace jucyaudio
         const DataActions &WorkingSetNode::getRowActions([[maybe_unused]] RowIndex_t rowIndex) const
         {
             return WorkingSetRowActions;
+        }
+
+        bool WorkingSetNode::deleteThisObject()
+        {
+            return theTrackLibrary.getWorkingSetManager().removeWorkingSet(m_queryArgs.mixId);
+        }
+
+        bool WorkingSetNode::removeTracks(const std::vector<TrackId> &trackIds) const
+        {
+            return theTrackLibrary.getWorkingSetManager().removeFromWorkingSet(m_queryArgs.workingSetId, trackIds);
         }
 
         bool WorkingSetNode::setSortOrder(const std::vector<SortOrderInfo> &sortOrders)

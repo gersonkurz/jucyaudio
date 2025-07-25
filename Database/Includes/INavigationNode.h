@@ -35,23 +35,12 @@ namespace jucyaudio
             virtual ~INavigationNode() = default;
 
             // --------------------- REDESIGNED METHODS -------------------------------------
-            explicit INavigationNode(const std::string &typeNameForSingleObject, const std::string &typeNameForMultipleObjects)
+            explicit INavigationNode(std::string_view typeNameForSingleObject, std::string_view typeNameForMultipleObjects)
                 : m_refTypeNameForSingleObject{typeNameForSingleObject},
                   m_refTypeNameForMultipleObjects{typeNameForMultipleObjects}
             {
             }
 
-            // @brief The name for a single object of this type. It's not a function, because implementing it
-            // in every type of node is cumbersome, and the name is constant anyway, so I simply
-            // added it to the (new) constructor.
-            // @example: "Track", "Mix", "Working Set", etc.
-            const std::string &m_refTypeNameForSingleObject;
-
-            // @brief The name for multiple objects of this type. It's not a function, because implementing it
-            // in every type of node is cumbersome, and the name is constant anyway, so I simply
-            // added it to the (new) constructor.
-            // @example: "Tracks", "Mixes", "Working Sets", etc.
-            const std::string &m_refTypeNameForMultipleObjects;
 
             // @brief Get the name of this navigation node. This is different from the object name:
             // for example, a specific mix might be named "My Awesome Mix", but the object class still is "mix".
@@ -73,6 +62,39 @@ namespace jucyaudio
             // @brief Collapse this node, removing its children from the provided vector.
             // This method clears the children vector, effectively collapsing the node.
             virtual bool collapse() = 0;
+
+            // @brief Get the actions available for this node.
+            // This method returns the actions that can be performed on this node
+            // itself, such as creating a new mix, working set, etc.
+            /// @return A reference to a DataActions object containing the available actions.
+            virtual const DataActions &getNodeActions() const = 0;
+
+            // @brief Remove tracks from the underlying data source (typically, a working-set or a mix)
+            // @param trackIds The IDs of the tracks to remove.
+            // @return True if the tracks were successfully removed, false otherwise.
+            virtual bool removeTracks(const std::vector<TrackId>& trackIds) const = 0;
+
+            // @brief Delete this object from the underlying data source.
+            // This method is called when the user wants to delete this object (e.g., a mix, working set, etc.).
+            // It should handle the deletion logic and return true if the object was successfully deleted, 
+            // or false if the deletion failed (e.g., due to constraints or errors).
+            /// @return True if the object was successfully deleted, false otherwise.
+            virtual bool deleteThisObject() = 0;
+
+            // @brief Notify that a child node has been deleted. It should update its internal state accordingly.
+            virtual void nodeHasBeenDeleted(INavigationNode *node) = 0;
+
+            // @brief The name for a single object of this type. It's not a function, because implementing it
+            // in every type of node is cumbersome, and the name is constant anyway, so I simply
+            // added it to the (new) constructor.
+            // @example: "Track", "Mix", "Working Set", etc.
+            const std::string_view m_refTypeNameForSingleObject;
+
+            // @brief The name for multiple objects of this type. It's not a function, because implementing it
+            // in every type of node is cumbersome, and the name is constant anyway, so I simply
+            // added it to the (new) constructor.
+            // @example: "Tracks", "Mixes", "Working Sets", etc.
+            const std::string_view m_refTypeNameForMultipleObjects;
 
             // --------------------- METHODS IN NEED FOR REVIEW -----------------------------
 
@@ -149,8 +171,6 @@ namespace jucyaudio
             /// It can be used to release resources or clear caches.
             virtual void dataNoLongerShowing() = 0;
 
-            /// @brief Get the actions available for this node.
-            virtual const DataActions &getNodeActions() const = 0;
 
             /// @brief Get the actions available for a specific row in this node.
             virtual const DataActions &getRowActions(RowIndex_t row) const = 0;

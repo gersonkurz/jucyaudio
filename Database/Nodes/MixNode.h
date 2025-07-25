@@ -26,6 +26,9 @@ namespace jucyaudio
                 return m_mixInfo.mixId;
             }
 
+            bool removeTracks(const std::vector<TrackId> &trackIds) const override;
+            bool deleteThisObject() override;
+            
             static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
 
         private:

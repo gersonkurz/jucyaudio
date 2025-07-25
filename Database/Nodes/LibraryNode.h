@@ -23,8 +23,8 @@ namespace jucyaudio
                 const std::string &name,
                 NodeType nodeType,
                 // new things start here);
-                const std::string &typeNameForSingleObject,
-                const std::string &typeNameForMultipleObjects);
+                std::string_view typeNameForSingleObject,
+                std::string_view typeNameForMultipleObjects);
             ~LibraryNode() override;
 
         protected:

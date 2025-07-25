@@ -337,7 +337,7 @@ namespace jucyaudio
                     juce::PopupMenu menu;
                     for (size_t i = 0; i < availableActions.size(); ++i)
                     {
-                        menu.addItem(static_cast<int>(i + 1), dataActionToString(availableActions[i]));
+                        menu.addItem(static_cast<int>(i + 1), dataActionToString(availableActions[i], m_currentNode));
                     }
 
                     const int result = menu.show();

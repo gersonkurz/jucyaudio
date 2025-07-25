@@ -56,7 +56,7 @@ namespace jucyaudio
               m_playbackController{m_hiddenPlaybackToolbar},
               m_enhancedPlayer{m_playbackController, m_audioFormatManager, m_audioThumbnailCache},
               m_statusPanel{*this},
-              m_navigationTree{m_navigationPanel}
+              m_navigationTree{m_navigationPanel, m_dataViewComponent}
         {
             theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
 
@@ -301,11 +301,11 @@ namespace jucyaudio
             }
 
             // Release retained INavigationNode pointers
-            if (m_currentSelectedDataNode)
+            if (m_currentNode)
             {
-                m_currentSelectedDataNode->dataNoLongerShowing(); // Good practice
-                m_currentSelectedDataNode->release(REFCOUNT_DEBUG_ARGS);
-                m_currentSelectedDataNode = nullptr;
+                m_currentNode->dataNoLongerShowing(); // Good practice
+                m_currentNode->release(REFCOUNT_DEBUG_ARGS);
+                m_currentNode = nullptr;
             }
             if (m_rootNavigationNode)
             {
@@ -330,7 +330,7 @@ namespace jucyaudio
 
             // Get the bounds of the area available for navPanel, divider, and
             // dataView auto bounds = getLocalBounds();
-            /* int toolbarHeight = */ m_dynamicToolbar.getHeight();                 // Assuming toolbar is visible and has a height
+            /* int toolbarHeight = */ m_dynamicToolbar.getHeight();  // Assuming toolbar is visible and has a height
             /* int bottomPanelHeight = */ m_statusPanel.getHeight(); // Assuming panel is visible
 
             // Adjust bounds for toolbar and bottom panel if they are part of
@@ -500,10 +500,10 @@ namespace jucyaudio
             // m_playbackController.syncUIToPlaybackControllerState(m_trackTableView.getSelectedRow()
             // != -1); We need an equivalent for "is a playable item selected in
             // data view?" For now, let's pass true/false based on
-            // m_currentSelectedDataNode or if DataView has selection. This
+            // m_currentNode or if DataView has selection. This
             // boolean was used by PlaybackController to enable/disable play
             // button if nothing is cued.
-            bool canPlaySelection = (m_currentSelectedDataNode != nullptr); // Simplistic: if a node is selected.
+            bool canPlaySelection = (m_currentNode != nullptr); // Simplistic: if a node is selected.
                                                                             // More accurately: if data view has a selected row
                                                                             // and that row represents a playable track.
             m_playbackController.syncUIToPlaybackControllerState(canPlaySelection);
@@ -513,7 +513,7 @@ namespace jucyaudio
         void MainComponent::handleNodeSelection(INavigationNode *selectedNode) // selectedNode is retained by caller (NavPanel)
         {
             const auto start{std::chrono::high_resolution_clock::now()};
-            if (m_currentSelectedDataNode == selectedNode)
+            if (m_currentNode == selectedNode)
             {
                 if (selectedNode)
                     selectedNode->release(REFCOUNT_DEBUG_ARGS); // Release the new one if it's
@@ -521,18 +521,18 @@ namespace jucyaudio
                 return;
             }
 
-            if (m_currentSelectedDataNode)
+            if (m_currentNode)
             {
-                m_currentSelectedDataNode->dataNoLongerShowing();
-                m_currentSelectedDataNode->release(REFCOUNT_DEBUG_ARGS);
+                m_currentNode->dataNoLongerShowing();
+                m_currentNode->release(REFCOUNT_DEBUG_ARGS);
             }
 
             const auto currentViewType{m_currentMainView};
-            m_currentSelectedDataNode = selectedNode; // Takes ownership of the retained selectedNode
+            m_currentNode = selectedNode; // Takes ownership of the retained selectedNode
 
-            if (m_currentSelectedDataNode)
+            if (m_currentNode)
             {
-                const auto newViewType{determineType(m_currentSelectedDataNode)};
+                const auto newViewType{determineType(m_currentNode)};
 
                 if (currentViewType != newViewType)
                 {
@@ -552,13 +552,13 @@ namespace jucyaudio
                 }
 
                 // we should use a function to crate a string path here.
-                const auto path{getNodePath(m_currentSelectedDataNode)};
+                const auto path{getNodePath(m_currentNode)};
 
-                m_currentSelectedDataNode->prepareToShowData();
-                m_dynamicToolbar.setCurrentNode(m_currentSelectedDataNode); // Toolbar updates its actions
+                m_currentNode->prepareToShowData();
+                m_dynamicToolbar.setCurrentNode(m_currentNode); // Toolbar updates its actions
                 if (m_currentMainView == MainViewType::MixEditor)
                 {
-                    m_mixEditorComponent.loadMix(m_currentSelectedDataNode->getUniqueId()); // Load the mix data
+                    m_mixEditorComponent.loadMix(m_currentNode->getUniqueId()); // Load the mix data
 
                     // Set up playback callback
                     m_mixEditorComponent.setPlaybackCallback(
@@ -583,13 +583,13 @@ namespace jucyaudio
                 }
                 else
                 {
-                    m_dataViewComponent.setCurrentNode(m_currentSelectedDataNode); // DataView updates its content source
+                    m_dataViewComponent.setCurrentNode(m_currentNode); // DataView updates its content source
                     m_dataViewComponent.refreshView();                             // Tell DataView to redraw
                 }
                 int64_t totalTracks = 0;
-                if (m_currentSelectedDataNode->getTotalTrackCount(totalTracks))
+                if (m_currentNode->getTotalTrackCount(totalTracks))
                 {
-                    m_statusPanel.setStatusMessage(std::format("{} tracks in '{}'", totalTracks, m_currentSelectedDataNode->getName()), false);
+                    m_statusPanel.setStatusMessage(std::format("{} tracks in '{}'", totalTracks, m_currentNode->getName()), false);
                 }
             }
             else
@@ -615,10 +615,10 @@ namespace jucyaudio
 
         void MainComponent::removeTrackFromMix(TrackId trackId)
         {
-            if (!m_currentSelectedDataNode)
+            if (!m_currentNode)
                 return;
 
-            MixId mixId = m_currentSelectedDataNode->getUniqueId();
+            MixId mixId = m_currentNode->getUniqueId();
             spdlog::info("Soft-deleting track {} from mix {}", trackId, mixId);
 
             auto *mixManager = &theTrackLibrary.getMixManager();
@@ -689,7 +689,7 @@ namespace jucyaudio
 
         void MainComponent::handleFilterChange(const juce::String &newFilterText)
         {
-            if (m_currentSelectedDataNode)
+            if (m_currentNode)
             {
                 // Convert juce::String to std::vector<std::string> for
                 // setSearchTerms Simple split by space for now.
@@ -704,7 +704,7 @@ namespace jucyaudio
                     }
                 }
 
-                if (m_currentSelectedDataNode->setSearchTerms(searchTerms))
+                if (m_currentNode->setSearchTerms(searchTerms))
                 {
                     if (m_currentMainView == MainViewType::MixEditor)
                     {
@@ -720,14 +720,14 @@ namespace jucyaudio
 
         void MainComponent::handleNodeActionFromToolbar(DataAction action)
         {
-            if (!m_currentSelectedDataNode)
+            if (!m_currentNode)
                 return;
-            handleNodeAction(m_currentSelectedDataNode, action);
+            handleNodeAction(m_currentNode, action);
         }
 
         void MainComponent::handleNodeAction(INavigationNode *selectedNode, DataAction action)
         {
-            m_statusPanel.setStatusMessage("Node action: " + juce::String(static_cast<int>(action)), false);
+            m_statusPanel.setStatusMessage("Node action: " + juce::String(dataActionToString(action, m_currentNode)), false);
 
             switch (action)
             {
@@ -737,8 +737,8 @@ namespace jucyaudio
             case DataAction::CreateMix:
                 createMix();
                 break;
-            case DataAction::RemoveMix:
-                onRemoveMix(selectedNode);
+            case DataAction::Delete:
+                onDataActionDelete(selectedNode);
                 break;
             case DataAction::ExportMix:
                 onExportMix(selectedNode);
@@ -749,19 +749,16 @@ namespace jucyaudio
             case DataAction::RunBpmAnalysis:
                 onRunBpmAnalysis(selectedNode);
                 break;
-            case DataAction::RemoveWorkingSet:
-                onRemoveWorkingSet(selectedNode);
-                break;
-
-            case DataAction::None:
             default:
+                spdlog::error("Unsupported action '{}' for node '{}' in MainComponent::handleNodeAction. This should not happen.",
+                    dataActionToString(action, m_currentNode).toStdString(),
+                    selectedNode->getName());
                 break;
             }
         }
 
         void MainComponent::handleRowActionFromDataView(RowIndex_t rowIndex, DataAction action, const juce::Point<int> & /*screenPos*/)
         {
-
             switch (action)
             {
             case DataAction::Play:
@@ -776,18 +773,14 @@ namespace jucyaudio
             case DataAction::RunBpmAnalysis:
                 onRunBpmAnalysisForSelectedRows();
                 break;
-            case DataAction::RemoveMix:
-            case DataAction::ExportMix:
-                spdlog::warn("Unsupported action '{}' for row {}. This should not happen.", static_cast<int>(action), rowIndex);
-                break;
             case DataAction::ShowDetails:
                 m_statusPanel.setStatusMessage("Show details for: " + std::to_string(rowIndex), false);
                 break;
             case DataAction::EditMetadata:
                 m_statusPanel.setStatusMessage("Edit metadata for: " + std::to_string(rowIndex), false);
                 break;
-            case DataAction::Delete:
-                deleteSelectedRows(true);
+            case DataAction::RemoveTracks: // TODO: we should do this only from the data View
+                onDataActionRemoveTracks();
                 break;
             case DataAction::None:
             default:
@@ -914,12 +907,12 @@ namespace jucyaudio
         // --- Action Execution Method Stubs ---
         void MainComponent::playDataRow(RowIndex_t rowIndex)
         {
-            if (!m_currentSelectedDataNode)
+            if (!m_currentNode)
             {
                 m_statusPanel.setStatusMessage("No node selected for playback.", true);
                 return;
             }
-            const auto track{m_currentSelectedDataNode->getTrackInfoForRow(rowIndex)};
+            const auto track{m_currentNode->getTrackInfoForRow(rowIndex)};
             if (!track)
             {
                 m_statusPanel.setStatusMessage("No track info available for row: " + std::to_string(rowIndex), true);
@@ -968,100 +961,18 @@ namespace jucyaudio
             syncPlaybackUIToControllerState();
         }
 
-        void MainComponent::onDeleteSelectedRows(DeleteContext *const dc, int result)
+        void MainComponent::onRemoveTracksFromCurrentNode(DeleteContext *const dc, int result)
         {
             if (result == 1) // User clicked "Delete"
             {
-                // what to do depends entirely on the context of the operation
-                bool success = false;
-                const auto nrSelectedRows{dc->selectedRows.size()};
                 std::string statusMessage;
-                switch (dc->node->getNodeType())
+                if (m_navigationTree.removeTracks(dc->node, dc->selectedRows))
                 {
-                case NodeType::Mix:
-                {
-                    const auto mixNode{reinterpret_cast<MixNode *>(dc->node)};
-                    const auto mixId{mixNode->getUniqueId()};
-                    // if you call it from the list of tracks in a mix, you're actually
-                    // removing tracks from the mix, not deleting the mix itself
-                    if (dc->fromDataView)
-                    {
-                        const auto trackIds{m_dataViewComponent.getUnderlyingObjectIds<TrackId>(dc->selectedRows)};
-                        success = theTrackLibrary.getMixManager().removeTracksFromMix(mixId, trackIds);
-                        statusMessage = success ? "Removed tracks from mix." : "Failed to remove tracks from mix.";
-                    }
-                    else
-                    {
-                        // the navigation panel can select only one mix at a time
-                        assert(nrSelectedRows <= 0);
-                        success = theTrackLibrary.getMixManager().removeMix(mixId);
-                        statusMessage = success ? "Mix deleted." : "Failed to delete mix.";
-                    }
-                    break;
+                    statusMessage = std::format("Removed tracks from {} {}", dc->node->m_refTypeNameForSingleObject, dc->node->getName());
                 }
-                case NodeType::MixesRoot:
+                else
                 {
-                    assert(dc->fromDataView); // You cannot select the root itself for deletion, must have come from the data view
-                    const auto mixesRootNode{reinterpret_cast<TypedOverviewNode<MixInfo, MixNode> *>(dc->node)};
-                    const auto mixIds{m_dataViewComponent.getUnderlyingObjectIds<MixId>(dc->selectedRows)};
-                    success = theTrackLibrary.getMixManager().removeMixes(mixIds);
-                    statusMessage = success ? "Mixes deleted." : "Failed to delete mixes.";
-                    break;
-                }
-                case NodeType::WorkingSet:
-                {
-                    const auto workingSetNode{reinterpret_cast<WorkingSetNode *>(dc->node)};
-                    const auto workingSetId{workingSetNode->getUniqueId()};
-                    // if you call it from the list of tracks in a working-set, you're actually
-                    // removing tracks from the working-set, not deleting the working-set itself
-                    if (dc->fromDataView)
-                    {
-                        const auto trackIds{m_dataViewComponent.getUnderlyingObjectIds<TrackId>(dc->selectedRows)};
-                        success = theTrackLibrary.getWorkingSetManager().removeFromWorkingSet(workingSetId, trackIds);
-                        statusMessage = success ? "Removed tracks from working set." : "Failed to remove tracks from working set.";
-                    }
-                    else
-                    {
-                        // the navigation panel can select only one working-set at a time
-                        assert(nrSelectedRows <= 0);
-                        success = theTrackLibrary.getWorkingSetManager().removeWorkingSet(workingSetId);
-                        statusMessage = success ? "Working set deleted." : "Failed to delete working set.";
-                    }
-                    break;
-                }
-                case NodeType::WorkingSetsRoot:
-                {
-                    assert(dc->fromDataView); // You cannot select the root itself for deletion, must have come from the data view
-                    const auto mixesRootNode{reinterpret_cast<TypedOverviewNode<WorkingSetInfo, WorkingSetNode> *>(dc->node)};
-                    const auto workingSetIds{m_dataViewComponent.getUnderlyingObjectIds<WorkingSetId>(dc->selectedRows)};
-                    success = theTrackLibrary.getWorkingSetManager().removeWorkingSets(workingSetIds);
-                    statusMessage = success ? "Working sets deleted." : "Failed to delete working sets.";
-                    break;
-                }
-                default:
-                    assert(false);
-                    return;
-                }
-                if (success)
-                {
-                    for (const auto rowIndex : dc->selectedRows)
-                    {
-                        spdlog::info("Deleting object at row {}", rowIndex);
-                        dc->node->removeObjectAtRow(rowIndex);
-                    }
-                    m_navigationPanel.refreshNode(dc->node);
-
-                    if (m_currentMainView != MainViewType::MixEditor)
-                    {
-                        if (dc->fromDataView)
-                        {
-                            m_dataViewComponent.refreshView(); // Refresh data view if it's the current view
-                        }
-                        else
-                        {
-                            // we may have to delete node from navigation and also select another one. Could be - not sure about that yet.
-                        }
-                    }
+                    statusMessage = std::format("Failed to remove tracks from {} {}", dc->node->m_refTypeNameForSingleObject, dc->node->getName());
                 }
                 m_statusPanel.setStatusMessage(statusMessage, false);
                 dc->node->release(REFCOUNT_DEBUG_ARGS);
@@ -1073,9 +984,9 @@ namespace jucyaudio
             }
         }
 
-        void MainComponent::deleteSelectedRows(bool fromDataView)
+        void MainComponent::onDataActionRemoveTracks()
         {
-            if (!m_currentSelectedDataNode)
+            if (!m_currentNode)
             {
                 m_statusPanel.setStatusMessage("No data node selected.", true);
                 return;
@@ -1085,134 +996,56 @@ namespace jucyaudio
                 m_statusPanel.setStatusMessage("Cannot delete rows in Mix Editor view.", true);
                 return;
             }
-            const auto nodePath{getNodePath(m_currentSelectedDataNode)};
+            const auto nodePath{getNodePath(m_currentNode)};
             if (nodePath.size() == 1)
             {
                 // we're being called from the root node, so we're about to delete complete mixes / working sets
             }
             const auto dc{new DeleteContext{}};
-            dc->fromDataView = fromDataView; // Store if this was called from DataView or NavigationPanel
-            if (fromDataView)
+            dc->selectedRows = m_dataViewComponent.getSelectedRowIndices();
+            if (dc->selectedRows.empty())
             {
-                // If called from DataView, get selected rows from DataView
-                dc->selectedRows = m_dataViewComponent.getSelectedRowIndices();
-                if (dc->selectedRows.empty())
-                {
-                    m_statusPanel.setStatusMessage("No rows selected for deletion.", true);
-                    return;
-                }
-                // Reverse to delete from end to start
-                std::reverse(dc->selectedRows.begin(), dc->selectedRows.end());
+                m_statusPanel.setStatusMessage("No rows selected for deletion.", true);
+                return;
             }
+            std::reverse(dc->selectedRows.begin(), dc->selectedRows.end());
             std::string warningMessage;
             std::string okButtonText;
             const auto nrSelectedRows{dc->selectedRows.size()};
-            dc->node = m_currentSelectedDataNode;
+            dc->node = m_currentNode;
             dc->node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid during deletion
             const auto nodeName{dc->node->getName()};
-            switch (dc->node->getNodeType())
-            {
-            case NodeType::Mix:
-                // if you call it from the list of tracks in a mix, you're actually
-                // removing tracks from the mix, not deleting the mix itself
-                if (fromDataView)
-                {
-                    if (nrSelectedRows == 1)
-                    {
-                        const auto assumedTrackName{dc->node->getCellText(dc->selectedRows[0], 0)};
-                        warningMessage = std::format("Do you want to remove the track {} from the mix {}?", assumedTrackName, nodeName); // TODO: retrieve mix name
-                        okButtonText = "Remove Track";
-                    }
-                    else
-                    {
-                        warningMessage = std::format("Do you want to remove the {} selected tracks from the mix {}?", nrSelectedRows, nodeName);
-                        okButtonText = "Remove Tracks";
-                    }
-                }
-                else
-                {
-                    // the navigation panel can select only one mix at a time
-                    assert(nrSelectedRows <= 0);
-                    warningMessage = std::format("Do you want to delete the mix {}?", nodeName); // TODO: retrieve mix name
-                    okButtonText = "Delete Mix";
-                }
-                break;
-            case NodeType::MixesRoot:
-                // if you call it from the list of mixes in the root node
-                if (fromDataView)
-                {
-                    // so this call must originate from the data-view
-                    warningMessage = std::format("Do you want to delete the {} selected mixes?", nrSelectedRows);
-                    okButtonText = "Delete Mixes";
-                }
-                else
-                {
-                    spdlog::error("logic problem: you cannot remove the root node itself, so this is should never happen");
-                    return;
-                }
-                break;
-            case NodeType::WorkingSet:
-                // if you call it from the list of tracks in a working-set, you're actually
-                // removing tracks from the working-set, not deleting the working-set itself
-                if (fromDataView)
-                {
-                    if (nrSelectedRows == 1)
-                    {
-                        const auto assumedTrackName{dc->node->getCellText(dc->selectedRows[0], 0)};
-                        warningMessage = std::format("Do you want to remove {} from the working-set {}?", assumedTrackName, nodeName);
-                        okButtonText = "Remove Track";
-                    }
-                    else
-                    {
-                        warningMessage = std::format("Do you want to remove the {} selected tracks from the working-set {}?", nrSelectedRows, nodeName);
-                        okButtonText = "Remove Tracks";
-                    }
-                }
-                else
-                {
-                    // the navigation panel can select only one working-set at a time
-                    assert(nrSelectedRows <= 0);
-                    warningMessage = std::format("Do you want to delete the working-set {}?", nodeName); // TODO: retrieve working-set name
-                    okButtonText = "Delete Working-Set";
-                }
-                break;
-            case NodeType::WorkingSetsRoot:
-                // if you call it from the list of working-sets in the root node
-                if (fromDataView)
-                {
-                    // so this call must originate from the data-view
-                    warningMessage = std::format("Do you want to delete the {} selected working-sets?", nrSelectedRows);
-                    okButtonText = "Delete Working-Sets";
-                }
-                else
-                {
-                    spdlog::error("logic problem: you cannot remove the root node itself, so this is should never happen");
-                    return;
-                }
-                break;
-            default:
-                spdlog::error("Unsupported node type for deletion: {}", static_cast<int>(m_currentSelectedDataNode->getNodeType()));
-                return;
-            }
 
-            const auto node = m_currentSelectedDataNode;
+            if (nrSelectedRows == 1)
+            {
+                const auto assumedTrackName{dc->node->getCellText(dc->selectedRows[0], 0)};
+                warningMessage =
+                    std::format("Do you want to remove the track {} from the {} {}?", assumedTrackName, dc->node->m_refTypeNameForSingleObject, nodeName);
+                okButtonText = "Remove Track";
+            }
+            else
+            {
+                warningMessage =
+                    std::format("Do you want to remove the {} tracks from the {} {}?", nrSelectedRows, dc->node->m_refTypeNameForSingleObject, nodeName);
+                okButtonText = "Remove Tracks";
+            }
 
             juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon, // Icon type
                 "Confirm Deletion",                                            // Window title
                 warningMessage,
-                okButtonText, // OK button text (can be "OK", "Delete", etc.)
-                "Cancel",     // Cancel button text
-                nullptr,      // Parent component (optional, nullptr for desktop)
+                okButtonText,
+                "Cancel",
+                nullptr, // TODO: use this window as parent instead
                 juce::ModalCallbackFunction::create(
                     [this, dc](int result)
                     {
-                        onDeleteSelectedRows(dc, result);
+                        onRemoveTracksFromCurrentNode(dc, result);
                     }));
         }
 
         bool MainComponent::createWorkingSet()
         {
-            if (!m_currentSelectedDataNode)
+            if (!m_currentNode)
             {
                 m_statusPanel.setStatusMessage("No data node selected to create working set from.", true);
                 return false;
@@ -1227,9 +1060,9 @@ namespace jucyaudio
             {
                 return createWorkingSetFromTrackIds(m_dataViewComponent.getSelectedTrackIds());
             }
-            else if (m_currentSelectedDataNode)
+            else if (m_currentNode)
             {
-                return createWorkingSetFromNode(m_currentSelectedDataNode);
+                return createWorkingSetFromNode(m_currentNode);
             }
             m_statusPanel.setStatusMessage("Internal error: no selection, and no current node?", true);
             return false;
@@ -1489,105 +1322,56 @@ namespace jucyaudio
             }
         }
 
-        void MainComponent::onRemoveWorkingSet(INavigationNode *selectedNode)
+        void MainComponent::onDataActionDelete(INavigationNode *node)
         {
-            assert(selectedNode != nullptr && "Selected node should not be null in onRemoveWorkingSet()");
+            assert(node != nullptr && "Selected node should not be null in onDataActionDelete()");
 
-            const auto workingSetNode{static_cast<WorkingSetNode *>(selectedNode)};
-            const auto workingSetInfo{workingSetNode->getWorkingSetInfo()};
+            const auto name{node->getName()};
+            const auto message{std::format("Are you sure you want to delete the {} {}?", node->m_refTypeNameForSingleObject, name)};
+            const auto caption
+            {std::format("Delete {}", node->m_refTypeNameForSingleObject)};
 
-            juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon, // Icon type
-                "Question",                                                    // Window title
-                std::format("Are you sure you want to delete the working-set {}?", workingSetInfo.name),
-                "Delete Mix",                        // OK button text (can be "OK", "Delete", etc.)
-                "Cancel",                            // Cancel button text
+            node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid during deletion
+            juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,
+                "Question",
+                message,
+                caption,
+                "Cancel",
                 nullptr,                             // Parent component (optional, nullptr for desktop)
                 juce::ModalCallbackFunction::create( // Callback
-                    [this,
-                        workingSetInfo,
-                        workingSetNode](int result) // Capture necessary data
+                    [this, node]
+                        (int result) // Capture necessary data
                     {
-                        onDoRemoveWorkingSet(workingSetNode, workingSetInfo, result);
+                        onDataActionDeleteConfirmed(node, result);
                     }));
         }
 
-        void MainComponent::onDoRemoveWorkingSet(INavigationNode *selectedNode, const WorkingSetInfo &workingSetToDelete, int result)
+        void MainComponent::onDataActionDeleteConfirmed(INavigationNode *node, int result)
         {
             if (result == 1)
             {
-                spdlog::info("User confirmed deletion for working-set ID: {} [{}]", workingSetToDelete.id, workingSetToDelete.name);
-                const bool removed = theTrackLibrary.getWorkingSetManager().removeWorkingSet(workingSetToDelete.id);
-                if (removed)
+                if (m_navigationTree.deleteObject(node))
                 {
-                    m_statusPanel.setStatusMessage(std::format("Working-Set {} successfully removed.", workingSetToDelete.name), false);
-                    m_navigationPanel.removeNodeFromTree(selectedNode); // Assuming you implement such a method
+                    m_statusPanel.setStatusMessage(
+                        std::format("{} {} successfully removed.", node->m_refTypeNameForSingleObject, node->getName()));
                 }
                 else
                 {
-                    spdlog::error("Failed to remove working-set ID: {} [{}]", workingSetToDelete.id, workingSetToDelete.name);
                     juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
                         "Deletion Failed",
-                        std::format("Could not remove the working-set '{}' from the database.", workingSetToDelete.name));
+                        std::format("Could not remove the {} {} from the database.", node->m_refTypeNameForSingleObject, node->getName()));
                 }
             }
             else // User clicked "Cancel" (result == 0) or closed the dialog
             {
-                spdlog::info("User cancelled deletion for working-set ID: {} [{}]", workingSetToDelete.id, workingSetToDelete.name);
-                m_statusPanel.setStatusMessage("Working-set deletion cancelled.", false);
+                m_statusPanel.setStatusMessage(std::format("{} deletion cancelled.", node->m_refTypeNameForSingleObject), false);
             }
-        }
-
-        void MainComponent::onRemoveMix(INavigationNode *selectedNode)
-        {
-            assert(selectedNode != nullptr && "Selected node should not be null in onRemoveMix()");
-
-            const auto mixNode{static_cast<MixNode *>(selectedNode)};
-            const auto mixInfo{mixNode->getMixInfo()};
-
-            juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon, // Icon type
-                "Question",                                                    // Window title
-                std::format("Are you sure you want to delete the mix {}?", mixInfo.name),
-                "Delete Mix",                        // OK button text (can be "OK", "Delete", etc.)
-                "Cancel",                            // Cancel button text
-                nullptr,                             // Parent component (optional, nullptr for desktop)
-                juce::ModalCallbackFunction::create( // Callback
-                    [this,
-                        mixInfo,
-                        mixNode](int result) // Capture necessary data
-                    {
-                        onDoRemoveMix(mixNode, mixInfo, result);
-                    }));
-        }
-
-        void MainComponent::onDoRemoveMix(INavigationNode *selectedNode, const MixInfo &mixToDelete, int result)
-        {
-            if (result == 1)
-            {
-                spdlog::info("User confirmed deletion for mix ID: {} [{}]", mixToDelete.mixId, mixToDelete.name);
-                const bool removed = theTrackLibrary.getMixManager().removeMix(mixToDelete.mixId);
-                if (removed)
-                {
-                    m_statusPanel.setStatusMessage(std::format("Mix {} successfully removed.", mixToDelete.name), false);
-                    m_navigationPanel.removeNodeFromTree(selectedNode); // Assuming you implement such a method
-                }
-                else
-                {
-                    spdlog::error("Failed to remove mix ID: {} [{}]", mixToDelete.mixId, mixToDelete.name);
-                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                        "Deletion Failed",
-                        std::format("Could not remove the mix '{}' from the database.", mixToDelete.name));
-                }
-            }
-            else // User clicked "Cancel" (result == 0) or closed the dialog
-            {
-                spdlog::info("User cancelled deletion for mix ID: {} [{}]", mixToDelete.mixId, mixToDelete.name);
-                m_statusPanel.setStatusMessage("Mix deletion cancelled.", false);
-            }
+            node->release(REFCOUNT_DEBUG_ARGS); // Release the node after deletion
         }
 
         void MainComponent::createMix()
         {
-            if (!m_currentSelectedDataNode)
+            if (!m_currentNode)
             {
                 m_statusPanel.setStatusMessage("No data node selected.", true);
                 return;
@@ -1599,12 +1383,12 @@ namespace jucyaudio
             }
 
             // Capture the source working set ID from the current node
-            const WorkingSetId source_ws_id = m_currentSelectedDataNode->getUniqueId();
+            const WorkingSetId source_ws_id = m_currentNode->getUniqueId();
 
             std::vector<TrackInfo> selectedTracks{m_dataViewComponent.getSelectedTracks()};
             if (selectedTracks.size() <= 1)
             {
-                selectedTracks = getAllTracks(m_currentSelectedDataNode);
+                selectedTracks = getAllTracks(m_currentNode);
             }
 
             if (selectedTracks.empty())

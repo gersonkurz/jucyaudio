@@ -25,12 +25,20 @@ namespace jucyaudio
             theBaseNodes.erase(key);
         }
 #endif
+        bool BaseNode::removeTracks(const std::vector<TrackId>& trackIds) const
+        {
+            return false;
+        }
+
+        void BaseNode::nodeHasBeenDeleted(INavigationNode *node)
+        {
+        }
 
         BaseNode::BaseNode(INavigationNode *parent,
             std::string_view name,
             NodeType nodeType,
-            const std::string &typeNameForSingleObject,
-            const std::string &typeNameForMultipleObjects)
+            std::string_view typeNameForSingleObject,
+            std::string_view typeNameForMultipleObjects)
             : INavigationNode{typeNameForSingleObject, typeNameForMultipleObjects},
               m_parent{parent},
               m_name{name},
@@ -154,6 +162,11 @@ namespace jucyaudio
         INavigationNode *BaseNode::getParent() const
         {
             return m_parent;
+        }
+
+        bool BaseNode::deleteThisObject()
+        {
+            return false;
         }
 
         void BaseNode::removeObjectAtRow(RowIndex_t rowIndex)

@@ -28,8 +28,8 @@ namespace jucyaudio
                 std::string_view name,
                 NodeType nodeType,
                 // new things start here);
-                const std::string &typeNameForSingleObject,
-                const std::string &typeNameForMultipleObjects);
+                std::string_view typeNameForSingleObject,
+                std::string_view typeNameForMultipleObjects);
             ~BaseNode() override;
 
             // IRefCounted interface
@@ -59,6 +59,7 @@ namespace jucyaudio
             int64_t getObjectIdForRow(RowIndex_t rowIndex) const override;
             bool getNumberOfRows(int64_t &outCount) const override;
             bool getTotalTrackCount(int64_t &outCount) const override;
+            void nodeHasBeenDeleted(INavigationNode *node) override;
             NodeType getNodeType() const override
             {
                 return m_nodeType;
@@ -68,6 +69,7 @@ namespace jucyaudio
             const std::vector<DataColumn> &getColumns() const override;
             const TrackQueryArgs *getQueryArgs() const override;
             void removeObjectAtRow(RowIndex_t rowIndex) override;
+            bool deleteThisObject() override;
             int64_t getUniqueId() const override;
             INavigationNode *get(const std::string &name) const override;
             INavigationNode *get(int64_t uniqueId) const override;
@@ -79,7 +81,8 @@ namespace jucyaudio
             {
                 m_name = newName;
             }
-
+            
+            bool removeTracks(const std::vector<TrackId> &trackIds) const override;
         private:
             INavigationNode *const m_parent;
             // no longer const to support renaming

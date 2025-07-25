@@ -18,6 +18,7 @@
 #pragma once
 
 #include <Database/Includes/Constants.h>
+#include <Database/Includes/INavigationNode.h>
 #include <filesystem>
 #include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -35,6 +36,7 @@ namespace jucyaudio
 {
     namespace ui
     {
+
         /**
          * @brief Converts a database action enum to a human-readable string
          * @param action The DataAction enum value to convert
@@ -42,7 +44,7 @@ namespace jucyaudio
          * @note Returns "Unknown Action" for unrecognized action values
          * @see database::DataAction
          */
-        juce::String dataActionToString(database::DataAction action);
+        juce::String dataActionToString(database::DataAction action, database::INavigationNode *node);
 
         /**
          * @brief Sanitizes text for safe display by filtering out problematic Unicode characters

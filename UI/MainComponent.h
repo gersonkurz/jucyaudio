@@ -25,13 +25,14 @@ namespace jucyaudio
 {
     namespace ui
     {
+        using namespace database;
         enum class MainViewType
         {
             DataView,
             MixEditor
         };
 
-        MainViewType determineType(const database::INavigationNode *node);
+        MainViewType determineType(const INavigationNode *node);
 
         extern std::string g_strConfigFilename;
         class MainComponent : public juce::AudioAppComponent, public MenuPresenter, public juce::Timer, public juce::ChangeListener
@@ -63,23 +64,21 @@ namespace jucyaudio
 
         private:
             friend class MainPlaybackAndStatusComponent;
-            void handleNodeSelection(database::INavigationNode *selectedNode);
+            void handleNodeSelection(INavigationNode *selectedNode);
             void handleFilterChange(const juce::String &newFilterText);
-            void handleNodeActionFromToolbar(database::DataAction action);
-            void handleNodeAction(database::INavigationNode *selectedNode, database::DataAction action);
-            void handleRowActionFromDataView(RowIndex_t rowIndex, database::DataAction action, const juce::Point<int> &screenPos);
+            void handleNodeActionFromToolbar(DataAction action);
+            void handleNodeAction(INavigationNode *selectedNode, DataAction action);
+            void handleRowActionFromDataView(RowIndex_t rowIndex, DataAction action, const juce::Point<int> &screenPos);
 
             void playDataRow(RowIndex_t rowIndex);
-            void deleteSelectedRows(bool fromDataView);
             void createMix();
 
-            // --- remove mix functionality ---
-            void onRemoveMix(database::INavigationNode *selectedNode);
-            void onDoRemoveMix(database::INavigationNode *selectedNode, const database::MixInfo &mixToDelete, int result);
+
+
 
             // --- export mix functionality ---
-            void onExportMix(database::INavigationNode *selectedNode);
-            void onExportMixFileChooserModalDismissed(const juce::FileChooser &chooser, database::MixInfo mixInfo);
+            void onExportMix(INavigationNode *selectedNode);
+            void onExportMixFileChooserModalDismissed(const juce::FileChooser &chooser, MixInfo mixInfo);
             std::unique_ptr<juce::FileChooser> m_activeFileChooser;
 
             void requestPlayOrPlaySelection();
@@ -98,22 +97,22 @@ namespace jucyaudio
 
             // working set management -------------------------------
             bool createWorkingSet();
-            bool createWorkingSetFromTrackIds(std::vector<database::TrackId> trackIds);
-            void onCreateWorkingSetFromTrackIdsCallback(const juce::String &name, std::vector<database::TrackId> trackIds);
-            bool createWorkingSetFromNode(const database::INavigationNode *node);
-            void onCreateWorkingSetFromNodeCallback(const juce::String &name, const database::INavigationNode *node);
-            void onCommonCreateWorkingSetCallback(bool success, const database::WorkingSetInfo &workingSetInfo);
-            void onMixCreatedCallback(bool success, const database::MixInfo& mixInfo);
+            bool createWorkingSetFromTrackIds(std::vector<TrackId> trackIds);
+            void onCreateWorkingSetFromTrackIdsCallback(const juce::String &name, std::vector<TrackId> trackIds);
+            bool createWorkingSetFromNode(const INavigationNode *node);
+            void onCreateWorkingSetFromNodeCallback(const juce::String &name, const INavigationNode *node);
+            void onCommonCreateWorkingSetCallback(bool success, const WorkingSetInfo &workingSetInfo);
+            void onMixCreatedCallback(bool success, const MixInfo& mixInfo);
             bool onHandleCreateWorkingSetDialog(int64_t trackCount, std::function<void(const juce::String &)> callback);
 
-            void onRemoveWorkingSet(database::INavigationNode *node);
-            void onDoRemoveWorkingSet(INavigationNode *selectedNode, const database::WorkingSetInfo &workingSetToDelete, int result);
+            void onDataActionDeleteWorkingSet(INavigationNode *node);
+            void onDoRemoveWorkingSet(INavigationNode *selectedNode, const WorkingSetInfo &workingSetToDelete, int result);
 
-            void onRunBpmAnalysis(database::INavigationNode* node);
+            void onRunBpmAnalysis(INavigationNode* node);
             void onRunBpmAnalysisForSelectedRows();
-            void showBadFilesDialog(const std::vector<database::TrackInfo>& badFiles);
+            void showBadFilesDialog(const std::vector<TrackInfo>& badFiles);
 
-            void onEditMetadata(database::INavigationNode *node);
+            void onEditMetadata(INavigationNode *node);
 
             audio::AudioLibrary m_audioLibrary;
             juce::ApplicationCommandManager &m_commandManager;
@@ -146,11 +145,11 @@ namespace jucyaudio
             int m_navPanelWidth{250};        // << NEW: Current width of the navigation panel
             const int m_dividerThickness{5}; // << NEW: Thickness of the divider bar
 
-            database::RootNode *m_rootNavigationNode{nullptr};
+            RootNode *m_rootNavigationNode{nullptr};
             
             // Marker handling
-            void showMarkerDialog(database::TrackId trackId, std::chrono::milliseconds position, bool isNewMarker);
-            database::INavigationNode *m_currentSelectedDataNode{nullptr};
+            void showMarkerDialog(TrackId trackId, std::chrono::milliseconds position, bool isNewMarker);
+            INavigationNode *m_currentNode{nullptr};
 
             enum CommandIDs
             {
@@ -165,12 +164,20 @@ namespace jucyaudio
             struct DeleteContext final
             {
                 // will have an added reference, so you must release it from the callback
-                database::INavigationNode *node{nullptr};
+                INavigationNode *node{nullptr};
                 std::vector<RowIndex_t> selectedRows;
-                bool fromDataView;
             };
 
-            void onDeleteSelectedRows(DeleteContext* const dc, int result);
+            
+            void onDataActionDelete(INavigationNode *selectedNode);
+            void onDataActionDeleteConfirmed(INavigationNode *selectedNode, int result);
+
+            // @brief Called when you select one or more tracks in the DataView and ask to remove them.
+            void onDataActionRemoveTracks();
+
+            // &brief Called when you confirm the warning dialog in onDataActionRemoveTracks in order to proceed 
+            // to the actual removal of the tracks from the current node
+            void onRemoveTracksFromCurrentNode(DeleteContext *const dc, int result);
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
         };
