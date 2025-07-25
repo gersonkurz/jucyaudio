@@ -13,7 +13,7 @@ namespace jucyaudio
         }
 
         VirtualFoldersOverview::VirtualFoldersOverview(INavigationNode *parent)
-            : BaseNode{parent, "Folders"}
+            : BaseNode{parent, "Folders", NodeType::VirtualFoldersRoot}
         {
             // The name "Folders" will appear in the navigation tree
         }

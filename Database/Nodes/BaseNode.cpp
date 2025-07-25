@@ -26,9 +26,10 @@ namespace jucyaudio
         }
 #endif
 
-        BaseNode::BaseNode(INavigationNode *parent, std::string_view name)
+        BaseNode::BaseNode(INavigationNode *parent, std::string_view name, NodeType nodeType)
             : m_parent{parent},
               m_name{name},
+              m_nodeType{nodeType},
               m_refCount{1} // Start with refcount 1
         {
 #ifdef USE_REFCOUNT_DEBUGGING
@@ -68,6 +69,11 @@ namespace jucyaudio
         const TrackInfo *BaseNode::getTrackInfoForRow([[maybe_unused]] RowIndex_t rowIndex) const
         {
             return nullptr;
+        }
+
+        int64_t BaseNode::getObjectIdForRow(RowIndex_t rowIndex) const
+        {
+            return 0;
         }
 
         bool BaseNode::prepareToShowData()

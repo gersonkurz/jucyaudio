@@ -20,7 +20,7 @@ namespace
         info.id = stmt.getInt64(col++);
         info.name = stmt.getText(col++);
         info.timestamp = timestampFromInt64(stmt.getInt64(col++));
-        
+
         // Parse sort_order JSON if present
         if (!stmt.isNull(col))
         {
@@ -30,7 +30,7 @@ namespace
                 try
                 {
                     auto json = nlohmann::json::parse(sortOrderJson);
-                    for (const auto& item : json)
+                    for (const auto &item : json)
                     {
                         SortOrderInfo sortInfo;
                         sortInfo.columnName = item["column"].get<std::string>();
@@ -38,14 +38,14 @@ namespace
                         info.sortOrder.push_back(sortInfo);
                     }
                 }
-                catch (const std::exception& e)
+                catch (const std::exception &e)
                 {
                     spdlog::warn("Failed to parse sort_order JSON for working set {}: {}", info.id, e.what());
                 }
             }
         }
         col++;
-        
+
         info.track_count = stmt.getInt64(col++);
         info.total_duration = durationFromInt64(stmt.getInt64(col++));
         return info;
@@ -57,8 +57,7 @@ namespace jucyaudio
     namespace database
     {
 
-        std::vector<WorkingSetInfo> SqliteWorkingSetManager::getWorkingSets(
-            const TrackQueryArgs &args) const
+        std::vector<WorkingSetInfo> SqliteWorkingSetManager::getWorkingSets(const TrackQueryArgs &args) const
         {
             const std::string BASE_STMT = R"SQL(SELECT 
     ws.ws_id,
@@ -115,8 +114,7 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
                 }
             }
             const auto sql_statement = output.asString();
-            spdlog::debug("Executing SQL statement to get mixes: {}",
-                         sql_statement);
+            spdlog::debug("Executing SQL statement to get mixes: {}", sql_statement);
             std::vector<WorkingSetInfo> workingSets;
             SqliteStatement stmt{m_db};
             stmt.query(
@@ -129,29 +127,24 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             return workingSets;
         }
 
-        bool SqliteWorkingSetManager::createWorkingSetFromQuery(
-            const TrackQueryArgs &args, std::string_view name,
-            WorkingSetInfo &newWorkingSet) const
+        bool SqliteWorkingSetManager::createWorkingSetFromQuery(const TrackQueryArgs &args, std::string_view name, WorkingSetInfo &newWorkingSet) const
         {
             if (SqliteTransaction transaction{m_db})
             {
                 // todo: name-uniqueness should be checked by SQL
-                newWorkingSet.name =
-                    name; // Set the name in the output parameter
+                newWorkingSet.name = name; // Set the name in the output parameter
                 newWorkingSet.timestamp = std::chrono::system_clock::now();
                 newWorkingSet.id = 0;
 
                 if (transaction.execute("INSERT INTO WorkingSets (name, "
                                         "timestamp) VALUES (?, ?);",
-                        name, timestampToInt64(newWorkingSet.timestamp)))
+                        name,
+                        timestampToInt64(newWorkingSet.timestamp)))
                 {
-                    newWorkingSet.id =
-                        m_db.getLastInsertRowId(); // Get the new working set ID
+                    newWorkingSet.id = m_db.getLastInsertRowId(); // Get the new working set ID
                     SqliteStatement stmt{m_db};
                     SqliteStatementConstruction stmtConstruction{stmt};
-                    if (stmtConstruction
-                            .createInsertIntoSelectTrackIdsStatement(
-                                args, newWorkingSet.id))
+                    if (stmtConstruction.createInsertIntoSelectTrackIdsStatement(args, newWorkingSet.id))
                     {
                         if (stmt.execute())
                         {
@@ -165,8 +158,7 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
         }
 
         bool SqliteWorkingSetManager::createWorkingSetFromVirtualFolder(
-            int64_t folderId, std::string_view name,
-            WorkingSetInfo &newWorkingSet, bool recursive) const
+            int64_t folderId, std::string_view name, WorkingSetInfo &newWorkingSet, bool recursive) const
         {
             if (SqliteTransaction transaction{m_db})
             {
@@ -177,15 +169,15 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
 
                 if (transaction.execute("INSERT INTO WorkingSets (name, "
                                         "timestamp) VALUES (?, ?);",
-                        name, timestampToInt64(newWorkingSet.timestamp)))
+                        name,
+                        timestampToInt64(newWorkingSet.timestamp)))
                 {
-                    newWorkingSet.id =
-                        m_db.getLastInsertRowId(); // Get the new working set ID
+                    newWorkingSet.id = m_db.getLastInsertRowId(); // Get the new working set ID
 
                     // Build recursive CTE to get all tracks in folder and subfolders
                     if (recursive)
                     {
-                        const char* recursiveQuery = R"(
+                        const char *recursiveQuery = R"(
                             WITH RECURSIVE folder_tree AS (
                                 SELECT folder_id FROM VirtualFolders WHERE folder_id = ?
                                 UNION ALL
@@ -198,7 +190,7 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
                             FROM Tracks 
                             WHERE virtual_folder_id IN (SELECT folder_id FROM folder_tree);
                         )";
-                        
+
                         if (transaction.execute(recursiveQuery, folderId, newWorkingSet.id))
                         {
                             return transaction.commit();
@@ -207,10 +199,10 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
                     else
                     {
                         // Non-recursive: only tracks in this specific folder
-                        if (transaction.execute(
-                                "INSERT INTO WorkingSetTracks (ws_id, track_id) "
-                                "SELECT ?, track_id FROM Tracks WHERE virtual_folder_id = ?;",
-                                newWorkingSet.id, folderId))
+                        if (transaction.execute("INSERT INTO WorkingSetTracks (ws_id, track_id) "
+                                                "SELECT ?, track_id FROM Tracks WHERE virtual_folder_id = ?;",
+                                newWorkingSet.id,
+                                folderId))
                         {
                             return transaction.commit();
                         }
@@ -221,8 +213,7 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
         }
 
         bool SqliteWorkingSetManager::createWorkingSetFromTrackIds(
-            const std::vector<TrackId> &trackIds, std::string_view name,
-            WorkingSetInfo &newWorkingSet) const
+            const std::vector<TrackId> &trackIds, std::string_view name, WorkingSetInfo &newWorkingSet) const
         {
             if (SqliteTransaction transaction{m_db})
             {
@@ -233,16 +224,17 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
 
                 if (transaction.execute("INSERT INTO WorkingSets (name, "
                                         "timestamp) VALUES (?, ?);",
-                        name, timestampToInt64(newWorkingSet.timestamp)))
+                        name,
+                        timestampToInt64(newWorkingSet.timestamp)))
                 {
-                    newWorkingSet.id =
-                        m_db.getLastInsertRowId(); // Get the new working set ID
+                    newWorkingSet.id = m_db.getLastInsertRowId(); // Get the new working set ID
                     for (const auto &trackId : trackIds)
                     {
                         if (!transaction.execute("INSERT OR IGNORE INTO "
                                                  "WorkingSetTracks (ws_id, "
                                                  "track_id) VALUES (?, ?);",
-                                                 newWorkingSet.id, trackId))
+                                newWorkingSet.id,
+                                trackId))
                         {
                             return transaction.rollback();
                         }
@@ -253,8 +245,7 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             return false;
         }
 
-        bool SqliteWorkingSetManager::addToWorkingSet(
-            WorkingSetId workingSetId, const std::vector<TrackId> &trackIds)
+        bool SqliteWorkingSetManager::addToWorkingSet(WorkingSetId workingSetId, const std::vector<TrackId> &trackIds)
         {
             if (SqliteTransaction transaction{m_db})
             {
@@ -263,7 +254,8 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
                     if (!transaction.execute("INSERT OR IGNORE INTO "
                                              "WorkingSetTracks (ws_id, "
                                              "track_id) VALUES (?, ?);",
-                                             workingSetId, trackId))
+                            workingSetId,
+                            trackId))
                     {
                         return transaction.rollback();
                     }
@@ -273,15 +265,14 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             return false;
         }
 
-        bool SqliteWorkingSetManager::addToWorkingSet(WorkingSetId workingSetId,
-                                                      TrackId trackId)
+        bool SqliteWorkingSetManager::addToWorkingSet(WorkingSetId workingSetId, TrackId trackId)
         {
             if (SqliteTransaction transaction{m_db})
             {
-                if (transaction.execute(
-                        "INSERT OR IGNORE INTO WorkingSetTracks (ws_id, "
-                        "track_id) VALUES (?, ?);",
-                        workingSetId, trackId))
+                if (transaction.execute("INSERT OR IGNORE INTO WorkingSetTracks (ws_id, "
+                                        "track_id) VALUES (?, ?);",
+                        workingSetId,
+                        trackId))
                 {
                     return transaction.commit();
                 }
@@ -303,8 +294,7 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             return false;
         }
 
-        bool SqliteWorkingSetManager::removeFromWorkingSet(
-            WorkingSetId workingSetId, const std::vector<TrackId> &trackIds)
+        bool SqliteWorkingSetManager::removeFromWorkingSet(WorkingSetId workingSetId, const std::vector<TrackId> &trackIds)
         {
             assert(!trackIds.empty());
             if (SqliteTransaction transaction{m_db})
@@ -314,7 +304,8 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
                     if (!transaction.execute("DELETE FROM WorkingSetTracks "
                                              "WHERE ws_id = ? AND "
                                              "track_id = ?;",
-                                             workingSetId, trackId))
+                            workingSetId,
+                            trackId))
                     {
                         return transaction.rollback();
                     }
@@ -324,14 +315,14 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             return false;
         }
 
-        bool SqliteWorkingSetManager::removeFromWorkingSet(
-            WorkingSetId workingSetId, TrackId trackId)
+        bool SqliteWorkingSetManager::removeFromWorkingSet(WorkingSetId workingSetId, TrackId trackId)
         {
             if (SqliteTransaction transaction{m_db})
             {
                 if (transaction.execute("DELETE FROM WorkingSetTracks WHERE "
                                         "ws_id = ? AND track_id = ?;",
-                                        workingSetId, trackId))
+                        workingSetId,
+                        trackId))
                 {
                     return transaction.commit();
                 }
@@ -339,18 +330,13 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             return false;
         }
 
-        bool SqliteWorkingSetManager::removeWorkingSet(
-            WorkingSetId workingSetId)
+        bool SqliteWorkingSetManager::removeWorkingSet(WorkingSetId workingSetId)
         {
             if (SqliteTransaction transaction{m_db})
             {
-                if (transaction.execute(
-                        "DELETE FROM WorkingSetTracks WHERE ws_id = ?;",
-                        workingSetId))
+                if (transaction.execute("DELETE FROM WorkingSetTracks WHERE ws_id = ?;", workingSetId))
                 {
-                    if (transaction.execute(
-                            "DELETE FROM WorkingSets WHERE ws_id = ?;",
-                            workingSetId))
+                    if (transaction.execute("DELETE FROM WorkingSets WHERE ws_id = ?;", workingSetId))
                     {
                         return transaction.commit();
                     }
@@ -358,30 +344,48 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             }
             return false;
         }
-        
-        bool SqliteWorkingSetManager::updateSortOrder(
-            WorkingSetId workingSetId,
-            const std::vector<SortOrderInfo>& sortOrder)
+
+        bool SqliteWorkingSetManager::removeWorkingSets(const std::vector<WorkingSetId>& workingSetIds)
+        {
+            if (SqliteTransaction transaction{m_db})
+            {
+                for (const auto workingSetId : workingSetIds)
+                {
+                    if (!transaction.execute("DELETE FROM WorkingSetTracks WHERE ws_id = ?;", workingSetId))
+                    {
+                        return transaction.rollback();
+                    }
+                    if (!transaction.execute("DELETE FROM WorkingSets WHERE ws_id = ?;", workingSetId))
+                    {
+                        return transaction.rollback();
+                    }
+                }
+                return transaction.commit();
+            }
+            return false;
+        }
+
+        bool SqliteWorkingSetManager::updateSortOrder(WorkingSetId workingSetId, const std::vector<SortOrderInfo> &sortOrder)
         {
             // Convert sort order to JSON
             nlohmann::json jsonArray = nlohmann::json::array();
-            for (const auto& sort : sortOrder)
+            for (const auto &sort : sortOrder)
             {
                 nlohmann::json sortObj;
                 sortObj["column"] = sort.columnName;
                 sortObj["descending"] = sort.descending;
                 jsonArray.push_back(sortObj);
             }
-            
+
             const std::string sortOrderJson = jsonArray.empty() ? "" : jsonArray.dump();
-            
+
             SqliteStatement stmt{m_db, "UPDATE WorkingSets SET sort_order = ? WHERE ws_id = ?;"};
             if (!stmt.isValid())
             {
                 spdlog::error("Failed to prepare updateSortOrder statement: {}", m_db.getLastError());
                 return false;
             }
-            
+
             // Bind parameters - use null for empty sort order
             if (sortOrderJson.empty())
             {
@@ -392,14 +396,13 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
                 stmt.addParam(sortOrderJson);
             }
             stmt.addParam(workingSetId);
-            
+
             if (!stmt.execute())
             {
-                spdlog::error("Failed to update sort order for working set {}: {}", 
-                             workingSetId, m_db.getLastError());
+                spdlog::error("Failed to update sort order for working set {}: {}", workingSetId, m_db.getLastError());
                 return false;
             }
-            
+
             return true;
         }
 

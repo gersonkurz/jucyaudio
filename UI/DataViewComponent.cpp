@@ -221,28 +221,7 @@ namespace jucyaudio
             return result;
         }
 
-        std::vector<database::TrackId> DataViewComponent::getSelectedTrackIds() const
-        {
-            std::vector<database::TrackId> result;
-            if (m_currentNode)
-            {
-                const auto selectedRows = m_tableListBox.getSelectedRows();
-
-                for (int i = 0; i < selectedRows.getNumRanges(); ++i)
-                {
-                    const auto range = selectedRows.getRange(i);
-                    for (int row = range.getStart(); row < range.getEnd(); ++row)
-                    {
-                        const auto pti{m_currentNode->getTrackInfoForRow(static_cast<RowIndex_t>(row))};
-                        if (pti)
-                        {
-                            result.push_back(pti->trackId);
-                        }
-                    }
-                }
-            }
-            return result;
-        }
+        
 
         void DataViewComponent::paintRowBackground(juce::Graphics &g, int rowNumber, [[maybe_unused]] int width, [[maybe_unused]] int height,
                                                    bool rowIsSelected)

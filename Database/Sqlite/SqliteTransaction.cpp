@@ -48,6 +48,8 @@ namespace jucyaudio
                 m_active = false;
                 m_db.execute("ROLLBACK;");
             }
+            // this must return false independent of the success of the action, because it signals to the caller
+            // that a transaction has been aborted.
             return false;
         }
 

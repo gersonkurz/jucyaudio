@@ -71,7 +71,33 @@ namespace jucyaudio
 
             std::vector<database::TrackInfo> getSelectedTracks() const; // Returns selected tracks from the table
             std::vector<RowIndex_t> getSelectedRowIndices() const; 
-            std::vector<database::TrackId> getSelectedTrackIds() const; 
+
+            template <typename T> std::vector<T> getUnderlyingObjectIds(const std::vector<RowIndex_t>& rowIndices) const
+            {
+                std::vector<T> result;
+                if (m_currentNode)
+                {
+                    for (const auto rowIndex : rowIndices)
+                    {
+                        const auto objectId{m_currentNode->getObjectIdForRow(rowIndex)};
+                        if (objectId)
+                        {
+                            result.push_back(static_cast<T>(objectId));
+                        }
+                    }
+                }
+                return result;
+            }
+
+            template <typename T> std::vector<T> getUnderlyingObjectIds() const
+            {
+                return getUnderlyingObjectIds<T>(getSelectedRowIndices());
+            }
+
+            std::vector<database::TrackId> getSelectedTrackIds() const
+            {
+                return getUnderlyingObjectIds<database::TrackId>();
+            }
             
         private:
             // --- juce::Timer overrides ---

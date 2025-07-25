@@ -64,7 +64,6 @@ namespace jucyaudio
 
         private:
             friend class MainPlaybackAndStatusComponent;
-            void onDeleteSelectedRows(std::vector<RowIndex_t> selectedRows, database::INavigationNode *node, int result);
             void handleNodeSelection(database::INavigationNode *selectedNode);
             void handleFilterChange(const juce::String &newFilterText);
             void handleNodeActionFromToolbar(database::DataAction action);
@@ -72,7 +71,7 @@ namespace jucyaudio
             void handleRowActionFromDataView(RowIndex_t rowIndex, database::DataAction action, const juce::Point<int> &screenPos);
 
             void playDataRow(RowIndex_t rowIndex);
-            void deleteSelectedRows();
+            void deleteSelectedRows(bool fromDataView);
             void createMix();
 
             // --- remove mix functionality ---
@@ -162,6 +161,16 @@ namespace jucyaudio
                 cmd_About,
                 cmd_Exit,
             };
+
+            struct DeleteContext final
+            {
+                // will have an added reference, so you must release it from the callback
+                database::INavigationNode *node{nullptr};
+                std::vector<RowIndex_t> selectedRows;
+                bool fromDataView;
+            };
+
+            void onDeleteSelectedRows(DeleteContext* const dc, int result);
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
         };

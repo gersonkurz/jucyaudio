@@ -1,12 +1,12 @@
 #include <Database/Nodes/LibraryNode.h>
 #include <Database/Nodes/LogicalFolderNode.h>
-#include <Database/Nodes/VirtualFoldersOverview.h>
 #include <Database/Nodes/MixNode.h>
 #include <Database/Nodes/MixesOverview.h>
 #include <Database/Nodes/RootNode.h>
 #include <Database/Nodes/TypedContainerNode.h>
 #include <Database/Nodes/TypedItemsOverview.h>
 #include <Database/Nodes/TypedOverviewNode.h>
+#include <Database/Nodes/VirtualFoldersOverview.h>
 #include <Database/Nodes/WorkingSetNode.h>
 #include <Database/Nodes/WorkingSetsOverview.h>
 #include <Utils/AssortedUtils.h>
@@ -21,8 +21,7 @@ namespace jucyaudio
         {
             const auto tokens{splitString(name, "/", true)};
             const BaseNode *pNode{this};
-            for (uint32_t tokenIndex = 0; tokenIndex < tokens.size();
-                 ++tokenIndex)
+            for (uint32_t tokenIndex = 0; tokenIndex < tokens.size(); ++tokenIndex)
             {
                 const auto &token{tokens[tokenIndex]};
                 if (token.empty())
@@ -52,17 +51,13 @@ namespace jucyaudio
         }
 
         RootNode::RootNode()
-            : BaseNode{nullptr, "Root"}
+            : BaseNode{nullptr, "Root", NodeType::Root}
         {
-            m_children.emplace_back(new LibraryNode{this});
+            m_children.emplace_back(new LibraryNode{this, "", NodeType::LibraryRoot});
             // Use VirtualFoldersOverview instead of filesystem-based folders
             m_children.emplace_back(new VirtualFoldersOverview{this});
-            m_children.emplace_back(
-                new TypedOverviewNode<WorkingSetInfo, WorkingSetNode>{
-                    this, getWorkingSetsRootNodeName(),
-                    &WorkingSetNode::createChildren});
-            m_children.emplace_back(new TypedOverviewNode<MixInfo, MixNode>{
-                this, getMixesRootNodeName(), &MixNode::createChildren});
+            m_children.emplace_back(new TypedOverviewNode<WorkingSetInfo, WorkingSetNode>{this, getWorkingSetsRootNodeName(), &WorkingSetNode::createChildren, NodeType::WorkingSetsRoot});
+            m_children.emplace_back(new TypedOverviewNode<MixInfo, MixNode>{this, getMixesRootNodeName(), &MixNode::createChildren, NodeType::MixesRoot});
         }
 
         bool RootNode::getChildren(std::vector<INavigationNode *> &outChildren)

@@ -211,6 +211,27 @@ FROM Mixes m
             return mixTracks;
         }
 
+        bool SqliteMixManager::removeTracksFromMix(MixId mixId, const std::vector<TrackId> &trackIds) const
+        {
+            if (SqliteTransaction transaction{m_db})
+            {
+                // Use a prepared statement to remove each track from the mix
+                SqliteStatement stmt{m_db, "DELETE FROM MixTracks WHERE mix_id = ? AND track_id = ?"};
+                for (const auto &trackId : trackIds)
+                {
+                    stmt.addParam(mixId);
+                    stmt.addParam(trackId);
+                    if (!stmt.execute())
+                    {
+                        return transaction.rollback();
+                    }
+                    stmt.reset();
+                }
+                return transaction.commit();
+            }
+            return false;
+        }
+
         bool SqliteMixManager::removeTrackFromMix(MixId mixId, TrackId trackId) const
         {
             if (SqliteTransaction transaction{m_db})
@@ -292,6 +313,26 @@ FROM Mixes m
                         return transaction.commit();
                     }
                 }
+            }
+            return false;
+        }
+
+        bool SqliteMixManager::removeMixes(const std::vector<MixId> &mixIds) const
+        {
+            if (SqliteTransaction transaction{m_db})
+            {
+                for (const auto mixId : mixIds)
+                {
+                    if (!transaction.execute("DELETE FROM MixTracks WHERE mix_id = ?;", mixId))
+                    {
+                        return transaction.rollback();
+                    }
+                    if (!transaction.execute("DELETE FROM Mixes WHERE mix_id = ?;", mixId))
+                    {
+                        return transaction.rollback();
+                    }
+                }
+                return transaction.commit();
             }
             return false;
         }

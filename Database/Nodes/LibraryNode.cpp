@@ -28,7 +28,7 @@ namespace jucyaudio
     namespace database
     {
 
-        const DataActions LibraryNodeActions{
+        const DataActions WorkingSetNodeActions{
             DataAction::CreateWorkingSet, DataAction::EditMetadata, DataAction::CreateMix, DataAction::RunBpmAnalysis, DataAction::RemoveWorkingSet};
         const DataActions LibraryRowActions{DataAction::Play,
             DataAction::CreateWorkingSet,
@@ -53,7 +53,7 @@ namespace jucyaudio
 
         const DataActions &LibraryNode::getNodeActions() const
         {
-            return LibraryNodeActions;
+            return WorkingSetNodeActions;
         }
 
         const DataActions &LibraryNode::getRowActions([[maybe_unused]] RowIndex_t rowIndex) const
@@ -68,8 +68,8 @@ namespace jucyaudio
             m_tracks.clear();
         }
 
-        LibraryNode::LibraryNode(INavigationNode *root, const std::string &name)
-            : BaseNode{root, name.empty() ? getLibraryRootNodeName() : name},
+        LibraryNode::LibraryNode(INavigationNode *root, const std::string &name, NodeType nodeType)
+            : BaseNode{root, name.empty() ? getLibraryRootNodeName() : name, nodeType},
               m_bCacheInitialized{false}
         {
         }
@@ -183,6 +183,12 @@ namespace jucyaudio
             const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
             if (duration.count() > 100)
                 spdlog::info("LibraryNode::getCellText for row {} took {} us", rowIndex, duration.count());
+        }
+
+        int64_t LibraryNode::getObjectIdForRow(RowIndex_t rowIndex) const
+        {
+            const auto trackInfo{getTrackInfoForRow(rowIndex)};
+            return trackInfo ? trackInfo->trackId : 0;
         }
 
         const TrackInfo *LibraryNode::getTrackInfoForRow(RowIndex_t rowIndex) const

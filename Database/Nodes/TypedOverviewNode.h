@@ -19,22 +19,16 @@ namespace jucyaudio
 {
     namespace database
     {
-        template <typename ITEM_TYPE, typename NODE_TYPE>
-        class TypedOverviewNode final : public TypedContainerNode<NODE_TYPE>
+        template <typename ITEM_TYPE, typename NODE_TYPE> class TypedOverviewNode final : public TypedContainerNode<NODE_TYPE>
         {
         public:
             explicit TypedOverviewNode<ITEM_TYPE, NODE_TYPE>(
-                INavigationNode *root, 
-                std::string_view name,
-                TypedContainerNode<NODE_TYPE>::ClientCreationMethod
-                    clientCreationMethod)
-                : TypedContainerNode<NODE_TYPE>{root, name,
-                                                clientCreationMethod}
+                INavigationNode *root, std::string_view name, TypedContainerNode<NODE_TYPE>::ClientCreationMethod clientCreationMethod, NodeType nodeType)
+                : TypedContainerNode<NODE_TYPE>{root, name, clientCreationMethod, nodeType}
             {
             }
 
-            bool setSortOrder(
-                const std::vector<SortOrderInfo> &sortOrders) override
+            bool setSortOrder(const std::vector<SortOrderInfo> &sortOrders) override
             {
                 m_queryArgs.sortBy = sortOrders;
                 m_bCacheInitialized = false;
@@ -46,8 +40,7 @@ namespace jucyaudio
                 return m_queryArgs.sortBy;
             }
 
-            bool setSearchTerms(
-                const std::vector<std::string> &searchTerms) override
+            bool setSearchTerms(const std::vector<std::string> &searchTerms) override
             {
                 m_queryArgs.searchTerms = searchTerms;
                 m_bCacheInitialized = false;
@@ -69,8 +62,7 @@ namespace jucyaudio
                 return m_overview.getRowActions(rowIndex);
             }
 
-            std::string getCellText(RowIndex_t rowIndex,
-                                    ColumnIndex_t index) const override
+            std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const override
             {
                 // TODO: we should have some sort of abstract track info to
                 // return here. We're really calling it only to refresh the
@@ -106,15 +98,11 @@ namespace jucyaudio
                     const auto &ws = m_objects[rowIndex];
                     if (!m_overview.removeObject(ws))
                     {
-                        spdlog::error(
-                            "Failed to remove object at row index: {}",
-                            rowIndex);
+                        spdlog::error("Failed to remove object at row index: {}", rowIndex);
                     }
                     else
                     {
-                        spdlog::info(
-                            "Successfully removed object at row index: {}",
-                            rowIndex);
+                        spdlog::info("Successfully removed object at row index: {}", rowIndex);
                         m_bCacheInitialized = false;
                     }
                 }
@@ -124,8 +112,7 @@ namespace jucyaudio
             {
                 if (m_bCacheInitialized || m_objects.empty())
                 {
-                    spdlog::info(
-                        "TON: Preparing to show data for TypedOverviewNode");
+                    spdlog::info("TON: Preparing to show data for TypedOverviewNode");
                     m_bCacheInitialized = false; // Reset cache state
                     refreshCache();
                 }
@@ -136,8 +123,7 @@ namespace jucyaudio
             {
                 if (m_bCacheInitialized)
                 {
-                    spdlog::info(
-                        "TON: Data no longer showing for TypedOverviewNode");
+                    spdlog::info("TON: Data no longer showing for TypedOverviewNode");
                     m_bCacheInitialized = false;
                     m_objects.clear(); // Clear the cache when data is no longer
                                        // shown
@@ -155,12 +141,9 @@ namespace jucyaudio
                 }
             }
 
-
-
             void refreshData()
             {
-                spdlog::info("Refreshing data for overview node: {}",
-                             this->getName().toStdString());
+                spdlog::info("Refreshing data for overview node: {}", this->getName().toStdString());
 
                 // 1. Refresh/invalidate list view data cache
                 refreshCache(true); // true to force a flush and re-fetch
@@ -177,10 +160,8 @@ namespace jucyaudio
                 //    This calls the refreshChildren method we discussed
                 //    earlier, which intelligently updates or rebuilds its
                 //    m_children (the INavigationNode models for the tree).
-                TypedContainerNode<
-                    NODE_TYPE>::refreshChildren(); // Call base class or its own
-                                                   // impl if overridden
-
+                TypedContainerNode<NODE_TYPE>::refreshChildren(); // Call base class or its own
+                                                                  // impl if overridden
             }
 
         private:

@@ -11,9 +11,8 @@ namespace jucyaudio
     namespace database
     {
 
-        LogicalFolderNode::LogicalFolderNode(INavigationNode *parent, const std::filesystem::path &folderPath,
-                                             const std::string &displayName)
-            : LibraryNode{parent, displayName}, // Call base constructor
+        LogicalFolderNode::LogicalFolderNode(INavigationNode *parent, const std::filesystem::path &folderPath, const std::string &displayName)
+            : LibraryNode{parent, displayName, NodeType::LogicalFolder}, // Call base constructor
               m_thisFolderPath{folderPath}
         {
             // IMPORTANT: Initialize this instance's query to be specific to its path
@@ -97,10 +96,10 @@ namespace jucyaudio
 
                         // Create new LogicalFolderNode for each sub-directory
                         auto *childFolderNode = new LogicalFolderNode{
-                            this,                      // Parent node
-                            entry.path(),              // Full path of the subdirectory
+                            this,                                 // Parent node
+                            entry.path(),                         // Full path of the subdirectory
                             pathToString(entry.path().filename()) // Display name (just the folder name)
-                                                       // u8string() then convert to std::string as needed
+                                                                  // u8string() then convert to std::string as needed
                         };
                         outChildren.push_back(childFolderNode);
                     }
@@ -113,17 +112,29 @@ namespace jucyaudio
                 }
 
                 // Sort children by name (case-insensitive, Unicode-aware)
-                std::sort(outChildren.begin(), outChildren.end(), 
-                    [](const INavigationNode* a, const INavigationNode* b) {
+                std::sort(outChildren.begin(),
+                    outChildren.end(),
+                    [](const INavigationNode *a, const INavigationNode *b)
+                    {
                         std::string nameA = a->getName();
                         std::string nameB = b->getName();
-                        
+
                         // Convert to lowercase for case-insensitive comparison
-                        std::transform(nameA.begin(), nameA.end(), nameA.begin(), 
-                            [](unsigned char c) { return std::tolower(c); });
-                        std::transform(nameB.begin(), nameB.end(), nameB.begin(), 
-                            [](unsigned char c) { return std::tolower(c); });
-                        
+                        std::transform(nameA.begin(),
+                            nameA.end(),
+                            nameA.begin(),
+                            [](unsigned char c)
+                            {
+                                return std::tolower(c);
+                            });
+                        std::transform(nameB.begin(),
+                            nameB.end(),
+                            nameB.begin(),
+                            [](unsigned char c)
+                            {
+                                return std::tolower(c);
+                            });
+
                         return nameA < nameB;
                     });
             }

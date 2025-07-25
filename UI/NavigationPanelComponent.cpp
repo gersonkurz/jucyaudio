@@ -134,32 +134,35 @@ namespace jucyaudio
                              // subItemsBuilt is false, but good practice)
 
             std::vector<database::INavigationNode *> children;
-            if (m_associatedNode->getChildren(children))
+            if (m_associatedNode->hasChildren())
             {
-                for (const auto childNode : children)
+                if (m_associatedNode->getChildren(children))
                 {
-                    if (childNode) // childNode is already retained by
-                                   // getChildren()
+                    for (const auto childNode : children)
                     {
-                        // The NavTreeViewItem constructor will take its own
-                        // retain() on childNode. The childNode pointer from the
-                        // 'children' vector can then be released.
-                        addSubItem(new NavTreeViewItem{childNode, m_ownerPanel});
+                        if (childNode) // childNode is already retained by
+                                       // getChildren()
+                        {
+                            // The NavTreeViewItem constructor will take its own
+                            // retain() on childNode. The childNode pointer from the
+                            // 'children' vector can then be released.
+                            addSubItem(new NavTreeViewItem{childNode, m_ownerPanel});
+                        }
                     }
                 }
-            }
-            // If getChildren failed or returned an empty vector, no sub-items
-            // will be added. Release any remaining nodes in the children vector
-            // if getChildren populated it but we didn't use all. However, the
-            // loop above processes all non-null children. If getChildren
-            // allocated nodes but returned false, it's its responsibility to
-            // clean them up. Our contract is that if getChildren returns true,
-            // 'children' contains retained nodes.
-            for (auto ptr : children)
-            {
-                if (ptr)
+                // If getChildren failed or returned an empty vector, no sub-items
+                // will be added. Release any remaining nodes in the children vector
+                // if getChildren populated it but we didn't use all. However, the
+                // loop above processes all non-null children. If getChildren
+                // allocated nodes but returned false, it's its responsibility to
+                // clean them up. Our contract is that if getChildren returns true,
+                // 'children' contains retained nodes.
+                for (auto ptr : children)
                 {
-                    ptr->release(REFCOUNT_DEBUG_ARGS); // Release each pointer
+                    if (ptr)
+                    {
+                        ptr->release(REFCOUNT_DEBUG_ARGS); // Release each pointer
+                    }
                 }
             }
             m_subItemsBuilt = true;

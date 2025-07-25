@@ -19,7 +19,7 @@ namespace jucyaudio
         class LibraryNode : public BaseNode
         {
         public:
-            LibraryNode(INavigationNode *root, const std::string& name = "");
+            LibraryNode(INavigationNode *root, const std::string& name, NodeType nodeType);
             ~LibraryNode() override;
 
         protected:
@@ -35,6 +35,7 @@ namespace jucyaudio
             bool getNumberOfRows(int64_t &outCount) const override;
             std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const override;
             const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;
+            int64_t getObjectIdForRow(RowIndex_t rowIndex) const override;
             void dataNoLongerShowing() override;
             const DataActions &getNodeActions() const override;
             const DataActions &getRowActions(RowIndex_t rowIndex) const override;

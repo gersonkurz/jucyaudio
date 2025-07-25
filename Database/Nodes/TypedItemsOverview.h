@@ -24,9 +24,15 @@ namespace jucyaudio
             {
                 return NoActionsPossible;
             }
+
             const DataActions &getRowActions(RowIndex_t rowIndex) const
             {
                 return NoActionsPossible;
+            }
+
+            NodeType getNodeType() const
+            {
+                return NodeType::Other; // Default to Other, can be specialized
             }
 
             const std::vector<DataColumn> &getColumns() const

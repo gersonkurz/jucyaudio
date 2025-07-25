@@ -24,7 +24,7 @@ namespace jucyaudio
         class BaseNode : public INavigationNode
         {
         public:
-            BaseNode(INavigationNode *parent, std::string_view name);
+            BaseNode(INavigationNode *parent, std::string_view name, NodeType nodeType);
             ~BaseNode() override;
 
             // IRefCounted interface
@@ -46,8 +46,13 @@ namespace jucyaudio
             const DataActions &getRowActions(RowIndex_t rowIndex) const override;
             std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const override;
             const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;
+            int64_t getObjectIdForRow(RowIndex_t rowIndex) const override;
             bool getNumberOfRows(int64_t &outCount) const override;
             bool getTotalTrackCount(int64_t &outCount) const override;
+            NodeType getNodeType() const override
+            {
+                return m_nodeType;
+            }
             bool prepareToShowData() override;
             void dataNoLongerShowing() override;
             const std::vector<DataColumn> &getColumns() const override;
@@ -70,6 +75,7 @@ namespace jucyaudio
             // no longer const to support renaming
             std::string m_name;
             mutable std::atomic<int32_t> m_refCount;
+            const NodeType m_nodeType;
 
          protected:
             friend class RootNode; // Allow RootNode to access m_children

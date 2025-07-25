@@ -23,6 +23,20 @@ namespace jucyaudio
 {
     namespace database
     {
+        enum class NodeType
+        {
+            Root,
+            LibraryRoot,
+            MixesRoot,
+            Mix,
+            WorkingSetsRoot,
+            WorkingSet,
+            VirtualFoldersRoot,
+            VirtualFolder,
+            LogicalFolder, // not really used any longer, but kept for compatibility
+            Other
+        };
+
         // --- INavigationNode Interface (remains an interface) ---
         struct INavigationNode : public IRefCounted
         {
@@ -39,6 +53,9 @@ namespace jucyaudio
             /// @brief Check if this navigation node has children.
             /// @return True if the node has children, false otherwise.
             virtual bool hasChildren() const = 0;
+
+            /// @brief Get the type of this navigation node.
+            virtual NodeType getNodeType() const = 0;
 
             /// @brief Refresh the children of this navigation node.
             /// This method should be called to refresh the list of children, e.g., after a change in the underlying data.
@@ -100,6 +117,7 @@ namespace jucyaudio
 
             virtual std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const = 0;
             virtual const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const = 0;
+            virtual int64_t getObjectIdForRow(RowIndex_t rowIndex) const = 0;
 
             /// @brief Prepare to show data for this node.
             /// This method is called when the node's data is about to be displayed.

@@ -25,6 +25,11 @@ namespace jucyaudio
             }
 
             const DataActions &getNodeActions() const override;
+            const DataActions &getRowActions(RowIndex_t rowIndex) const;
+            NodeType getNodeType() const override
+            {
+                return NodeType::WorkingSet;
+            }
 
             void rename(std::string_view newName)
             {

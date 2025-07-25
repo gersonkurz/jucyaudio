@@ -5,6 +5,7 @@
 #include <Database/Includes/MixInfo.h>
 #include <Database/Nodes/MixNode.h>
 #include <Database/Nodes/RootNode.h>
+#include <Database/Nodes/TypedOverviewNode.h>
 #include <Database/Nodes/VirtualFolderNode.h>
 #include <Database/Nodes/WorkingSetNode.h>
 #include <UI/ColumnConfiguratorDialog.h>
@@ -12,10 +13,10 @@
 #include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/ILongRunningTask.h>
 #include <UI/MainComponent.h>
+#include <UI/MarkerEditDialog.h>
 #include <UI/ScanDialogComponent.h>
 #include <UI/TaskDialog.h>
 #include <UI/WorkingSetMetaDataEditorDialog.h>
-#include <UI/MarkerEditDialog.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
 #include <algorithm>
@@ -57,7 +58,7 @@ namespace jucyaudio
               m_mainPlaybackAndStatusPanel{*this}
         {
             theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
-            
+
             // Register audio formats
             m_audioFormatManager.registerBasicFormats();
 
@@ -138,12 +139,11 @@ namespace jucyaudio
                 // TODO: Implement next track logic
                 spdlog::info("Next track requested");
             };
-            
+
             m_enhancedPlayer.onMarkerAction = [this](database::TrackId trackId, std::chrono::milliseconds position, bool isNewMarker)
             {
-                spdlog::info("Marker action requested: track={}, position={}ms, isNew={}", 
-                    trackId, position.count(), isNewMarker);
-                
+                spdlog::info("Marker action requested: track={}, position={}ms, isNew={}", trackId, position.count(), isNewMarker);
+
                 showMarkerDialog(trackId, position, isNewMarker);
             };
 
@@ -837,7 +837,7 @@ namespace jucyaudio
                 m_mainPlaybackAndStatusPanel.setStatusMessage("Edit metadata for: " + std::to_string(rowIndex), false);
                 break;
             case DataAction::Delete:
-                deleteSelectedRows();
+                deleteSelectedRows(true);
                 break;
             case DataAction::None:
             default:
@@ -865,9 +865,9 @@ namespace jucyaudio
                 [this, task]()
                 {
                     m_dataViewComponent.refreshView();
-                    
+
                     // Check for bad files
-                    const auto& badFiles = task->getBadFiles();
+                    const auto &badFiles = task->getBadFiles();
                     if (!badFiles.empty())
                     {
                         showBadFilesDialog(badFiles);
@@ -893,9 +893,9 @@ namespace jucyaudio
                 [this, task]()
                 {
                     m_dataViewComponent.refreshView();
-                    
+
                     // Check for bad files
-                    const auto& badFiles = task->getBadFiles();
+                    const auto &badFiles = task->getBadFiles();
                     if (!badFiles.empty())
                     {
                         showBadFilesDialog(badFiles);
@@ -903,22 +903,21 @@ namespace jucyaudio
                 });
             task->release(REFCOUNT_DEBUG_ARGS);
         }
-        
-        void MainComponent::showBadFilesDialog(const std::vector<database::TrackInfo>& badFiles)
+
+        void MainComponent::showBadFilesDialog(const std::vector<database::TrackInfo> &badFiles)
         {
             juce::String message = "The following files could not be analyzed due to unsupported decoder format:\n\n";
-            
-            for (const auto& track : badFiles)
+
+            for (const auto &track : badFiles)
             {
                 message += juce::String(track.filepath.filename().string()) + juce::String("\n");
             }
-            
+
             message += "\nWould you like to remove these files from all working sets?\n";
             message += "(They will remain in the library but marked as bad format,\n";
             message += "and won't be included in future BPM analysis or playback)";
-            
-            juce::AlertWindow::showOkCancelBox(
-                juce::AlertWindow::WarningIcon,
+
+            juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,
                 "Bad Files Detected",
                 message,
                 "Remove from Working Sets",
@@ -932,17 +931,17 @@ namespace jucyaudio
                             // Collect track IDs
                             std::vector<database::TrackId> badTrackIds;
                             badTrackIds.reserve(badFiles.size());
-                            for (const auto& track : badFiles)
+                            for (const auto &track : badFiles)
                             {
                                 badTrackIds.push_back(track.trackId);
                             }
-                            
+
                             // Remove bad files from all working sets
-                            auto& wsManager = theTrackLibrary.getWorkingSetManager();
+                            auto &wsManager = theTrackLibrary.getWorkingSetManager();
                             const auto allWorkingSets = wsManager.getWorkingSets(database::TrackQueryArgs{});
-                            
+
                             int removedCount = 0;
-                            for (const auto& ws : allWorkingSets)
+                            for (const auto &ws : allWorkingSets)
                             {
                                 // Try to remove all bad tracks from this working set
                                 // The method will ignore tracks that aren't in the set
@@ -951,18 +950,15 @@ namespace jucyaudio
                                     removedCount++;
                                 }
                             }
-                            
+
                             m_mainPlaybackAndStatusPanel.setStatusMessage(
-                                std::format("Marked {} bad files and removed from {} working sets", 
-                                    badFiles.size(), removedCount), false);
-                            
+                                std::format("Marked {} bad files and removed from {} working sets", badFiles.size(), removedCount), false);
+
                             // Refresh the view to show updated working sets
                             m_dataViewComponent.refreshView();
-                            //m_navigationPanel.refreshCurrentNode();
+                            // m_navigationPanel.refreshCurrentNode();
                         }
-                    }
-                )
-            );
+                    }));
         }
 
         // --- Action Execution Method Stubs ---
@@ -990,7 +986,7 @@ namespace jucyaudio
                     m_mainPlaybackAndStatusPanel.setStatusMessage(getSafeDisplayText("Error playing: " + audioFile.getFileName()), true);
                     juce::AlertWindow::showMessageBoxAsync(
                         juce::AlertWindow::WarningIcon, "Playback Error", "Cannot play file:\n" + audioFile.getFullPathName());
-                    
+
                     // Update track status to bad_format if it wasn't already marked
                     if (track->status != database::TrackStatus::BadFormat)
                     {
@@ -1004,10 +1000,10 @@ namespace jucyaudio
                     {
                         theTrackLibrary.getTrackDatabase()->updateTrackStatus(track->trackId, database::TrackStatus::Ok);
                     }
-                    
+
                     // Load waveform when playback starts successfully
                     m_enhancedPlayer.loadFile(audioFile, track->trackId);
-                    
+
                     // Load markers for this track
                     const auto markers = theTrackLibrary.getMarkerManager().getMarkersForTrack(track->trackId);
                     m_enhancedPlayer.setMarkers(markers);
@@ -1022,32 +1018,112 @@ namespace jucyaudio
             syncPlaybackUIToControllerState();
         }
 
-        void MainComponent::onDeleteSelectedRows(std::vector<RowIndex_t> selectedRows, INavigationNode *node, int result)
+        void MainComponent::onDeleteSelectedRows(DeleteContext *const dc, int result)
         {
             if (result == 1) // User clicked "Delete"
             {
-                for (const auto rowIndex : selectedRows)
+                // what to do depends entirely on the context of the operation
+                bool success = false;
+                const auto nrSelectedRows{dc->selectedRows.size()};
+                std::string statusMessage;
+                switch (dc->node->getNodeType())
                 {
-                    spdlog::info("Deleting row index: {}", rowIndex);
-                    node->removeObjectAtRow(rowIndex);
-                }
-                m_navigationPanel.refreshNode(node);
-                if (m_currentMainView == MainViewType::MixEditor)
+                case NodeType::Mix:
                 {
+                    const auto mixNode{reinterpret_cast<MixNode *>(dc->node)};
+                    const auto mixId{mixNode->getUniqueId()};
+                    // if you call it from the list of tracks in a mix, you're actually
+                    // removing tracks from the mix, not deleting the mix itself
+                    if (dc->fromDataView)
+                    {
+                        const auto trackIds{m_dataViewComponent.getUnderlyingObjectIds<TrackId>(dc->selectedRows)};
+                        success = theTrackLibrary.getMixManager().removeTracksFromMix(mixId, trackIds);
+                        statusMessage = success ? "Removed tracks from mix." : "Failed to remove tracks from mix.";
+                    }
+                    else
+                    {
+                        // the navigation panel can select only one mix at a time
+                        assert(nrSelectedRows <= 0);
+                        success = theTrackLibrary.getMixManager().removeMix(mixId);
+                        statusMessage = success ? "Mix deleted." : "Failed to delete mix.";
+                    }
+                    break;
                 }
-                else
+                case NodeType::MixesRoot:
                 {
-                    m_dataViewComponent.refreshView(); // Refresh data view if it's the current view
+                    assert(dc->fromDataView); // You cannot select the root itself for deletion, must have come from the data view
+                    const auto mixesRootNode{reinterpret_cast<TypedOverviewNode<MixInfo, MixNode> *>(dc->node)};
+                    const auto mixIds{m_dataViewComponent.getUnderlyingObjectIds<MixId>(dc->selectedRows)};
+                    success = theTrackLibrary.getMixManager().removeMixes(mixIds);
+                    statusMessage = success ? "Mixes deleted." : "Failed to delete mixes.";
+                    break;
                 }
-                m_mainPlaybackAndStatusPanel.setStatusMessage("Selected mixes deleted successfully.", false);
+                case NodeType::WorkingSet:
+                {
+                    const auto workingSetNode{reinterpret_cast<WorkingSetNode *>(dc->node)};
+                    const auto workingSetId{workingSetNode->getUniqueId()};
+                    // if you call it from the list of tracks in a working-set, you're actually
+                    // removing tracks from the working-set, not deleting the working-set itself
+                    if (dc->fromDataView)
+                    {
+                        const auto trackIds{m_dataViewComponent.getUnderlyingObjectIds<TrackId>(dc->selectedRows)};
+                        success = theTrackLibrary.getWorkingSetManager().removeFromWorkingSet(workingSetId, trackIds);
+                        statusMessage = success ? "Removed tracks from working set." : "Failed to remove tracks from working set.";
+                    }
+                    else
+                    {
+                        // the navigation panel can select only one working-set at a time
+                        assert(nrSelectedRows <= 0);
+                        success = theTrackLibrary.getWorkingSetManager().removeWorkingSet(workingSetId);
+                        statusMessage = success ? "Working set deleted." : "Failed to delete working set.";
+                    }
+                    break;
+                }
+                case NodeType::WorkingSetsRoot:
+                {
+                    assert(dc->fromDataView); // You cannot select the root itself for deletion, must have come from the data view
+                    const auto mixesRootNode{reinterpret_cast<TypedOverviewNode<WorkingSetInfo, WorkingSetNode> *>(dc->node)};
+                    const auto workingSetIds{m_dataViewComponent.getUnderlyingObjectIds<WorkingSetId>(dc->selectedRows)};
+                    success = theTrackLibrary.getWorkingSetManager().removeWorkingSets(workingSetIds);
+                    statusMessage = success ? "Working sets deleted." : "Failed to delete working sets.";
+                    break;
+                }
+                default:
+                    assert(false);
+                    return;
+                }
+                if (success)
+                {
+                    for (const auto rowIndex : dc->selectedRows)
+                    {
+                        spdlog::info("Deleting object at row {}", rowIndex);
+                        dc->node->removeObjectAtRow(rowIndex);
+                    }
+                    m_navigationPanel.refreshNode(dc->node);
+
+                    if (m_currentMainView != MainViewType::MixEditor)
+                    {
+                        if (dc->fromDataView)
+                        {
+                            m_dataViewComponent.refreshView(); // Refresh data view if it's the current view
+                        }
+                        else
+                        {
+                            // we may have to delete node from navigation and also select another one. Could be - not sure about that yet.
+                        }
+                    }
+                }
+                m_mainPlaybackAndStatusPanel.setStatusMessage(statusMessage, false);
+                dc->node->release(REFCOUNT_DEBUG_ARGS);
+                delete dc;
             }
             else
             {
-                m_mainPlaybackAndStatusPanel.setStatusMessage("Mix deletion cancelled.", false);
+                m_mainPlaybackAndStatusPanel.setStatusMessage("Operation cancelled", false);
             }
         }
 
-        void MainComponent::deleteSelectedRows()
+        void MainComponent::deleteSelectedRows(bool fromDataView)
         {
             if (!m_currentSelectedDataNode)
             {
@@ -1059,64 +1135,128 @@ namespace jucyaudio
                 m_mainPlaybackAndStatusPanel.setStatusMessage("Cannot delete rows in Mix Editor view.", true);
                 return;
             }
-            const auto name{m_currentSelectedDataNode->getName()};
-            const bool isWorkingSetsNode = (name == getWorkingSetsRootNodeName());
-            auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
-            if (selectedRows.empty())
+            const auto nodePath{getNodePath(m_currentSelectedDataNode)};
+            if (nodePath.size() == 1)
             {
-                m_mainPlaybackAndStatusPanel.setStatusMessage("No rows selected for deletion.", true);
-                return;
+                // we're being called from the root node, so we're about to delete complete mixes / working sets
             }
-            std::reverse(selectedRows.begin(),
-                selectedRows.end()); // Reverse to delete from end to start
-
-            juce::String message;
-            std::string okButtonText;
-            if (selectedRows.size() == 1)
+            const auto dc{new DeleteContext{}};
+            dc->fromDataView = fromDataView; // Store if this was called from DataView or NavigationPanel
+            if (fromDataView)
             {
-                if (isWorkingSetsNode)
+                // If called from DataView, get selected rows from DataView
+                dc->selectedRows = m_dataViewComponent.getSelectedRowIndices();
+                if (dc->selectedRows.empty())
                 {
-                    message = "Are you sure you want to delete the selected "
-                              "working-set";
-                    okButtonText = "Delete Working Set";
+                    m_mainPlaybackAndStatusPanel.setStatusMessage("No rows selected for deletion.", true);
+                    return;
+                }
+                // Reverse to delete from end to start
+                std::reverse(dc->selectedRows.begin(), dc->selectedRows.end());
+            }
+            std::string warningMessage;
+            std::string okButtonText;
+            const auto nrSelectedRows{dc->selectedRows.size()};
+            dc->node = m_currentSelectedDataNode;
+            dc->node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid during deletion
+            const auto nodeName{dc->node->getName()};
+            switch (dc->node->getNodeType())
+            {
+            case NodeType::Mix:
+                // if you call it from the list of tracks in a mix, you're actually
+                // removing tracks from the mix, not deleting the mix itself
+                if (fromDataView)
+                {
+                    if (nrSelectedRows == 1)
+                    {
+                        const auto assumedTrackName{dc->node->getCellText(dc->selectedRows[0], 0)};
+                        warningMessage = std::format("Do you want to remove the track {} from the mix {}?", assumedTrackName, nodeName); // TODO: retrieve mix name
+                        okButtonText = "Remove Track";
+                    }
+                    else
+                    {
+                        warningMessage = std::format("Do you want to remove the {} selected tracks from the mix {}?", nrSelectedRows, nodeName);
+                        okButtonText = "Remove Tracks";
+                    }
                 }
                 else
                 {
-                    message = "Are you sure you want to delete the selected mix";
+                    // the navigation panel can select only one mix at a time
+                    assert(nrSelectedRows <= 0);
+                    warningMessage = std::format("Do you want to delete the mix {}?", nodeName); // TODO: retrieve mix name
                     okButtonText = "Delete Mix";
                 }
-            }
-            else
-            {
-                if (isWorkingSetsNode)
+                break;
+            case NodeType::MixesRoot:
+                // if you call it from the list of mixes in the root node
+                if (fromDataView)
                 {
-                    message = std::format("Are you sure you want to delete the "
-                                          "selected {} working-sets?",
-                        selectedRows.size());
-                    okButtonText = "Delete Working Sets";
+                    // so this call must originate from the data-view
+                    warningMessage = std::format("Do you want to delete the {} selected mixes?", nrSelectedRows);
+                    okButtonText = "Delete Mixes";
                 }
                 else
                 {
-                    message = std::format("Are you sure you want to delete the "
-                                          "selected {} mixes?",
-                        selectedRows.size());
-                    okButtonText = "Delete Mixes";
+                    spdlog::error("logic problem: you cannot remove the root node itself, so this is should never happen");
+                    return;
                 }
+                break;
+            case NodeType::WorkingSet:
+                // if you call it from the list of tracks in a working-set, you're actually
+                // removing tracks from the working-set, not deleting the working-set itself
+                if (fromDataView)
+                {
+                    if (nrSelectedRows == 1)
+                    {
+                        const auto assumedTrackName{dc->node->getCellText(dc->selectedRows[0], 0)};
+                        warningMessage = std::format("Do you want to remove {} from the working-set {}?", assumedTrackName, nodeName);
+                        okButtonText = "Remove Track";
+                    }
+                    else
+                    {
+                        warningMessage = std::format("Do you want to remove the {} selected tracks from the working-set {}?", nrSelectedRows, nodeName);
+                        okButtonText = "Remove Tracks";
+                    }
+                }
+                else
+                {
+                    // the navigation panel can select only one working-set at a time
+                    assert(nrSelectedRows <= 0);
+                    warningMessage = std::format("Do you want to delete the working-set {}?", nodeName); // TODO: retrieve working-set name
+                    okButtonText = "Delete Working-Set";
+                }
+                break;
+            case NodeType::WorkingSetsRoot:
+                // if you call it from the list of working-sets in the root node
+                if (fromDataView)
+                {
+                    // so this call must originate from the data-view
+                    warningMessage = std::format("Do you want to delete the {} selected working-sets?", nrSelectedRows);
+                    okButtonText = "Delete Working-Sets";
+                }
+                else
+                {
+                    spdlog::error("logic problem: you cannot remove the root node itself, so this is should never happen");
+                    return;
+                }
+                break;
+            default:
+                spdlog::error("Unsupported node type for deletion: {}", static_cast<int>(m_currentSelectedDataNode->getNodeType()));
+                return;
             }
+
             const auto node = m_currentSelectedDataNode;
 
             juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon, // Icon type
                 "Confirm Deletion",                                            // Window title
-                message,
-                okButtonText,                        // OK button text (can be "OK", "Delete", etc.)
-                "Cancel",                            // Cancel button text
-                nullptr,                             // Parent component (optional, nullptr for desktop)
-                juce::ModalCallbackFunction::create( // Callback
-                    [this,
-                        selectedRows,
-                        node](int result) // Capture necessary data
+                warningMessage,
+                okButtonText, // OK button text (can be "OK", "Delete", etc.)
+                "Cancel",     // Cancel button text
+                nullptr,      // Parent component (optional, nullptr for desktop)
+                juce::ModalCallbackFunction::create(
+                    [this, dc](int result)
                     {
-                        onDeleteSelectedRows(selectedRows, node, result);
+                        onDeleteSelectedRows(dc, result);
                     }));
         }
 
@@ -1820,17 +1960,17 @@ namespace jucyaudio
 
         void MainComponent::showMarkerDialog(database::TrackId trackId, std::chrono::milliseconds position, bool isNewMarker)
         {
-            auto& markerManager = theTrackLibrary.getMarkerManager();
-            
+            auto &markerManager = theTrackLibrary.getMarkerManager();
+
             // markerManager is a reference, so it's always valid
-            
-            auto* dialog = new MarkerEditDialog();
-            
+
+            auto *dialog = new MarkerEditDialog();
+
             if (isNewMarker)
             {
                 // Set up for new marker
                 dialog->setupForNewMarker(position);
-                
+
                 dialog->onSave = [this, dialog, &markerManager, trackId, position]()
                 {
                     const auto comment = dialog->getComment().toStdString();
@@ -1839,21 +1979,21 @@ namespace jucyaudio
                         m_mainPlaybackAndStatusPanel.setStatusMessage("Marker comment cannot be empty", true);
                         return;
                     }
-                    
+
                     MarkerId newMarkerId;
                     const auto result = markerManager.createMarker(trackId, position, comment, newMarkerId);
-                    
+
                     if (result == MarkerResult::Success)
                     {
                         spdlog::info("Created marker {} for track {} at {}ms", newMarkerId, trackId, position.count());
                         m_mainPlaybackAndStatusPanel.setStatusMessage("Marker created", false);
-                        
+
                         // Reload markers in the player
                         const auto markers = markerManager.getMarkersForTrack(trackId);
                         m_enhancedPlayer.setMarkers(markers);
-                        
+
                         // Close the dialog
-                        if (auto* window = dialog->findParentComponentOfClass<juce::DialogWindow>())
+                        if (auto *window = dialog->findParentComponentOfClass<juce::DialogWindow>())
                         {
                             window->exitModalState(0);
                         }
@@ -1869,19 +2009,23 @@ namespace jucyaudio
             {
                 // Find existing marker at this position
                 const auto markers = markerManager.getMarkersForTrack(trackId);
-                const auto markerIt = std::find_if(markers.begin(), markers.end(),
-                    [position](const auto& m) { return m.position == position; });
-                
+                const auto markerIt = std::find_if(markers.begin(),
+                    markers.end(),
+                    [position](const auto &m)
+                    {
+                        return m.position == position;
+                    });
+
                 if (markerIt == markers.end())
                 {
                     spdlog::error("No marker found at position {}ms", position.count());
                     delete dialog;
                     return;
                 }
-                
+
                 const auto marker = *markerIt;
                 dialog->setupForExistingMarker(marker);
-                
+
                 // Save callback
                 dialog->onSave = [this, dialog, &markerManager, marker, trackId]()
                 {
@@ -1891,20 +2035,20 @@ namespace jucyaudio
                         m_mainPlaybackAndStatusPanel.setStatusMessage("Marker comment cannot be empty", true);
                         return;
                     }
-                    
+
                     const auto result = markerManager.updateMarker(marker.markerId, newComment);
-                    
+
                     if (result == MarkerResult::Success)
                     {
                         spdlog::info("Updated marker {}", marker.markerId);
                         m_mainPlaybackAndStatusPanel.setStatusMessage("Marker updated", false);
-                        
+
                         // Reload markers in the player
                         const auto markers = markerManager.getMarkersForTrack(trackId);
                         m_enhancedPlayer.setMarkers(markers);
-                        
+
                         // Close the dialog
-                        if (auto* window = dialog->findParentComponentOfClass<juce::DialogWindow>())
+                        if (auto *window = dialog->findParentComponentOfClass<juce::DialogWindow>())
                         {
                             window->exitModalState(0);
                         }
@@ -1915,23 +2059,23 @@ namespace jucyaudio
                         m_mainPlaybackAndStatusPanel.setStatusMessage("Failed to update marker", true);
                     }
                 };
-                
+
                 // Delete callback
                 dialog->onDelete = [this, dialog, &markerManager, marker, trackId]()
                 {
                     const auto result = markerManager.deleteMarker(marker.markerId);
-                    
+
                     if (result == MarkerResult::Success)
                     {
                         spdlog::info("Deleted marker {}", marker.markerId);
                         m_mainPlaybackAndStatusPanel.setStatusMessage("Marker deleted", false);
-                        
+
                         // Reload markers in the player
                         const auto markers = markerManager.getMarkersForTrack(trackId);
                         m_enhancedPlayer.setMarkers(markers);
-                        
+
                         // Close the dialog
-                        if (auto* window = dialog->findParentComponentOfClass<juce::DialogWindow>())
+                        if (auto *window = dialog->findParentComponentOfClass<juce::DialogWindow>())
                         {
                             window->exitModalState(0);
                         }
@@ -1943,16 +2087,16 @@ namespace jucyaudio
                     }
                 };
             }
-            
+
             // Cancel callback (common for both new and existing)
             dialog->onCancel = [dialog]()
             {
-                if (auto* window = dialog->findParentComponentOfClass<juce::DialogWindow>())
+                if (auto *window = dialog->findParentComponentOfClass<juce::DialogWindow>())
                 {
                     window->exitModalState(0);
                 }
             };
-            
+
             // Show the dialog
             juce::DialogWindow::LaunchOptions launchOptions;
             launchOptions.content.setOwned(dialog);

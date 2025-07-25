@@ -51,6 +51,12 @@ namespace jucyaudio
             // @return True if the mix was successfully removed, false otherwise.
             virtual bool removeMix(MixId mixId) const = 0;
 
+            // @brief Remove multiple mixes from the database.
+            // @param mixIds A vector of MixIds to remove from the database.
+            // @return True if all specified mixes were successfully removed, false otherwise.
+            virtual bool removeMixes(const std::vector<MixId> &mixIds) const = 0;
+            
+
             // @brief Creates a new mix based on an ordered list of track IDs using an automatic mixing logic
             //        (e.g., sequential with predefined crossfades) and saves it to the database.
             // @param trackInfos The ordered list of track infos. Why not TrackIds? Because the UI has all this information
@@ -74,6 +80,12 @@ namespace jucyaudio
             // @param trackId The ID of the track to remove from the mix.
             // @return True if the track was successfully removed from the mix, false otherwise.            
             virtual bool removeTrackFromMix(MixId mixId, TrackId trackId) const = 0;
+
+            // @brief Remove multiple tracks from a mix.
+            // @param mixId The ID of the mix from which to remove the tracks.
+            // @param trackIds A vector of TrackIds to remove from the mix.
+            // @return True if all specified tracks were successfully removed from the mix, false otherwise.
+            virtual bool removeTracksFromMix(MixId mixId, const std::vector<TrackId> &trackIds) const = 0;
 
             // @brief Finalize a mix, prune the source working set, and prepare for export.
             // @param mixId The ID of the mix to finalize.

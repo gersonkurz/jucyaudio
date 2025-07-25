@@ -7,7 +7,7 @@ namespace jucyaudio
     namespace database
     {
         VirtualFolderNode::VirtualFolderNode(INavigationNode *parent, int64_t folderId, const std::string &folderName)
-            : LibraryNode{parent, folderName},
+            : LibraryNode{parent, folderName, NodeType::VirtualFolder},
               m_folderId{folderId}
         {
         }
@@ -15,7 +15,7 @@ namespace jucyaudio
         bool VirtualFolderNode::hasChildren() const
         {
             // Check if this folder has any subfolders
-            auto* trackDb{theTrackLibrary.getTrackDatabase()};
+            auto *trackDb{theTrackLibrary.getTrackDatabase()};
             if (!trackDb)
                 return false;
 
@@ -24,18 +24,18 @@ namespace jucyaudio
 
         bool VirtualFolderNode::getChildren(std::vector<INavigationNode *> &outChildren)
         {
-            auto* trackDb{theTrackLibrary.getTrackDatabase()};
+            auto *trackDb{theTrackLibrary.getTrackDatabase()};
             if (!trackDb)
                 return false;
 
             auto folderChildren{trackDb->getVirtualFolderChildren(m_folderId)};
-            
-            for (const auto& childInfo : folderChildren)
+
+            for (const auto &childInfo : folderChildren)
             {
-                auto* childNode{new VirtualFolderNode{this, childInfo.folderId, childInfo.folderName}};
+                auto *childNode{new VirtualFolderNode{this, childInfo.folderId, childInfo.folderName}};
                 outChildren.push_back(childNode);
             }
-            
+
             return true;
         }
 
@@ -43,14 +43,14 @@ namespace jucyaudio
         {
             // Set the virtual folder filter in our query args
             m_queryArgs.virtualFolderId = m_folderId;
-            
+
             // Call parent implementation
             return LibraryNode::prepareToShowData();
         }
 
         bool VirtualFolderNode::getTotalTrackCount(int64_t &outCount) const
         {
-            auto* trackDb{theTrackLibrary.getTrackDatabase()};
+            auto *trackDb{theTrackLibrary.getTrackDatabase()};
             if (!trackDb)
             {
                 outCount = 0;
