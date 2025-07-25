@@ -125,7 +125,7 @@ namespace jucyaudio
 
             m_navigationPanel.m_onNodeAction = [this](INavigationNode *selectedNode, DataAction dataAction)
             {
-                handleNodeAction(selectedNode, dataAction);
+                handleNodeActionFromNavigationPanel(selectedNode, dataAction);
             };
 
             // Enhanced Player callbacks
@@ -722,10 +722,10 @@ namespace jucyaudio
         {
             if (!m_currentNode)
                 return;
-            handleNodeAction(m_currentNode, action);
+            handleNodeActionFromNavigationPanel(m_currentNode, action);
         }
 
-        void MainComponent::handleNodeAction(INavigationNode *node, DataAction action)
+        void MainComponent::handleNodeActionFromNavigationPanel(INavigationNode *node, DataAction action)
         {
             m_statusPanel.setStatusMessage("Node action: " + juce::String(dataActionToString(action, m_currentNode)), false);
 
@@ -738,7 +738,7 @@ namespace jucyaudio
                 createMix();
                 break;
             case DataAction::Delete:
-                onDataActionDelete(node);
+                onDataActionDeleteSelectedObjects();
                 break;
             case DataAction::ExportMix:
                 onExportMix(node);
@@ -750,7 +750,7 @@ namespace jucyaudio
                 onRunBpmAnalysis(node);
                 break;
             default:
-                spdlog::error("Unsupported action '{}' for node '{}' in MainComponent::handleNodeAction. This should not happen.",
+                spdlog::error("Unsupported action '{}' for node '{}' in MainComponent::handleNodeActionFromNavigationPanel. This should not happen.",
                     dataActionToString(action, m_currentNode).toStdString(),
                     node->getName());
                 break;
@@ -769,6 +769,9 @@ namespace jucyaudio
                 break;
             case DataAction::CreateMix:
                 createMix();
+                break;
+            case DataAction::Delete:
+                onDataActionDeleteSelectedObjects();
                 break;
             case DataAction::RunBpmAnalysis:
                 onRunBpmAnalysisForSelectedRows();
@@ -818,14 +821,14 @@ namespace jucyaudio
 
         void MainComponent::onRunBpmAnalysisForSelectedRows()
         {
-            auto trackIds = m_dataViewComponent.getSelectedTrackIds();
-            if (trackIds.empty())
+            auto objectIds = m_dataViewComponent.getSelectedObjectIds();
+            if (objectIds.empty())
             {
                 m_statusPanel.setStatusMessage("No tracks selected for analysis.", true);
                 return;
             }
 
-            auto *task = new background_tasks::BpmAnalysisTask(std::move(trackIds));
+            auto *task = new background_tasks::BpmAnalysisTask(std::move(objectIds));
             TaskDialog::launch("BPM Analysis",
                 task,
                 500,
@@ -958,12 +961,12 @@ namespace jucyaudio
             syncPlaybackUIToControllerState();
         }
 
-        void MainComponent::onRemoveTracksFromCurrentNode(DeleteContext *const dc, int result)
+        void MainComponent::onRemoveRowsFromCurrentNode(DeleteContext *const dc, int result)
         {
             if (result == 1) // User clicked "Delete"
             {
                 std::string statusMessage;
-                if (m_navigationTree.removeTracks(dc->node, dc->selectedRows))
+                if (m_navigationTree.removeObjectsForRows(dc->node, dc->selectedRows))
                 {
                     statusMessage = std::format("Removed tracks from {} {}", dc->node->m_refTypeNameForSingleObject, dc->node->getName());
                 }
@@ -980,8 +983,19 @@ namespace jucyaudio
                 m_statusPanel.setStatusMessage("Operation cancelled", false);
             }
         }
+        
+        void MainComponent::onDataActionDeleteSelectedObjects()
+        {
+            // TODO: determine object type better
+            onDataActionRemoveNamedObjects("object", "objects");
+        }
 
         void MainComponent::onDataActionRemoveTracks()
+        {
+            onDataActionRemoveNamedObjects("track", "tracks");
+        }
+
+        void MainComponent::onDataActionRemoveNamedObjects(std::string_view itemTypeSingular, std::string_view itemTypePlural)
         {
             if (!m_currentNode)
             {
@@ -992,11 +1006,6 @@ namespace jucyaudio
             {
                 m_statusPanel.setStatusMessage("Cannot delete rows in Mix Editor view.", true);
                 return;
-            }
-            const auto nodePath{getNodePath(m_currentNode)};
-            if (nodePath.size() == 1)
-            {
-                // we're being called from the root node, so we're about to delete complete mixes / working sets
             }
             const auto dc{new DeleteContext{}};
             dc->selectedRows = m_dataViewComponent.getSelectedRowIndices();
@@ -1016,15 +1025,15 @@ namespace jucyaudio
             if (nrSelectedRows == 1)
             {
                 const auto assumedTrackName{dc->node->getCellText(dc->selectedRows[0], 0)};
-                warningMessage =
-                    std::format("Do you want to remove the track {} from the {} {}?", assumedTrackName, dc->node->m_refTypeNameForSingleObject, nodeName);
-                okButtonText = "Remove Track";
+                warningMessage = std::format(
+                    "Do you want to remove the {} {} from the {} {}?", itemTypeSingular, assumedTrackName, dc->node->m_refTypeNameForSingleObject, nodeName);
+                okButtonText = std::format("Remove {}", itemTypeSingular);
             }
             else
             {
-                warningMessage =
-                    std::format("Do you want to remove the {} tracks from the {} {}?", nrSelectedRows, dc->node->m_refTypeNameForSingleObject, nodeName);
-                okButtonText = "Remove Tracks";
+                warningMessage = std::format(
+                    "Do you want to remove the {} {} from the {} {}?", nrSelectedRows, itemTypePlural, dc->node->m_refTypeNameForSingleObject, nodeName);
+                okButtonText = std::format("Remove {}", itemTypePlural);
             }
 
             juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon, // Icon type
@@ -1036,7 +1045,7 @@ namespace jucyaudio
                 juce::ModalCallbackFunction::create(
                     [this, dc](int result)
                     {
-                        onRemoveTracksFromCurrentNode(dc, result);
+                        onRemoveRowsFromCurrentNode(dc, result);
                     }));
         }
 
@@ -1056,7 +1065,7 @@ namespace jucyaudio
 
             if (m_dataViewComponent.getNumSelectedRows() > 0)
             {
-                return createWorkingSetFromTrackIds(m_dataViewComponent.getSelectedTrackIds());
+                return createWorkingSetFromTrackIds(m_dataViewComponent.getSelectedObjectIds());
             }
             else if (m_currentNode)
             {
@@ -1313,7 +1322,7 @@ namespace jucyaudio
         void MainComponent::onDataActionDelete(INavigationNode *node)
         {
             assert(node != nullptr && "Selected node should not be null in onDataActionDelete()");
-
+            
             const auto name{node->getName()};
             const auto message{std::format("Are you sure you want to delete the {} {}?", node->m_refTypeNameForSingleObject, name)};
             const auto caption
@@ -1818,6 +1827,7 @@ namespace jucyaudio
             launchOptions.resizable = false;
             launchOptions.launchAsync();
         }
+
 
     } // namespace ui
 } // namespace jucyaudio

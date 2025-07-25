@@ -25,7 +25,7 @@ namespace jucyaudio
             theBaseNodes.erase(key);
         }
 #endif
-        bool BaseNode::removeTracks(const std::vector<TrackId>& trackIds) const
+        bool BaseNode::removeObjects(const std::vector<ObjectId> &objectIds) const
         {
             return false;
         }
@@ -122,9 +122,9 @@ namespace jucyaudio
         {
         }
 
-        int64_t BaseNode::getUniqueId() const
+        ObjectId BaseNode::getUniqueId() const
         {
-            return reinterpret_cast<int64_t>(this); // Use pointer address as unique ID
+            return reinterpret_cast<ObjectId>(this); // Use pointer address as unique ID
         }
 
         void BaseNode::refreshChildren()

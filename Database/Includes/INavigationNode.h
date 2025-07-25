@@ -72,7 +72,7 @@ namespace jucyaudio
             // @brief Remove tracks from the underlying data source (typically, a working-set or a mix)
             // @param trackIds The IDs of the tracks to remove.
             // @return True if the tracks were successfully removed, false otherwise.
-            virtual bool removeTracks(const std::vector<TrackId>& trackIds) const = 0;
+            virtual bool removeObjects(const std::vector<ObjectId>& objectIds) const = 0;
 
             // @brief Delete this object from the underlying data source.
             // This method is called when the user wants to delete this object (e.g., a mix, working set, etc.).
@@ -129,7 +129,7 @@ namespace jucyaudio
             /// ID, or nullptr if not found.
             virtual INavigationNode *get(int64_t uniqueId) const = 0;
 
-            virtual int64_t getUniqueId() const = 0;
+            virtual ObjectId getUniqueId() const = 0;
 
             /// @brief Get the parent node of this navigation node.
             /// Returns a NON-OWNING pointer. Do NOT release.

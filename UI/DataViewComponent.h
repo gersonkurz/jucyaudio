@@ -3,20 +3,17 @@
 #include <Database/Includes/Constants.h>
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Includes/TrackInfo.h>
-#include <juce_gui_basics/juce_gui_basics.h>
-#include <juce_graphics/juce_graphics.h>
 #include <UI/DynamicColumnManager.h>
+#include <juce_graphics/juce_graphics.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 
 namespace jucyaudio
 {
     namespace ui
     {
+        using namespace database;
         // Forward declaration
         class MainComponent;
-        // Using directives for convenience within this UI namespace
-        using jucyaudio::database::DataAction;
-        using database::DataColumn; // For m_currentDataColumns
-        using database::INavigationNode; // For m_currentNode
 
         // Alias for the row action callback function type
         using RowActionCallback = std::function<void(RowIndex_t rowNumber, DataAction action, const juce::Point<int> &screenPosition)>;
@@ -26,13 +23,13 @@ namespace jucyaudio
         {
         public:
             using juce::TableListBox::TableListBox;
-            
+
             void mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel) override
             {
                 if (event.mods.isCommandDown())
                 {
                     // Forward to parent for scaling
-                    if (auto* parent = getParentComponent())
+                    if (auto *parent = getParentComponent())
                     {
                         parent->mouseWheelMove(event.getEventRelativeTo(parent), wheel);
                     }
@@ -44,7 +41,7 @@ namespace jucyaudio
                 }
             }
         };
-        
+
         class DataViewComponent : public juce::Component, private juce::TableListBoxModel, private juce::Timer
         {
         public:
@@ -69,12 +66,12 @@ namespace jucyaudio
                 return m_tableListBox.getNumSelectedRows();
             }
 
-            std::vector<database::TrackInfo> getSelectedTracks() const; // Returns selected tracks from the table
-            std::vector<RowIndex_t> getSelectedRowIndices() const; 
+            std::vector<TrackInfo> getSelectedTracks() const; // Returns selected tracks from the table
+            std::vector<RowIndex_t> getSelectedRowIndices() const;
 
-            template <typename T> std::vector<T> getUnderlyingObjectIds(const std::vector<RowIndex_t>& rowIndices) const
+            std::vector<ObjectId> getUnderlyingObjectIds(const std::vector<RowIndex_t> &rowIndices) const
             {
-                std::vector<T> result;
+                std::vector<ObjectId> result;
                 if (m_currentNode)
                 {
                     for (const auto rowIndex : rowIndices)
@@ -82,23 +79,18 @@ namespace jucyaudio
                         const auto objectId{m_currentNode->getObjectIdForRow(rowIndex)};
                         if (objectId)
                         {
-                            result.push_back(static_cast<T>(objectId));
+                            result.push_back(objectId);
                         }
                     }
                 }
                 return result;
             }
 
-            template <typename T> std::vector<T> getUnderlyingObjectIds() const
+            std::vector<ObjectId> getSelectedObjectIds() const
             {
-                return getUnderlyingObjectIds<T>(getSelectedRowIndices());
+                return getUnderlyingObjectIds(getSelectedRowIndices());
             }
 
-            std::vector<database::TrackId> getSelectedTrackIds() const
-            {
-                return getUnderlyingObjectIds<database::TrackId>();
-            }
-            
         private:
             // --- juce::Timer overrides ---
             void timerCallback() override;
@@ -119,8 +111,8 @@ namespace jucyaudio
 
             ScalableTableListBox m_tableListBox;
             INavigationNode *m_currentNode{nullptr};
-            std::vector<database::DataColumnWithIndex> m_currentDataColumns;
-            
+            std::vector<DataColumnWithIndex> m_currentDataColumns;
+
             // Font size management
             float m_fontScale{1.0f};
             static constexpr float MIN_FONT_SCALE = 0.5f;

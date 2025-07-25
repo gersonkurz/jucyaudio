@@ -66,11 +66,18 @@ namespace jucyaudio
     typedef uint32_t ColumnIndex_t;
 
     /**
+     * @brief Unique identifier for objects in the database
+     * @note 64-bit signed integer allows for a large number of unique objects
+     *       and is suitable for future extensions
+     */
+    typedef int64_t ObjectId;
+
+    /**
      * @brief Unique identifier for audio tracks in the database
      * @note 64-bit signed integer allows for large track collections
      *       and potential future extensions
      */
-    typedef int64_t TrackId;
+    typedef ObjectId TrackId;
 
     /**
      * @brief Unique identifier for metadata tags
@@ -82,13 +89,13 @@ namespace jucyaudio
      * @brief Unique identifier for working sets (track collections)
      * @note Working sets are user-defined collections of tracks for specific purposes
      */
-    typedef int64_t WorkingSetId;
+    typedef ObjectId WorkingSetId;
 
     /**
      * @brief Unique identifier for mixes (DJ sets)
      * @note Mixes represent ordered sequences of tracks with crossfade information
      */
-    typedef int64_t MixId;
+    typedef ObjectId MixId;
 
     /**
      * @brief Volume level representation as integer to avoid floating-point issues

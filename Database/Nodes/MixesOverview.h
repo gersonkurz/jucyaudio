@@ -30,6 +30,7 @@ namespace jucyaudio
             std::string getCellText(const MixInfo &wsi, ColumnIndex_t index) const;
             bool removeObject(const MixInfo &wsi) const;
             void refreshCache(const TrackQueryArgs &args, std::vector<MixInfo> &data) const;
+            bool removeObjects(const std::vector<ObjectId> &objectIds) const;
         };
 
     } // namespace database

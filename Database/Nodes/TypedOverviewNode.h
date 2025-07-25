@@ -67,6 +67,11 @@ namespace jucyaudio
                 return m_overview.getRowActions(rowIndex);
             }
 
+            bool removeObjects(const std::vector<ObjectId>& objectIds) const override
+            {
+                return m_overview.removeObjects(objectIds);
+            }
+
             std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const override
             {
                 // TODO: we should have some sort of abstract track info to

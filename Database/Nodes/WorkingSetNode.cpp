@@ -45,9 +45,9 @@ namespace jucyaudio
             return theTrackLibrary.getWorkingSetManager().removeWorkingSet(m_queryArgs.workingSetId);
         }
 
-        bool WorkingSetNode::removeTracks(const std::vector<TrackId> &trackIds) const
+        bool WorkingSetNode::removeObjects(const std::vector<ObjectId> &objectIds) const
         {
-            return theTrackLibrary.getWorkingSetManager().removeFromWorkingSet(m_queryArgs.workingSetId, trackIds);
+            return theTrackLibrary.getWorkingSetManager().removeFromWorkingSet(m_queryArgs.workingSetId, objectIds);
         }
 
         bool WorkingSetNode::setSortOrder(const std::vector<SortOrderInfo> &sortOrders)

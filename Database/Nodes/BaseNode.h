@@ -70,7 +70,7 @@ namespace jucyaudio
             const TrackQueryArgs *getQueryArgs() const override;
             void removeObjectAtRow(RowIndex_t rowIndex) override;
             bool deleteThisObject() override;
-            int64_t getUniqueId() const override;
+            ObjectId getUniqueId() const override;
             INavigationNode *get(const std::string &name) const override;
             INavigationNode *get(int64_t uniqueId) const override;
             void refreshCache(bool flushCache = false) const override
@@ -79,7 +79,7 @@ namespace jucyaudio
             std::vector<TrackId> getAllTrackIds() const override;
             void rename(std::string_view newName) override;
             
-            bool removeTracks(const std::vector<TrackId> &trackIds) const override;
+            bool removeObjects(const std::vector<ObjectId> &objectIds) const override;
         private:
             INavigationNode *const m_parent;
             // no longer const to support renaming

@@ -30,7 +30,7 @@ namespace jucyaudio
             // @brief Remove the tracks at the specified row indices from the current root node.
             // @param node The current root node from which to remove tracks.
             // @param rows The row indices of the tracks to remove.
-            bool removeTracks(INavigationNode *node, const std::vector<RowIndex_t> &rows);
+            bool removeObjectsForRows(INavigationNode *node, const std::vector<RowIndex_t> &rows);
 
             // @brief Remove the specified node from the navigation tree,
             // and also the underlying data (the mix, the working-set)

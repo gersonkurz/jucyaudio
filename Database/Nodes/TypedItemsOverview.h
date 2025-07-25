@@ -40,14 +40,21 @@ namespace jucyaudio
                 return NoColumnsPossible;
             }
 
+            bool removeObjects(const std::vector<ObjectId>& objectIds) const
+            {
+                return false;
+            }
+
             std::string getCellText(const ITEM_TYPE &wsi, ColumnIndex_t index) const
             {
                 return "???";
             }
+
             bool removeObject(const ITEM_TYPE &wsi) const
             {
                 return false;
             }
+
             void refreshCache(const TrackQueryArgs &args, std::vector<ITEM_TYPE> &data) const
             {
             }

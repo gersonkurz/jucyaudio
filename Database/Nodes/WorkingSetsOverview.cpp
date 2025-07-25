@@ -46,6 +46,11 @@ namespace jucyaudio
         {
             return WorkingSetsRowActions;
         }
+        
+        bool TypedItemsOverview<WorkingSetInfo>::removeObjects(const std::vector<ObjectId> &objectIds) const
+        {
+            return theTrackLibrary.getWorkingSetManager().removeWorkingSets(objectIds);
+        }
 
         bool TypedItemsOverview<WorkingSetInfo>::removeObject(const WorkingSetInfo &wsi) const
         {

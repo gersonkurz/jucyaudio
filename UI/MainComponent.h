@@ -68,7 +68,7 @@ namespace jucyaudio
             void handleNodeSelection(INavigationNode *selectedNode);
             void handleFilterChange(const juce::String &newFilterText);
             void handleNodeActionFromToolbar(DataAction action);
-            void handleNodeAction(INavigationNode *selectedNode, DataAction action);
+            void handleNodeActionFromNavigationPanel(INavigationNode *selectedNode, DataAction action);
             void handleRowActionFromDataView(RowIndex_t rowIndex, DataAction action, const juce::Point<int> &screenPos);
 
             void playDataRow(RowIndex_t rowIndex);
@@ -168,14 +168,20 @@ namespace jucyaudio
 
             
             void onDataActionDelete(INavigationNode *selectedNode);
+            
             void onDataActionDeleteConfirmed(INavigationNode *selectedNode, int result);
+
+            // @brief Called when you select one or more objects in the DataView and ask to delete them.
+            void onDataActionDeleteSelectedObjects();
 
             // @brief Called when you select one or more tracks in the DataView and ask to remove them.
             void onDataActionRemoveTracks();
 
             // &brief Called when you confirm the warning dialog in onDataActionRemoveTracks in order to proceed 
-            // to the actual removal of the tracks from the current node
-            void onRemoveTracksFromCurrentNode(DeleteContext *const dc, int result);
+            // to the actual removal of the tracks from the current node / mixes from the list of mixes etc.
+            void onRemoveRowsFromCurrentNode(DeleteContext *const dc, int result);
+
+            void onDataActionRemoveNamedObjects(std::string_view itemTypeSingular, std::string_view itemTypePlural);
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
         };

@@ -49,6 +49,11 @@ namespace jucyaudio
             return MixesRowActions;
         }
 
+        bool TypedItemsOverview<MixInfo>::removeObjects(const std::vector<ObjectId> &objectIds) const
+        {
+            return theTrackLibrary.getMixManager().removeMixes(objectIds);
+        }
+
         bool TypedItemsOverview<MixInfo>::removeObject(const MixInfo &mix) const
         {
             return theTrackLibrary.getMixManager().removeMix(mix.mixId);

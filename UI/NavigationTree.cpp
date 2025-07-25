@@ -67,14 +67,14 @@ namespace jucyaudio
             return deleted;
         }
         
-        bool NavigationTree::removeTracks(INavigationNode *node, const std::vector<RowIndex_t> &rows)
+        bool NavigationTree::removeObjectsForRows(INavigationNode *node, const std::vector<RowIndex_t> &rows)
         {
             // what to do depends entirely on the context of the operation
             bool success = false;
             const auto nrSelectedRows{rows.size()};
             std::string statusMessage;
-            const auto trackIds{m_dvc.getUnderlyingObjectIds<TrackId>(rows)};
-            success = node->removeTracks(trackIds);
+            const auto objectIds{m_dvc.getUnderlyingObjectIds(rows)};
+            success = node->removeObjects(objectIds);
             statusMessage = success ? "Removed tracks from mix." : "Failed to remove tracks from mix.";
             if (success)
             {
@@ -92,6 +92,7 @@ namespace jucyaudio
             }
             return success;
         }
+
         void NavigationTree::onMixCreated(MixId mixId)
         {
             if (const auto mixesRootNode{m_root->getMixesRootNode()})

@@ -32,9 +32,9 @@ namespace jucyaudio
             return theTrackLibrary.getMixManager().removeMix(m_queryArgs.mixId);
         }
 
-        bool MixNode::removeTracks(const std::vector<TrackId> &trackIds) const
+        bool MixNode::removeObjects(const std::vector<ObjectId> &objectIds) const
         {
-            return theTrackLibrary.getMixManager().removeTracksFromMix(m_queryArgs.mixId, trackIds);
+            return theTrackLibrary.getMixManager().removeTracksFromMix(m_queryArgs.mixId, objectIds);
         }
 
         void MixNode::createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children)
