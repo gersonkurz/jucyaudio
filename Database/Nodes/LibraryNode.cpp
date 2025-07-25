@@ -68,19 +68,24 @@ namespace jucyaudio
             m_tracks.clear();
         }
 
-        LibraryNode::LibraryNode(INavigationNode *root, const std::string &name, NodeType nodeType)
-            : BaseNode{root, name.empty() ? getLibraryRootNodeName() : name, nodeType},
+        LibraryNode::LibraryNode(INavigationNode *root,
+            const std::string &name,
+            NodeType nodeType,
+            // new things start here);
+            const std::string &typeNameForSingleObject,
+            const std::string &typeNameForMultipleObjects)
+            : BaseNode{root, name.empty() ? getLibraryRootNodeName() : name, nodeType, typeNameForSingleObject, typeNameForMultipleObjects},
               m_bCacheInitialized{false}
         {
         }
 
-        bool LibraryNode::getChildren([[maybe_unused]] std::vector<INavigationNode *> &outChildren)
+        bool LibraryNode::expand([[maybe_unused]] std::vector<INavigationNode *> &outChildren)
         {
-            assert(false && "you should first check with hasChildren before you call this...");
+            assert(false && "you should first check with canExpand before you call this...");
             return false;
         }
 
-        bool LibraryNode::hasChildren() const
+        bool LibraryNode::canExpand()
         {
             return false;
         }

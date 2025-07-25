@@ -13,8 +13,8 @@ namespace jucyaudio
                               const std::string &displayName); // displayName might be folderPath.filename()
             ~LogicalFolderNode() override = default;
 
-            bool hasChildren() const override;
-            bool getChildren(std::vector<INavigationNode *> &outChildren) override;
+            bool canExpand() override;
+            bool expand(std::vector<INavigationNode *> &outChildren) override;
 
             static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
 

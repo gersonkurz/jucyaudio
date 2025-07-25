@@ -131,24 +131,83 @@ The marker system is fully functional with create, read, update, delete operatio
 - UI properly refreshes after bad file removal
 - Clear user communication about what happens to bad files
 
-**Remaining Work for Future Sessions:**
+## Session 6: Comprehensive Deletion System Implementation
 
-1. **Visual Indicators:**
-   - Show bad_format status in data view (red icon or strikethrough)
-   - Add status column to track list views
+**Objective:** Implement proper deletion functionality for tracks, mixes, and working sets across all UI contexts.
 
-2. **User Controls:**
-   - Add ability to manually mark files as bad/good from context menu
-   - Add filter option to show/hide bad files in library view
-   - Consider adding "retry" functionality for bad files after codec updates
+**Work Done:**
 
-3. **Enhanced Features:**
-   - Add deleteTrack method to completely remove tracks from library
-   - Batch operations for managing multiple bad files
-   - Statistics view showing bad file counts per folder
-   - Export list of bad files for user review
+1. **Node Type System:**
+   - Added `NodeType` enum to identify different navigation node types (Root, Mix, WorkingSet, etc.)
+   - Each node now reports its type via `getNodeType()` method
+   - Enables context-aware deletion operations
 
-4. **Integration:**
-   - Consider checking status during file drop/import operations
-   - Add bad file warnings during mix creation
-   - Prevent bad files from being added to new working sets
+2. **Batch Deletion Operations:**
+   - Added `removeMixes()` to IMixManager for deleting multiple mixes
+   - Added `removeTracksFromMix()` for batch track removal from mixes
+   - Added `removeWorkingSets()` to IWorkingSetManager for batch deletion
+   - All operations use database transactions for consistency
+
+3. **UI Integration:**
+   - Added `getObjectIdForRow()` to navigation nodes to retrieve underlying object IDs
+   - Implemented `getUnderlyingObjectIds<T>()` template in DataViewComponent for type-safe ID extraction
+   - Centralized deletion logic in MainComponent::onDeleteSelectedRows()
+   - Created DeleteContext struct to track deletion state and source
+
+4. **Context-Aware Deletion:**
+   - Deleting from navigation panel removes entire containers (mixes/working sets)
+   - Deleting from data view removes items from containers
+   - Proper confirmation dialogs with item counts
+   - Automatic UI refresh after successful deletion
+
+**Technical Highlights:**
+- Used std::ranges for modern C++20 iteration
+- Proper transaction handling in SQLite operations
+- Thread-safe deletion with existing database mutex
+- Maintained separation between UI and database layers
+
+**Architectural Issues Identified:**
+
+The deletion implementation revealed several architectural problems that need refactoring:
+
+1. **Node Type Rigidity:**
+   - Hard-coded NodeType enum creates maintenance burden
+   - Switch statements on node types violate open-closed principle
+   - Adding new node types requires changes in multiple places
+
+2. **MainComponent Coupling:**
+   - MainComponent has too much knowledge of node internals
+   - Uses unsafe reinterpret_cast for node type conversions
+   - Mixes UI concerns with business logic
+
+3. **Action System Inconsistency:**
+   - Node actions defined as global constants
+   - No clear ownership or encapsulation of actions
+   - Difficult to maintain consistency across node types
+
+4. **Memory Management:**
+   - Manual new/delete for DeleteContext
+   - Reference counting could be replaced with smart pointers
+   - Risk of memory leaks if exceptions occur
+
+**Proposed Refactoring:**
+
+1. **Visitor Pattern for Node Operations:**
+   - Replace switch statements with double dispatch
+   - Move node-specific logic into nodes themselves
+   - Enable type-safe operations without casting
+
+2. **Command Pattern for Actions:**
+   - Encapsulate each action as a command object
+   - Decouple action execution from UI components
+   - Enable undo/redo functionality
+
+3. **Strategy Pattern for Deletion:**
+   - Create deletion strategies for different contexts
+   - Move deletion logic out of MainComponent
+   - Enable testing of deletion logic in isolation
+
+4. **Smart Pointer Usage:**
+   - Replace manual memory management with std::unique_ptr
+   - Use std::shared_ptr for shared node ownership
+   - Eliminate reference counting complexity

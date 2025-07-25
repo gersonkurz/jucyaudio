@@ -13,12 +13,13 @@ namespace jucyaudio
         }
 
         VirtualFoldersOverview::VirtualFoldersOverview(INavigationNode *parent)
-            : BaseNode{parent, "Folders", NodeType::VirtualFoldersRoot}
+            : BaseNode{parent, "Folders", NodeType::VirtualFoldersRoot, 
+            "Folder", "Folders"}
         {
             // The name "Folders" will appear in the navigation tree
         }
 
-        bool VirtualFoldersOverview::getChildren(std::vector<INavigationNode *> &outChildren)
+        bool VirtualFoldersOverview::expand(std::vector<INavigationNode *> &outChildren)
         {
             auto* trackDb{theTrackLibrary.getTrackDatabase()};
             if (!trackDb)

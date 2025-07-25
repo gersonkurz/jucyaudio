@@ -9,6 +9,7 @@
 #include <UI/DynamicToolbarComponent.h>
 #include <UI/MainPlaybackAndStatusComponent.h>
 #include <UI/MenuManager.h>
+#include <UI/NavigationTree.h>
 #include <UI/MenuPresenter.h>
 #include <UI/NavigationPanelComponent.h>
 #include <UI/MixEditorComponent.h>
@@ -24,8 +25,6 @@ namespace jucyaudio
 {
     namespace ui
     {
-        juce::LookAndFeel_V4::ColourScheme getColourSchemeFromConfig();
-
         enum class MainViewType
         {
             DataView,
@@ -122,6 +121,7 @@ namespace jucyaudio
             // UI Child Components
             DynamicToolbarComponent m_dynamicToolbar;
             NavigationPanelComponent m_navigationPanel;
+            NavigationTree m_navigationTree;
 
             MainViewType m_currentMainView{MainViewType::DataView};
             juce::Component *m_currentMainViewComponent{nullptr};
@@ -137,7 +137,7 @@ namespace jucyaudio
             PlaybackToolbarComponent m_hiddenPlaybackToolbar; // Hidden, just for PlaybackController
             PlaybackController m_playbackController;
             EnhancedPlayerComponent m_enhancedPlayer; // Direct member object
-            MainPlaybackAndStatusComponent m_mainPlaybackAndStatusPanel;
+            MainPlaybackAndStatusComponent m_statusPanel;
             juce::LookAndFeel_V4 m_lookAndFeel;
 
             std::filesystem::path getThemesDirectoryPath() const;

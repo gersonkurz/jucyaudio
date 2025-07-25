@@ -51,16 +51,18 @@ namespace jucyaudio
         }
 
         RootNode::RootNode()
-            : BaseNode{nullptr, "Root", NodeType::Root}
+            : BaseNode{nullptr, "Root", NodeType::Root, "", ""}
         {
-            m_children.emplace_back(new LibraryNode{this, "", NodeType::LibraryRoot});
+            m_children.emplace_back(new LibraryNode{this, "", NodeType::LibraryRoot, "Library", "Libraries"});
             // Use VirtualFoldersOverview instead of filesystem-based folders
             m_children.emplace_back(new VirtualFoldersOverview{this});
-            m_children.emplace_back(new TypedOverviewNode<WorkingSetInfo, WorkingSetNode>{this, getWorkingSetsRootNodeName(), &WorkingSetNode::createChildren, NodeType::WorkingSetsRoot});
-            m_children.emplace_back(new TypedOverviewNode<MixInfo, MixNode>{this, getMixesRootNodeName(), &MixNode::createChildren, NodeType::MixesRoot});
+            m_children.emplace_back(new TypedOverviewNode<WorkingSetInfo, WorkingSetNode>{
+                this, getWorkingSetsRootNodeName(), &WorkingSetNode::createChildren, NodeType::WorkingSetsRoot, "Working Set", "Working Sets"});
+            m_children.emplace_back(
+                new TypedOverviewNode<MixInfo, MixNode>{this, getMixesRootNodeName(), &MixNode::createChildren, NodeType::MixesRoot, "Mix", "Mixes"});
         }
 
-        bool RootNode::getChildren(std::vector<INavigationNode *> &outChildren)
+        bool RootNode::expand(std::vector<INavigationNode *> &outChildren)
         {
             assert(outChildren.empty());
             outChildren.resize(m_children.size());
@@ -72,7 +74,7 @@ namespace jucyaudio
             return true;
         }
 
-        bool RootNode::hasChildren() const
+        bool RootNode::canExpand()
         {
             return true;
         }

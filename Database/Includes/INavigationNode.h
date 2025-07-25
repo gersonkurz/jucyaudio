@@ -1,23 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
-#include <optional>
-
-#undef USE_REFCOUNT_DEBUGGING
-#ifdef USE_REFCOUNT_DEBUGGING
-#define REFCOUNT_DEBUG_ARGS __FILE__, __LINE__
-#define REFCOUNT_DEBUG_SPEC const char* file, int line
-#else
-#define REFCOUNT_DEBUG_ARGS 
-#define REFCOUNT_DEBUG_SPEC 
-#endif
 
 #include <Database/Includes/Constants.h>
-#include <Database/Includes/TrackQueryArgs.h>
 #include <Database/Includes/DataColumn.h>
 #include <Database/Includes/IRefCounted.h>
+#include <Database/Includes/TrackQueryArgs.h>
 
 namespace jucyaudio
 {
@@ -40,19 +31,50 @@ namespace jucyaudio
         // --- INavigationNode Interface (remains an interface) ---
         struct INavigationNode : public IRefCounted
         {
+
             virtual ~INavigationNode() = default;
 
-            /// @brief Get the children of this navigation node.
-            /// This method retrieves the children of the node and populates the provided vector.
-            /// The caller is responsible for releasing the nodes when done.
-            /// @param outChildren Reference to a vector that will be populated with child nodes.
-            /// @return True if children were successfully retrieved, false if there are no children or an error occurred.
-            /// @note The children nodes are retained by this method, so the caller must release them when done.
-            virtual bool getChildren(std::vector<INavigationNode *> &outChildren) = 0;
+            // --------------------- REDESIGNED METHODS -------------------------------------
+            explicit INavigationNode(const std::string &typeNameForSingleObject, const std::string &typeNameForMultipleObjects)
+                : m_refTypeNameForSingleObject{typeNameForSingleObject},
+                  m_refTypeNameForMultipleObjects{typeNameForMultipleObjects}
+            {
+            }
 
-            /// @brief Check if this navigation node has children.
-            /// @return True if the node has children, false otherwise.
-            virtual bool hasChildren() const = 0;
+            // @brief The name for a single object of this type. It's not a function, because implementing it
+            // in every type of node is cumbersome, and the name is constant anyway, so I simply
+            // added it to the (new) constructor.
+            // @example: "Track", "Mix", "Working Set", etc.
+            const std::string &m_refTypeNameForSingleObject;
+
+            // @brief The name for multiple objects of this type. It's not a function, because implementing it
+            // in every type of node is cumbersome, and the name is constant anyway, so I simply
+            // added it to the (new) constructor.
+            // @example: "Tracks", "Mixes", "Working Sets", etc.
+            const std::string &m_refTypeNameForMultipleObjects;
+
+            // @brief Get the name of this navigation node. This is different from the object name:
+            // for example, a specific mix might be named "My Awesome Mix", but the object class still is "mix".
+            virtual const std::string &getName() const = 0;
+
+            // @brief Check if this node can be expanded.
+            // @note: This is not declared as 'const' because concievably it invalidates some cache
+            // @note: You could just call expand() and then check if the result is empty - but by having
+            // a separate method, we can possibly avoid the overhead of actually expanding
+            virtual bool canExpand() = 0;
+
+            // @brief Expand this node and retrieve its children.
+            // This method populates the provided vector with the expanded nodes.
+            // @param children Reference to a vector that will be populated with expanded nodes.
+            // &return True if the expansion was successful and children were added,
+            /// @note The children nodes are retained by this method, so the caller must release them when done.
+            virtual bool expand(std::vector<INavigationNode *> &children) = 0;
+
+            // @brief Collapse this node, removing its children from the provided vector.
+            // This method clears the children vector, effectively collapsing the node.
+            virtual bool collapse() = 0;
+
+            // --------------------- METHODS IN NEED FOR REVIEW -----------------------------
 
             /// @brief Get the type of this navigation node.
             virtual NodeType getNodeType() const = 0;
@@ -97,10 +119,8 @@ namespace jucyaudio
             }
 
             /// @brief Remove the object at the specified row index. May / may not be implemented by all nodes.
-            /// @param rowIndex 
+            /// @param rowIndex
             virtual void removeObjectAtRow(RowIndex_t rowIndex) = 0;
-
-            virtual const std::string &getName() const = 0;
 
             virtual const std::vector<DataColumn> &getColumns() const = 0;
 

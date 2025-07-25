@@ -15,8 +15,8 @@ namespace jucyaudio
             VirtualFolderNode(INavigationNode* parent, int64_t folderId, const std::string& folderName);
             
             // Override INavigationNode interface
-            bool hasChildren() const override;
-            bool getChildren(std::vector<INavigationNode*>& outChildren) override;
+            bool canExpand() override;
+            bool expand(std::vector<INavigationNode *> &outChildren) override;
             
             // Override prepareToShowData to set our folder filter
             bool prepareToShowData() override;

@@ -12,7 +12,7 @@ namespace jucyaudio
     {
 
         LogicalFolderNode::LogicalFolderNode(INavigationNode *parent, const std::filesystem::path &folderPath, const std::string &displayName)
-            : LibraryNode{parent, displayName, NodeType::LogicalFolder}, // Call base constructor
+            : LibraryNode{parent, displayName, NodeType::LogicalFolder, "Folder", "Folders"}, // Call base constructor
               m_thisFolderPath{folderPath}
         {
             // IMPORTANT: Initialize this instance's query to be specific to its path
@@ -26,7 +26,7 @@ namespace jucyaudio
             // m_queryArgs to filter by its own path.
         }
 
-        bool LogicalFolderNode::hasChildren() const
+        bool LogicalFolderNode::canExpand()
         {
             // Use std::filesystem to check for the existence of any subdirectories
             // This avoids iterating through all entries if we just need to know if AT LEAST ONE exists.
@@ -36,14 +36,14 @@ namespace jucyaudio
                 if (ec)
                 {
                     // Handle error, e.g., path doesn't exist, permissions issue
-                    spdlog::warn("LogicalFolderNode::hasChildren - Error iterating directory {}: {}", m_thisFolderPath.string(), ec.message());
+                    spdlog::warn("LogicalFolderNode::canExpand - Error iterating directory {}: {}", m_thisFolderPath.string(), ec.message());
                     return false; // No accessible children or error
                 }
                 if (entry.is_directory(ec))
                 {
                     if (ec)
                     { // Error checking is_directory
-                        spdlog::warn("LogicalFolderNode::hasChildren - Error checking entry type for {}: {}", entry.path().string(), ec.message());
+                        spdlog::warn("LogicalFolderNode::canExpand - Error checking entry type for {}: {}", entry.path().string(), ec.message());
                         continue; // Skip this problematic entry
                     }
                     return true; // Found at least one subdirectory
@@ -51,12 +51,12 @@ namespace jucyaudio
             }
             if (ec)
             { // Check for error if the loop itself didn't run (e.g. path not found initially)
-                spdlog::warn("LogicalFolderNode::hasChildren - Initial error iterating directory {}: {}", m_thisFolderPath.string(), ec.message());
+                spdlog::warn("LogicalFolderNode::canExpand - Initial error iterating directory {}: {}", m_thisFolderPath.string(), ec.message());
             }
             return false; // No subdirectories found or error occurred
         }
 
-        bool LogicalFolderNode::getChildren(std::vector<INavigationNode *> &outChildren)
+        bool LogicalFolderNode::expand(std::vector<INavigationNode *> &outChildren)
         {
             assert(outChildren.empty()); // Precondition
 
@@ -68,11 +68,11 @@ namespace jucyaudio
                 {
                     if (ec)
                     {
-                        spdlog::warn("LogicalFolderNode::getChildren - Filesystem error accessing path {}: {}", m_thisFolderPath.string(), ec.message());
+                        spdlog::warn("LogicalFolderNode::expand - Filesystem error accessing path {}: {}", m_thisFolderPath.string(), ec.message());
                     }
                     else
                     {
-                        spdlog::warn("LogicalFolderNode::getChildren - Path {} is not a directory or does not exist.", m_thisFolderPath.string());
+                        spdlog::warn("LogicalFolderNode::expand - Path {} is not a directory or does not exist.", m_thisFolderPath.string());
                     }
                     return false; // Cannot get children if path is invalid
                 }
@@ -81,7 +81,7 @@ namespace jucyaudio
                 {
                     if (ec)
                     { // Error during iteration
-                        spdlog::warn("LogicalFolderNode::getChildren - Error iterating directory {}: {}", m_thisFolderPath.string(), ec.message());
+                        spdlog::warn("LogicalFolderNode::expand - Error iterating directory {}: {}", m_thisFolderPath.string(), ec.message());
                         // Decide whether to stop or skip this entry. For robustness, maybe stop.
                         return false; // Or clear outChildren and return false
                     }
@@ -90,7 +90,7 @@ namespace jucyaudio
                     {
                         if (ec)
                         { // Error checking entry type
-                            spdlog::warn("LogicalFolderNode::getChildren - Error checking entry type for {}: {}", entry.path().string(), ec.message());
+                            spdlog::warn("LogicalFolderNode::expand - Error checking entry type for {}: {}", entry.path().string(), ec.message());
                             continue; // Skip this problematic entry
                         }
 
@@ -107,7 +107,7 @@ namespace jucyaudio
                 }
                 if (ec)
                 { // Check for error if the loop didn't run (e.g. path not found initially before check above)
-                    spdlog::warn("LogicalFolderNode::getChildren - Initial error iterating directory {}: {}", m_thisFolderPath.string(), ec.message());
+                    spdlog::warn("LogicalFolderNode::expand - Initial error iterating directory {}: {}", m_thisFolderPath.string(), ec.message());
                     return false;
                 }
 
@@ -141,7 +141,7 @@ namespace jucyaudio
             catch (const std::filesystem::filesystem_error &e)
             {
                 // Catch other potential filesystem exceptions
-                spdlog::error("LogicalFolderNode::getChildren - Filesystem exception for path {}: {}", m_thisFolderPath.string(), e.what());
+                spdlog::error("LogicalFolderNode::expand - Filesystem exception for path {}: {}", m_thisFolderPath.string(), e.what());
                 return false;
             }
 

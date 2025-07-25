@@ -24,7 +24,12 @@ namespace jucyaudio
         class BaseNode : public INavigationNode
         {
         public:
-            BaseNode(INavigationNode *parent, std::string_view name, NodeType nodeType);
+            BaseNode(INavigationNode *parent,
+                std::string_view name,
+                NodeType nodeType,
+                // new things start here);
+                const std::string &typeNameForSingleObject,
+                const std::string &typeNameForMultipleObjects);
             ~BaseNode() override;
 
             // IRefCounted interface
@@ -32,6 +37,11 @@ namespace jucyaudio
             void release(REFCOUNT_DEBUG_SPEC) const override final;
             void clear() override;
             const std::string &getName() const override final;
+
+            // Revised INavigationNode interface
+            bool canExpand() override;
+            bool expand(std::vector<INavigationNode*> &children) override;
+            bool collapse() override;
 
         protected:
             // INavigationNode interface

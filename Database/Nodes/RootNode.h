@@ -19,7 +19,7 @@ namespace jucyaudio
         {
             return "Working Sets";
         }
-        
+
         constexpr auto getFoldersRootNodeName()
         {
             return "Folders";
@@ -59,8 +59,8 @@ namespace jucyaudio
 
         private:
             // INavigationNode interface
-            bool getChildren(std::vector<INavigationNode *> &outChildren) override;
-            bool hasChildren() const override;
+            bool expand(std::vector<INavigationNode *> &outChildren) override;
+            bool canExpand() override;
         };
 
     } // namespace database

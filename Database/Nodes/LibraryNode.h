@@ -19,7 +19,12 @@ namespace jucyaudio
         class LibraryNode : public BaseNode
         {
         public:
-            LibraryNode(INavigationNode *root, const std::string& name, NodeType nodeType);
+            LibraryNode(INavigationNode *root,
+                const std::string &name,
+                NodeType nodeType,
+                // new things start here);
+                const std::string &typeNameForSingleObject,
+                const std::string &typeNameForMultipleObjects);
             ~LibraryNode() override;
 
         protected:
@@ -29,8 +34,6 @@ namespace jucyaudio
         private:
             
             // INavigationNode interface
-            bool getChildren(std::vector<INavigationNode *> &outChildren) override;
-            bool hasChildren() const override;
             const std::vector<DataColumn> &getColumns() const override;
             bool getNumberOfRows(int64_t &outCount) const override;
             std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const override;
@@ -45,6 +48,8 @@ namespace jucyaudio
             const TrackQueryArgs *getQueryArgs() const override;
             void refreshCache(bool flushCache = false) const override;
             std::vector<TrackId> getAllTrackIds() const override;
+            bool canExpand() override;
+            bool expand(std::vector<INavigationNode *> &outChildren) override;
 
         private:
             mutable std::vector<TrackInfo> m_tracks;

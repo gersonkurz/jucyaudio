@@ -1,46 +1,48 @@
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Nodes/RootNode.h>
+#include <UI/MainComponent.h>
 #include <UI/NavigationPanelComponent.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
 #include <spdlog/spdlog.h>
-#include <UI/MainComponent.h>
 
 namespace jucyaudio
 {
     namespace ui
     {
+        using namespace database;
 
-        NavigationPanelComponent::NavTreeViewItem::NavTreeViewItem(database::INavigationNode *node, NavigationPanelComponent &owner)
-            : m_associatedNode{node},
+        NavTreeViewItem::NavTreeViewItem(INavigationNode *node, NavigationPanelComponent &owner)
+            : m_node{node},
               m_ownerPanel{owner}
         {
-            if (m_associatedNode)
+            assert(node != nullptr); // Ensure we have a valid node
+            if (node)
             {
-                m_associatedNode->retain(REFCOUNT_DEBUG_ARGS);
+                node->retain(REFCOUNT_DEBUG_ARGS);
             }
         }
 
-        NavigationPanelComponent::NavTreeViewItem::~NavTreeViewItem()
+        NavTreeViewItem::~NavTreeViewItem()
         {
             // Release the node when the TreeViewItem is destroyed
-            if (m_associatedNode)
+            if (m_node)
             {
-                m_associatedNode->release(REFCOUNT_DEBUG_ARGS);
-                m_associatedNode = nullptr;
+                m_node->release(REFCOUNT_DEBUG_ARGS);
+                m_node = nullptr;
             }
         }
 
-        bool NavigationPanelComponent::NavTreeViewItem::mightContainSubItems()
+        bool NavTreeViewItem::mightContainSubItems()
         {
-            if (m_associatedNode)
+            if (m_node)
             {
-                return m_associatedNode->hasChildren();
+                return m_node->canExpand();
             }
             return false;
         }
 
-        void NavigationPanelComponent::NavTreeViewItem::paintItem(juce::Graphics &g, int width, int height)
+        void NavTreeViewItem::paintItem(juce::Graphics &g, int width, int height)
         {
             // Use the width and height parameters to define the local bounds,
             // which sidesteps the strange compiler error with getLocalBounds().
@@ -71,11 +73,11 @@ namespace jucyaudio
                 g.setColour(foregroundColour);
             }
 
-            if (m_associatedNode)
+            if (m_node)
             {
                 // Use the modern, non-deprecated Font constructor that you were already using.
                 g.setFont(juce::Font{juce::FontOptions{}.withHeight(height * 0.7f)});
-                g.drawText(m_associatedNode->getName(), textBounds, juce::Justification::centredLeft, true);
+                g.drawText(m_node->getName(), textBounds, juce::Justification::centredLeft, true);
             }
             else
             {
@@ -85,13 +87,14 @@ namespace jucyaudio
             }
         }
 
-        void NavigationPanelComponent::NavTreeViewItem::itemOpennessChanged(bool isNowOpen)
+        void NavTreeViewItem::itemOpennessChanged(bool isNowOpen)
         {
-            if (isNowOpen && !m_subItemsBuilt)
+            //if (isNowOpen && !m_subItemsBuilt)
+            if (isNowOpen)
             {
                 buildSubItems();
             }
-            else if (!isNowOpen)
+            else 
             {
                 // TreeViewItem's clearSubItems() will handle destroying
                 // children. If we had custom logic for when an item is closed
@@ -105,7 +108,7 @@ namespace jucyaudio
             }
         }
 
-        void NavigationPanelComponent::NavTreeViewItem::itemSelectionChanged(bool isNowSelected)
+        void NavTreeViewItem::itemSelectionChanged(bool isNowSelected)
         {
             // This method is called by the TreeView when this item's selection
             // state changes.
@@ -121,56 +124,44 @@ namespace jucyaudio
             // item is selected (by default).
         }
 
-        void NavigationPanelComponent::NavTreeViewItem::buildSubItems()
+        bool NavTreeViewItem::buildSubItems()
         {
-            // Ensure we don't rebuild if already built (unless explicitly
-            // cleared)
-            if (m_subItemsBuilt || !m_associatedNode)
+            if (!m_node)
             {
-                return;
+                spdlog::error("buildSubItems: Node is null, cannot build sub-items.");
+                return false;
             }
 
-            clearSubItems(); // Clear any existing (shouldn't be any if
-                             // subItemsBuilt is false, but good practice)
+            //if (m_subItemsBuilt)
+            //{
+            //    spdlog::warn("buildSubItems: Sub-items already built, skipping.");
+            //    return true; // Already built, nothing to do
+            // }
 
-            std::vector<database::INavigationNode *> children;
-            if (m_associatedNode->hasChildren())
+            clearSubItems(); // Clear any existing (shouldn't be any if subItemsBuilt is false, but good practice)
+            if (m_node->canExpand())
             {
-                if (m_associatedNode->getChildren(children))
+                std::vector<INavigationNode *> nodes;
+                if (m_node->expand(nodes))
                 {
-                    for (const auto childNode : children)
+                    for (auto &node : nodes)
                     {
-                        if (childNode) // childNode is already retained by
-                                       // getChildren()
-                        {
-                            // The NavTreeViewItem constructor will take its own
-                            // retain() on childNode. The childNode pointer from the
-                            // 'children' vector can then be released.
-                            addSubItem(new NavTreeViewItem{childNode, m_ownerPanel});
-                        }
+                        // The NavTreeViewItem constructor will take its own
+                        // retain() on childNode. The childNode pointer from the
+                        // 'children' vector can then be released.
+                        addSubItem(new NavTreeViewItem{node, m_ownerPanel});
+                        node->release(REFCOUNT_DEBUG_ARGS); // Release the original node pointer
                     }
                 }
-                // If getChildren failed or returned an empty vector, no sub-items
-                // will be added. Release any remaining nodes in the children vector
-                // if getChildren populated it but we didn't use all. However, the
-                // loop above processes all non-null children. If getChildren
-                // allocated nodes but returned false, it's its responsibility to
-                // clean them up. Our contract is that if getChildren returns true,
-                // 'children' contains retained nodes.
-                for (auto ptr : children)
-                {
-                    if (ptr)
-                    {
-                        ptr->release(REFCOUNT_DEBUG_ARGS); // Release each pointer
-                    }
-                }
+                spdlog::info("buildSubItems: built a total of {} sub-items for node '{}'.", nodes.size(), m_node->getName());
             }
-            m_subItemsBuilt = true;
+            else
+            {
+                spdlog::info("buildSubItems: Node '{}' cannot expand, no sub-items built.", m_node->getName());
+            }
+            //m_subItemsBuilt = true;
+            return true;
         }
-
-        //==============================================================================
-        // NavigationPanelComponent Implementation
-        //==============================================================================
 
         NavigationPanelComponent::NavigationPanelComponent(MainComponent & /*owner*/) // ownerMainComponent parameter removed as it's not
                                                                                       // used directly : ownerMainComponent(owner) // No
@@ -215,7 +206,7 @@ namespace jucyaudio
             m_treeView.setBounds(getLocalBounds());
         }
 
-        void NavigationPanelComponent::NavTreeViewItem::itemClicked(const juce::MouseEvent &e)
+        void NavTreeViewItem::itemClicked(const juce::MouseEvent &e)
         {
             // First, ensure the item is selected when clicked (if that's the
             // desired behavior for any click) TreeView might do this
@@ -228,12 +219,12 @@ namespace jucyaudio
                 // Now we need to get the available actions for this node and
                 // show the menu.
 
-                if (m_associatedNode == nullptr)
+                if (m_node == nullptr)
                 {
                     return; // Should not happen if node is valid
                 }
 
-                const auto &availableActions{m_associatedNode->getNodeActions()};
+                const auto &availableActions{m_node->getNodeActions()};
                 if (!availableActions.empty())
                 {
                     juce::PopupMenu menu;
@@ -247,7 +238,7 @@ namespace jucyaudio
                     {
                         if (m_ownerPanel.m_onNodeAction)
                         {
-                            m_ownerPanel.m_onNodeAction(m_associatedNode, availableActions[result - 1]);
+                            m_ownerPanel.m_onNodeAction(m_node, availableActions[result - 1]);
                         }
                     }
                 }
@@ -263,39 +254,43 @@ namespace jucyaudio
             }
         }
 
-        void NavigationPanelComponent::setRootNode(database::INavigationNode *rootNode)
+        bool NavigationPanelComponent::setRootNode(INavigationNode *rootNode)
         {
-            // Release any existing root node this panel might be holding a
-            // reference to
-            if (m_currentRootNode)
+            if (m_currentRootNode != nullptr)
             {
-                m_currentRootNode->release(REFCOUNT_DEBUG_ARGS);
-                m_currentRootNode = nullptr;
+                spdlog::error("You cannot set a new root node in NavigationPanelComponent while one is already set. Please clear the current root node first.");
+                return false;
+            }
+            if (!rootNode)
+            {
+                spdlog::error("You cannot set a null root node in NavigationPanelComponent.");
+                return false;
             }
 
-            m_currentRootNode = rootNode; // The incoming rootNode is assumed to be already
-                                          // retained by the caller (MainComponent)
+            m_currentRootNode = rootNode;
+            m_currentRootNode->retain(REFCOUNT_DEBUG_ARGS);
 
-            if (m_currentRootNode)
+            const auto rootItem = new NavTreeViewItem{m_currentRootNode, *this};
+            m_treeView.setRootItem(rootItem);
+
+            // Configure TreeView to hide root item decorations
+            m_treeView.setRootItemVisible(false);
+
+            // Ensure root is open so children are visible
+            rootItem->setOpen(true);
+
+            // TODO: select and display the first child of root
+            /*
+            if (getTreeView().getNumRowsInTree() > 0) // Check if TreeView has any visible items
             {
-                m_currentRootNode->retain(REFCOUNT_DEBUG_ARGS);
-                // currentRootNode is already retained by MainComponent.
-                // NavTreeViewItem will take its own retain. So, we don't need
-                // an extra retain here for currentRootNode itself, but the new
-                // NavTreeViewItem will retain it.
-                const auto rootItem = new NavTreeViewItem{m_currentRootNode, *this};
-                m_treeView.setRootItem(rootItem);
-
-                // Configure TreeView to hide root item decorations
-                m_treeView.setRootItemVisible(false); // This is the key JUCE method!
-
-                // Ensure root is open so children are visible
-                rootItem->setOpen(true);
-            }
-            else
-            {
-                m_treeView.setRootItem(nullptr);
-            }
+                if (auto *firstTopLevelTreeViewItem =
+                        dynamic_cast<NavTreeViewItem *>(m_navigationPanel.getTreeView().getItemOnRow(0)))
+                {
+                        firstTopLevelTreeViewItem->setSelected(true, true);
+                    }
+                }
+            */
+            return true;
         }
 
         void NavigationPanelComponent::handleItemSelection(NavTreeViewItem *selectedItem)
@@ -304,7 +299,7 @@ namespace jucyaudio
             {
                 if (selectedItem)
                 {
-                    database::INavigationNode *node = selectedItem->getNode();
+                    INavigationNode *node = selectedItem->getNode();
                     if (node)
                     {
                         // The node is already retained by the NavTreeViewItem.
@@ -333,7 +328,7 @@ namespace jucyaudio
             }
         }
 
-        void NavigationPanelComponent::selectNode(database::INavigationNode *nodeToSelect)
+        void NavigationPanelComponent::selectNode(INavigationNode *nodeToSelect)
         {
             if (!nodeToSelect || !m_treeView.getRootItem())
             {
@@ -398,20 +393,19 @@ namespace jucyaudio
             }
         }
 
-        NavigationPanelComponent::NavTreeViewItem *NavigationPanelComponent::findTreeViewItemForNode(database::INavigationNode *targetNode)
+        NavTreeViewItem *NavigationPanelComponent::findTreeViewItemForNode(INavigationNode *targetNode)
         {
             return findTreeViewItemForNode(m_treeView.getRootItem(), targetNode);
         }
 
-        NavigationPanelComponent::NavTreeViewItem *NavigationPanelComponent::findTreeViewItemForNode(juce::TreeViewItem *currentItem,
-                                                                                                     database::INavigationNode *targetNode)
+        NavTreeViewItem *NavigationPanelComponent::findTreeViewItemForNode(juce::TreeViewItem *currentItem, INavigationNode *targetNode)
         {
             if (currentItem == nullptr)
             {
                 return nullptr;
             }
 
-            auto *navItem = dynamic_cast<NavigationPanelComponent::NavTreeViewItem *>(currentItem);
+            auto *navItem = dynamic_cast<NavTreeViewItem *>(currentItem);
             if (navItem && navItem->getNode() == targetNode)
             {
                 return navItem;
@@ -427,7 +421,7 @@ namespace jucyaudio
             return nullptr;
         }
 
-        void NavigationPanelComponent::refreshNode(database::INavigationNode *nodeToRefresh)
+        void NavigationPanelComponent::refreshNode(INavigationNode *nodeToRefresh)
         {
             if (!m_currentRootNode || !m_treeView.getRootItem())
             {
@@ -451,7 +445,7 @@ namespace jucyaudio
             const std::string strDisplayNode{treeViewItemToRefresh->getNode() ? treeViewItemToRefresh->getNode()->getName() : "UNKNOWN_NODE_IN_GUI_ITEM"};
             spdlog::info("NavigationPanel::refreshNode - Refreshing GUI sub-items for "
                          "TreeViewItem displaying node: {}",
-                         strDisplayNode);
+                strDisplayNode);
 
             // To force a rebuild of its GUI children based on the now-updated
             // model: a. Mark its current GUI children as not built (if they
@@ -505,14 +499,14 @@ namespace jucyaudio
             m_treeView.repaint(); // Ensure the tree view repaints
         }
 
-        void NavigationPanelComponent::NavTreeViewItem::rebuildSubItemsFromModel()
+        void NavTreeViewItem::rebuildSubItemsFromModel()
         {
             // This method explicitly clears existing GUI children and rebuilds
-            // them from the current state of m_associatedNode->m_children. It
-            // assumes m_associatedNode->refreshChildren() (the model update)
+            // them from the current state of m_node->m_children. It
+            // assumes m_node->refreshChildren() (the model update)
             // has already been called.
 
-            spdlog::debug("NavTreeViewItem (Node: {}): Rebuilding sub-items from model.", m_associatedNode ? m_associatedNode->getName() : "null");
+            spdlog::debug("NavTreeViewItem (Node: {}): Rebuilding sub-items from model.", m_node ? m_node->getName() : "null");
 
             // 1. Clear existing GUI sub-items. This is crucial.
             //    clearSubItems() destroys the child NavTreeViewItem objects,
@@ -520,11 +514,11 @@ namespace jucyaudio
             clearSubItems();
 
             // 2. Reset the flag so buildSubItems knows to run.
-            m_subItemsBuilt = false;
+            //m_subItemsBuilt = false;
 
             // 3. Call buildSubItems to repopulate with new GUI items based on
             // the (already refreshed) model.
-            //    This will call m_associatedNode->getChildren() which should
+            //    This will call m_node->expand() which should
             //    return the updated list of child models from
             //    nodeToRefreshModel->m_children.
             buildSubItems();
@@ -537,7 +531,7 @@ namespace jucyaudio
             //    that's relevant for TreeView
         }
 
-        void NavigationPanelComponent::removeNodeFromTree(database::INavigationNode *nodeToRemove)
+        void NavigationPanelComponent::removeNodeFromTree(INavigationNode *nodeToRemove)
         {
             if (nodeToRemove == nullptr || m_treeView.getRootItem() == nullptr)
             {
@@ -571,8 +565,8 @@ namespace jucyaudio
                         // own their sub-items) and trigger appropriate UI
                         // updates.
                         parentItem->removeSubItem(indexInParent,
-                                                  true); // true to delete the item
-                                                         // The TreeView should refresh automatically.
+                            true); // true to delete the item
+                                   // The TreeView should refresh automatically.
                     }
                     else
                     {
@@ -618,7 +612,7 @@ namespace jucyaudio
             {
                 spdlog::warn("MTE: Could not find TreeViewItem to remove for "
                              "INavigationNode (ptr: {}). Tree might be out of sync.",
-                             (void *)nodeToRemove);
+                    (void *)nodeToRemove);
                 // Fallback refresh
                 m_treeView.repaint();
             }

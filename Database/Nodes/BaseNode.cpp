@@ -26,8 +26,13 @@ namespace jucyaudio
         }
 #endif
 
-        BaseNode::BaseNode(INavigationNode *parent, std::string_view name, NodeType nodeType)
-            : m_parent{parent},
+        BaseNode::BaseNode(INavigationNode *parent,
+            std::string_view name,
+            NodeType nodeType,
+            const std::string &typeNameForSingleObject,
+            const std::string &typeNameForMultipleObjects)
+            : INavigationNode{typeNameForSingleObject, typeNameForMultipleObjects},
+              m_parent{parent},
               m_name{name},
               m_nodeType{nodeType},
               m_refCount{1} // Start with refcount 1
@@ -218,5 +223,22 @@ namespace jucyaudio
             }
             return path;
         }
+
+        // Revised INavigationNode interface
+        bool BaseNode::canExpand()
+        {
+            return false;
+        }
+
+        bool BaseNode::expand(std::vector<INavigationNode *> &children)
+        {
+            return false;
+        }
+
+        bool BaseNode::collapse()
+        {
+            return true;
+        }
+
     } // namespace database
 } // namespace jucyaudio

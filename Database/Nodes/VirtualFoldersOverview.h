@@ -14,8 +14,11 @@ namespace jucyaudio
             ~VirtualFoldersOverview() override = default;
 
             // Navigation
-            bool hasChildren() const override { return true; }
-            bool getChildren(std::vector<INavigationNode *> &outChildren) override;
+            bool canExpand() override
+            {
+                return true;
+            }
+            bool expand(std::vector<INavigationNode *> &outChildren) override;
             
             // No actions on the overview node itself
             const DataActions &getNodeActions() const override;

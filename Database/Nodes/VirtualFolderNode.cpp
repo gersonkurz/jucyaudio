@@ -7,12 +7,12 @@ namespace jucyaudio
     namespace database
     {
         VirtualFolderNode::VirtualFolderNode(INavigationNode *parent, int64_t folderId, const std::string &folderName)
-            : LibraryNode{parent, folderName, NodeType::VirtualFolder},
+            : LibraryNode{parent, folderName, NodeType::VirtualFolder, "Folder", "Folders"},
               m_folderId{folderId}
         {
         }
 
-        bool VirtualFolderNode::hasChildren() const
+        bool VirtualFolderNode::canExpand()
         {
             // Check if this folder has any subfolders
             auto *trackDb{theTrackLibrary.getTrackDatabase()};
@@ -22,7 +22,7 @@ namespace jucyaudio
             return trackDb->virtualFolderHasChildren(m_folderId);
         }
 
-        bool VirtualFolderNode::getChildren(std::vector<INavigationNode *> &outChildren)
+        bool VirtualFolderNode::expand(std::vector<INavigationNode *> &outChildren)
         {
             auto *trackDb{theTrackLibrary.getTrackDatabase()};
             if (!trackDb)

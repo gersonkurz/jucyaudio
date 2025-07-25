@@ -24,8 +24,11 @@ namespace jucyaudio
             explicit TypedContainerNode(
                 INavigationNode *root, std::string_view name,
                 ClientCreationMethod clientCreationMethod,
-                NodeType nodeType)
-                : BaseNode{root, name, nodeType},
+                NodeType nodeType,
+                // new things start here);
+                const std::string &typeNameForSingleObject,
+                const std::string &typeNameForMultipleObjects)
+                : BaseNode{root, name, nodeType, typeNameForSingleObject, typeNameForMultipleObjects},
                   m_clientCreationMethod{clientCreationMethod}
             {
             }
@@ -122,7 +125,7 @@ namespace jucyaudio
             }
 
         private:
-            bool getChildren(
+            bool expand(
                 std::vector<INavigationNode *> &outChildren) override
             {
                 assert(outChildren.empty());
@@ -138,7 +141,7 @@ namespace jucyaudio
                 return true;
             }
 
-            bool hasChildren() const override
+            bool canExpand() override
             {
                 if (m_children.empty())
                 {

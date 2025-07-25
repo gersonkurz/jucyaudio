@@ -307,7 +307,7 @@ target_sources(jucyaudio PRIVATE
     UI/WorkingSetMetaDataEditorDialog.h
     UI/MarkerEditDialog.cpp
     UI/MarkerEditDialog.h
-)
+  "UI/NavigationTree.cpp" "UI/NavigationTree.h" )
 
 # Add Windows-specific manifest
 if(WIN32)

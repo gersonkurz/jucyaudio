@@ -16,7 +16,6 @@ namespace jucyaudio
         TrackLibrary theTrackLibrary;
 
         TrackLibrary::TrackLibrary()
-            : m_rootNavNode{new RootNode{}}
               // Create a root node with no children
         {
             spdlog::debug("TrackLibrary created.");
@@ -25,25 +24,7 @@ namespace jucyaudio
         TrackLibrary::~TrackLibrary()
         {
             shutdown();
-            if (m_rootNavNode)
-            {
-                m_rootNavNode->release(
-                    REFCOUNT_DEBUG_ARGS); // Release the root node
-            }
             spdlog::debug("TrackLibrary destroyed.");
-        }
-
-        INavigationNode *TrackLibrary::getRootNavigationNode() const
-        {
-            if (m_rootNavNode)
-            {
-                m_rootNavNode->retain(
-                    REFCOUNT_DEBUG_ARGS); // Caller gets a new, incremented
-                                          // reference.
-            }
-            return m_rootNavNode;
-            // Caller is responsible for calling release() on the pointer they
-            // receive.
         }
 
         bool TrackLibrary::initialise(

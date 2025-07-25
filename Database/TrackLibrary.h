@@ -47,9 +47,7 @@ namespace jucyaudio
             {
                 return m_isInitialised;
             }
-            /// @brief Returns a retained pointer to the root navigation node.
-            /// @return The root navigation node, or nullptr if not initialised.
-            INavigationNode *getRootNavigationNode() const;
+
             // --- Scanning API exposed by TrackLibrary ---
             bool scanLibrary(std::vector<FolderInfo> &foldersToScan, bool forceRescanAllFiles, ProgressCallback progressCb,
                              CompletionCallback completionCb, std::atomic<bool> *shouldCancel);
@@ -156,7 +154,6 @@ namespace jucyaudio
             TrackScanner *m_scanner{nullptr};
             bool m_isInitialised{false};
             mutable std::string m_lastErrorMessage; // For getLastError()
-            INavigationNode *const m_rootNavNode;   // Raw pointer
         };
 
         extern TrackLibrary theTrackLibrary;

@@ -22,9 +22,14 @@ namespace jucyaudio
         template <typename ITEM_TYPE, typename NODE_TYPE> class TypedOverviewNode final : public TypedContainerNode<NODE_TYPE>
         {
         public:
-            explicit TypedOverviewNode<ITEM_TYPE, NODE_TYPE>(
-                INavigationNode *root, std::string_view name, TypedContainerNode<NODE_TYPE>::ClientCreationMethod clientCreationMethod, NodeType nodeType)
-                : TypedContainerNode<NODE_TYPE>{root, name, clientCreationMethod, nodeType}
+            explicit TypedOverviewNode<ITEM_TYPE, NODE_TYPE>(INavigationNode *root,
+                std::string_view name,
+                TypedContainerNode<NODE_TYPE>::ClientCreationMethod clientCreationMethod,
+                NodeType nodeType,
+                // new things start here);
+                const std::string &typeNameForSingleObject,
+                const std::string &typeNameForMultipleObjects)
+                : TypedContainerNode<NODE_TYPE>{root, name, clientCreationMethod, nodeType, typeNameForSingleObject, typeNameForMultipleObjects}
             {
             }
 
