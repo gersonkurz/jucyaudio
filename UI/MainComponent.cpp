@@ -1050,6 +1050,7 @@ namespace jucyaudio
                 m_statusPanel.setStatusMessage("No data node selected to create working set from.", true);
                 return false;
             }
+
             if (m_currentMainView == MainViewType::MixEditor)
             {
                 m_statusPanel.setStatusMessage("Cannot create working set in Mix Editor view.", true);
@@ -1082,16 +1083,7 @@ namespace jucyaudio
             if (success)
             {
                 m_statusPanel.setStatusMessage("Working set '" + workingSetInfo.name + "' created successfully.", false);
-
-                if (const auto workingSetsRootNode{m_rootNavigationNode->getWorkingSetsRootNode()})
-                {
-                    m_navigationPanel.refreshNode(workingSetsRootNode);
-                    if (const auto wsNewNode{workingSetsRootNode->get(workingSetInfo.id)})
-                    {
-                        m_navigationPanel.selectNode(wsNewNode);
-                        wsNewNode->release(REFCOUNT_DEBUG_ARGS);
-                    }
-                }
+                m_navigationTree.onWorkingSetCreated(workingSetInfo.id);
             }
             else
             {
@@ -1114,10 +1106,12 @@ namespace jucyaudio
                 m_statusPanel.setStatusMessage("Error retrieving track count from node.", true);
                 return false;
             }
+            node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid during working set creation
             return onHandleCreateWorkingSetDialog(trackCount,
                 [this, node](const juce::String &name)
                 {
                     onCreateWorkingSetFromNodeCallback(name, node);
+                    node->release(REFCOUNT_DEBUG_ARGS); // Release the node after working set creation
                 });
         }
 
@@ -1396,7 +1390,6 @@ namespace jucyaudio
                 m_statusPanel.setStatusMessage("Not enough tracks selected to create a mix.", true);
                 return;
             }
-
             auto *dialog = new ui::CreateMixDialogComponent(m_audioLibrary,
                 selectedTracks,
                 source_ws_id,
@@ -1418,16 +1411,7 @@ namespace jucyaudio
             if (success)
             {
                 m_statusPanel.setStatusMessage("Mix '" + mixInfo.name + "' created successfully.", false);
-
-                if (const auto mixesRootNode{m_rootNavigationNode->getMixesRootNode()})
-                {
-                    m_navigationPanel.refreshNode(mixesRootNode);
-                    if (const auto newMixNode{mixesRootNode->get(mixInfo.mixId)})
-                    {
-                        m_navigationPanel.selectNode(newMixNode);
-                        newMixNode->release(REFCOUNT_DEBUG_ARGS);
-                    }
-                }
+                m_navigationTree.onMixCreated(mixInfo.mixId);
             }
             else
             {

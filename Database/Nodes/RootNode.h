@@ -57,7 +57,6 @@ namespace jucyaudio
                 return get(getMixesRootNodeName());
             }
 
-        private:
             // INavigationNode interface
             bool expand(std::vector<INavigationNode *> &outChildren) override;
             bool canExpand() override;

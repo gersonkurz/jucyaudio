@@ -9,7 +9,7 @@ namespace jucyaudio
 {
     namespace ui
     {
-        CreateWorkingSetDialogComponent::CreateWorkingSetDialogComponent(int64_t trackCount, std::function<void(const juce::String &)> onOkCallback)
+        CreateWorkingSetDialogComponent::CreateWorkingSetDialogComponent(int64_t trackCount, OnCreateWorkingSetCallback onOkCallback)
             : m_trackCount{trackCount},
               m_onOkCallback{std::move(onOkCallback)},
               m_titleLabel{"titleLabel", "Create Working Set"},

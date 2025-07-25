@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Database/Includes/INavigationNode.h>
+#include <Database/Nodes/RootNode.h>
 
 namespace jucyaudio
 {
@@ -35,8 +36,14 @@ namespace jucyaudio
             // and also the underlying data (the mix, the working-set)
             bool deleteObject(INavigationNode *node);
 
+            // @brief Notify the navigation tree that a mix has been created.
+            // This method is called when a new mix is created, allowing the tree to update its structure.
+            // @param mixId The ID of the newly created mix.
+            void onMixCreated(MixId mixId);
+            void onWorkingSetCreated(WorkingSetId workingSetId);
+
         private:
-            INavigationNode *m_root{nullptr}; // Pointer to the root node of the navigation tree
+            RootNode *m_root{nullptr}; // Pointer to the root node of the navigation tree
             NavigationPanelComponent &m_npc;            // Reference to the UI that will display the navigation tree
             DataViewComponent &m_dvc;                   // Reference to the DataViewComponent for data display
         };

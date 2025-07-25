@@ -8,10 +8,10 @@ namespace jucyaudio
     namespace ui
     {
         using OnCreateWorkingSetCallback = std::function<void(const juce::String &)>;
+
         class CreateWorkingSetDialogComponent : public juce::Component, public juce::Button::Listener, public juce::TextEditor::Listener
         {
         public:
-
             CreateWorkingSetDialogComponent(int64_t trackCount, OnCreateWorkingSetCallback onOkCallback);
             ~CreateWorkingSetDialogComponent() override;
 

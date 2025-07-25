@@ -16,6 +16,7 @@
 #include <UI/PlaybackController.h>
 #include <UI/PlaybackToolbarComponent.h>
 #include <UI/EnhancedPlayerComponent.h>
+#include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/ThemeManager.h>
 #include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -102,11 +103,8 @@ namespace jucyaudio
             bool createWorkingSetFromNode(const INavigationNode *node);
             void onCreateWorkingSetFromNodeCallback(const juce::String &name, const INavigationNode *node);
             void onCommonCreateWorkingSetCallback(bool success, const WorkingSetInfo &workingSetInfo);
-            void onMixCreatedCallback(bool success, const MixInfo& mixInfo);
-            bool onHandleCreateWorkingSetDialog(int64_t trackCount, std::function<void(const juce::String &)> callback);
-
-            void onDataActionDeleteWorkingSet(INavigationNode *node);
-            void onDoRemoveWorkingSet(INavigationNode *selectedNode, const WorkingSetInfo &workingSetToDelete, int result);
+            void onMixCreatedCallback(bool success, const MixInfo &mixInfo);
+            bool onHandleCreateWorkingSetDialog(int64_t trackCount, OnCreateWorkingSetCallback callback);
 
             void onRunBpmAnalysis(INavigationNode* node);
             void onRunBpmAnalysisForSelectedRows();

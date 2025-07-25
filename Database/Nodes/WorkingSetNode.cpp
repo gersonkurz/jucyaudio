@@ -37,7 +37,7 @@ namespace jucyaudio
 
         bool WorkingSetNode::deleteThisObject()
         {
-            return theTrackLibrary.getWorkingSetManager().removeWorkingSet(m_queryArgs.mixId);
+            return theTrackLibrary.getWorkingSetManager().removeWorkingSet(m_queryArgs.workingSetId);
         }
 
         bool WorkingSetNode::removeTracks(const std::vector<TrackId> &trackIds) const

@@ -92,6 +92,30 @@ namespace jucyaudio
             }
             return success;
         }
+        void NavigationTree::onMixCreated(MixId mixId)
+        {
+            if (const auto mixesRootNode{m_root->getMixesRootNode()})
+            {
+                m_npc.refreshNode(mixesRootNode);
+                if (const auto newMixNode{mixesRootNode->get(mixId)})
+                {
+                    m_npc.selectNode(newMixNode);
+                    newMixNode->release(REFCOUNT_DEBUG_ARGS);
+                }
+            }
+        }
+        void NavigationTree::onWorkingSetCreated(WorkingSetId workingSetId)
+        {
+            if (const auto workingSetsRootNode{m_root->getWorkingSetsRootNode()})
+            {
+                m_npc.refreshNode(workingSetsRootNode);
+                if (const auto newWorkingSetNode{workingSetsRootNode->get(workingSetId)})
+                {
+                    m_npc.selectNode(newWorkingSetNode);
+                    newWorkingSetNode->release(REFCOUNT_DEBUG_ARGS);
+                }
+            }
+        }
 
     } // namespace database
 } // namespace jucyaudio
