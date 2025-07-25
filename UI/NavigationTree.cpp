@@ -39,6 +39,10 @@ namespace jucyaudio
                 {
                     m_npc.selectNode(child);
                 }
+                for (const auto child : children)
+                {
+                    child->release(REFCOUNT_DEBUG_ARGS);
+                }
             }
             return true;
         }
