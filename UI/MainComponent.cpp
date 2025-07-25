@@ -725,7 +725,7 @@ namespace jucyaudio
             handleNodeAction(m_currentNode, action);
         }
 
-        void MainComponent::handleNodeAction(INavigationNode *selectedNode, DataAction action)
+        void MainComponent::handleNodeAction(INavigationNode *node, DataAction action)
         {
             m_statusPanel.setStatusMessage("Node action: " + juce::String(dataActionToString(action, m_currentNode)), false);
 
@@ -738,21 +738,21 @@ namespace jucyaudio
                 createMix();
                 break;
             case DataAction::Delete:
-                onDataActionDelete(selectedNode);
+                onDataActionDelete(node);
                 break;
             case DataAction::ExportMix:
-                onExportMix(selectedNode);
+                onExportMix(node);
                 break;
-            case DataAction::EditMetadata:
-                onEditMetadata(selectedNode);
+            case DataAction::EditWorkingSetMetadata:
+                onEditWorkingSetMetadata(node);
                 break;
             case DataAction::RunBpmAnalysis:
-                onRunBpmAnalysis(selectedNode);
+                onRunBpmAnalysis(node);
                 break;
             default:
                 spdlog::error("Unsupported action '{}' for node '{}' in MainComponent::handleNodeAction. This should not happen.",
                     dataActionToString(action, m_currentNode).toStdString(),
-                    selectedNode->getName());
+                    node->getName());
                 break;
             }
         }
@@ -775,9 +775,6 @@ namespace jucyaudio
                 break;
             case DataAction::ShowDetails:
                 m_statusPanel.setStatusMessage("Show details for: " + std::to_string(rowIndex), false);
-                break;
-            case DataAction::EditMetadata:
-                m_statusPanel.setStatusMessage("Edit metadata for: " + std::to_string(rowIndex), false);
                 break;
             case DataAction::RemoveTracks: // TODO: we should do this only from the data View
                 onDataActionRemoveTracks();
@@ -1281,24 +1278,21 @@ namespace jucyaudio
             task->release(REFCOUNT_DEBUG_ARGS);
         }
 
-        void MainComponent::onEditMetadata(INavigationNode *selectedNode)
+        void MainComponent::onEditWorkingSetMetadata(INavigationNode *node)
         {
-            if (auto *wsNode = dynamic_cast<WorkingSetNode *>(selectedNode))
+            if (auto *wsNode = dynamic_cast<WorkingSetNode *>(node))
             {
                 const auto wsInfo = wsNode->getWorkingSetInfo();
 
+                node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid during metadata editing
                 auto *dialog = new WorkingSetMetaDataEditorDialog{wsInfo,
-                    [this, wsNode](bool nameChanged, std::string_view newName)
+                    [this, node](bool nameChanged, std::string_view newName)
                     {
                         if (nameChanged)
                         {
-                            spdlog::info("Working set name changed to: {}", newName);
-                            wsNode->rename(newName);
-                            if (auto navTreeItem = m_navigationPanel.findTreeViewItemForNode(wsNode))
-                            {
-                                navTreeItem->getOwnerView()->repaint();
-                            }
+                            m_navigationTree.onNodeRenamed(node, newName);
                         }
+                        node->release(REFCOUNT_DEBUG_ARGS); // Release the node after editing
                     }};
 
                 juce::DialogWindow::LaunchOptions launchOptions;

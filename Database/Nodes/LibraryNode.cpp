@@ -28,13 +28,12 @@ namespace jucyaudio
     namespace database
     {
         const DataActions LibraryNodeActions{
-            DataAction::CreateWorkingSet, DataAction::EditMetadata, DataAction::CreateMix, DataAction::RunBpmAnalysis, DataAction::Delete};
+            DataAction::CreateWorkingSet, DataAction::CreateMix, DataAction::RunBpmAnalysis, DataAction::Delete};
 
         const DataActions LibraryRowActions{DataAction::Play,
             DataAction::CreateWorkingSet,
             DataAction::CreateMix,
             DataAction::ShowDetails,
-            DataAction::EditMetadata,
             DataAction::RemoveTracks,
             DataAction::RunBpmAnalysis};
 

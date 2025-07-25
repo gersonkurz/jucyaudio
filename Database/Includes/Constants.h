@@ -191,16 +191,16 @@ namespace jucyaudio
          */
         enum class DataAction
         {
-            None,             ///< No action available/selected
-            Play,             ///< Start playback of the selected item(s)
-            CreateWorkingSet, ///< Create a new working set from selected items
-            CreateMix,        ///< Create a new DJ mix from selected tracks
-            ShowDetails,      ///< Display detailed information in a separate view
-            EditMetadata,     ///< Open metadata editor for the item
-            RemoveTracks,     ///< Remove selected tracks from a mix or working set
-            Delete,           ///< Delete the selected working set
-            ExportMix,        ///< Export mix to audio file
-            RunBpmAnalysis    ///< Run BPM analysis on selected items
+            None,                   ///< No action available/selected
+            Play,                   ///< Start playback of the selected item(s)
+            CreateWorkingSet,       ///< Create a new working set from selected items
+            CreateMix,              ///< Create a new DJ mix from selected tracks
+            ShowDetails,            ///< Display detailed information in a separate view
+            EditWorkingSetMetadata, ///< Open metadata editor for the item
+            RemoveTracks,           ///< Remove selected tracks from a mix or working set
+            Delete,                 ///< Delete the selected working set
+            ExportMix,              ///< Export mix to audio file
+            RunBpmAnalysis          ///< Run BPM analysis on selected items
         };
 
         // @brief Collection of data actions available in the application

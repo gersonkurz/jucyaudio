@@ -110,7 +110,7 @@ namespace jucyaudio
             void onRunBpmAnalysisForSelectedRows();
             void showBadFilesDialog(const std::vector<TrackInfo>& badFiles);
 
-            void onEditMetadata(INavigationNode *node);
+            void onEditWorkingSetMetadata(INavigationNode *node);
 
             audio::AudioLibrary m_audioLibrary;
             juce::ApplicationCommandManager &m_commandManager;

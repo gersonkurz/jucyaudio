@@ -28,8 +28,8 @@ namespace jucyaudio
                 return "Export Mix";
             case database::DataAction::ShowDetails:
                 return "Details";
-            case database::DataAction::EditMetadata:
-                return "Edit Metadata";
+            case database::DataAction::EditWorkingSetMetadata:
+                return "Edit Working-Set Metadata";
             case database::DataAction::RemoveTracks:
                 return "Remove Tracks";
             case database::DataAction::RunBpmAnalysis:

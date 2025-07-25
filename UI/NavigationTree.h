@@ -40,7 +40,13 @@ namespace jucyaudio
             // This method is called when a new mix is created, allowing the tree to update its structure.
             // @param mixId The ID of the newly created mix.
             void onMixCreated(MixId mixId);
+
+            // @brief Notify the navigation tree that a working set has been created.
+            // This method is called when a new working set is created, allowing the tree to update its structure.
+            // @param workingSetId The ID of the newly created working set.
             void onWorkingSetCreated(WorkingSetId workingSetId);
+
+            void onNodeRenamed(INavigationNode *node, std::string_view newName);
 
         private:
             RootNode *m_root{nullptr}; // Pointer to the root node of the navigation tree

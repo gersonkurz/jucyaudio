@@ -84,6 +84,9 @@ namespace jucyaudio
             // @brief Notify that a child node has been deleted. It should update its internal state accordingly.
             virtual void nodeHasBeenDeleted(INavigationNode *node) = 0;
 
+            // @brief Rename this node
+            virtual void rename(std::string_view newName) = 0;
+
             // @brief The name for a single object of this type. It's not a function, because implementing it
             // in every type of node is cumbersome, and the name is constant anyway, so I simply
             // added it to the (new) constructor.

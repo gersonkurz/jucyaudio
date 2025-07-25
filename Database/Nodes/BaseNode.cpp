@@ -33,7 +33,10 @@ namespace jucyaudio
         void BaseNode::nodeHasBeenDeleted(INavigationNode *node)
         {
         }
-
+        void BaseNode::rename(std::string_view newName)
+        {
+            m_name = newName;
+        }
         BaseNode::BaseNode(INavigationNode *parent,
             std::string_view name,
             NodeType nodeType,

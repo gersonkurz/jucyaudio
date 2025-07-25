@@ -77,10 +77,7 @@ namespace jucyaudio
             {
             }
             std::vector<TrackId> getAllTrackIds() const override;
-            void rename(std::string_view newName)
-            {
-                m_name = newName;
-            }
+            void rename(std::string_view newName) override;
             
             bool removeTracks(const std::vector<TrackId> &trackIds) const override;
         private:

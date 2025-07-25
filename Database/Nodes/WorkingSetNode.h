@@ -33,12 +33,8 @@ namespace jucyaudio
                 return NodeType::WorkingSet;
             }
 
-            void rename(std::string_view newName)
-            {
-                m_workingSetInfo.name = newName;
-                BaseNode::rename(newName);
-            }
-            
+            void rename(std::string_view newName) override;
+
             // Override to persist sort order to database
             bool setSortOrder(const std::vector<SortOrderInfo> &sortOrders) override;
             std::vector<SortOrderInfo> getCurrentSortOrder() const override;

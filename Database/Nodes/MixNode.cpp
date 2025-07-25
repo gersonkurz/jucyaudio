@@ -17,7 +17,11 @@ namespace jucyaudio
         {
             m_queryArgs.mixId = mixInfo.mixId;
         }
-
+        void MixNode::rename(std::string_view newName)
+        {
+            m_mixInfo.name = newName;
+            BaseNode::rename(newName);
+        }
         const DataActions &MixNode::getNodeActions() const
         {
             return MixNodeActions;

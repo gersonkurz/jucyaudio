@@ -117,5 +117,14 @@ namespace jucyaudio
             }
         }
 
+        void NavigationTree::onNodeRenamed(INavigationNode *node, std::string_view newName)
+        {
+            node->rename(newName);
+            if (auto navTreeItem = m_npc.findTreeViewItemForNode(node))
+            {
+                navTreeItem->getOwnerView()->repaint();
+            }
+        }
+
     } // namespace database
 } // namespace jucyaudio

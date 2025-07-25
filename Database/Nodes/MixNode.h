@@ -28,12 +28,13 @@ namespace jucyaudio
 
             bool removeTracks(const std::vector<TrackId> &trackIds) const override;
             bool deleteThisObject() override;
+            void rename(std::string_view newName) override;
             
             static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
 
         private:
             const DataActions &getNodeActions() const override;
-            const MixInfo m_mixInfo;
+            MixInfo m_mixInfo;
         };
     } // namespace database
 } // namespace jucyaudio
