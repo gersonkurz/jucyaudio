@@ -26,7 +26,21 @@ namespace jucyaudio
                 spdlog::error("Failed to create root node for NavigationTree.");
                 return false;
             }
-            return m_npc.setRootNode(m_root);
+            if (!m_npc.setRootNode(m_root))
+                return false;
+
+            // get first child of the root node - or rather, all of them
+            assert(m_root->canExpand()); // The root node should be expandable
+            std::vector<INavigationNode *> children;
+            if (m_root->expand(children))
+            {
+                // now we can add the children to the navigation panel
+                if (const auto child{ children.front() })
+                {
+                    m_npc.selectNode(child);
+                }
+            }
+            return true;
         }
 
         bool NavigationTree::deleteObject(INavigationNode* node)
