@@ -32,11 +32,6 @@ namespace jucyaudio
             DataColumn{Column_TrackCount, "track_count", "# Songs", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
             DataColumn{Column_TotalLength, "total_length", "Duration", 150, ColumnAlignment::Left, ColumnDataTypeHint::String}};
 
-        NodeType TypedItemsOverview<WorkingSetInfo>::getNodeType() const
-        {
-            return NodeType::WorkingSetsRoot;
-        }
-
         const DataActions &TypedItemsOverview<WorkingSetInfo>::getNodeActions() const
         {
             return WorkingSetsNodeActions;

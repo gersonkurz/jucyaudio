@@ -7,7 +7,7 @@ namespace jucyaudio
     namespace database
     {
         VirtualFolderNode::VirtualFolderNode(INavigationNode *parent, int64_t folderId, const std::string &folderName)
-            : LibraryNode{parent, folderName, NodeType::VirtualFolder, "Folder", "Folders"},
+            : LibraryNode{parent, folderName, "Folder", "Folders"},
               m_folderId{folderId}
         {
         }

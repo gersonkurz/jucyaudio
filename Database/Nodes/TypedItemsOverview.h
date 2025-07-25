@@ -30,11 +30,6 @@ namespace jucyaudio
                 return NoActionsPossible;
             }
 
-            NodeType getNodeType() const
-            {
-                return NodeType::Other; // Default to Other, can be specialized
-            }
-
             const std::vector<DataColumn> &getColumns() const
             {
                 return NoColumnsPossible;

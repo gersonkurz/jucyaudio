@@ -18,7 +18,7 @@ namespace jucyaudio
             DataAction::RunBpmAnalysis};
 
         WorkingSetNode::WorkingSetNode(INavigationNode *parent, const WorkingSetInfo &workingSet)
-            : LibraryNode{parent, workingSet.name, NodeType::WorkingSet, "Working Set", "Working Sets"},
+            : LibraryNode{parent, workingSet.name, "Working Set", "Working Sets"},
               m_workingSetInfo{workingSet} // Call base constructor
         {
             m_queryArgs.workingSetId = workingSet.id;

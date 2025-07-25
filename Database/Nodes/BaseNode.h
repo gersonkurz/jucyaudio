@@ -26,7 +26,6 @@ namespace jucyaudio
         public:
             BaseNode(INavigationNode *parent,
                 std::string_view name,
-                NodeType nodeType,
                 // new things start here);
                 std::string_view typeNameForSingleObject,
                 std::string_view typeNameForMultipleObjects);
@@ -60,10 +59,7 @@ namespace jucyaudio
             bool getNumberOfRows(int64_t &outCount) const override;
             bool getTotalTrackCount(int64_t &outCount) const override;
             void nodeHasBeenDeleted(INavigationNode *node) override;
-            NodeType getNodeType() const override
-            {
-                return m_nodeType;
-            }
+
             bool prepareToShowData() override;
             void dataNoLongerShowing() override;
             const std::vector<DataColumn> &getColumns() const override;
@@ -85,7 +81,6 @@ namespace jucyaudio
             // no longer const to support renaming
             std::string m_name;
             mutable std::atomic<int32_t> m_refCount;
-            const NodeType m_nodeType;
 
          protected:
             friend class RootNode; // Allow RootNode to access m_children

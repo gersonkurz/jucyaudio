@@ -12,7 +12,7 @@ namespace jucyaudio
         const DataActions MixNodeActions{DataAction::Delete, DataAction::ExportMix};
 
         MixNode::MixNode(INavigationNode *parent, const MixInfo &mixInfo)
-            : LibraryNode{parent, mixInfo.name, NodeType::Mix, "Mix", "Mixes"},
+            : LibraryNode{parent, mixInfo.name, "Mix", "Mixes"},
               m_mixInfo{mixInfo}
         {
             m_queryArgs.mixId = mixInfo.mixId;

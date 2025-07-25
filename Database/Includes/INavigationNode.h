@@ -14,20 +14,6 @@ namespace jucyaudio
 {
     namespace database
     {
-        enum class NodeType
-        {
-            Root,
-            LibraryRoot,
-            MixesRoot,
-            Mix,
-            WorkingSetsRoot,
-            WorkingSet,
-            VirtualFoldersRoot,
-            VirtualFolder,
-            LogicalFolder, // not really used any longer, but kept for compatibility
-            Other
-        };
-
         // --- INavigationNode Interface (remains an interface) ---
         struct INavigationNode : public IRefCounted
         {
@@ -100,9 +86,6 @@ namespace jucyaudio
             const std::string_view m_refTypeNameForMultipleObjects;
 
             // --------------------- METHODS IN NEED FOR REVIEW -----------------------------
-
-            /// @brief Get the type of this navigation node.
-            virtual NodeType getNodeType() const = 0;
 
             /// @brief Refresh the children of this navigation node.
             /// This method should be called to refresh the list of children, e.g., after a change in the underlying data.

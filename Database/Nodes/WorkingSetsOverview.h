@@ -26,7 +26,6 @@ namespace jucyaudio
             const DataActions &getNodeActions() const;
             const DataActions &getRowActions(RowIndex_t rowIndex) const;
             const std::vector<DataColumn> &getColumns() const;
-            NodeType getNodeType() const;
 
             std::string getCellText(const WorkingSetInfo &wsi, ColumnIndex_t index) const;
             bool removeObject(const WorkingSetInfo &wsi) const;

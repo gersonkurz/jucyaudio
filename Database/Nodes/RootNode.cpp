@@ -51,15 +51,15 @@ namespace jucyaudio
         }
 
         RootNode::RootNode()
-            : BaseNode{nullptr, "Root", NodeType::Root, "", ""}
+            : BaseNode{nullptr, "Root", "", ""}
         {
-            m_children.emplace_back(new LibraryNode{this, "", NodeType::LibraryRoot, "Library", "Libraries"});
+            m_children.emplace_back(new LibraryNode{this, "", "Library", "Libraries"});
             // Use VirtualFoldersOverview instead of filesystem-based folders
             m_children.emplace_back(new VirtualFoldersOverview{this});
             m_children.emplace_back(new TypedOverviewNode<WorkingSetInfo, WorkingSetNode>{
-                this, getWorkingSetsRootNodeName(), &WorkingSetNode::createChildren, NodeType::WorkingSetsRoot, "Working Set", "Working Sets"});
+                this, getWorkingSetsRootNodeName(), &WorkingSetNode::createChildren, "Working Set", "Working Sets"});
             m_children.emplace_back(
-                new TypedOverviewNode<MixInfo, MixNode>{this, getMixesRootNodeName(), &MixNode::createChildren, NodeType::MixesRoot, "Mix", "Mixes"});
+                new TypedOverviewNode<MixInfo, MixNode>{this, getMixesRootNodeName(), &MixNode::createChildren, "Mix", "Mixes"});
         }
 
         bool RootNode::expand(std::vector<INavigationNode *> &outChildren)

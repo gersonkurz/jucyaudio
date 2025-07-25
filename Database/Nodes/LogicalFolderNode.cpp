@@ -12,7 +12,7 @@ namespace jucyaudio
     {
 
         LogicalFolderNode::LogicalFolderNode(INavigationNode *parent, const std::filesystem::path &folderPath, const std::string &displayName)
-            : LibraryNode{parent, displayName, NodeType::LogicalFolder, "Folder", "Folders"}, // Call base constructor
+            : LibraryNode{parent, displayName, "Folder", "Folders"}, // Call base constructor
               m_thisFolderPath{folderPath}
         {
             // IMPORTANT: Initialize this instance's query to be specific to its path
