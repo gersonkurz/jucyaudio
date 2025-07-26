@@ -42,7 +42,10 @@ namespace jucyaudio
             }
         };
 
-        class DataViewComponent : public juce::Component, private juce::TableListBoxModel, private juce::Timer
+        class DataViewComponent : public juce::Component, 
+                                  public juce::DragAndDropContainer,
+                                  private juce::TableListBoxModel, 
+                                  private juce::Timer
         {
         public:
             explicit DataViewComponent();
