@@ -395,7 +395,7 @@ namespace jucyaudio
             repaint();
         }
         
-        void EnhancedPlayerComponent::loadFile(const juce::File& file, std::optional<database::TrackId> trackId)
+        void EnhancedPlayerComponent::loadFile(const juce::File& file, std::optional<TrackId> trackId)
         {
             m_waveformDisplay.loadFile(file);
             m_currentTrackId = trackId;

@@ -39,7 +39,7 @@ namespace jucyaudio
             void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
             // File loading (with optional track ID for marker loading)
-            void loadFile(const juce::File& file, std::optional<database::TrackId> trackId = std::nullopt);
+            void loadFile(const juce::File& file, std::optional<TrackId> trackId = std::nullopt);
             
             // Marker management
             void setMarkers(const std::vector<database::TrackMarker>& markers);
@@ -47,7 +47,7 @@ namespace jucyaudio
             // Callbacks for external control
             std::function<void()> onPreviousTrack;
             std::function<void()> onNextTrack;
-            std::function<void(database::TrackId, std::chrono::milliseconds, bool isNewMarker)> onMarkerAction;
+            std::function<void(TrackId, std::chrono::milliseconds, bool isNewMarker)> onMarkerAction;
 
             // Repeat modes
             enum class RepeatMode
@@ -132,7 +132,7 @@ namespace jucyaudio
             juce::AudioThumbnailCache &m_thumbnailCache;
             RepeatMode m_repeatMode{RepeatMode::Off};
             bool m_shuffleEnabled{false};
-            std::optional<database::TrackId> m_currentTrackId;
+            std::optional<TrackId> m_currentTrackId;
 
             // Helper methods
             void updateTransportButtons();

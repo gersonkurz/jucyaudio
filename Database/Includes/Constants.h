@@ -96,6 +96,26 @@ namespace jucyaudio
      * @note Mixes represent ordered sequences of tracks with crossfade information
      */
     typedef ObjectId MixId;
+    
+     /**
+     * @brief Track identifier type for database namespace
+     * @note Redefined in database namespace for compatibility
+     * @deprecated Use jucyaudio::TrackId instead
+     */
+    typedef ObjectId TrackId;
+
+    /**
+     * @brief Tag identifier type for database namespace
+     * @note Redefined in database namespace for compatibility
+     * @deprecated Use jucyaudio::TagId instead
+     */
+    typedef ObjectId TagId;
+
+    /**
+     * @brief Unique identifier for folder structures in the database
+     * @note Used for organizing tracks in hierarchical folder structures
+     */
+    typedef ObjectId FolderId;
 
     /**
      * @brief Volume level representation as integer to avoid floating-point issues
@@ -111,11 +131,7 @@ namespace jucyaudio
      */
     typedef int64_t BPM_t;
 
-    /**
-     * @brief Unique identifier for folder structures in the database
-     * @note Used for organizing tracks in hierarchical folder structures
-     */
-    typedef int64_t FolderId;
+
 
     namespace database
     {
@@ -138,20 +154,6 @@ namespace jucyaudio
         constexpr BPM_t BPM_NORMALIZATION = 1000;
 
         struct TrackInfo; ///< Forward declaration for track information structure
-
-        /**
-         * @brief Track identifier type for database namespace
-         * @note Redefined in database namespace for compatibility
-         * @deprecated Use jucyaudio::TrackId instead
-         */
-        typedef long long TrackId;
-
-        /**
-         * @brief Tag identifier type for database namespace
-         * @note Redefined in database namespace for compatibility
-         * @deprecated Use jucyaudio::TagId instead
-         */
-        typedef long long TagId;
 
         /**
          * @brief Specifies sort order for database queries

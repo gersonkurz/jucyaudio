@@ -141,7 +141,7 @@ namespace jucyaudio
                 spdlog::info("Next track requested");
             };
 
-            m_enhancedPlayer.onMarkerAction = [this](database::TrackId trackId, std::chrono::milliseconds position, bool isNewMarker)
+            m_enhancedPlayer.onMarkerAction = [this](TrackId trackId, std::chrono::milliseconds position, bool isNewMarker)
             {
                 spdlog::info("Marker action requested: track={}, position={}ms, isNew={}", trackId, position.count(), isNewMarker);
 
@@ -872,7 +872,7 @@ namespace jucyaudio
                         if (result == 1) // OK button clicked
                         {
                             // Collect track IDs
-                            std::vector<database::TrackId> badTrackIds;
+                            std::vector<TrackId> badTrackIds;
                             badTrackIds.reserve(badFiles.size());
                             for (const auto &track : badFiles)
                             {
@@ -1679,7 +1679,7 @@ namespace jucyaudio
             return false;
         }
 
-        void MainComponent::showMarkerDialog(database::TrackId trackId, std::chrono::milliseconds position, bool isNewMarker)
+        void MainComponent::showMarkerDialog(TrackId trackId, std::chrono::milliseconds position, bool isNewMarker)
         {
             auto &markerManager = theTrackLibrary.getMarkerManager();
 
