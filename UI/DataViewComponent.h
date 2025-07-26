@@ -18,13 +18,70 @@ namespace jucyaudio
         // Alias for the row action callback function type
         using RowActionCallback = std::function<void(RowIndex_t rowNumber, DataAction action, const juce::Point<int> &screenPosition)>;
 
-        // Custom TableListBox that forwards Ctrl+wheel events to parent
-        class ScalableTableListBox : public juce::TableListBox
+        // Drop indicator overlay component
+        class DropIndicatorOverlay : public juce::Component
         {
         public:
-            using juce::TableListBox::TableListBox;
+            DropIndicatorOverlay() { setInterceptsMouseClicks(false, false); }
+            
+            void setDropPosition(int y)
+            {
+                m_dropY = y;
+                repaint();
+            }
+            
+            void clearDropPosition()
+            {
+                m_dropY = -1;
+                repaint();
+            }
+            
+            void paint(juce::Graphics& g) override
+            {
+                if (m_dropY >= 0)
+                {
+                    // Draw a thick line to indicate drop position
+                    g.setColour(juce::Colours::orange);
+                    g.fillRect(0.0f, float(m_dropY - 2), float(getWidth()), 4.0f);
+                    
+                    // Draw small triangles at the ends
+                    juce::Path triangle;
+                    triangle.addTriangle(0.0f, float(m_dropY), 8.0f, float(m_dropY - 4), 8.0f, float(m_dropY + 4));
+                    g.fillPath(triangle);
+                    
+                    triangle.clear();
+                    triangle.addTriangle(float(getWidth()), float(m_dropY), float(getWidth() - 8), float(m_dropY - 4), float(getWidth() - 8), float(m_dropY + 4));
+                    g.fillPath(triangle);
+                }
+            }
+            
+        private:
+            int m_dropY{-1};
+        };
+
+        // Custom TableListBox that forwards Ctrl+wheel events to parent
+        class ScalableTableListBox : public juce::TableListBox,
+                                      public juce::DragAndDropTarget
+        {
+        public:
+            ScalableTableListBox(const juce::String& name, juce::TableListBoxModel* model);
 
             void mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel) override;
+            void resized() override;
+            
+            // DragAndDropTarget overrides
+            bool isInterestedInDragSource(const SourceDetails& dragSourceDetails) override;
+            void itemDragEnter(const SourceDetails& dragSourceDetails) override;
+            void itemDragMove(const SourceDetails& dragSourceDetails) override;
+            void itemDragExit(const SourceDetails& dragSourceDetails) override;
+            void itemDropped(const SourceDetails& dragSourceDetails) override;
+            
+            DropIndicatorOverlay& getDropOverlay() { return m_dropOverlay; }
+            
+        private:
+            int m_dropTargetRow{-1};
+            bool m_insertAbove{true};
+            DropIndicatorOverlay m_dropOverlay;
         };
 
         class DataViewComponent : public juce::Component, 

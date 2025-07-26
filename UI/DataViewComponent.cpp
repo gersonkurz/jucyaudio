@@ -10,6 +10,13 @@ namespace jucyaudio
     {
         using namespace database; // For convenience, we use the database namespace here
 
+        ScalableTableListBox::ScalableTableListBox(const juce::String& name, juce::TableListBoxModel* model)
+            : juce::TableListBox(name, model)
+        {
+            // Add the overlay as a child component
+            addAndMakeVisible(m_dropOverlay);
+        }
+
         void ScalableTableListBox::mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel)
         {
             if (event.mods.isCommandDown())
@@ -25,6 +32,92 @@ namespace jucyaudio
                 // Normal scrolling
                 TableListBox::mouseWheelMove(event, wheel);
             }
+        }
+        
+        bool ScalableTableListBox::isInterestedInDragSource(const SourceDetails& dragSourceDetails)
+        {
+            // Check if this is our mix track drag
+            return dragSourceDetails.description.toString().startsWith("MixTrackDrag:");
+        }
+        
+        void ScalableTableListBox::itemDragEnter(const SourceDetails& dragSourceDetails)
+        {
+            spdlog::info("ScalableTableListBox::itemDragEnter");
+            m_dropTargetRow = -1;
+            m_dropOverlay.clearDropPosition();
+        }
+        
+        void ScalableTableListBox::itemDragMove(const SourceDetails& dragSourceDetails)
+        {
+            auto pos = dragSourceDetails.localPosition.toInt();
+            auto row = getRowContainingPosition(pos.x, pos.y);
+            
+            if (row >= 0)
+            {
+                // Determine if we're in the top or bottom half of the row
+                auto rowPos = getRowPosition(row, true);
+                auto rowHeight = getRowHeight();
+                auto relativeY = pos.y - rowPos.getY();
+                m_insertAbove = relativeY < rowHeight / 2;
+                
+                // Check if the position changed
+                bool positionChanged = (row != m_dropTargetRow);
+                bool sideChanged = false;
+                
+                if (row == m_dropTargetRow)
+                {
+                    // Same row, check if we switched from above to below or vice versa
+                    bool newInsertAbove = relativeY < rowHeight / 2;
+                    sideChanged = (newInsertAbove != m_insertAbove);
+                    m_insertAbove = newInsertAbove;
+                }
+                
+                if (positionChanged || sideChanged)
+                {
+                    m_dropTargetRow = row;
+                    auto y = m_insertAbove ? rowPos.getY() : rowPos.getBottom();
+                    m_dropOverlay.setDropPosition(y);
+                }
+            }
+        }
+        
+        void ScalableTableListBox::itemDragExit(const SourceDetails& dragSourceDetails)
+        {
+            spdlog::info("ScalableTableListBox::itemDragExit");
+            m_dropTargetRow = -1;
+            m_dropOverlay.clearDropPosition();
+        }
+        
+        void ScalableTableListBox::itemDropped(const SourceDetails& dragSourceDetails)
+        {
+            spdlog::info("ScalableTableListBox::itemDropped at row {}", m_dropTargetRow);
+            
+            if (m_dropTargetRow >= 0)
+            {
+                // Extract the source row from the drag description
+                auto desc = dragSourceDetails.description.toString();
+                if (desc.startsWith("MixTrackDrag:"))
+                {
+                    auto sourceRow = desc.substring(13).getIntValue();
+                    auto targetRow = m_dropTargetRow;
+                    if (!m_insertAbove && targetRow >= sourceRow)
+                    {
+                        targetRow++;
+                    }
+                    
+                    spdlog::info("Dropping row {} at position {}", sourceRow, targetRow);
+                    // TODO: Call reorder function in next step
+                }
+            }
+            
+            m_dropTargetRow = -1;
+            m_dropOverlay.clearDropPosition();
+        }
+        
+        void ScalableTableListBox::resized()
+        {
+            TableListBox::resized();
+            m_dropOverlay.setBounds(getLocalBounds());
         }
 
 
