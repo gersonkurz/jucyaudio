@@ -18,6 +18,7 @@
 #include <UI/EnhancedPlayerComponent.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/ThemeManager.h>
+#include <Utils/UiUtils.h>
 #include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -27,11 +28,7 @@ namespace jucyaudio
     namespace ui
     {
         using namespace database;
-        enum class MainViewType
-        {
-            DataView,
-            MixEditor
-        };
+
 
         MainViewType determineType(const INavigationNode *node);
 

@@ -332,22 +332,10 @@ namespace jucyaudio
             if (e.mods.isRightButtonDown())
             {
                 const auto &availableActions{m_currentNode->getRowActions(static_cast<RowIndex_t>(rowNumber))};
-                if (!availableActions.empty())
+                const auto action{showDataActionPopup(availableActions, m_currentNode, MainViewType::MixEditor)};
+                if (action != DataAction::None && m_onRowActionRequested)
                 {
-                    juce::PopupMenu menu;
-                    for (size_t i = 0; i < availableActions.size(); ++i)
-                    {
-                        menu.addItem(static_cast<int>(i + 1), dataActionToString(availableActions[i], m_currentNode));
-                    }
-
-                    const int result = menu.show();
-                    if (result > 0 && result <= static_cast<int>(availableActions.size()))
-                    {
-                        if (m_onRowActionRequested)
-                        {
-                            m_onRowActionRequested(static_cast<RowIndex_t>(rowNumber), availableActions[result - 1], e.getScreenPosition());
-                        }
-                    }
+                    m_onRowActionRequested(static_cast<RowIndex_t>(rowNumber), action, e.getScreenPosition());
                 }
             }
         }

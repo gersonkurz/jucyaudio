@@ -141,8 +141,8 @@ namespace jucyaudio
             {
                 for (const auto &action : m_currentNode->getNodeActions())
                 {
-                    if (action == DataAction::None)
-                        continue; // Skip "None" action
+                    if (action == DataAction::None || action == DataAction::Separator)
+                        continue;
 
                     auto *button = m_actionButtons.add(new juce::TextButton{});
                     button->setButtonText(dataActionToString(action, m_currentNode));

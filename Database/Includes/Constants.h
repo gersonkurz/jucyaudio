@@ -209,7 +209,10 @@ namespace jucyaudio
             RemoveTracks,           ///< Remove selected tracks from a mix or working set
             Delete,                 ///< Delete the selected working set
             ExportMix,              ///< Export mix to audio file
-            RunBpmAnalysis          ///< Run BPM analysis on selected items
+            RunBpmAnalysis,         ///< Run BPM analysis on selected items
+            ShowMixEditor,          ///< Open the mix editor for the selected mix
+            ShowTrackEditor,        ///< Open the track editor for the selected track
+            Separator,              ///< Separator in context menus (not an action)
         };
 
         // @brief Collection of data actions available in the application

@@ -225,22 +225,10 @@ namespace jucyaudio
                 }
 
                 const auto &availableActions{m_node->getNodeActions()};
-                if (!availableActions.empty())
+                const auto action{showDataActionPopup(availableActions, m_node, MainViewType::MixEditor)};
+                if (action != DataAction::None && m_ownerPanel.m_onNodeAction)
                 {
-                    juce::PopupMenu menu;
-                    for (size_t i = 0; i < availableActions.size(); ++i)
-                    {
-                        menu.addItem(static_cast<int>(i + 1), dataActionToString(availableActions[i], m_node));
-                    }
-
-                    const int result = menu.show();
-                    if (result > 0 && result <= static_cast<int>(availableActions.size()))
-                    {
-                        if (m_ownerPanel.m_onNodeAction)
-                        {
-                            m_ownerPanel.m_onNodeAction(m_node, availableActions[result - 1]);
-                        }
-                    }
+                    m_ownerPanel.m_onNodeAction(m_node, action);
                 }
             }
             else

@@ -7,36 +7,84 @@ namespace jucyaudio
 {
     namespace ui
     {
+        using namespace database;
 
         // Helper to convert DataAction to a displayable string (simple version)
         // In a real app, this might be more sophisticated, perhaps with localization.
-        juce::String dataActionToString(database::DataAction action, database::INavigationNode* node)
+        juce::String dataActionToString(DataAction action, const INavigationNode* node)
         {
             switch (action)
             {
-            case database::DataAction::None:
+            case DataAction::None:
                 return "None";
-            case database::DataAction::Play:
+            case DataAction::Play:
                 return "Play";
-            case database::DataAction::CreateWorkingSet:
+            case DataAction::CreateWorkingSet:
                 return "Create Working Set";
-            case database::DataAction::CreateMix:
+            case DataAction::CreateMix:
                 return "Create Mix";
-            case database::DataAction::Delete:
+            case DataAction::Delete:
                 return std::format("Delete {}", node->m_refTypeNameForSingleObject);
-            case database::DataAction::ExportMix:
+            case DataAction::ExportMix:
                 return "Export Mix";
-            case database::DataAction::ShowDetails:
+            case DataAction::ShowDetails:
                 return "Details";
-            case database::DataAction::EditWorkingSetMetadata:
+            case DataAction::EditWorkingSetMetadata:
                 return "Edit Working-Set Metadata";
-            case database::DataAction::RemoveTracks:
+            case DataAction::RemoveTracks:
                 return "Remove Tracks";
-            case database::DataAction::RunBpmAnalysis:
+            case DataAction::RunBpmAnalysis:
                 return "Run BPM Analysis";
+            case DataAction::ShowMixEditor:
+                return "Show Mix Editor";
+            case DataAction::ShowTrackEditor:
+                return "Show Track Editor";
+            case DataAction::Separator:
+                return "------";
             default:
                 return "dataActionToString()?";
             }
+        }
+
+        DataAction showDataActionPopup(const DataActions &availableActions, const INavigationNode *node, MainViewType mainViewType)
+        {
+            if (availableActions.empty())
+                return DataAction::None;
+
+            juce::PopupMenu menu;
+            for (size_t i = 0; i < availableActions.size(); ++i)
+            {
+                bool isTicked = false;
+                const auto action{availableActions[i]};
+                if (action == DataAction::Separator)
+                {
+                    menu.addSeparator();
+                }
+                else if (action == DataAction::None)
+                {
+                    // Skip None action, it doesn't make sense to show it in the menu
+                    continue;
+                }
+                else
+                {
+                    if (action == DataAction::ShowMixEditor && mainViewType == MainViewType::MixEditor)
+                    {
+                        isTicked = true; // ShowMixEditor is always ticked in MixEditor view
+                    }
+                    else if (action == DataAction::ShowTrackEditor && mainViewType == MainViewType::DataView)
+                    {
+                        isTicked = true; // ShowTrackEditor is always ticked in DataView
+                    }
+                    menu.addItem(static_cast<int>(i + 1), dataActionToString(action, node), true, isTicked);
+                }
+            }
+
+            const int result = menu.show();
+            if (result > 0 && result <= static_cast<int>(availableActions.size()))
+            {
+                return availableActions[result - 1];
+            }
+            return DataAction::None;
         }
 
         juce::String getSafeDisplayText(const juce::String &text)
