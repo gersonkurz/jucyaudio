@@ -8,14 +8,16 @@ namespace jucyaudio
 {
     namespace ui
     {
+        using namespace database;
+
         /**
-         * @class WorkingSetMetaDataEditorDialog
+         * @class EditMixMetaDataDialog
          * @brief A dialog for viewing and editing the metadata of a Working Set.
          *
          * This component displays statistics about a working set (track count, total duration, creation date)
          * and allows the user to rename it.
          */
-        class WorkingSetMetaDataEditorDialog : public juce::Component, private juce::Timer
+        class EditMixMetaDataDialog : public juce::Component, private juce::Timer
         {
         public:
             /**
@@ -30,8 +32,8 @@ namespace jucyaudio
              * @param workingSetInfo The info object for the working set to be edited.
              * @param onFinishedCallback The callback to be invoked when the dialog is closed.
              */
-            WorkingSetMetaDataEditorDialog(const database::WorkingSetInfo &workingSetInfo, OnDialogFinished onFinishedCallback);
-            ~WorkingSetMetaDataEditorDialog() override = default;
+            EditMixMetaDataDialog(const MixInfo &workingSetInfo, OnDialogFinished onFinishedCallback);
+            ~EditMixMetaDataDialog() override = default;
 
             void paint(juce::Graphics &g) override;
             void resized() override;
@@ -41,7 +43,7 @@ namespace jucyaudio
         private:
             //==============================================================================
             // Data
-            database::WorkingSetInfo m_workingSetInfo;
+            MixInfo m_mixInfo;
             OnDialogFinished m_onFinishedCallback;
 
             // UI Components
@@ -59,7 +61,7 @@ namespace jucyaudio
             void saveChanges();
             void closeDialog(bool changed);
 
-            JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WorkingSetMetaDataEditorDialog)
+            JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EditMixMetaDataDialog)
         };
     } // namespace ui
 } // namespace jucyaudio

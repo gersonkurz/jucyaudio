@@ -7,10 +7,10 @@
 #include <Utils/AssortedUtils.h>
 #include <Utils/StringWriter.h>
 #include <algorithm> // For std::reverse
-#include <cassert> // For assert
+#include <cassert>   // For assert
 #include <ranges>
-#include <unordered_map>
 #include <spdlog/spdlog.h>
+#include <unordered_map>
 
 namespace
 {
@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS MixTracks(
     FOREIGN KEY(mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE,
     FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
 );)SQL",
-        
+
         // Virtual Folders for efficient folder navigation
         R"SQL(
 CREATE TABLE IF NOT EXISTS VirtualFolders (
@@ -163,7 +163,7 @@ CREATE TABLE IF NOT EXISTS VirtualFolders (
         "CREATE INDEX IF NOT EXISTS idx_vf_parent ON VirtualFolders(parent_id);",
         "CREATE INDEX IF NOT EXISTS idx_vf_path ON VirtualFolders(full_path);",
         "CREATE INDEX IF NOT EXISTS idx_vf_depth ON VirtualFolders(depth);",
-        
+
         // Index to speed up filepath LIKE queries
         "CREATE INDEX IF NOT EXISTS idx_tracks_filepath ON Tracks(filepath);",
     };
@@ -235,7 +235,7 @@ CREATE TABLE IF NOT EXISTS VirtualFolders (
             info.user_notes = stmt.getText(col);
         col++;
         info.is_missing = stmt.getInt32(col++) != 0;
-        
+
         // Read status field
         if (!stmt.isNull(col))
         {
@@ -248,7 +248,7 @@ CREATE TABLE IF NOT EXISTS VirtualFolders (
                 info.status = TrackStatus::Unknown;
         }
         col++;
-        
+
         return info;
     }
 
@@ -285,14 +285,20 @@ CREATE TABLE IF NOT EXISTS VirtualFolders (
         ok &= stmt.addParam(info.internal_content_hash);
         ok &= stmt.addParam(info.user_notes);
         ok &= stmt.addParam(info.is_missing ? 1 : 0);
-        
+
         // Add status field
         std::string statusStr;
         switch (info.status)
         {
-            case TrackStatus::Unknown: statusStr = "unknown"; break;
-            case TrackStatus::Ok: statusStr = "ok"; break;
-            case TrackStatus::BadFormat: statusStr = "bad_format"; break;
+        case TrackStatus::Unknown:
+            statusStr = "unknown";
+            break;
+        case TrackStatus::Ok:
+            statusStr = "ok";
+            break;
+        case TrackStatus::BadFormat:
+            statusStr = "bad_format";
+            break;
         }
         ok &= stmt.addParam(statusStr);
 
@@ -378,13 +384,13 @@ namespace jucyaudio
             assert(isOpen() && "Cannot get working-set manager when database is not open");
             return m_workingSetManager;
         }
-        
+
         IMarkerManager &SqliteTrackDatabase::getMarkerManager()
         {
             assert(isOpen() && "Cannot get marker manager when database is not open");
             return m_markerManager;
         }
-        
+
         const IMarkerManager &SqliteTrackDatabase::getMarkerManager() const
         {
             assert(isOpen() && "Cannot get marker manager when database is not open");
@@ -558,8 +564,9 @@ namespace jucyaudio
         {
             if (!isOpen())
                 return DbResult::failure(DbResultStatus::ErrorConnection, "Database not open.");
-            SqliteStatement stmt{m_db, "UPDATE SchemaInfo SET value = ? WHERE "
-                                       "key = 'schema_version';"};
+            SqliteStatement stmt{m_db,
+                "UPDATE SchemaInfo SET value = ? WHERE "
+                "key = 'schema_version';"};
             if (!stmt.isValid())
             {
                 return DbResult::failure(DbResultStatus::ErrorDB, "Prepare failed for setDBSchemaVersion: " + m_db.getLastError());
@@ -612,10 +619,9 @@ namespace jucyaudio
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
 
-                
                 currentVersion = 2; // Update for next check
             }
-            
+
             if (currentVersion < 3)
             {
                 spdlog::info("Migrating database from version 2 to 3...");
@@ -628,14 +634,14 @@ namespace jucyaudio
                         transaction.rollback();
                         return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
                     }
-                    
+
                     if (auto result = setDBSchemaVersion(3); !result.isOk())
                     {
                         m_lastErrorMessage = "Failed to update schema version to 3: " + result.errorMessage;
                         transaction.rollback();
                         return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
                     }
-                    
+
                     if (!transaction.commit())
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
@@ -646,10 +652,10 @@ namespace jucyaudio
                 {
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
-                
+
                 currentVersion = 3; // Update for next check
             }
-            
+
             if (currentVersion < 4)
             {
                 spdlog::info("Migrating database from version 3 to 4 - Adding TrackMarkers table...");
@@ -672,19 +678,19 @@ namespace jucyaudio
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create TrackMarkers table.");
                     }
-                    
+
                     // Create index for efficient track lookups
                     if (!m_db.execute("CREATE INDEX IF NOT EXISTS idx_trackmarkers_track_id ON TrackMarkers (track_id);"))
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create TrackMarkers index.");
                     }
-                    
+
                     // Update schema version
                     if (auto result = setDBSchemaVersion(4); !result.isOk())
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 4.");
                     }
-                    
+
                     if (!transaction.commit())
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
@@ -695,10 +701,10 @@ namespace jucyaudio
                 {
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
-                
+
                 currentVersion = 4; // Update for next check
             }
-            
+
             if (currentVersion < 5)
             {
                 spdlog::info("Migrating database from version 4 to 5 - Adding status field to Tracks table...");
@@ -709,25 +715,25 @@ namespace jucyaudio
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to add status column to Tracks table.");
                     }
-                    
+
                     // Update existing tracks that have BPM data to 'ok' status
                     if (!m_db.execute("UPDATE Tracks SET status = 'ok' WHERE bpm IS NOT NULL AND bpm > 0;"))
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update existing track statuses.");
                     }
-                    
+
                     // Create index for efficient status lookups
                     if (!m_db.execute("CREATE INDEX IF NOT EXISTS idx_tracks_status ON Tracks (status);"))
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create status index.");
                     }
-                    
+
                     // Update schema version
                     if (auto result = setDBSchemaVersion(5); !result.isOk())
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 5.");
                     }
-                    
+
                     if (!transaction.commit())
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
@@ -809,7 +815,7 @@ namespace jucyaudio
             if (success)
             {
                 updateTrackTagsFromInsideTransaction(trackInfo.trackId,
-                                                     trackInfo.tag_ids); // Update tags after insert
+                    trackInfo.tag_ids); // Update tags after insert
                 if (!m_db.execute("COMMIT;"))
                 {
                     m_lastErrorMessage = "Failed to commit transaction: " + m_db.getLastError();
@@ -922,8 +928,8 @@ namespace jucyaudio
 
         // --- Generic single field update helper ---
         template <typename T>
-        DbResult SqliteTrackDatabase::updateSingleTrackField(TrackId trackId, const std::string &columnName, T value,
-                                                             std::function<bool(SqliteStatement &, T)> binder)
+        DbResult SqliteTrackDatabase::updateSingleTrackField(
+            TrackId trackId, const std::string &columnName, T value, std::function<bool(SqliteStatement &, T)> binder)
         {
             if (!isOpen())
             {
@@ -964,7 +970,7 @@ namespace jucyaudio
             return updateTrackBpm(results);
         }
 
-        DbResult SqliteTrackDatabase::updateTrackBpm(const std::vector<std::pair<TrackId, AudioMetadata>>& results)
+        DbResult SqliteTrackDatabase::updateTrackBpm(const std::vector<std::pair<TrackId, AudioMetadata>> &results)
         {
             if (!isOpen())
             {
@@ -976,7 +982,7 @@ namespace jucyaudio
             }
             m_lastErrorMessage.clear();
 
-            if (SqliteTransaction transaction{ m_db })
+            if (SqliteTransaction transaction{m_db})
             {
                 SqliteStatement stmt{m_db, "UPDATE Tracks SET bpm=?, intro_end=?, outro_start=? WHERE track_id = ?;"};
                 if (!stmt.isValid())
@@ -1030,35 +1036,39 @@ namespace jucyaudio
                 m_lastErrorMessage = "Failed to begin transaction for batch BPM update: " + m_db.getLastError();
                 return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
-
-            
         }
 
         DbResult SqliteTrackDatabase::updateTrackRating(TrackId trackId, int rating)
         {
-            return updateSingleTrackField<int>(trackId, "rating", rating,
-                                               [](SqliteStatement &s, int val)
-                                               {
-                                                   return s.addParam(val);
-                                               });
+            return updateSingleTrackField<int>(trackId,
+                "rating",
+                rating,
+                [](SqliteStatement &s, int val)
+                {
+                    return s.addParam(val);
+                });
         }
 
         DbResult SqliteTrackDatabase::updateTrackLikedStatus(TrackId trackId, int likedStatus)
         {
-            return updateSingleTrackField<int>(trackId, "liked_status", likedStatus,
-                                               [](SqliteStatement &s, int val)
-                                               {
-                                                   return s.addParam(val);
-                                               });
+            return updateSingleTrackField<int>(trackId,
+                "liked_status",
+                likedStatus,
+                [](SqliteStatement &s, int val)
+                {
+                    return s.addParam(val);
+                });
         }
 
         DbResult SqliteTrackDatabase::updateTrackUserNotes(TrackId trackId, const std::string &notes)
         {
-            return updateSingleTrackField<const std::string &>(trackId, "user_notes", notes,
-                                                               [](SqliteStatement &s, const std::string &val)
-                                                               {
-                                                                   return s.addParam(val);
-                                                               });
+            return updateSingleTrackField<const std::string &>(trackId,
+                "user_notes",
+                notes,
+                [](SqliteStatement &s, const std::string &val)
+                {
+                    return s.addParam(val);
+                });
         }
 
         DbResult SqliteTrackDatabase::updateTrackStatus(TrackId trackId, TrackStatus status)
@@ -1066,16 +1076,24 @@ namespace jucyaudio
             std::string statusStr;
             switch (status)
             {
-                case TrackStatus::Unknown: statusStr = "unknown"; break;
-                case TrackStatus::Ok: statusStr = "ok"; break;
-                case TrackStatus::BadFormat: statusStr = "bad_format"; break;
+            case TrackStatus::Unknown:
+                statusStr = "unknown";
+                break;
+            case TrackStatus::Ok:
+                statusStr = "ok";
+                break;
+            case TrackStatus::BadFormat:
+                statusStr = "bad_format";
+                break;
             }
-            
-            return updateSingleTrackField<const std::string &>(trackId, "status", statusStr,
-                                                               [](SqliteStatement &s, const std::string &val)
-                                                               {
-                                                                   return s.addParam(val);
-                                                               });
+
+            return updateSingleTrackField<const std::string &>(trackId,
+                "status",
+                statusStr,
+                [](SqliteStatement &s, const std::string &val)
+                {
+                    return s.addParam(val);
+                });
         }
 
         DbResult SqliteTrackDatabase::incrementTrackPlayCount(TrackId trackId)
@@ -1135,11 +1153,13 @@ namespace jucyaudio
 
         DbResult SqliteTrackDatabase::setTrackPathMissing(TrackId trackId, bool isMissing)
         {
-            return updateSingleTrackField<int>(trackId, "is_missing", isMissing ? 1 : 0,
-                                               [](SqliteStatement &s, int val)
-                                               {
-                                                   return s.addParam(val);
-                                               });
+            return updateSingleTrackField<int>(trackId,
+                "is_missing",
+                isMissing ? 1 : 0,
+                [](SqliteStatement &s, int val)
+                {
+                    return s.addParam(val);
+                });
         }
 
         // GetTracks and GetTotalTrackCount need more complex SQL building based
@@ -1205,9 +1225,10 @@ namespace jucyaudio
                     trackMap[track.trackId] = &track; // Store pointer to TrackInfo
                 }
             }
-            SqliteStatement stmt{m_db, "SELECT track_id, tag_id FROM TrackTags WHERE "
-                                       "track_id IN (SELECT track_id FROM " +
-                                           tempTableName + ");"};
+            SqliteStatement stmt{m_db,
+                "SELECT track_id, tag_id FROM TrackTags WHERE "
+                "track_id IN (SELECT track_id FROM " +
+                    tempTableName + ");"};
             while (stmt.getNextResult())
             {
                 if (!stmt.isNull(0))
@@ -1234,7 +1255,7 @@ namespace jucyaudio
             std::vector<TrackId> results;
             SqliteStatement stmt{m_db};
             SqliteStatementConstruction stmtConstruction{stmt};
-            
+
             // Create a modified query args to only select the track_id
             TrackQueryArgs id_args = args;
             id_args.columns = {"track_id"};
@@ -1269,26 +1290,21 @@ namespace jucyaudio
             if (!isOpen())
                 return -1; // Indicate error
             m_lastErrorMessage.clear();
-            
+
             // Optimization: If we're querying for a virtual folder, use the cached count
-            if (args.virtualFolderId.has_value() && 
-                args.searchTerms.empty() && 
-                !args.pathFilter.has_value() && 
-                args.workingSetId == 0 && 
-                args.mixId == 0)
+            if (args.virtualFolderId.has_value() && args.searchTerms.empty() && !args.pathFilter.has_value() && args.workingSetId == 0 && args.mixId == 0)
             {
                 // Use the cached count from VirtualFolders table
-                SqliteStatement stmt{m_db, 
-                    "SELECT direct_track_count FROM VirtualFolders WHERE folder_id = ?;"};
+                SqliteStatement stmt{m_db, "SELECT direct_track_count FROM VirtualFolders WHERE folder_id = ?;"};
                 stmt.addParam(args.virtualFolderId.value());
-                
+
                 if (stmt.getNextResult())
                 {
                     return stmt.getInt32(0);
                 }
                 return 0;
             }
-            
+
             // Fall back to the generic count query for complex filters
             SqliteStatement stmt{m_db};
             SqliteStatementConstruction stmtConstruction{stmt};
@@ -1425,8 +1441,7 @@ namespace jucyaudio
             return tags;
         }
 
-        DbResult SqliteTrackDatabase::buildVirtualFolders(
-            std::function<void(float /*progress*/, const std::string& /*status*/)> progressCallback)
+        DbResult SqliteTrackDatabase::buildVirtualFolders(std::function<void(float /*progress*/, const std::string & /*status*/)> progressCallback)
         {
             if (!isOpen())
             {
@@ -1434,7 +1449,7 @@ namespace jucyaudio
             }
 
             spdlog::info("Starting virtual folder building process");
-            
+
             // Begin transaction for better performance
             SqliteTransaction transaction{m_db};
             if (!transaction)
@@ -1454,7 +1469,7 @@ namespace jucyaudio
                 SqliteStatement countStmt{m_db, "SELECT COUNT(*) FROM Tracks;"};
                 countStmt.getNextResult();
                 const int totalTracks{static_cast<int>(countStmt.getInt64(0))};
-                
+
                 if (totalTracks == 0)
                 {
                     spdlog::info("No tracks in database, nothing to process");
@@ -1464,7 +1479,7 @@ namespace jucyaudio
                 // Map to track folder IDs by path
                 std::unordered_map<std::string, int64_t> folderPathToId;
                 int64_t nextFolderId{1};
-                
+
                 // Get all tracks with their paths
                 SqliteStatement trackStmt{m_db, "SELECT track_id, filepath, filesize_bytes FROM Tracks ORDER BY filepath;"};
                 if (!trackStmt.isValid())
@@ -1473,48 +1488,48 @@ namespace jucyaudio
                 }
 
                 int processedTracks{0};
-                
+
                 while (trackStmt.getNextResult())
                 {
                     const auto trackId{trackStmt.getInt64(0)};
                     const auto filepath{trackStmt.getText(1)};
                     const auto filesize{trackStmt.getInt64(2)};
-                    
+
                     // Parse the path to extract folder hierarchy
                     std::filesystem::path trackPath{filepath};
                     std::filesystem::path parentPath{trackPath.parent_path()};
-                    
+
                     // Build folder hierarchy from root to immediate parent
                     std::vector<std::filesystem::path> pathComponents;
                     std::filesystem::path currentPath{parentPath};
-                    
+
                     while (!currentPath.empty() && currentPath != currentPath.root_path())
                     {
                         pathComponents.push_back(currentPath);
                         currentPath = currentPath.parent_path();
                     }
-                    
+
                     // Process folders from root to leaf
                     std::reverse(pathComponents.begin(), pathComponents.end());
-                    
+
                     int64_t parentId{0}; // NULL parent for root folders
                     int depth{0};
-                    
-                    for (const auto& folderPath : pathComponents)
+
+                    for (const auto &folderPath : pathComponents)
                     {
                         const std::string pathStr{pathToString(folderPath)};
-                        
+
                         // Check if folder already exists
                         auto it{folderPathToId.find(pathStr)};
                         if (it == folderPathToId.end())
                         {
                             // Create new folder entry
                             const std::string folderName{folderPath.filename().string()};
-                            
-                            SqliteStatement insertStmt{m_db, 
+
+                            SqliteStatement insertStmt{m_db,
                                 "INSERT INTO VirtualFolders (parent_id, folder_name, full_path, depth, last_updated) "
                                 "VALUES (?, ?, ?, ?, ?);"};
-                            
+
                             if (parentId == 0)
                             {
                                 insertStmt.addParam(nullptr); // NULL parent
@@ -1523,18 +1538,17 @@ namespace jucyaudio
                             {
                                 insertStmt.addParam(parentId);
                             }
-                            
+
                             insertStmt.addParam(folderName);
                             insertStmt.addParam(pathStr);
                             insertStmt.addParam(depth);
                             insertStmt.addParam(std::chrono::system_clock::now().time_since_epoch().count());
-                            
+
                             if (!insertStmt.execute())
                             {
-                                return DbResult::failure(DbResultStatus::ErrorDB, 
-                                    std::format("Failed to insert folder: {}", pathStr));
+                                return DbResult::failure(DbResultStatus::ErrorDB, std::format("Failed to insert folder: {}", pathStr));
                             }
-                            
+
                             const auto folderId{m_db.getLastInsertRowId()};
                             folderPathToId[pathStr] = folderId;
                             parentId = folderId;
@@ -1543,23 +1557,22 @@ namespace jucyaudio
                         {
                             parentId = it->second;
                         }
-                        
+
                         depth++;
                     }
-                    
+
                     // Update track with its immediate parent folder ID
                     if (parentId > 0)
                     {
-                        SqliteStatement updateTrackStmt{m_db, 
-                            "UPDATE Tracks SET virtual_folder_id = ? WHERE track_id = ?;"};
+                        SqliteStatement updateTrackStmt{m_db, "UPDATE Tracks SET virtual_folder_id = ? WHERE track_id = ?;"};
                         updateTrackStmt.addParam(parentId);
                         updateTrackStmt.addParam(trackId);
-                        
+
                         if (!updateTrackStmt.execute())
                         {
                             spdlog::warn("Failed to update track {} with virtual folder", trackId);
                         }
-                        
+
                         // Update direct statistics for the immediate parent folder
                         SqliteStatement updateStatsStmt{m_db,
                             "UPDATE VirtualFolders SET "
@@ -1570,30 +1583,29 @@ namespace jucyaudio
                         updateStatsStmt.addParam(parentId);
                         updateStatsStmt.execute();
                     }
-                    
+
                     processedTracks++;
-                    
+
                     // Report progress
                     if (progressCallback && (processedTracks % 100 == 0 || processedTracks == totalTracks))
                     {
                         float progress{static_cast<float>(processedTracks) / static_cast<float>(totalTracks)};
-                        progressCallback(progress, 
-                            std::format("Processing track {} of {}", processedTracks, totalTracks));
+                        progressCallback(progress, std::format("Processing track {} of {}", processedTracks, totalTracks));
                     }
                 }
-                
+
                 // Now calculate total statistics (including subfolders)
                 // This needs to be done bottom-up
                 if (progressCallback)
                 {
                     progressCallback(0.9f, "Calculating folder statistics...");
                 }
-                
+
                 // Get max depth
                 SqliteStatement maxDepthStmt{m_db, "SELECT MAX(depth) FROM VirtualFolders;"};
                 maxDepthStmt.getNextResult();
                 const int maxDepth{static_cast<int>(maxDepthStmt.getInt64(0))};
-                
+
                 // Process from deepest level up to root
                 for (int currentDepth{maxDepth}; currentDepth >= 0; --currentDepth)
                 {
@@ -1607,35 +1619,34 @@ namespace jucyaudio
                         "   WHERE child.parent_id = parent.folder_id), 0) "
                         "WHERE parent.depth = ?;"};
                     updateTotalsStmt.addParam(currentDepth);
-                    
+
                     if (!updateTotalsStmt.execute())
                     {
                         spdlog::warn("Failed to update totals for depth {}", currentDepth);
                     }
                 }
-                
+
                 // Commit transaction
                 if (!transaction.commit())
                 {
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit transaction");
                 }
-                
+
                 if (progressCallback)
                 {
                     progressCallback(1.0f, "Virtual folder building completed");
                 }
-                
+
                 // Report summary
                 SqliteStatement folderCountStmt{m_db, "SELECT COUNT(*) FROM VirtualFolders;"};
                 folderCountStmt.getNextResult();
                 const int folderCount{static_cast<int>(folderCountStmt.getInt64(0))};
-                
-                spdlog::info("Virtual folder building completed: {} folders created from {} tracks", 
-                    folderCount, totalTracks);
-                
+
+                spdlog::info("Virtual folder building completed: {} folders created from {} tracks", folderCount, totalTracks);
+
                 return DbResult::success();
             }
-            catch (const std::exception& e)
+            catch (const std::exception &e)
             {
                 spdlog::error("Exception during virtual folder building: {}", e.what());
                 transaction.rollback();
@@ -1646,7 +1657,7 @@ namespace jucyaudio
         std::vector<VirtualFolderInfo> SqliteTrackDatabase::getVirtualFolderChildren(int64_t parentId) const
         {
             std::vector<VirtualFolderInfo> children;
-            
+
             if (!isOpen())
             {
                 spdlog::error("Database not open in getVirtualFolderChildren");
@@ -1654,22 +1665,20 @@ namespace jucyaudio
             }
 
             SqliteStatement stmt{m_db};
-            
+
             if (parentId == -1)
             {
                 // Get root folders
-                stmt.bindStatement(
-                    "SELECT folder_id, parent_id, folder_name, full_path, depth, "
-                    "direct_track_count, total_track_count, direct_size_bytes, total_size_bytes "
-                    "FROM VirtualFolders WHERE parent_id IS NULL ORDER BY folder_name COLLATE NOCASE;");
+                stmt.bindStatement("SELECT folder_id, parent_id, folder_name, full_path, depth, "
+                                   "direct_track_count, total_track_count, direct_size_bytes, total_size_bytes "
+                                   "FROM VirtualFolders WHERE parent_id IS NULL ORDER BY folder_name COLLATE NOCASE;");
             }
             else
             {
                 // Get children of specific folder
-                stmt.bindStatement(
-                    "SELECT folder_id, parent_id, folder_name, full_path, depth, "
-                    "direct_track_count, total_track_count, direct_size_bytes, total_size_bytes "
-                    "FROM VirtualFolders WHERE parent_id = ? ORDER BY folder_name COLLATE NOCASE;");
+                stmt.bindStatement("SELECT folder_id, parent_id, folder_name, full_path, depth, "
+                                   "direct_track_count, total_track_count, direct_size_bytes, total_size_bytes "
+                                   "FROM VirtualFolders WHERE parent_id = ? ORDER BY folder_name COLLATE NOCASE;");
                 stmt.addParam(parentId);
             }
 
@@ -1685,7 +1694,7 @@ namespace jucyaudio
                 info.totalTrackCount = static_cast<int>(stmt.getInt64(6));
                 info.directSizeBytes = stmt.getInt64(7);
                 info.totalSizeBytes = stmt.getInt64(8);
-                
+
                 children.push_back(info);
             }
 
@@ -1718,7 +1727,7 @@ namespace jucyaudio
                 info.totalTrackCount = static_cast<int>(stmt.getInt64(6));
                 info.directSizeBytes = stmt.getInt64(7);
                 info.totalSizeBytes = stmt.getInt64(8);
-                
+
                 return info;
             }
 
@@ -1733,8 +1742,7 @@ namespace jucyaudio
                 return std::nullopt;
             }
 
-            SqliteStatement stmt{m_db,
-                "SELECT total_track_count FROM VirtualFolders WHERE folder_id = ?;"};
+            SqliteStatement stmt{m_db, "SELECT total_track_count FROM VirtualFolders WHERE folder_id = ?;"};
             stmt.addParam(folderId);
 
             if (stmt.getNextResult())
@@ -1750,9 +1758,9 @@ namespace jucyaudio
             // Use the existing getTracks method with virtualFolderId filter
             TrackQueryArgs args;
             args.virtualFolderId = folderId;
-            args.usePaging = false;  // Get all tracks in the folder
+            args.usePaging = false; // Get all tracks in the folder
             args.sortBy = {{.columnName = "title", .descending = false}};
-            
+
             return getTracks(args);
         }
 

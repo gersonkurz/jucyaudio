@@ -12,6 +12,7 @@
 #include <Database/Nodes/BaseNode.h>
 #include <Database/Nodes/WorkingSetsOverview.h>
 #include <Utils/AssortedUtils.h>
+#include <Utils/UiUtils.h>
 
 namespace jucyaudio
 {
@@ -69,9 +70,9 @@ namespace jucyaudio
             case Column_Name: // Name
                 return wsi.name;
             case Column_TrackCount: // Nr. of songs
-                return std::to_string(wsi.track_count);
+                return ui::formatStandardStringNumber(wsi.numberOfTracks);
             case Column_TotalLength: // Duration
-                return durationToString(wsi.total_duration);
+                return durationToString(wsi.totalDuration);
             default:
                 spdlog::warn("Invalid column index {} for WorkingSetsOverview", index);
                 return "";

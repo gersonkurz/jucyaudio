@@ -1,12 +1,15 @@
 #include <Database/TrackLibrary.h>
-#include <UI/WorkingSetMetaDataEditorDialog.h>
+#include <UI/EditWorkingSetMetaDataDialog.h>
 #include <Utils/AssortedUtils.h>
+#include <Utils/UiUtils.h>
 
 namespace jucyaudio
 {
     namespace ui
     {
-        WorkingSetMetaDataEditorDialog::WorkingSetMetaDataEditorDialog(const database::WorkingSetInfo &workingSetInfo, OnDialogFinished onFinishedCallback)
+        using namespace database;
+
+        EditWorkingSetMetaDataDialog::EditWorkingSetMetaDataDialog(const WorkingSetInfo &workingSetInfo, OnDialogFinished onFinishedCallback)
             : m_workingSetInfo{workingSetInfo},
               m_onFinishedCallback{std::move(onFinishedCallback)},
               m_titleLabel{"titleLabel", "Working Set Details"},
@@ -23,8 +26,8 @@ namespace jucyaudio
             m_nameEditor.setSelectAllWhenFocused(true);
 
             // Statistics
-            std::string statsText = "Tracks: " + std::to_string(m_workingSetInfo.track_count) + "\n" +
-                                    "Duration: " + durationToString(m_workingSetInfo.total_duration) + "\n" +
+            std::string statsText = "Tracks: " + formatStandardStringNumber(m_workingSetInfo.numberOfTracks) + "\n" +
+                                    "Duration: " + durationToString(m_workingSetInfo.totalDuration) + "\n" +
                                     "Created: " + timestampToString(m_workingSetInfo.timestamp);
             m_statsLabel.setText("Statistics:", juce::dontSendNotification);
             m_statsValueLabel.setText(statsText, juce::dontSendNotification);
@@ -54,12 +57,12 @@ namespace jucyaudio
             setSize(300, 220);  // Slightly taller to accommodate title
         }
 
-        void WorkingSetMetaDataEditorDialog::paint(juce::Graphics &g)
+        void EditWorkingSetMetaDataDialog::paint(juce::Graphics &g)
         {
             g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
         }
 
-        void WorkingSetMetaDataEditorDialog::resized()
+        void EditWorkingSetMetaDataDialog::resized()
         {
             auto bounds = getLocalBounds().reduced(10);
             
@@ -83,7 +86,7 @@ namespace jucyaudio
             m_cancelButton.setBounds(buttonArea.removeFromRight(80));
         }
         
-        void WorkingSetMetaDataEditorDialog::parentHierarchyChanged()
+        void EditWorkingSetMetaDataDialog::parentHierarchyChanged()
         {
             if (isShowing() && !isTimerRunning())
             {
@@ -92,7 +95,7 @@ namespace jucyaudio
             }
         }
         
-        void WorkingSetMetaDataEditorDialog::timerCallback()
+        void EditWorkingSetMetaDataDialog::timerCallback()
         {
             stopTimer();
             if (auto* dialogWindow = findParentComponentOfClass<juce::DialogWindow>())
@@ -109,7 +112,7 @@ namespace jucyaudio
             }
         }
 
-        void WorkingSetMetaDataEditorDialog::saveChanges()
+        void EditWorkingSetMetaDataDialog::saveChanges()
         {
             const auto newName = m_nameEditor.getText().toStdString();
             if (newName.empty() || newName == m_workingSetInfo.name)
@@ -118,7 +121,7 @@ namespace jucyaudio
                 return;
             }
 
-            if (database::theTrackLibrary.getWorkingSetManager().renameWorkingSet(m_workingSetInfo.id, newName))
+            if (theTrackLibrary.getWorkingSetManager().renameWorkingSet(m_workingSetInfo.id, newName))
             {
                 closeDialog(true);
             }
@@ -128,7 +131,7 @@ namespace jucyaudio
             }
         }
 
-        void WorkingSetMetaDataEditorDialog::closeDialog(bool changed)
+        void EditWorkingSetMetaDataDialog::closeDialog(bool changed)
         {
             if (m_onFinishedCallback)
             {

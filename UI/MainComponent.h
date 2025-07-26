@@ -110,6 +110,7 @@ namespace jucyaudio
             void showBadFilesDialog(const std::vector<TrackInfo>& badFiles);
 
             void onEditWorkingSetMetadata(INavigationNode *node);
+            void onEditMixMetadata(INavigationNode *node);
 
             audio::AudioLibrary m_audioLibrary;
             juce::ApplicationCommandManager &m_commandManager;

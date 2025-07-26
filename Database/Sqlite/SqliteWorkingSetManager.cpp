@@ -46,8 +46,8 @@ namespace
         }
         col++;
 
-        info.track_count = stmt.getInt64(col++);
-        info.total_duration = durationFromInt64(stmt.getInt64(col++));
+        info.numberOfTracks = stmt.getInt64(col++);
+        info.totalDuration = durationFromInt64(stmt.getInt64(col++));
         return info;
     }
 } // namespace
@@ -345,7 +345,7 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             return false;
         }
 
-        bool SqliteWorkingSetManager::removeWorkingSets(const std::vector<WorkingSetId>& workingSetIds)
+        bool SqliteWorkingSetManager::removeWorkingSets(const std::vector<WorkingSetId> &workingSetIds)
         {
             if (SqliteTransaction transaction{m_db})
             {

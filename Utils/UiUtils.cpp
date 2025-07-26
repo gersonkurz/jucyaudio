@@ -31,6 +31,8 @@ namespace jucyaudio
                 return "Details";
             case DataAction::EditWorkingSetMetadata:
                 return "Edit Working-Set Metadata";
+            case DataAction::EditMixMetadata:
+                return "Edit Mix Metadata";
             case DataAction::RemoveTracks:
                 return "Remove Tracks";
             case DataAction::RunBpmAnalysis:

@@ -56,6 +56,7 @@ namespace jucyaudio
             // @return True if all specified mixes were successfully removed, false otherwise.
             virtual bool removeMixes(const std::vector<MixId> &mixIds) const = 0;
             
+            virtual bool renameMix(MixId mixId, std::string_view name) const = 0;
 
             // @brief Creates a new mix based on an ordered list of track IDs using an automatic mixing logic
             //        (e.g., sequential with predefined crossfades) and saves it to the database.

@@ -11,12 +11,13 @@
 #include <UI/ColumnConfiguratorDialog.h>
 #include <UI/CreateMixDialogComponent.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
+#include <UI/EditWorkingSetMetaDataDialog.h>
+#include <UI/EditMixMetaDataDialog.h>
 #include <UI/ILongRunningTask.h>
 #include <UI/MainComponent.h>
 #include <UI/MarkerEditDialog.h>
 #include <UI/ScanDialogComponent.h>
 #include <UI/TaskDialog.h>
-#include <UI/WorkingSetMetaDataEditorDialog.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
 #include <algorithm>
@@ -36,7 +37,7 @@ namespace jucyaudio
 
         // @brief This is the last-known view type FOR MIXES ONLY
         ui::MainViewType lastKnownViewTypeForMixes{ui::MainViewType::MixEditor};
-    }
+    } // namespace
 
     namespace ui
     {
@@ -767,6 +768,9 @@ namespace jucyaudio
             case DataAction::EditWorkingSetMetadata:
                 onEditWorkingSetMetadata(node);
                 break;
+            case DataAction::EditMixMetadata:
+                onEditMixMetadata(node);
+                break;
             case DataAction::RunBpmAnalysis:
                 onRunBpmAnalysis(node);
                 break;
@@ -1321,7 +1325,7 @@ namespace jucyaudio
                 const auto wsInfo = wsNode->getWorkingSetInfo();
 
                 node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid during metadata editing
-                auto *dialog = new WorkingSetMetaDataEditorDialog{wsInfo,
+                auto *dialog = new EditWorkingSetMetaDataDialog{wsInfo,
                     [this, node](bool nameChanged, std::string_view newName)
                     {
                         if (nameChanged)
@@ -1334,6 +1338,38 @@ namespace jucyaudio
                 juce::DialogWindow::LaunchOptions launchOptions;
                 launchOptions.content.setOwned(dialog);
                 launchOptions.dialogTitle = "Working Set Details";
+                launchOptions.componentToCentreAround = this;
+                launchOptions.escapeKeyTriggersCloseButton = true;
+                launchOptions.resizable = false;
+                launchOptions.launchAsync();
+            }
+            else
+            {
+                // Handle other node types here if needed in the future
+                m_statusPanel.setStatusMessage("Details not available for this item.", true);
+            }
+        }
+
+        void MainComponent::onEditMixMetadata(INavigationNode *node)
+        {
+            if (auto *mixNode = dynamic_cast<MixNode *>(node))
+            {
+                const auto mixInfo = mixNode->getMixInfo();
+
+                node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid during metadata editing
+                auto *dialog = new EditMixMetaDataDialog{mixInfo,
+                    [this, node](bool nameChanged, std::string_view newName)
+                    {
+                        if (nameChanged)
+                        {
+                            m_navigationTree.onNodeRenamed(node, newName);
+                        }
+                        node->release(REFCOUNT_DEBUG_ARGS); // Release the node after editing
+                    }};
+
+                juce::DialogWindow::LaunchOptions launchOptions;
+                launchOptions.content.setOwned(dialog);
+                launchOptions.dialogTitle = "Mix Details";
                 launchOptions.componentToCentreAround = this;
                 launchOptions.escapeKeyTriggersCloseButton = true;
                 launchOptions.resizable = false;

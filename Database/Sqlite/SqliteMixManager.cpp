@@ -19,7 +19,7 @@ namespace
     void envelopePointToJson(json &j, const EnvelopePoint &ep)
     {
         j = json{{"time_ms", ep.time.count()}, // store as integer (milliseconds)
-                 {"volume", ep.volume}};
+            {"volume", ep.volume}};
     }
 
     // from_json
@@ -207,7 +207,8 @@ FROM Mixes m
                     mixTracks.emplace_back(mixTrackFromStatement(stmt));
                     return true;
                 },
-                "SELECT * FROM MixTracks WHERE mix_id=? AND is_active = 1 ORDER BY order_in_mix ASC", mixId);
+                "SELECT * FROM MixTracks WHERE mix_id=? AND is_active = 1 ORDER BY order_in_mix ASC",
+                mixId);
             return mixTracks;
         }
 
@@ -267,19 +268,25 @@ FROM Mixes m
                 if (mixInfo.mixId)
                 {
                     if (!transaction.execute("DELETE FROM MixTracks WHERE mix_id = ?;", mixInfo.mixId) ||
-                        !transaction.execute("UPDATE Mixes SET name=?, timestamp=?, track_count=?, total_length=? WHERE mix_id=?", mixInfo.name,
-                                             timestampToInt64(mixInfo.timestamp), mixInfo.numberOfTracks,
-                                             durationToInt64(mixInfo.totalDuration), mixInfo.mixId))
+                        !transaction.execute("UPDATE Mixes SET name=?, timestamp=?, track_count=?, total_length=? WHERE mix_id=?",
+                            mixInfo.name,
+                            timestampToInt64(mixInfo.timestamp),
+                            mixInfo.numberOfTracks,
+                            durationToInt64(mixInfo.totalDuration),
+                            mixInfo.mixId))
                     {
                         return transaction.rollback();
                     }
                 }
                 else
                 {
-                    if (!transaction.execute("INSERT INTO Mixes (name, timestamp, track_count, total_length, source_ws_id) VALUES (?, ?, ?, ?, ?)", 
-                                             mixInfo.name, timestampToInt64(mixInfo.timestamp), mixInfo.numberOfTracks, 
-                                             durationToInt64(mixInfo.totalDuration), mixInfo.source_ws_id))
-                    {   
+                    if (!transaction.execute("INSERT INTO Mixes (name, timestamp, track_count, total_length, source_ws_id) VALUES (?, ?, ?, ?, ?)",
+                            mixInfo.name,
+                            timestampToInt64(mixInfo.timestamp),
+                            mixInfo.numberOfTracks,
+                            durationToInt64(mixInfo.totalDuration),
+                            mixInfo.source_ws_id))
+                    {
                         return transaction.rollback();
                     }
                     mixInfo.mixId = m_db.getLastInsertRowId(); // Get the new mix ID
@@ -289,8 +296,9 @@ FROM Mixes m
                 for (auto &track : tracks)
                 {
                     track.mixId = mixInfo.mixId;
-                    SqliteStatement stmt_insert{m_db, "INSERT INTO MixTracks (mix_id,track_id,order_in_mix,envelopePoints,mix_start_time, mix_end_time, is_active) "
-                                                      "VALUES (?,?,?,?,?,?,?)"};
+                    SqliteStatement stmt_insert{m_db,
+                        "INSERT INTO MixTracks (mix_id,track_id,order_in_mix,envelopePoints,mix_start_time, mix_end_time, is_active) "
+                        "VALUES (?,?,?,?,?,?,?)"};
                     bindMixTrackToStatement(stmt_insert, track);
                     if (!stmt_insert.execute())
                     {
@@ -361,14 +369,14 @@ FROM Mixes m
                 if (status == "New" && source_ws_id.has_value())
                 {
                     // 3a. Identify all tracks in the mix up to the last active track
-                    SqliteStatement stmt_prune{m_db, 
+                    SqliteStatement stmt_prune{m_db,
                         "SELECT track_id FROM MixTracks WHERE mix_id = ? AND order_in_mix <= "
                         "(SELECT MAX(order_in_mix) FROM MixTracks WHERE mix_id = ? AND is_active = 1)"};
                     stmt_prune.addParam(mixId);
                     stmt_prune.addParam(mixId);
 
                     std::vector<TrackId> tracksToPrune;
-                    while(stmt_prune.getNextResult())
+                    while (stmt_prune.getNextResult())
                     {
                         tracksToPrune.push_back(stmt_prune.getInt64(0));
                     }
@@ -409,10 +417,10 @@ FROM Mixes m
         }
 
         bool SqliteMixManager::createAndSaveAutoMix(const std::vector<TrackInfo> &trackInfos,
-                                                    /*in/out*/ MixInfo &mixInfo,
-                                                    /*out*/ std::vector<MixTrack> &resultingTracks,
-                                                    WorkingSetId source_ws_id,
-                                                    const Duration_t defaultCrossfadeDuration) const
+            /*in/out*/ MixInfo &mixInfo,
+            /*out*/ std::vector<MixTrack> &resultingTracks,
+            WorkingSetId source_ws_id,
+            const Duration_t defaultCrossfadeDuration) const
         {
             assert(resultingTracks.empty() && "resultingTracks should be empty before creating a new mix");
             assert(!trackInfos.empty() && "trackInfos should not be empty when creating a new mix");
@@ -432,8 +440,10 @@ FROM Mixes m
                 // check track is longer than defaultCrossfadeDuration seconds - otherwise it's not suitable for mixing
                 if (trackInfo.duration < minimumExpectedSongLength)
                 {
-                    spdlog::debug("Track {} ({}) is only {} long: too short for mixing, skipping", trackInfo.trackId, pathToString(trackInfo.filepath),
-                                  durationToString(trackInfo.duration));
+                    spdlog::debug("Track {} ({}) is only {} long: too short for mixing, skipping",
+                        trackInfo.trackId,
+                        pathToString(trackInfo.filepath),
+                        durationToString(trackInfo.duration));
                     continue;
                 }
 
@@ -474,5 +484,19 @@ FROM Mixes m
             // ok, this is the definition; store it in the database
             return createOrUpdateMix(mixInfo, resultingTracks);
         }
+        bool SqliteMixManager::renameMix(MixId mixId, std::string_view name) const
+        {
+            if (SqliteTransaction transaction{m_db})
+            {
+                if (transaction.execute("UPDATE Mixes SET name=? WHERE mix_id=?;", name, mixId))
+                {
+                    return transaction.commit();
+                }
+                return transaction.commit();
+            }
+            return false;
+        }
+
+
     } // namespace database
 } // namespace jucyaudio

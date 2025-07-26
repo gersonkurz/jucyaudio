@@ -206,6 +206,7 @@ namespace jucyaudio
             CreateMix,              ///< Create a new DJ mix from selected tracks
             ShowDetails,            ///< Display detailed information in a separate view
             EditWorkingSetMetadata, ///< Open metadata editor for the item
+            EditMixMetadata,        ///< Open metadata editor for the item
             RemoveTracks,           ///< Remove selected tracks from a mix or working set
             Delete,                 ///< Delete the selected working set
             ExportMix,              ///< Export mix to audio file
@@ -227,22 +228,6 @@ namespace jucyaudio
         {
             TagId id;         ///< Unique database identifier for the tag
             std::string name; ///< Human-readable tag name for display
-        };
-
-        /**
-         * @brief Complete information about a working set
-         * @details Working sets are user-defined collections of tracks organized
-         *          for specific purposes (e.g., "Workout Music", "Party Playlist").
-         *          They provide quick access to frequently used track combinations.
-         */
-        struct WorkingSetInfo
-        {
-            WorkingSetId id;                      ///< Unique database identifier
-            std::string name;                     ///< User-defined name for the working set
-            Timestamp_t timestamp;                ///< Creation or last modification time
-            int64_t track_count;                  ///< Number of tracks in the working set
-            Duration_t total_duration;            ///< Combined duration of all tracks
-            std::vector<SortOrderInfo> sortOrder; ///< Saved sort order for this working set
         };
 
     } // namespace database

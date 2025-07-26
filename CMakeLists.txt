@@ -303,11 +303,11 @@ target_sources(jucyaudio PRIVATE
     UI/MixTrackComponent.h
     UI/TimelineComponent.cpp
     UI/TimelineComponent.h
-    UI/WorkingSetMetaDataEditorDialog.cpp
-    UI/WorkingSetMetaDataEditorDialog.h
+    "UI/EditWorkingSetMetaDataDialog.cpp"
+    "UI/EditWorkingSetMetaDataDialog.h"
     UI/MarkerEditDialog.cpp
     UI/MarkerEditDialog.h
-  "UI/NavigationTree.cpp" "UI/NavigationTree.h" )
+  "UI/NavigationTree.cpp" "UI/NavigationTree.h"  "UI/EditMixMetaDataDialog.cpp" "UI/EditMixMetaDataDialog.h" "Database/Includes/WorkingSetInfo.h")
 
 # Add Windows-specific manifest
 if(WIN32)
