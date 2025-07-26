@@ -2,6 +2,7 @@
 #include <UI/DataViewComponent.h>
 #include <UI/MainComponent.h>
 #include <Utils/UiUtils.h>
+#include <spdlog/spdlog.h>
 
 namespace jucyaudio
 {
@@ -9,8 +10,27 @@ namespace jucyaudio
     {
         using namespace database; // For convenience, we use the database namespace here
 
-        DataViewComponent::DataViewComponent()
-            : m_tableListBox{juce::String{}, this}
+        void ScalableTableListBox::mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel)
+        {
+            if (event.mods.isCommandDown())
+            {
+                // Forward to parent for scaling
+                if (auto *parent = getParentComponent())
+                {
+                    parent->mouseWheelMove(event.getEventRelativeTo(parent), wheel);
+                }
+            }
+            else
+            {
+                // Normal scrolling
+                TableListBox::mouseWheelMove(event, wheel);
+            }
+        }
+
+
+        DataViewComponent::DataViewComponent(MainComponent &mainComponent)
+            : m_tableListBox{juce::String{}, this},
+              m_mainComponent{mainComponent}
         {
             addAndMakeVisible(m_tableListBox);
             m_tableListBox.setColour(juce::ListBox::outlineColourId, juce::Colours::grey);
@@ -18,8 +38,12 @@ namespace jucyaudio
             m_tableListBox.setHeaderHeight(30);
             m_tableListBox.setMultipleSelectionEnabled(true);
             
+            // Enable mouse events for drag detection
+            m_tableListBox.setInterceptsMouseClicks(true, true);
+            m_tableListBox.setMouseClickGrabsKeyboardFocus(true);
+
             // Table will forward Ctrl+wheel events to us
-            
+
             updateFontSize();
             // startTimer(2000);
         }
@@ -44,7 +68,7 @@ namespace jucyaudio
         {
             m_tableListBox.setBounds(getLocalBounds());
         }
-        
+
         void DataViewComponent::mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel)
         {
             // Check if Ctrl (or Cmd on Mac) is held
@@ -59,9 +83,9 @@ namespace jucyaudio
                 {
                     m_fontScale = juce::jmax(m_fontScale - FONT_SCALE_STEP, MIN_FONT_SCALE);
                 }
-                
+
                 spdlog::info("DataView: Font scale changed to {:.1f}x", m_fontScale);
-                
+
                 updateFontSize();
                 m_tableListBox.updateContent();
                 m_tableListBox.repaint();
@@ -72,18 +96,19 @@ namespace jucyaudio
                 Component::mouseWheelMove(event, wheel);
             }
         }
-        
+
         void DataViewComponent::updateFontSize()
         {
             const int baseRowHeight = 22;
             const int scaledRowHeight = static_cast<int>(baseRowHeight * m_fontScale);
             m_tableListBox.setRowHeight(scaledRowHeight);
-            
+
             // Also scale the header height
             const int baseHeaderHeight = 30;
             const int scaledHeaderHeight = static_cast<int>(baseHeaderHeight * m_fontScale);
             m_tableListBox.setHeaderHeight(scaledHeaderHeight);
         }
+        
 
         void DataViewComponent::setCurrentNode(INavigationNode *node, bool refresh)
         {
@@ -132,13 +157,13 @@ namespace jucyaudio
                     // the columnID here is a) one-based, not zero-based, and b) it really is not what *we* mean with our column index
                     m_tableListBox.getHeader().addColumn(dataColumn.column->name, columnIdCounter++, width, 50, -1, columnFlags);
                 }
-                
+
                 // Apply saved sort order if available
                 const auto savedSortOrder = m_currentNode->getCurrentSortOrder();
                 if (!savedSortOrder.empty())
                 {
                     // Find the column index for the first sort order
-                    const auto& firstSort = savedSortOrder[0];
+                    const auto &firstSort = savedSortOrder[0];
                     for (size_t i = 0; i < m_currentDataColumns.size(); ++i)
                     {
                         if (m_currentDataColumns[i].column->sqlId == firstSort.columnName)
@@ -148,10 +173,11 @@ namespace jucyaudio
                             // JUCE uses 'isForwards' which means ascending when true
                             const bool isForwards = !firstSort.descending;
                             m_tableListBox.getHeader().setSortColumnId(columnId, isForwards);
-                            spdlog::info("Applied saved sort order: column '{}' {} (descending={}, isForwards={})", 
-                                        firstSort.columnName, 
-                                        firstSort.descending ? "descending" : "ascending",
-                                        firstSort.descending, isForwards);
+                            spdlog::info("Applied saved sort order: column '{}' {} (descending={}, isForwards={})",
+                                firstSort.columnName,
+                                firstSort.descending ? "descending" : "ascending",
+                                firstSort.descending,
+                                isForwards);
                             break;
                         }
                     }
@@ -221,10 +247,8 @@ namespace jucyaudio
             return result;
         }
 
-        
-
-        void DataViewComponent::paintRowBackground(juce::Graphics &g, int rowNumber, [[maybe_unused]] int width, [[maybe_unused]] int height,
-                                                   bool rowIsSelected)
+        void DataViewComponent::paintRowBackground(
+            juce::Graphics &g, int rowNumber, [[maybe_unused]] int width, [[maybe_unused]] int height, bool rowIsSelected)
         {
             auto &lf = getLookAndFeel();
             if (rowIsSelected)
@@ -294,8 +318,8 @@ namespace jucyaudio
             g.drawText(textToDisplay, 2, 0, width - 4, height, justification, true);
             const auto end{std::chrono::high_resolution_clock::now()};
             const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
-            //if (duration.count() > 100)
-            //    spdlog::info("DataViewComponent::paintCell for row {} took {} us", rowNumber, duration.count());
+            // if (duration.count() > 100)
+            //     spdlog::info("DataViewComponent::paintCell for row {} took {} us", rowNumber, duration.count());
         }
 
         void DataViewComponent::sortOrderChanged(int newSortColumnId, bool isForwards)
@@ -329,6 +353,9 @@ namespace jucyaudio
 
         void DataViewComponent::cellClicked(int rowNumber, [[maybe_unused]] int columnId, const juce::MouseEvent &e)
         {
+            spdlog::info("DataViewComponent::cellClicked - row: {}, column: {}, position: ({}, {})", 
+                        rowNumber, columnId, e.position.x, e.position.y);
+            
             if (e.mods.isRightButtonDown())
             {
                 const auto &availableActions{m_currentNode->getRowActions(static_cast<RowIndex_t>(rowNumber))};
@@ -365,6 +392,32 @@ namespace jucyaudio
                     m_onRowActionRequested(static_cast<RowIndex_t>(rowNumber), actionToExecute, e.getScreenPosition());
                 }
             }
+        }
+
+        juce::var DataViewComponent::getDragSourceDescription(const juce::SparseSet<int>& selectedRows)
+        {
+            spdlog::info("DataViewComponent::getDragSourceDescription called with {} selected rows", 
+                        selectedRows.size());
+            
+            // Check if we're in the right context for drag & drop
+            bool inMixView = m_mainComponent.isTrackEditorInMixView();
+            spdlog::info("isTrackEditorInMixView returned: {}", inMixView);
+            
+            if (!inMixView)
+            {
+                spdlog::info("Not in mix track editor view, returning empty drag description");
+                return {};
+            }
+            
+            // For now, just return a simple description
+            if (selectedRows.size() > 0)
+            {
+                int firstRow = selectedRows[0];
+                spdlog::info("Creating drag description for row {}", firstRow);
+                return juce::String("MixTrackDrag:") + juce::String(firstRow);
+            }
+            
+            return {};
         }
 
     } // namespace ui

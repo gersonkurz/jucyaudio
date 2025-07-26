@@ -61,6 +61,10 @@ namespace jucyaudio
 
             // Method called by DividerComponent during drag
             void updateNavPanelWidthFromDrag(int originalNavPanelWidthAtDragStart, int dragDeltaX);
+            
+            // @brief Helper method to check if we're in track editor view for a mix
+            // @return true if the current main view is MixEditor, false otherwise
+            bool isTrackEditorInMixView() const;
 
         private:
             friend class MainPlaybackAndStatusComponent;
@@ -87,8 +91,6 @@ namespace jucyaudio
             void seekToTimelinePosition(double timePosition);
             void removeTrackFromMix(TrackId trackId);
             
-            // Helper method to check if we're in track editor view for a mix
-            bool isTrackEditorInMixView() const;
 
             // menu management --------------------------------
             bool onShowScanDialog();
@@ -125,7 +127,7 @@ namespace jucyaudio
 
             MainViewType m_currentMainView{MainViewType::DataView};
             juce::Component *m_currentMainViewComponent{nullptr};
-            DataViewComponent m_dataViewComponent;
+            DataViewComponent m_dataViewComponent{*this};
             MixEditorComponent m_mixEditorComponent;
 
             DividerComponent m_verticalDivider;

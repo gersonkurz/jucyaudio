@@ -24,22 +24,7 @@ namespace jucyaudio
         public:
             using juce::TableListBox::TableListBox;
 
-            void mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel) override
-            {
-                if (event.mods.isCommandDown())
-                {
-                    // Forward to parent for scaling
-                    if (auto *parent = getParentComponent())
-                    {
-                        parent->mouseWheelMove(event.getEventRelativeTo(parent), wheel);
-                    }
-                }
-                else
-                {
-                    // Normal scrolling
-                    TableListBox::mouseWheelMove(event, wheel);
-                }
-            }
+            void mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel) override;
         };
 
         class DataViewComponent : public juce::Component, 
@@ -48,7 +33,7 @@ namespace jucyaudio
                                   private juce::Timer
         {
         public:
-            explicit DataViewComponent();
+            explicit DataViewComponent(MainComponent& mainComponent);
             ~DataViewComponent() override;
 
             void resized() override;
@@ -109,10 +94,14 @@ namespace jucyaudio
             int getColumnAutoSizeWidth(int columnId) override; // columnId is 1-based index
             void cellClicked(int rowNumber, int columnId, const juce::MouseEvent &e) override;
             void cellDoubleClicked(int rowNumber, int columnId, const juce::MouseEvent &e) override;
+            
+            // Drag & drop support
+            juce::var getDragSourceDescription(const juce::SparseSet<int>& selectedRows) override;
 
             void updateTableColumns();
 
             ScalableTableListBox m_tableListBox;
+            MainComponent& m_mainComponent;
             INavigationNode *m_currentNode{nullptr};
             std::vector<DataColumnWithIndex> m_currentDataColumns;
 
