@@ -1899,6 +1899,22 @@ namespace jucyaudio
             lastKnownViewTypeForMixes = MainViewType::DataView;
             handleNodeSelection(nullptr, true);
         }
+        
+        bool MainComponent::isTrackEditorInMixView() const
+        {
+            // We're in track editor view for a mix if:
+            // 1. We're in DataView mode (not MixEditor)
+            // 2. The current node is a specific mix (3rd level under Mixes root)
+            if (m_currentMainView != MainViewType::DataView || m_currentNode == nullptr)
+            {
+                return false;
+            }
+            
+            const auto nodePath = getNodePath(m_currentNode);
+            // Path should be: [0] = Root, [1] = Mixes, [2] = Specific Mix
+            return nodePath.size() == 3 && 
+                   nodePath[1]->getName() == getMixesRootNodeName();
+        }
 
     } // namespace ui
 } // namespace jucyaudio

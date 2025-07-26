@@ -86,6 +86,9 @@ namespace jucyaudio
             void playFileFromPosition(const juce::File &audioFile, double startPosition);
             void seekToTimelinePosition(double timePosition);
             void removeTrackFromMix(TrackId trackId);
+            
+            // Helper method to check if we're in track editor view for a mix
+            bool isTrackEditorInMixView() const;
 
             // menu management --------------------------------
             bool onShowScanDialog();
