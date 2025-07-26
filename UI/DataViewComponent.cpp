@@ -332,7 +332,7 @@ namespace jucyaudio
             if (e.mods.isRightButtonDown())
             {
                 const auto &availableActions{m_currentNode->getRowActions(static_cast<RowIndex_t>(rowNumber))};
-                const auto action{showDataActionPopup(availableActions, m_currentNode, MainViewType::MixEditor)};
+                const auto action{showDataActionPopup(availableActions, m_currentNode, getLastKnownMainViewType())};
                 if (action != DataAction::None && m_onRowActionRequested)
                 {
                     m_onRowActionRequested(static_cast<RowIndex_t>(rowNumber), action, e.getScreenPosition());

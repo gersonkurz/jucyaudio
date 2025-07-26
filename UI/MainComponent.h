@@ -30,9 +30,11 @@ namespace jucyaudio
         using namespace database;
 
 
-        MainViewType determineType(const INavigationNode *node);
+        MainViewType determineMainViewType(const INavigationNode *node);
+        MainViewType getLastKnownMainViewType();
 
         extern std::string g_strConfigFilename;
+
         class MainComponent : public juce::AudioAppComponent, public MenuPresenter, public juce::Timer, public juce::ChangeListener
         {
         public:            
@@ -62,7 +64,7 @@ namespace jucyaudio
 
         private:
             friend class MainPlaybackAndStatusComponent;
-            void handleNodeSelection(INavigationNode *selectedNode);
+            void handleNodeSelection(INavigationNode *selectedNode, bool forceDisplaySwitch = false);
             void handleFilterChange(const juce::String &newFilterText);
             void handleNodeActionFromToolbar(DataAction action);
             void handleNodeActionFromNavigationPanel(INavigationNode *selectedNode, DataAction action);
@@ -179,6 +181,12 @@ namespace jucyaudio
             void onRemoveRowsFromCurrentNode(DeleteContext *const dc, int result);
 
             void onDataActionRemoveNamedObjects(std::string_view itemTypeSingular, std::string_view itemTypePlural);
+
+            // @brief Called when you want to switch the mix-view to "Mix Editor" mode, that is: waveform view
+            void onShowMixEditor();
+
+            // @brief Called when you want to switch the mix-view to "Data View" mode, that is: table view
+            void onShowTrackEditor();
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
         };

@@ -29,20 +29,36 @@ namespace jucyaudio
 {
     using namespace database;
 
+    namespace // anonymous
+    {
+        // @brief This is the actual last-known view type, used internally
+        ui::MainViewType lastKnownViewType{ui::MainViewType::DataView};
+
+        // @brief This is the last-known view type FOR MIXES ONLY
+        ui::MainViewType lastKnownViewTypeForMixes{ui::MainViewType::MixEditor};
+    }
+
     namespace ui
     {
-        MainViewType determineType(const INavigationNode *node)
+        MainViewType getLastKnownMainViewType()
+        {
+            return lastKnownViewType;
+        }
+
+        MainViewType determineMainViewType(const INavigationNode *node)
         {
             const auto nodePath{getNodePath(node)};
             if (nodePath.size() >= 3)
             {
                 if (nodePath[1]->getName() == getMixesRootNodeName())
                 {
-                    return MainViewType::MixEditor;
+                    lastKnownViewType = lastKnownViewTypeForMixes;
+                    return lastKnownViewType;
                 }
             }
             // Add more types as needed
-            return MainViewType::DataView; // Default to DataView if no specific type matches
+            lastKnownViewType = MainViewType::DataView; // Default to DataView if no specific type matches
+            return lastKnownViewType;
         }
 
         MainComponent::MainComponent(juce::ApplicationCommandManager &commandManager)
@@ -504,36 +520,41 @@ namespace jucyaudio
             // boolean was used by PlaybackController to enable/disable play
             // button if nothing is cued.
             bool canPlaySelection = (m_currentNode != nullptr); // Simplistic: if a node is selected.
-                                                                            // More accurately: if data view has a selected row
-                                                                            // and that row represents a playable track.
+                                                                // More accurately: if data view has a selected row
+                                                                // and that row represents a playable track.
             m_playbackController.syncUIToPlaybackControllerState(canPlaySelection);
         }
 
         // --- Handler Method Stubs / Basic Logic ---
-        void MainComponent::handleNodeSelection(INavigationNode *selectedNode) // selectedNode is retained by caller (NavPanel)
+        void MainComponent::handleNodeSelection(INavigationNode *selectedNode, bool forceDisplaySwitch) // selectedNode is retained by caller (NavPanel)
         {
             const auto start{std::chrono::high_resolution_clock::now()};
-            if (m_currentNode == selectedNode)
-            {
-                if (selectedNode)
-                    selectedNode->release(REFCOUNT_DEBUG_ARGS); // Release the new one if it's
-                                                                // same as old
-                return;
-            }
-
-            if (m_currentNode)
-            {
-                m_currentNode->dataNoLongerShowing();
-                m_currentNode->release(REFCOUNT_DEBUG_ARGS);
-            }
-
             const auto currentViewType{m_currentMainView};
-            m_currentNode = selectedNode; // Takes ownership of the retained selectedNode
+            if (forceDisplaySwitch)
+            {
+                // don't change node:
+                assert(selectedNode == nullptr);
+            }
+            else
+            {
+                if (m_currentNode == selectedNode)
+                {
+                    if (selectedNode)
+                        selectedNode->release(REFCOUNT_DEBUG_ARGS); // Release the new one if it's same as old
+                    return;
+                }
+
+                if (m_currentNode)
+                {
+                    m_currentNode->dataNoLongerShowing();
+                    m_currentNode->release(REFCOUNT_DEBUG_ARGS);
+                }
+                m_currentNode = selectedNode; // Takes ownership of the retained selectedNode
+            }
 
             if (m_currentNode)
             {
-                const auto newViewType{determineType(m_currentNode)};
-
+                const auto newViewType{determineMainViewType(m_currentNode)};
                 if (currentViewType != newViewType)
                 {
                     m_currentMainViewComponent->setVisible(false);
@@ -584,7 +605,7 @@ namespace jucyaudio
                 else
                 {
                     m_dataViewComponent.setCurrentNode(m_currentNode); // DataView updates its content source
-                    m_dataViewComponent.refreshView();                             // Tell DataView to redraw
+                    m_dataViewComponent.refreshView();                 // Tell DataView to redraw
                 }
                 int64_t totalTracks = 0;
                 if (m_currentNode->getTotalTrackCount(totalTracks))
@@ -748,6 +769,12 @@ namespace jucyaudio
                 break;
             case DataAction::RunBpmAnalysis:
                 onRunBpmAnalysis(node);
+                break;
+            case DataAction::ShowMixEditor:
+                onShowMixEditor();
+                break;
+            case DataAction::ShowTrackEditor:
+                onShowTrackEditor();
                 break;
             default:
                 spdlog::error("Unsupported action '{}' for node '{}' in MainComponent::handleNodeActionFromNavigationPanel. This should not happen.",
@@ -983,7 +1010,7 @@ namespace jucyaudio
                 m_statusPanel.setStatusMessage("Operation cancelled", false);
             }
         }
-        
+
         void MainComponent::onDataActionDeleteSelectedObjects()
         {
             // TODO: determine object type better
@@ -1322,11 +1349,10 @@ namespace jucyaudio
         void MainComponent::onDataActionDelete(INavigationNode *node)
         {
             assert(node != nullptr && "Selected node should not be null in onDataActionDelete()");
-            
+
             const auto name{node->getName()};
             const auto message{std::format("Are you sure you want to delete the {} {}?", node->m_refTypeNameForSingleObject, name)};
-            const auto caption
-            {std::format("Delete {}", node->m_refTypeNameForSingleObject)};
+            const auto caption{std::format("Delete {}", node->m_refTypeNameForSingleObject)};
 
             node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid during deletion
             juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,
@@ -1336,8 +1362,7 @@ namespace jucyaudio
                 "Cancel",
                 nullptr,                             // Parent component (optional, nullptr for desktop)
                 juce::ModalCallbackFunction::create( // Callback
-                    [this, node]
-                        (int result) // Capture necessary data
+                    [this, node](int result)         // Capture necessary data
                     {
                         onDataActionDeleteConfirmed(node, result);
                     }));
@@ -1349,8 +1374,7 @@ namespace jucyaudio
             {
                 if (m_navigationTree.deleteObject(node))
                 {
-                    m_statusPanel.setStatusMessage(
-                        std::format("{} {} successfully removed.", node->m_refTypeNameForSingleObject, node->getName()));
+                    m_statusPanel.setStatusMessage(std::format("{} {} successfully removed.", node->m_refTypeNameForSingleObject, node->getName()));
                 }
                 else
                 {
@@ -1828,6 +1852,17 @@ namespace jucyaudio
             launchOptions.launchAsync();
         }
 
+        void MainComponent::onShowMixEditor()
+        {
+            lastKnownViewTypeForMixes = MainViewType::MixEditor;
+            handleNodeSelection(nullptr, true);
+        }
+
+        void MainComponent::onShowTrackEditor()
+        {
+            lastKnownViewTypeForMixes = MainViewType::DataView;
+            handleNodeSelection(nullptr, true);
+        }
 
     } // namespace ui
 } // namespace jucyaudio

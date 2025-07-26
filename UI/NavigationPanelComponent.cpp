@@ -225,7 +225,7 @@ namespace jucyaudio
                 }
 
                 const auto &availableActions{m_node->getNodeActions()};
-                const auto action{showDataActionPopup(availableActions, m_node, MainViewType::MixEditor)};
+                const auto action{showDataActionPopup(availableActions, m_node, getLastKnownMainViewType())};
                 if (action != DataAction::None && m_ownerPanel.m_onNodeAction)
                 {
                     m_ownerPanel.m_onNodeAction(m_node, action);
