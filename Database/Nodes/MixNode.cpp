@@ -45,6 +45,25 @@ namespace jucyaudio
                 children.emplace_back(new MixNode{parent, mix});
             }
         }
+        
+        const TrackInfo *MixNode::getTrackInfoForRow(RowIndex_t rowIndex) const
+        {
+            if (!m_bCacheInitialized)
+            {
+                refreshCache(false);
+            }
+            return m_mixProjectLoader.getTrackInfoForRow(rowIndex);
+        }
 
+        void MixNode::refreshCache(bool flushCache) const
+        {
+            // if the cache is invalid, or the rowIndex is out of bounds, we need to retrieve the rows
+            const auto refreshCache = !m_bCacheInitialized || flushCache;
+            if (refreshCache)
+            {
+                m_mixProjectLoader.loadMix(m_mixInfo.mixId);
+                m_bCacheInitialized = true;
+            }
+        }
     } // namespace database
 } // namespace jucyaudio

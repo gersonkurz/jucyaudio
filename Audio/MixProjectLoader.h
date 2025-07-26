@@ -50,6 +50,15 @@ namespace jucyaudio
                 return (it != m_trackInfosMap.end()) ? it->second : nullptr;
             }
 
+            const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const
+            {
+                if (rowIndex < 0 || rowIndex >= static_cast<RowIndex_t>(m_mixTracks.size()))
+                {
+                    return nullptr; // Out of bounds
+                }
+                return getTrackInfoForId(m_mixTracks[rowIndex].trackId);
+            }
+
         private:
 
             // Helper to construct the query args needed to fetch all tracks for this mix.

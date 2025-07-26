@@ -50,7 +50,7 @@ namespace jucyaudio
 
         bool SqliteDatabase::execute(std::string_view statement)
         {
-            //spdlog::debug("SqliteDatabase executing SQL: {}", statement);
+            spdlog::debug("SqliteDatabase executing SQL: {}", statement);
             char *lpszErrorMessage = nullptr;
             int rc = sqlite3_exec(m_db, statement.data(), nullptr, 0, &lpszErrorMessage);
             if (rc != SQLITE_OK)

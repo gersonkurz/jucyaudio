@@ -3,6 +3,7 @@
 // Database/Nodes/MixNode.h
 #include <Database/Nodes/LibraryNode.h>
 #include <filesystem>
+#include <Audio/MixProjectLoader.h>
 
 namespace jucyaudio
 {
@@ -29,11 +30,14 @@ namespace jucyaudio
             bool removeObjects(const std::vector<ObjectId> &objectIds) const override;
             bool deleteThisObject() override;
             void rename(std::string_view newName) override;
+            const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;            
+            void refreshCache(bool flushCache) const override;
             static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
 
         private:
             const DataActions &getNodeActions() const override;
             MixInfo m_mixInfo;
+            mutable audio::MixProjectLoader m_mixProjectLoader;
         };
     } // namespace database
 } // namespace jucyaudio

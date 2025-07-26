@@ -10,7 +10,7 @@ namespace jucyaudio
             : m_formatManager{formatManager},
               m_thumbnailCache{thumbnailCache}
         {
-            setWantsKeyboardFocus(true);  
+            setWantsKeyboardFocus(true);
         }
 
         bool TimelineComponent::keyPressed(const juce::KeyPress &key)
@@ -36,11 +36,12 @@ namespace jucyaudio
             spdlog::info("Deleting selected track from timeline");
 
             // Find which track view corresponds to the selected component
-            auto it = std::find_if(m_trackViews.begin(), m_trackViews.end(),
-                                   [this](const TrackView &view)
-                                   {
-                                       return view.component.get() == m_selectedTrack;
-                                   });
+            auto it = std::find_if(m_trackViews.begin(),
+                m_trackViews.end(),
+                [this](const TrackView &view)
+                {
+                    return view.component.get() == m_selectedTrack;
+                });
 
             if (it != m_trackViews.end())
             {
@@ -118,7 +119,7 @@ namespace jucyaudio
                 maxTimeSecs = startTime + duration;
             }
 
-            m_calculatedWidth = static_cast<int>(maxTimeSecs * m_pixelsPerSecond)  + 200;
+            m_calculatedWidth = static_cast<int>(maxTimeSecs * m_pixelsPerSecond) + 200;
             setSize(m_calculatedWidth, m_calculatedHeight);
 
             // This will trigger resized() which repositions all tracks
@@ -295,7 +296,7 @@ namespace jucyaudio
         }
         void TimelineComponent::resized()
         {
-            spdlog::info("LAYOUT_START: TimelineComponent::resized() -----------------------");
+            //spdlog::info("LAYOUT_START: TimelineComponent::resized() -----------------------");
 
             auto visibleArea = getParentComponent()->getLocalBounds();
             const int rulerHeight = 30;
@@ -324,16 +325,29 @@ namespace jucyaudio
                 const int yPos = rulerHeight + (currentLane * (trackHeight + yGap));
 
                 // Log BEFORE setting bounds
-                spdlog::info("LAYOUT_TRACK: Track {}, startTime={:.3f}s, duration={:.3f}s, startX={}, width={}, yPos={}, currentBounds=({},{},{}x{})",
-                             view.mixTrackData->trackId, startTime, trackDuration, startX, width, yPos, view.component->getX(), view.component->getY(),
-                             view.component->getWidth(), view.component->getHeight());
+                /* spdlog::info("LAYOUT_TRACK: Track {}, startTime={:.3f}s, duration={:.3f}s, startX={}, width={}, yPos={}, currentBounds=({},{},{}x{})",
+                    view.mixTrackData->trackId,
+                    startTime,
+                    trackDuration,
+                    startX,
+                    width,
+                    yPos,
+                    view.component->getX(),
+                    view.component->getY(),
+                    view.component->getWidth(),
+                    view.component->getHeight());
+                    */
 
                 view.component->setBounds(startX, yPos, width, trackHeight);
 
                 // Log AFTER setting bounds
-                spdlog::info("LAYOUT_SET: Track {}, newBounds=({},{},{}x{})", view.mixTrackData->trackId, view.component->getX(), view.component->getY(),
-                             view.component->getWidth(), view.component->getHeight());
-
+                /* spdlog::info("LAYOUT_SET: Track {}, newBounds=({},{},{}x{})",
+                    view.mixTrackData->trackId,
+                    view.component->getX(),
+                    view.component->getY(),
+                    view.component->getWidth(),
+                    view.component->getHeight());
+                    */
                 // Update lane logic
                 if ((currentLane + laneDirection) >= numLanes || (currentLane + laneDirection) < 0)
                 {
@@ -344,7 +358,7 @@ namespace jucyaudio
                     currentLane = 0;
             }
 
-            spdlog::info("LAYOUT_END: TimelineComponent::resized() finished -----------------------");
+            //spdlog::info("LAYOUT_END: TimelineComponent::resized() finished -----------------------");
         }
 
         void TimelineComponent::populateFrom(const audio::MixProjectLoader &mixLoader)
@@ -359,7 +373,7 @@ namespace jucyaudio
             {
                 if (const auto *trackInfo = mixLoader.getTrackInfoForId(mixTrack.trackId))
                 {
-                    spdlog::info("Adding track ID: {} to timeline", mixTrack.trackId);
+                    //spdlog::info("Adding track ID: {} to timeline", mixTrack.trackId);
                     TrackView view;
                     view.mixTrackData = &mixTrack;
                     view.trackInfoData = trackInfo;
@@ -411,13 +425,13 @@ namespace jucyaudio
         {
             if (m_draggingTrack == track)
             {
-                spdlog::info("TIMELINE_DRAG: Track at time {:.3f}s, draggingTrack={}", newTime, m_draggingTrack != nullptr);
+                //spdlog::info("TIMELINE_DRAG: Track at time {:.3f}s, draggingTrack={}", newTime, m_draggingTrack != nullptr);
 
                 static double lastUpdateTime = -1.0;
                 if (std::abs(newTime - lastUpdateTime) > 0.1)
                 {
                     lastUpdateTime = newTime;
-                    spdlog::info("TIMELINE_UPDATE: Significant time change to {:.3f}s", newTime);
+                    //spdlog::info("TIMELINE_UPDATE: Significant time change to {:.3f}s", newTime);
                 }
             }
         }
@@ -426,7 +440,7 @@ namespace jucyaudio
         {
             if (m_draggingTrack == track)
             {
-                spdlog::info("Timeline: Finished drag at time: {:.2f}s", finalTime);
+                //spdlog::info("Timeline: Finished drag at time: {:.2f}s", finalTime);
 
                 // Find the track data and update it
                 auto trackId = getTrackIdForComponent(track);
@@ -487,11 +501,12 @@ namespace jucyaudio
                 sortedViews.push_back(&view);
             }
 
-            std::sort(sortedViews.begin(), sortedViews.end(),
-                      [](const TrackView *a, const TrackView *b)
-                      {
-                          return a->mixTrackData->mixStartTime < b->mixTrackData->mixStartTime;
-                      });
+            std::sort(sortedViews.begin(),
+                sortedViews.end(),
+                [](const TrackView *a, const TrackView *b)
+                {
+                    return a->mixTrackData->mixStartTime < b->mixTrackData->mixStartTime;
+                });
 
             // Update orderInMix values
             for (size_t i = 0; i < sortedViews.size(); ++i)
