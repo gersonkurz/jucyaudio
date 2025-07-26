@@ -38,14 +38,26 @@ namespace jucyaudio
                 const auto end_time = std::chrono::high_resolution_clock::now();
                 const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
-                spdlog::info("Analyzed '{}' in {} ms. BPM: {:.2f}, Has Intro: {}, Has Outro: {}", 
-                    trackInfo.filepath.filename().string(), 
-                    duration.count(), 
-                    am.bpm, 
-                    am.hasIntro, 
-                    am.hasOutro);
+                // Check if analysis failed (BPM = 0 indicates failure)
+                if (am.bpm <= 0.0)
+                {
+                    spdlog::error("Failed to analyze '{}' - marking as bad format", 
+                        trackInfo.filepath.filename().string());
+                    
+                    // Mark the track as bad format so it won't be retried
+                    theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
+                }
+                else
+                {
+                    spdlog::info("Analyzed '{}' in {} ms. BPM: {:.2f}, Has Intro: {}, Has Outro: {}", 
+                        trackInfo.filepath.filename().string(), 
+                        duration.count(), 
+                        am.bpm, 
+                        am.hasIntro, 
+                        am.hasOutro);
 
-                theTrackLibrary.getTrackDatabase()->updateTrackBpm(trackInfo.trackId, am);
+                    theTrackLibrary.getTrackDatabase()->updateTrackBpm(trackInfo.trackId, am);
+                }
             }
         } // namespace background_tasks
     } // namespace database

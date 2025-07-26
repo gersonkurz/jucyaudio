@@ -230,6 +230,50 @@ The refactoring successfully addresses the architectural issues identified in Se
 - Centralized navigation state management
 - Proper memory management with reference counting
 
+## Session 8: Mix Editor Drag & Drop Implementation
+
+**Objective:** Implement drag & drop functionality for reordering tracks in mixes, ensuring both the track list and timeline views stay synchronized.
+
+**Work Done:**
+
+1. **Drag & Drop Infrastructure:**
+   - Added `DragAndDropContainer` to `DataViewComponent` for initiating drags
+   - Implemented `ScalableTableListBox` as a `DragAndDropTarget` 
+   - Added `DropIndicatorOverlay` component for visual feedback during drags
+   - Support for multi-track selection and dragging
+
+2. **Track Reordering Logic in MixProjectLoader:**
+   - Implemented `reorderTracks()` method that handles both single and multiple track moves
+   - Key innovation: When moving tracks, the system:
+     - Calculates the "hole" left by moved tracks
+     - Shifts affected tracks by this exact duration to maintain timeline
+     - Updates both `orderInMix` and temporal positions (`startTimeMs`/`endTimeMs`)
+   - Factored out `reorderSingleTrack()` for clean single-track logic
+   - Multi-track moves apply single moves sequentially with position adjustment
+
+3. **Shared MixProjectLoader Architecture:**
+   - MixNode owns the MixProjectLoader instance
+   - Both DataView and MixEditor reference the same loader
+   - Ensures both views always show consistent data
+   - No synchronization issues as there's only one source of truth
+
+4. **Background BPM Analysis Fix:**
+   - Fixed infinite retry loop for tracks with bad encoding
+   - Background analyzer now marks failed tracks as `bad_format`
+   - Prevents the same unanalyzable track from being selected repeatedly
+
+**Technical Highlights:**
+- Clean separation of concerns with drag source description containing all selected rows
+- Efficient time-shifting algorithm that only affects tracks between source and destination
+- Proper handling of edge cases (moving to first/last position, multiple selections)
+- Consistent state management through shared MixProjectLoader
+
+**Current Status:**
+- Drag & drop fully functional for single and multiple track selections
+- Track order and timeline positions update correctly in both views
+- Bad audio files no longer block the background analyzer
+- System maintains all user-defined overlaps and timing relationships
+
 ## Important Build Instructions
 
 **DO NOT BUILD** - The human will handle all builds. When making code changes:
