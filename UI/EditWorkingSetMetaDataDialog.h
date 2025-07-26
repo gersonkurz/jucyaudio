@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Database/Includes/Constants.h>
+#include <UI/MetaDataEditorDialogBase.h>
+#include <Database/Includes/WorkingSetInfo.h>
 #include <Database/TrackLibrary.h>
-#include <juce_gui_basics/juce_gui_basics.h>
 
 namespace jucyaudio
 {
@@ -17,15 +17,9 @@ namespace jucyaudio
          * This component displays statistics about a working set (track count, total duration, creation date)
          * and allows the user to rename it.
          */
-        class EditWorkingSetMetaDataDialog : public juce::Component, private juce::Timer
+        class EditWorkingSetMetaDataDialog : public MetaDataEditorDialogBase
         {
         public:
-            /**
-             * @brief Callback function type for when the dialog is closed.
-             * @param nameChanged True if the name was changed and saved, false otherwise.
-             */
-            using OnDialogFinished = std::function<void(bool nameChanged, std::string_view newName)>;
-
             /**
              * @brief Construct a new Working Set Meta Data Editor Dialog object
              *
@@ -35,32 +29,14 @@ namespace jucyaudio
             EditWorkingSetMetaDataDialog(const WorkingSetInfo &workingSetInfo, OnDialogFinished onFinishedCallback);
             ~EditWorkingSetMetaDataDialog() override = default;
 
-            void paint(juce::Graphics &g) override;
-            void resized() override;
-            void parentHierarchyChanged() override;
-            void timerCallback() override;
+        protected:
+            bool performRename(const std::string& newName) override;
+            std::string getErrorMessage() const override;
+            std::string getCurrentName() const override;
 
         private:
-            //==============================================================================
-            // Data
             WorkingSetInfo m_workingSetInfo;
-            OnDialogFinished m_onFinishedCallback;
-
-            // UI Components
-            juce::Label m_titleLabel;
-            juce::Label m_nameLabel;
-            juce::TextEditor m_nameEditor;
-
-            juce::Label m_statsLabel;
-            juce::Label m_statsValueLabel;
-
-            juce::TextButton m_saveButton;
-            juce::TextButton m_cancelButton;
-
-            // Private Methods
-            void saveChanges();
-            void closeDialog(bool changed);
-
+            
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EditWorkingSetMetaDataDialog)
         };
     } // namespace ui

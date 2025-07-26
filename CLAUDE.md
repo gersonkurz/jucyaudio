@@ -229,3 +229,10 @@ The refactoring successfully addresses the architectural issues identified in Se
 - Type-safe object management without casting
 - Centralized navigation state management
 - Proper memory management with reference counting
+
+## Important Build Instructions
+
+**DO NOT BUILD** - The human will handle all builds. When making code changes:
+1. Make the requested changes to the code
+2. Do NOT run cmake or any build commands
+3. Wait for the human to build and report any issues
