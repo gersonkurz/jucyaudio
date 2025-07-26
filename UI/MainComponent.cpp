@@ -11,8 +11,8 @@
 #include <UI/ColumnConfiguratorDialog.h>
 #include <UI/CreateMixDialogComponent.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
-#include <UI/EditWorkingSetMetaDataDialog.h>
 #include <UI/EditMixMetaDataDialog.h>
+#include <UI/EditWorkingSetMetaDataDialog.h>
 #include <UI/ILongRunningTask.h>
 #include <UI/MainComponent.h>
 #include <UI/MarkerEditDialog.h>
@@ -581,7 +581,7 @@ namespace jucyaudio
                 m_dynamicToolbar.setCurrentNode(m_currentNode); // Toolbar updates its actions
                 if (m_currentMainView == MainViewType::MixEditor)
                 {
-                    m_mixEditorComponent.loadMix(static_cast<MixNode*>(m_currentNode)); // Load the mix data
+                    m_mixEditorComponent.loadMix(static_cast<MixNode *>(m_currentNode)); // Load the mix data
 
                     // Set up playback callback
                     m_mixEditorComponent.setPlaybackCallback(
@@ -649,7 +649,7 @@ namespace jucyaudio
             {
                 m_statusPanel.setStatusMessage("Track removed from mix.", false);
                 // Refresh the mix editor to show the change
-                m_mixEditorComponent.loadMix(static_cast<MixNode*>(m_currentNode));
+                m_mixEditorComponent.loadMix(static_cast<MixNode *>(m_currentNode));
             }
             else
             {
@@ -761,7 +761,7 @@ namespace jucyaudio
                 createMix();
                 break;
             case DataAction::Delete:
-                onDataActionDeleteSelectedObjects();
+                onDataActionDelete(m_currentNode);
                 break;
             case DataAction::ExportMix:
                 onExportMix(node);
@@ -803,7 +803,7 @@ namespace jucyaudio
                 createMix();
                 break;
             case DataAction::Delete:
-                onDataActionDeleteSelectedObjects();
+                onDataActionRemoveNamedObjects("object", "objects");
                 break;
             case DataAction::RunBpmAnalysis:
                 onRunBpmAnalysisForSelectedRows();
@@ -812,7 +812,7 @@ namespace jucyaudio
                 m_statusPanel.setStatusMessage("Show details for: " + std::to_string(rowIndex), false);
                 break;
             case DataAction::RemoveTracks: // TODO: we should do this only from the data View
-                onDataActionRemoveTracks();
+                onDataActionRemoveNamedObjects("track", "tracks");
                 break;
             case DataAction::None:
             default:
@@ -1014,17 +1014,6 @@ namespace jucyaudio
             {
                 m_statusPanel.setStatusMessage("Operation cancelled", false);
             }
-        }
-
-        void MainComponent::onDataActionDeleteSelectedObjects()
-        {
-            // TODO: determine object type better
-            onDataActionRemoveNamedObjects("object", "objects");
-        }
-
-        void MainComponent::onDataActionRemoveTracks()
-        {
-            onDataActionRemoveNamedObjects("track", "tracks");
         }
 
         void MainComponent::onDataActionRemoveNamedObjects(std::string_view itemTypeSingular, std::string_view itemTypePlural)
@@ -1402,6 +1391,7 @@ namespace jucyaudio
                     [this, node](int result)         // Capture necessary data
                     {
                         onDataActionDeleteConfirmed(node, result);
+                        node->release(REFCOUNT_DEBUG_ARGS); // Release the node after deletion
                     }));
         }
 
@@ -1424,7 +1414,6 @@ namespace jucyaudio
             {
                 m_statusPanel.setStatusMessage(std::format("{} deletion cancelled.", node->m_refTypeNameForSingleObject), false);
             }
-            node->release(REFCOUNT_DEBUG_ARGS); // Release the node after deletion
         }
 
         void MainComponent::createMix()
@@ -1900,7 +1889,7 @@ namespace jucyaudio
             lastKnownViewTypeForMixes = MainViewType::DataView;
             handleNodeSelection(nullptr, true);
         }
-        
+
         bool MainComponent::isTrackEditorInMixView() const
         {
             // We're in track editor view for a mix if:
@@ -1910,11 +1899,10 @@ namespace jucyaudio
             {
                 return false;
             }
-            
+
             const auto nodePath = getNodePath(m_currentNode);
             // Path should be: [0] = Root, [1] = Mixes, [2] = Specific Mix
-            return nodePath.size() == 3 && 
-                   nodePath[1]->getName() == getMixesRootNodeName();
+            return nodePath.size() == 3 && nodePath[1]->getName() == getMixesRootNodeName();
         }
 
     } // namespace ui

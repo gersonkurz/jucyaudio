@@ -176,18 +176,12 @@ namespace jucyaudio
             
             void onDataActionDeleteConfirmed(INavigationNode *selectedNode, int result);
 
-            // @brief Called when you select one or more objects in the DataView and ask to delete them.
-            void onDataActionDeleteSelectedObjects();
-
-            // @brief Called when you select one or more tracks in the DataView and ask to remove them.
-            void onDataActionRemoveTracks();
-
             // &brief Called when you confirm the warning dialog in onDataActionRemoveTracks in order to proceed 
             // to the actual removal of the tracks from the current node / mixes from the list of mixes etc.
             void onRemoveRowsFromCurrentNode(DeleteContext *const dc, int result);
 
             void onDataActionRemoveNamedObjects(std::string_view itemTypeSingular, std::string_view itemTypePlural);
-
+            
             // @brief Called when you want to switch the mix-view to "Mix Editor" mode, that is: waveform view
             void onShowMixEditor();
 
