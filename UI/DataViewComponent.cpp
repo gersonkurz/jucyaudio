@@ -1,4 +1,6 @@
 #include <Database/Includes/INavigationNode.h>
+#include <Database/Nodes/MixNode.h>
+#include <Database/TrackLibrary.h>
 #include <UI/DataViewComponent.h>
 #include <UI/MainComponent.h>
 #include <Utils/UiUtils.h>
@@ -100,13 +102,26 @@ namespace jucyaudio
                 {
                     auto sourceRow = desc.substring(13).getIntValue();
                     auto targetRow = m_dropTargetRow;
-                    if (!m_insertAbove && targetRow >= sourceRow)
+                    
+                    // Adjust target position based on insert position
+                    if (!m_insertAbove)
                     {
                         targetRow++;
                     }
                     
+                    // If dropping after the source position, we need to adjust
+                    if (targetRow > sourceRow)
+                    {
+                        targetRow--;
+                    }
+                    
                     spdlog::info("Dropping row {} at position {}", sourceRow, targetRow);
-                    // TODO: Call reorder function in next step
+                    
+                    // Notify the parent DataViewComponent about the drop
+                    if (auto* dataView = findParentComponentOfClass<DataViewComponent>())
+                    {
+                        dataView->handleTrackReorder(sourceRow, targetRow);
+                    }
                 }
             }
             
@@ -317,9 +332,9 @@ namespace jucyaudio
             return result;
         }
 
-        std::vector<database::TrackInfo> DataViewComponent::getSelectedTracks() const
+        std::vector<TrackInfo> DataViewComponent::getSelectedTracks() const
         {
-            std::vector<database::TrackInfo> result;
+            std::vector<TrackInfo> result;
             if (m_currentNode)
             {
                 const auto selectedRows = m_tableListBox.getSelectedRows();
@@ -422,7 +437,7 @@ namespace jucyaudio
             if (dataColumnIndex >= 0 && static_cast<size_t>(dataColumnIndex) < m_currentDataColumns.size())
             {
                 const auto &columnToSortBy = m_currentDataColumns[dataColumnIndex];
-                std::vector<database::SortOrderInfo> sortOrders;
+                std::vector<SortOrderInfo> sortOrders;
                 // isForwards=true means ascending, descending=false
                 sortOrders.push_back({columnToSortBy.column->sqlId, !isForwards});
 
@@ -511,6 +526,64 @@ namespace jucyaudio
             }
             
             return {};
+        }
+        
+        void DataViewComponent::handleTrackReorder(int sourceRow, int targetRow)
+        {
+            spdlog::info("DataViewComponent::handleTrackReorder - moving row {} to position {}", sourceRow, targetRow);
+            
+            // Check if we have a current node and if it's a MixNode
+            if (!m_currentNode)
+            {
+                spdlog::error("No current node set");
+                return;
+            }
+            
+            // Try to cast to MixNode
+            if (auto* mixNode = dynamic_cast<MixNode*>(m_currentNode))
+            {
+                // Get the track ID for the source row
+                const auto* trackInfo = mixNode->getTrackInfoForRow(sourceRow);
+                if (!trackInfo)
+                {
+                    spdlog::error("Failed to get track info for row {}", sourceRow);
+                    return;
+                }
+                
+                // Get the MixProjectLoader and perform the reorder
+                auto& mixProjectLoader = const_cast<audio::MixProjectLoader&>(mixNode->getMixProjectLoader());
+                
+                // Create the track move pair
+                std::vector<std::pair<TrackId, int>> trackMoves;
+                trackMoves.emplace_back(trackInfo->trackId, targetRow);
+                
+                if (mixProjectLoader.reorderTracks(trackMoves))
+                {
+                    spdlog::info("Track reorder successful, saving to database");
+                    
+                    // Save the changes to the database
+                    if (mixProjectLoader.saveMix(theTrackLibrary.getMixManager()))
+                    {
+                        spdlog::info("Mix saved successfully");
+                        
+                        // Refresh the view to show the new order
+                        m_currentNode->refreshCache(true);
+                        refreshView();
+                    }
+                    else
+                    {
+                        spdlog::error("Failed to save mix to database");
+                    }
+                }
+                else
+                {
+                    spdlog::error("Failed to reorder tracks");
+                }
+            }
+            else
+            {
+                spdlog::error("Current node is not a MixNode");
+            }
         }
 
     } // namespace ui

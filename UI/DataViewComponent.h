@@ -135,6 +135,9 @@ namespace jucyaudio
             {
                 return getUnderlyingObjectIds(getSelectedRowIndices());
             }
+            
+            // Handle track reordering from drag & drop
+            void handleTrackReorder(int sourceRow, int targetRow);
 
         private:
             // --- juce::Timer overrides ---

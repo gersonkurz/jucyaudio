@@ -43,6 +43,11 @@ namespace jucyaudio
             {
                 return m_mixTracks;
             }
+            
+            const MixInfo& getMixInfo() const
+            {
+                return m_mixInfo;
+            }
 
             const TrackInfo *getTrackInfoForId(TrackId trackId) const
             {
@@ -58,6 +63,16 @@ namespace jucyaudio
                 }
                 return getTrackInfoForId(m_mixTracks[rowIndex].trackId);
             }
+            
+            // Reorder tracks in the mix
+            // @param trackMoves Vector of pairs where first is the track ID and second is the new position
+            // @return true if reordering was successful
+            bool reorderTracks(const std::vector<std::pair<TrackId, int>>& trackMoves);
+            
+            // Save the current mix state back to the database
+            // @param mixManager The mix manager to use for saving
+            // @return true if save was successful
+            bool saveMix(const IMixManager& mixManager) const;
 
         private:
 
@@ -72,6 +87,7 @@ namespace jucyaudio
 
         protected:
             MixId m_mixId;
+            MixInfo m_mixInfo;
             std::vector<MixTrack> m_mixTracks;
             std::vector<TrackInfo> m_trackInfos;
             std::unordered_map<TrackId, const TrackInfo *> m_trackInfosMap;

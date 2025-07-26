@@ -33,6 +33,8 @@ namespace jucyaudio
             const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;            
             void refreshCache(bool flushCache) const override;
             static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
+            
+            const audio::MixProjectLoader& getMixProjectLoader() const { return m_mixProjectLoader; }
 
         private:
             const DataActions &getNodeActions() const override;
