@@ -361,7 +361,7 @@ namespace jucyaudio
             //spdlog::info("LAYOUT_END: TimelineComponent::resized() finished -----------------------");
         }
 
-        void TimelineComponent::populateFrom(const audio::MixProjectLoader &mixLoader)
+        void TimelineComponent::populateFrom(audio::MixProjectLoader &mixLoader)
         {
             m_selectedTrack = nullptr;
             m_currentTimePosition = 0.0;
@@ -373,7 +373,8 @@ namespace jucyaudio
             {
                 if (const auto *trackInfo = mixLoader.getTrackInfoForId(mixTrack.trackId))
                 {
-                    //spdlog::info("Adding track ID: {} to timeline", mixTrack.trackId);
+                    //spdlog::info("Adding track ID: {} to timeline: {}-{}", mixTrack.trackId,
+                    //    trackInfo->artist_name, trackInfo->title);
                     TrackView view;
                     view.mixTrackData = &mixTrack;
                     view.trackInfoData = trackInfo;

@@ -11,7 +11,8 @@ namespace jucyaudio
     {
 
         MixEditorComponent::MixEditorComponent()
-            : m_timeline{m_formatManager, m_thumbnailCache}
+            : m_timeline{m_formatManager, m_thumbnailCache},
+              m_node{nullptr}
         {
             m_formatManager.registerBasicFormats();
 
@@ -59,13 +60,26 @@ namespace jucyaudio
             g.fillAll(getLookAndFeel().findColour(juce::ListBox::backgroundColourId).darker());
         }
 
-        void MixEditorComponent::loadMix(MixId mixId)
+        void MixEditorComponent::unloadMix()
         {
-            spdlog::info("Loading mix with ID: {}", mixId);
-            spdlog::info("Existing tracks size before loadMix(): {}", m_mixProjectLoader.getMixTracks().size());
-            m_mixProjectLoader.loadMix(mixId);
-            m_timeline.populateFrom(m_mixProjectLoader);
-            spdlog::info("Mix loaded with {} tracks", m_mixProjectLoader.getMixTracks().size());
+            if (m_node)
+            {
+                m_node->release(REFCOUNT_DEBUG_ARGS);
+                m_node = nullptr;
+            }
+        }
+
+        void MixEditorComponent::loadMix(database::MixNode *node)
+        {
+            assert(node != nullptr && "MixNode should not be null in loadMix()");
+            if (m_node)
+            {
+                m_node->release(REFCOUNT_DEBUG_ARGS); // Release previous node if any
+            }
+            m_node = node; // Take ownership of the new node
+            node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid
+            node->refreshCache(false);
+            m_timeline.populateFrom(node->getMixProjectLoader());
         }
 
         void MixEditorComponent::resized()
@@ -78,10 +92,15 @@ namespace jucyaudio
         // Add new methods to MixEditorComponent.cpp
         void MixEditorComponent::updateTrackPositionInData(TrackId trackId, std::chrono::milliseconds newStartTime)
         {
+            if (!m_node)
+            {
+                spdlog::error("MixEditorComponent::updateTrackPositionInData - No mix node loaded");
+                return;
+            }
             spdlog::info("Updating position for track {} to {}ms", trackId, newStartTime.count());
 
             // Get non-const access to the mix tracks
-            auto &mixTracks = m_mixProjectLoader.getMixTracks(); // This method needs to be added
+            auto &mixTracks = m_node->getMixProjectLoader().getMixTracks(); // This method needs to be added
 
             // Find and update the track
             for (auto &track : mixTracks)
@@ -97,11 +116,17 @@ namespace jucyaudio
 
         void MixEditorComponent::saveMixChanges()
         {
+            if (!m_node)
+            {
+                spdlog::error("MixEditorComponent::saveMixChanges - No mix node loaded");
+                return;
+            }
             spdlog::info("Saving mix changes to database");
 
             // Get the current mix info and tracks
-            auto mixId = m_mixProjectLoader.getMixId();
-            auto &mixTracks = m_mixProjectLoader.getMixTracks();
+            auto &mixProjectLoader = m_node->getMixProjectLoader();
+            auto mixId = mixProjectLoader.getMixId();
+            auto &mixTracks = mixProjectLoader.getMixTracks();
 
             // Get mix info from database
             auto mixInfo = database::theTrackLibrary.getMixManager().getMix(mixId);

@@ -580,7 +580,7 @@ namespace jucyaudio
                 m_dynamicToolbar.setCurrentNode(m_currentNode); // Toolbar updates its actions
                 if (m_currentMainView == MainViewType::MixEditor)
                 {
-                    m_mixEditorComponent.loadMix(m_currentNode->getUniqueId()); // Load the mix data
+                    m_mixEditorComponent.loadMix(static_cast<MixNode*>(m_currentNode)); // Load the mix data
 
                     // Set up playback callback
                     m_mixEditorComponent.setPlaybackCallback(
@@ -648,7 +648,7 @@ namespace jucyaudio
             {
                 m_statusPanel.setStatusMessage("Track removed from mix.", false);
                 // Refresh the mix editor to show the change
-                m_mixEditorComponent.loadMix(mixId);
+                m_mixEditorComponent.loadMix(static_cast<MixNode*>(m_currentNode));
             }
             else
             {

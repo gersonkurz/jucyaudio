@@ -34,11 +34,6 @@ namespace jucyaudio
                 return m_mixId;
             }
 
-            const std::vector<MixTrack> &getMixTracks() const
-            {
-                return m_mixTracks;
-            }
-
             std::vector<MixTrack> &getMixTracks()
             {
                 return m_mixTracks;

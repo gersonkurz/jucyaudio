@@ -31,6 +31,7 @@ namespace jucyaudio
                 m_trackInfosMap[ti.trackId] = &ti;
             }
             int index = 0;
+            /*
             StringWriter writer;
             for (const auto &mixTrack : m_mixTracks)
             {
@@ -52,6 +53,7 @@ namespace jucyaudio
                 ++index;
             }
             spdlog::info("MixProjectLoader: Loaded mix project with ID {}:\n{}", m_mixId, writer.asString());
+            */
             spdlog::info("MixProjectLoader: Indexed {} track infos for mix ID {}", m_trackInfosMap.size(), m_mixId);
         }
 

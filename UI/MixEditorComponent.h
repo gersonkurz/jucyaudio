@@ -4,6 +4,7 @@
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Includes/TrackInfo.h>
 #include <Database/TrackLibrary.h>
+#include <Database/Nodes/MixNode.h>
 #include <UI/DynamicColumnManager.h>
 #include <UI/TimelineComponent.h>
 #include <juce_graphics/juce_graphics.h>
@@ -22,7 +23,8 @@ namespace jucyaudio
             void paint(juce::Graphics &g) override;
             void resized() override;
 
-            void loadMix(MixId mixId);
+            void loadMix(database::MixNode* node);
+            void unloadMix();
             void forceRefresh();
             void setTrackDeletionCallback(std::function<void(TrackId)> callback);
             void setPlaybackCallback(std::function<void(const juce::File &, double)> callback);
@@ -33,10 +35,10 @@ namespace jucyaudio
                 return m_timeline;
             }
 
-            auto &getMixProjectLoader()
+            /* audio::MixProjectLoader *getMixProjectLoader()
             {
                 return m_mixProjectLoader;
-            }
+            }*/
 
         private:
             void updateTrackPositionInData(TrackId trackId, std::chrono::milliseconds newStartTime);
@@ -47,7 +49,7 @@ namespace jucyaudio
 
             TimelineComponent m_timeline;
             juce::Viewport m_viewport;
-            audio::MixProjectLoader m_mixProjectLoader;
+            database::MixNode *m_node;
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixEditorComponent)
         };
 

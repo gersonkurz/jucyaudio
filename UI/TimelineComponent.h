@@ -13,7 +13,7 @@ namespace jucyaudio
             TimelineComponent(juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache);
 
             // The main method to update the timeline display from the data model.
-            void populateFrom(const audio::MixProjectLoader &mixLoader);
+            void populateFrom(audio::MixProjectLoader &mixLoader);
 
             MixTrackComponent *getSelectedTrack() const
             {
