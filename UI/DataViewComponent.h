@@ -138,6 +138,7 @@ namespace jucyaudio
             
             // Handle track reordering from drag & drop
             void handleTrackReorder(int sourceRow, int targetRow);
+            void handleTracksReorder(const std::vector<int>& sourceRows, int targetRow);
 
         private:
             // --- juce::Timer overrides ---

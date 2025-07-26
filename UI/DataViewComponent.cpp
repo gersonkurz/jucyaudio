@@ -100,7 +100,16 @@ namespace jucyaudio
                 auto desc = dragSourceDetails.description.toString();
                 if (desc.startsWith("MixTrackDrag:"))
                 {
-                    auto sourceRow = desc.substring(13).getIntValue();
+                    // Parse comma-separated list of source rows
+                    auto rowsString = desc.substring(13);
+                    juce::StringArray rowStrings = juce::StringArray::fromTokens(rowsString, ",", "");
+                    std::vector<int> sourceRows;
+                    
+                    for (const auto& rowStr : rowStrings)
+                    {
+                        sourceRows.push_back(rowStr.getIntValue());
+                    }
+                    
                     auto targetRow = m_dropTargetRow;
                     
                     // Adjust target position based on insert position
@@ -109,18 +118,24 @@ namespace jucyaudio
                         targetRow++;
                     }
                     
-                    // If dropping after the source position, we need to adjust
-                    if (targetRow > sourceRow)
+                    // If dropping after any source position, we need to adjust
+                    // Count how many source rows are before the target
+                    int sourceRowsBeforeTarget = 0;
+                    for (int sourceRow : sourceRows)
                     {
-                        targetRow--;
+                        if (sourceRow < targetRow)
+                        {
+                            sourceRowsBeforeTarget++;
+                        }
                     }
+                    targetRow -= sourceRowsBeforeTarget;
                     
-                    spdlog::info("Dropping row {} at position {}", sourceRow, targetRow);
+                    spdlog::info("Dropping {} rows at position {}", sourceRows.size(), targetRow);
                     
                     // Notify the parent DataViewComponent about the drop
                     if (auto* dataView = findParentComponentOfClass<DataViewComponent>())
                     {
-                        dataView->handleTrackReorder(sourceRow, targetRow);
+                        dataView->handleTracksReorder(sourceRows, targetRow);
                     }
                 }
             }
@@ -517,12 +532,18 @@ namespace jucyaudio
                 return {};
             }
             
-            // For now, just return a simple description
+            // Create a description containing all selected rows
             if (selectedRows.size() > 0)
             {
-                int firstRow = selectedRows[0];
-                spdlog::info("Creating drag description for row {}", firstRow);
-                return juce::String("MixTrackDrag:") + juce::String(firstRow);
+                juce::StringArray rowStrings;
+                for (int i = 0; i < selectedRows.size(); ++i)
+                {
+                    rowStrings.add(juce::String(selectedRows[i]));
+                }
+                
+                auto description = juce::String("MixTrackDrag:") + rowStrings.joinIntoString(",");
+                spdlog::info("Creating drag description: {}", description.toStdString());
+                return description;
             }
             
             return {};
@@ -530,7 +551,13 @@ namespace jucyaudio
         
         void DataViewComponent::handleTrackReorder(int sourceRow, int targetRow)
         {
-            spdlog::info("DataViewComponent::handleTrackReorder - moving row {} to position {}", sourceRow, targetRow);
+            handleTracksReorder({sourceRow}, targetRow);
+        }
+        
+        void DataViewComponent::handleTracksReorder(const std::vector<int>& sourceRows, int targetRow)
+        {
+            spdlog::info("DataViewComponent::handleTracksReorder - moving {} rows to position {}", 
+                         sourceRows.size(), targetRow);
             
             // Check if we have a current node and if it's a MixNode
             if (!m_currentNode)
@@ -542,24 +569,28 @@ namespace jucyaudio
             // Try to cast to MixNode
             if (auto* mixNode = dynamic_cast<MixNode*>(m_currentNode))
             {
-                // Get the track ID for the source row
-                const auto* trackInfo = mixNode->getTrackInfoForRow(sourceRow);
-                if (!trackInfo)
-                {
-                    spdlog::error("Failed to get track info for row {}", sourceRow);
-                    return;
-                }
-                
-                // Get the MixProjectLoader and perform the reorder
+                // Get the MixProjectLoader
                 auto& mixProjectLoader = const_cast<audio::MixProjectLoader&>(mixNode->getMixProjectLoader());
                 
-                // Create the track move pair
+                // Create track move pairs for all selected tracks
                 std::vector<std::pair<TrackId, int>> trackMoves;
-                trackMoves.emplace_back(trackInfo->trackId, targetRow);
+                
+                for (int sourceRow : sourceRows)
+                {
+                    const auto* trackInfo = mixNode->getTrackInfoForRow(sourceRow);
+                    if (!trackInfo)
+                    {
+                        spdlog::error("Failed to get track info for row {}", sourceRow);
+                        return;
+                    }
+                    
+                    // All tracks go to the same target position
+                    trackMoves.emplace_back(trackInfo->trackId, targetRow);
+                }
                 
                 if (mixProjectLoader.reorderTracks(trackMoves))
                 {
-                    spdlog::info("Track reorder successful, saving to database");
+                    spdlog::info("Tracks reorder successful, saving to database");
                     
                     // Save the changes to the database
                     if (mixProjectLoader.saveMix(theTrackLibrary.getMixManager()))

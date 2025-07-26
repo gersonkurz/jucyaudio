@@ -19,6 +19,10 @@ namespace jucyaudio
         {
         public:
             MixEditorComponent();
+            ~MixEditorComponent() override
+            {
+                unloadMix();
+            }
 
             void paint(juce::Graphics &g) override;
             void resized() override;

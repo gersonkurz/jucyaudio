@@ -558,6 +558,7 @@ namespace jucyaudio
                 const auto newViewType{determineMainViewType(m_currentNode)};
                 if (currentViewType != newViewType)
                 {
+                    m_mixEditorComponent.unloadMix(); // Clear previous mix data
                     m_currentMainViewComponent->setVisible(false);
                     if (newViewType == MainViewType::MixEditor)
                     {

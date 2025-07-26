@@ -70,6 +70,9 @@ namespace jucyaudio
             bool saveMix(const IMixManager& mixManager) const;
 
         private:
+            void dumpContext(const char *file, int line) const;
+            // Helper to move a single track to a new position
+            bool reorderSingleTrack(TrackId trackId, int newPosition);
 
             // Helper to construct the query args needed to fetch all tracks for this mix.
             TrackQueryArgs getMixTrackQueryArgs(MixId mixId) const
