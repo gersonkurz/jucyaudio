@@ -1,7 +1,5 @@
 #include <UI/EditWorkingSetMetaDataDialog.h>
 #include <Database/TrackLibrary.h>
-#include <Utils/AssortedUtils.h>
-#include <Utils/UiUtils.h>
 
 namespace jucyaudio
 {
@@ -13,9 +11,9 @@ namespace jucyaudio
             : MetaDataEditorDialogBase{
                 "Working Set Details",
                 workingSetInfo.name,
-                "Tracks: " + formatStandardStringNumber(workingSetInfo.numberOfTracks) + "\n" +
-                "Duration: " + durationToString(workingSetInfo.totalDuration) + "\n" +
-                "Created: " + timestampToString(workingSetInfo.timestamp),
+                workingSetInfo.numberOfTracks,
+                workingSetInfo.totalDuration,
+                workingSetInfo.timestamp,
                 std::move(onFinishedCallback)
               },
               m_workingSetInfo{workingSetInfo}
@@ -30,11 +28,6 @@ namespace jucyaudio
         std::string EditWorkingSetMetaDataDialog::getErrorMessage() const
         {
             return "Failed to rename the working set.";
-        }
-
-        std::string EditWorkingSetMetaDataDialog::getCurrentName() const
-        {
-            return m_workingSetInfo.name;
         }
 
     } // namespace ui

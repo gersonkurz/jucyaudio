@@ -7,6 +7,11 @@
 // JUCE includes
 #include <juce_gui_basics/juce_gui_basics.h>
 
+// Project includes
+#include <Database/Includes/Constants.h>
+#include <Utils/AssortedUtils.h>
+#include <Utils/UiUtils.h>
+
 namespace jucyaudio
 {
     namespace ui
@@ -38,20 +43,29 @@ namespace jucyaudio
                 m_titleLabel.setBounds(bounds.removeFromTop(30));
                 bounds.removeFromTop(10);  // Add spacing after title
                 
-                auto topArea = bounds.removeFromTop(80);
+                auto topArea = bounds.removeFromTop(120);  // Increased for 3 stats fields
                 auto buttonArea = bounds.removeFromBottom(30);
 
                 auto nameArea = topArea.removeFromTop(30);
                 m_nameLabel.setBounds(nameArea.removeFromLeft(80));
                 m_nameEditor.setBounds(nameArea);
 
-                auto statsArea = topArea.removeFromTop(50);
-                m_statsLabel.setBounds(statsArea.removeFromLeft(80));
-                m_statsValueLabel.setBounds(statsArea);
+                // Three separate stats fields
+                auto tracksArea = topArea.removeFromTop(25);
+                m_tracksLabel.setBounds(tracksArea.removeFromLeft(80));
+                m_tracksValueLabel.setBounds(tracksArea);
+                
+                auto durationArea = topArea.removeFromTop(25);
+                m_durationLabel.setBounds(durationArea.removeFromLeft(80));
+                m_durationValueLabel.setBounds(durationArea);
+                
+                auto timestampArea = topArea.removeFromTop(25);
+                m_timestampLabel.setBounds(timestampArea.removeFromLeft(80));
+                m_timestampValueLabel.setBounds(timestampArea);
 
-                m_saveButton.setBounds(buttonArea.removeFromRight(80));
-                buttonArea.removeFromRight(10);
                 m_cancelButton.setBounds(buttonArea.removeFromRight(80));
+                buttonArea.removeFromRight(10);
+                m_saveButton.setBounds(buttonArea.removeFromRight(80));
             }
 
             void parentHierarchyChanged() override
@@ -83,9 +97,12 @@ namespace jucyaudio
         protected:
             MetaDataEditorDialogBase(std::string_view title,
                                    const std::string& initialName,
-                                   const std::string& statsText,
+                                   int64_t trackCount,
+                                   Duration_t duration,
+                                   Timestamp_t timestamp,
                                    OnDialogFinished onFinishedCallback)
-                : m_onFinishedCallback{std::move(onFinishedCallback)},
+                : m_initialName{initialName},
+                  m_onFinishedCallback{std::move(onFinishedCallback)},
                   m_titleLabel{"titleLabel", title.data()},
                   m_saveButton{"Save"},
                   m_cancelButton{"Cancel"}
@@ -99,15 +116,25 @@ namespace jucyaudio
                 m_nameEditor.setText(initialName);
                 m_nameEditor.setSelectAllWhenFocused(true);
 
-                // Statistics
-                m_statsLabel.setText("Statistics:", juce::dontSendNotification);
-                m_statsValueLabel.setText(statsText, juce::dontSendNotification);
+                // Statistics - format the values here
+                m_tracksLabel.setText("Tracks:", juce::dontSendNotification);
+                m_tracksValueLabel.setText(formatStandardStringNumber(trackCount), juce::dontSendNotification);
+                
+                m_durationLabel.setText("Duration:", juce::dontSendNotification);
+                m_durationValueLabel.setText(durationToString(duration), juce::dontSendNotification);
+                
+                m_timestampLabel.setText("Created:", juce::dontSendNotification);
+                m_timestampValueLabel.setText(timestampToString(timestamp), juce::dontSendNotification);
 
                 addAndMakeVisible(m_titleLabel);
                 addAndMakeVisible(m_nameLabel);
                 addAndMakeVisible(m_nameEditor);
-                addAndMakeVisible(m_statsLabel);
-                addAndMakeVisible(m_statsValueLabel);
+                addAndMakeVisible(m_tracksLabel);
+                addAndMakeVisible(m_tracksValueLabel);
+                addAndMakeVisible(m_durationLabel);
+                addAndMakeVisible(m_durationValueLabel);
+                addAndMakeVisible(m_timestampLabel);
+                addAndMakeVisible(m_timestampValueLabel);
                 addAndMakeVisible(m_saveButton);
                 addAndMakeVisible(m_cancelButton);
 
@@ -119,22 +146,18 @@ namespace jucyaudio
                 m_nameEditor.onReturnKey = [this] { m_saveButton.triggerClick(); };
                 m_nameEditor.onEscapeKey = [this] { closeDialog(false); };
 
-                setSize(300, 220);  // Slightly taller to accommodate title
+                setSize(300, 260);  // Increased height for separate stats fields
             }
 
             // Pure virtual methods that derived classes must implement
             virtual bool performRename(const std::string& newName) = 0;
             virtual std::string getErrorMessage() const = 0;
-            virtual std::string getCurrentName() const = 0;
-
-            // Protected method to get editor text
-            std::string getEditorText() const { return m_nameEditor.getText().toStdString(); }
 
         private:
             void saveChanges()
             {
                 const auto newName = m_nameEditor.getText().toStdString();
-                if (newName.empty() || newName == getCurrentName())
+                if (newName.empty() || newName == m_initialName)
                 {
                     closeDialog(false);
                     return;
@@ -168,6 +191,7 @@ namespace jucyaudio
             }
 
             // Data
+            std::string m_initialName;
             OnDialogFinished m_onFinishedCallback;
 
             // UI Components
@@ -175,8 +199,12 @@ namespace jucyaudio
             juce::Label m_nameLabel;
             juce::TextEditor m_nameEditor;
 
-            juce::Label m_statsLabel;
-            juce::Label m_statsValueLabel;
+            juce::Label m_tracksLabel;
+            juce::Label m_tracksValueLabel;
+            juce::Label m_durationLabel;
+            juce::Label m_durationValueLabel;
+            juce::Label m_timestampLabel;
+            juce::Label m_timestampValueLabel;
 
             juce::TextButton m_saveButton;
             juce::TextButton m_cancelButton;

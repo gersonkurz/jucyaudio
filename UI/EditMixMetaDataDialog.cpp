@@ -1,7 +1,5 @@
 #include <UI/EditMixMetaDataDialog.h>
 #include <Database/TrackLibrary.h>
-#include <Utils/AssortedUtils.h>
-#include <Utils/UiUtils.h>
 
 namespace jucyaudio
 {
@@ -13,9 +11,9 @@ namespace jucyaudio
             : MetaDataEditorDialogBase{
                 "Mix Details",
                 mixInfo.name,
-                "Tracks: " + formatStandardStringNumber(mixInfo.numberOfTracks) + "\n" +
-                "Duration: " + durationToString(mixInfo.totalDuration) + "\n" +
-                "Created: " + timestampToString(mixInfo.timestamp),
+                mixInfo.numberOfTracks,
+                mixInfo.totalDuration,
+                mixInfo.timestamp,
                 std::move(onFinishedCallback)
               },
               m_mixInfo{mixInfo}
@@ -30,11 +28,6 @@ namespace jucyaudio
         std::string EditMixMetaDataDialog::getErrorMessage() const
         {
             return "Failed to rename the mix.";
-        }
-
-        std::string EditMixMetaDataDialog::getCurrentName() const
-        {
-            return m_mixInfo.name;
         }
 
     } // namespace ui
