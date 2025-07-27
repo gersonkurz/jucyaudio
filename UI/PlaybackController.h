@@ -6,9 +6,16 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <spdlog/spdlog.h> // For logging within the controller
+#include <memory>
 
 namespace jucyaudio
 {
+    namespace audio 
+    {
+        class MixPlaybackEngine;
+        class MixProjectLoader;
+    }
+    
     namespace ui
     {
         class PlaybackToolbarComponent;
@@ -25,6 +32,12 @@ namespace jucyaudio
                 Paused,
                 Stopping // Transient: about to stop
             };
+            
+            enum class PlaybackMode
+            {
+                SingleTrack,
+                MixPreview
+            };
 
             PlaybackController(PlaybackToolbarComponent &toolbar);
             ~PlaybackController();
@@ -38,6 +51,13 @@ namespace jucyaudio
             // --- Playback Control Methods ---
             // Returns true if loading was successful and playback started/is starting.
             bool loadAndPlayFile(const juce::File &audioFile);
+            
+            // Load and play a mix preview
+            bool loadAndPlayMix(audio::MixProjectLoader* mixLoader, double startPositionSeconds = 0.0);
+            
+            // Switch between single track and mix preview modes
+            void setPlaybackMode(PlaybackMode mode);
+            PlaybackMode getPlaybackMode() const { return m_playbackMode; }
 
             void play(); // Plays if a file is loaded and paused/stopped, or resumes.
             void pause();
@@ -78,6 +98,11 @@ namespace jucyaudio
             juce::AudioFormatManager m_audioFormatManager;
             std::unique_ptr<juce::AudioFormatReaderSource> m_currentAudioFileSource;
             juce::AudioTransportSource m_audioTransportSource;
+            
+            // Mix playback support
+            std::unique_ptr<audio::MixPlaybackEngine> m_mixPlaybackEngine;
+            PlaybackMode m_playbackMode{PlaybackMode::SingleTrack};
+            
             double m_deviceSampleRate{0.0};
             int m_deviceBlockSize{0};
             bool m_isDevicePrepared{false};

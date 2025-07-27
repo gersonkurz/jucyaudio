@@ -13,9 +13,44 @@ namespace jucyaudio
             setWantsKeyboardFocus(true);
         }
 
+        void TimelineComponent::playMixFromPosition(double timePosition)
+        {
+            spdlog::info("TimelineComponent::playMixFromPosition at time: {:.2f}", timePosition);
+            
+            if (onMixPlaybackRequested)
+            {
+                onMixPlaybackRequested(timePosition);
+            }
+            else
+            {
+                spdlog::warn("onMixPlaybackRequested callback is not set");
+            }
+        }
+
         bool TimelineComponent::keyPressed(const juce::KeyPress &key)
         {
-            if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
+            spdlog::info("TimelineComponent::keyPressed - key code: {}", key.getKeyCode());
+            
+            if (key == juce::KeyPress::spaceKey)
+            {
+                spdlog::info("Space key pressed - toggling playback");
+                // Space: Play/stop entire mix from current position
+                // If no position has been clicked, start from the beginning
+                double playPosition = m_currentTimePosition >= 0.0 ? m_currentTimePosition : 0.0;
+                playMixFromPosition(playPosition);
+                return true;
+            }
+            else if (key == juce::KeyPress::escapeKey)
+            {
+                spdlog::info("Escape key pressed - stopping playback");
+                // Escape: Stop playback
+                if (onMixPlaybackRequested)
+                {
+                    onMixPlaybackRequested(-1.0); // Special value to indicate stop
+                }
+                return true;
+            }
+            else if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
             {
                 if (m_selectedTrack)
                 {
@@ -93,16 +128,24 @@ namespace jucyaudio
 
         void TimelineComponent::paintOverChildren(juce::Graphics &g)
         {
-            // Draw playhead OVER all the tracks
+            // Draw click position playhead (thin white line)
             if (m_currentTimePosition >= 0.0)
             {
                 float playheadX = static_cast<float>(m_currentTimePosition * m_pixelsPerSecond);
-                g.setColour(juce::Colours::red);
+                g.setColour(juce::Colours::white.withAlpha(0.5f));
                 g.drawVerticalLine(juce::roundToInt(playheadX), 0.0f, static_cast<float>(getHeight()));
+            }
+            
+            // Draw mix playback position (thick red line)
+            if (m_mixPlaybackPosition >= 0.0)
+            {
+                float playheadX = static_cast<float>(m_mixPlaybackPosition * m_pixelsPerSecond);
+                g.setColour(juce::Colours::red);
+                g.fillRect(playheadX - 1.0f, 0.0f, 2.0f, static_cast<float>(getHeight()));
 
-                // Optional: draw a small triangle at the top
+                // Draw a triangle at the top
                 juce::Path playheadMarker;
-                playheadMarker.addTriangle(playheadX - 5, 0, playheadX + 5, 0, playheadX, 10);
+                playheadMarker.addTriangle(playheadX - 6, 0, playheadX + 6, 0, playheadX, 12);
                 g.fillPath(playheadMarker);
             }
         }
@@ -193,6 +236,9 @@ namespace jucyaudio
 
         void TimelineComponent::mouseDown(const juce::MouseEvent &event)
         {
+            // Grab keyboard focus when clicked
+            grabKeyboardFocus();
+            
             if (event.mods.isLeftButtonDown())
             {
                 double clickTime = event.position.x / m_pixelsPerSecond;
@@ -205,14 +251,16 @@ namespace jucyaudio
 
                 if (event.getNumberOfClicks() == 2)
                 {
-                    spdlog::info("Double-click detected - requesting playback");
-                    if (clickedTrack)
+                    spdlog::info("Double-click detected - playing mix from position");
+                    // Double-click = set position + always play mix (don't toggle)
+                    if (onMixPlaybackAlwaysRequested)
                     {
-                        playSelectedTrackFromPosition(clickTime);
+                        onMixPlaybackAlwaysRequested(clickTime);
                     }
                     else
                     {
-                        playFromPosition(clickTime);
+                        // Fallback to regular playback if the new callback isn't set
+                        playMixFromPosition(clickTime);
                     }
                 }
                 else if (event.getNumberOfClicks() == 1)
@@ -304,7 +352,7 @@ namespace jucyaudio
             const int yGap = 5;
             const int availableHeightForLanes = visibleArea.getHeight() - rulerHeight;
 
-            spdlog::info("LAYOUT_INFO: visibleArea={}x{}, availableHeight={}", visibleArea.getWidth(), visibleArea.getHeight(), availableHeightForLanes);
+            //spdlog::info("LAYOUT_INFO: visibleArea={}x{}, availableHeight={}", visibleArea.getWidth(), visibleArea.getHeight(), availableHeightForLanes);
 
             int numLanes = availableHeightForLanes / (trackHeight + yGap);
             if (numLanes < 1)
@@ -364,7 +412,7 @@ namespace jucyaudio
         void TimelineComponent::populateFrom(audio::MixProjectLoader &mixLoader)
         {
             m_selectedTrack = nullptr;
-            m_currentTimePosition = 0.0;
+            m_currentTimePosition = -1.0;
             // Clear all existing components
             m_trackViews.clear();
             removeAllChildren();

@@ -10,6 +10,7 @@
 #include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <Audio/MixProjectLoader.h>
+#include <Audio/MixPlaybackEngine.h>
 
 namespace jucyaudio
 {
@@ -19,10 +20,7 @@ namespace jucyaudio
         {
         public:
             MixEditorComponent();
-            ~MixEditorComponent() override
-            {
-                unloadMix();
-            }
+            ~MixEditorComponent() override;
 
             void paint(juce::Graphics &g) override;
             void resized() override;
@@ -33,6 +31,7 @@ namespace jucyaudio
             void setTrackDeletionCallback(std::function<void(TrackId)> callback);
             void setPlaybackCallback(std::function<void(const juce::File &, double)> callback);
             void setSeekCallback(std::function<void(double)> callback);
+            void setMixPlaybackCallback(std::function<void(double)> callback);
 
             auto &getTimeline()
             {
@@ -47,13 +46,34 @@ namespace jucyaudio
         private:
             void updateTrackPositionInData(TrackId trackId, std::chrono::milliseconds newStartTime);
             void saveMixChanges();
+            void handleMixPlayback(double startTime, bool alwaysPlay = false);
+            void startMixPlayback();
+            void stopMixPlayback();
+            void updatePlaybackPosition();
 
             juce::AudioFormatManager m_formatManager;
             juce::AudioThumbnailCache m_thumbnailCache{5}; // 5 items in the cache
 
             TimelineComponent m_timeline;
             juce::Viewport m_viewport;
-            database::MixNode *m_node;
+            database::MixNode *m_node{nullptr};
+            
+            // Mix playback
+            std::unique_ptr<audio::MixPlaybackEngine> m_mixPlaybackEngine;
+            std::unique_ptr<juce::AudioDeviceManager> m_audioDeviceManager;
+            bool m_isPlaying{false};
+            
+            // Timer for updating playback position
+            class PlaybackTimer : public juce::Timer
+            {
+            public:
+                MixEditorComponent* owner;
+                void timerCallback() override 
+                { 
+                    if (owner) owner->updatePlaybackPosition(); 
+                }
+            } m_playbackTimer;
+            
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixEditorComponent)
         };
 

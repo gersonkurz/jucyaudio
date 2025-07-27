@@ -66,26 +66,35 @@ namespace jucyaudio
                 if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
                 {
                     timeline->setSelectedTrack(this);
+                    
+                    // Calculate and set the click position in the timeline
+                    auto localClick = event.position;
+                    auto trackBounds = getBounds();
+                    double clickTime = (trackBounds.getX() + localClick.x) / timeline->getPixelsPerSecond();
+                    timeline->setCurrentTimePosition(clickTime);
+                    
+                    // Ensure timeline has keyboard focus for Space/Escape keys
+                    timeline->grabKeyboardFocus();
 
                     // Only handle click-to-seek if we're not about to start dragging
                     // (We'll determine this based on whether the mouse moves significantly)
 
                     if (event.getNumberOfClicks() == 2)
                     {
-                        // Double-click: ALWAYS play this track from clicked position
-                        spdlog::info("Double-click on track - requesting playback");
-                        if (timeline->onPlaybackRequested)
+                        // Double-click: Play the entire mix from clicked position
+                        spdlog::info("Double-click on track - requesting mix playback");
+                        auto localClick = event.position;
+                        auto trackBounds = getBounds();
+                        double clickTime = (trackBounds.getX() + localClick.x) / timeline->getPixelsPerSecond();
+                        
+                        // Use the always-play callback for double-clicks
+                        if (timeline->onMixPlaybackAlwaysRequested)
                         {
-                            auto localClick = event.position;
-                            auto trackBounds = getBounds();
-                            double clickTime = (trackBounds.getX() + localClick.x) / timeline->getPixelsPerSecond();
-
-                            const auto startTime = std::chrono::duration<double>(m_mixTrack.mixStartTime).count();
-                            double trackOffset = clickTime - startTime;
-                            trackOffset = juce::jlimit(0.0, std::chrono::duration<double>(m_trackInfo.duration).count(), trackOffset);
-
-                            juce::File audioFile(m_trackInfo.filepath.string());
-                            timeline->onPlaybackRequested(audioFile, trackOffset);
+                            timeline->onMixPlaybackAlwaysRequested(clickTime);
+                        }
+                        else
+                        {
+                            timeline->playMixFromPosition(clickTime);
                         }
                     }
                     else if (event.getNumberOfClicks() == 1)

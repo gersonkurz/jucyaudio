@@ -156,6 +156,8 @@ target_sources(jucyaudio PRIVATE
     Audio/Includes/IMixExporter.h
     Audio/MixProjectLoader.cpp
     Audio/MixProjectLoader.h
+    Audio/MixPlaybackEngine.cpp
+    Audio/MixPlaybackEngine.h
     
     # Utils files
     Utils/AssortedUtils.cpp

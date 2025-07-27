@@ -42,6 +42,7 @@ namespace jucyaudio
 
         void BackgroundTaskService::registerTask(IBackgroundTask *task)
         {
+            return;
             if (task)
             {
                 const std::lock_guard<std::mutex> lock(m_tasksMutex);

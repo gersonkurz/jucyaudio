@@ -24,6 +24,17 @@ namespace jucyaudio
             {
                 return m_currentTimePosition;
             }
+            
+            double getMixPlaybackPosition() const
+            {
+                return m_mixPlaybackPosition;
+            }
+            
+            void setMixPlaybackPosition(double position)
+            {
+                m_mixPlaybackPosition = position;
+                repaint();
+            }
 
             double getPixelsPerSecond() const
             {
@@ -34,6 +45,7 @@ namespace jucyaudio
             void setCurrentTimePosition(double timeInSeconds);
             void playFromPosition(double timePosition);
             void playSelectedTrackFromPosition(double timePosition);
+            void playMixFromPosition(double timePosition);
             bool keyPressed(const juce::KeyPress &key) override;
             void deleteSelectedTrack();
             void startTrackDrag(MixTrackComponent *track);
@@ -45,6 +57,8 @@ namespace jucyaudio
             std::function<void(TrackId)> onTrackDeleted;
             std::function<void(TrackId, std::chrono::milliseconds)> onTrackPositionChanged;
             std::function<void()> onMixChanged;
+            std::function<void(double)> onMixPlaybackRequested;
+            std::function<void(double)> onMixPlaybackAlwaysRequested; // For double-clicks
 
         private:
             void paint(juce::Graphics &g) override;
@@ -76,7 +90,8 @@ namespace jucyaudio
             static constexpr double MAX_ZOOM = 100.0;  // 100 pixels per second (zoomed in)
             static constexpr double ZOOM_FACTOR = 1.2; // 20% zoom steps
             MixTrackComponent *m_selectedTrack = nullptr;
-            double m_currentTimePosition = 0.0; // in seconds
+            double m_currentTimePosition = -1.0; // in seconds (for click position, -1 means not set)
+            double m_mixPlaybackPosition = -1.0; // in seconds (for mix playback, -1 means not playing)
 
             // Helper methods
             MixTrackComponent *getTrackAtPosition(juce::Point<int> position);
