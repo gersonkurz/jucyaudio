@@ -23,7 +23,15 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
-FetchContent_MakeAvailable(JUCE nlohmann_json)
+# Add tabulate for pretty table printing
+FetchContent_Declare(
+    tabulate
+    GIT_REPOSITORY https://github.com/p-ranav/tabulate.git
+    GIT_TAG v1.5
+    GIT_SHALLOW TRUE
+)
+
+FetchContent_MakeAvailable(JUCE nlohmann_json tabulate)
 
 # Platform-specific library paths and includes
 if(WIN32)
@@ -356,6 +364,9 @@ if(WIN32)
         # nlohmann/json
         nlohmann_json::nlohmann_json
         
+        # tabulate
+        tabulate::tabulate
+        
         # External libraries (Windows)
         ${AUBIO_LIBRARY}
         ${SPDLOG_LIBRARY}
@@ -386,6 +397,9 @@ else()
 
         # nlohmann/json
         nlohmann_json::nlohmann_json
+        
+        # tabulate
+        tabulate::tabulate
         
         # External libraries (macOS/Linux)
         ${AUBIO_LIBRARY}

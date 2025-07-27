@@ -3,6 +3,8 @@
 #include <Utils/StringWriter.h>
 #include <algorithm>
 #include <unordered_set>
+#include <tabulate/table.hpp>
+#include <sstream>
 
 namespace jucyaudio
 {
@@ -38,28 +40,70 @@ namespace jucyaudio
 
         void MixProjectLoader::dumpContext(const char* file, int line) const
         {
-#if 0
-            StringWriter writer;
-            writer.appendFormatted("MixProjectLoader: Context dump at {}:{}\n", file, line);
+            using namespace tabulate;
+            
+            spdlog::info("MixProjectLoader: Context dump at {}:{} for mix ID {}", file, line, m_mixId);
+            
+            if (m_mixTracks.empty())
+            {
+                spdlog::info("  [Mix is empty]");
+                return;
+            }
+            
+            Table mixTable;
+            mixTable.add_row({"#", "Track ID", "Artist - Title", "Cue Start", "Cue End", 
+                             "Attach From", "Attach To", "Envelope Points"});
+            
+            // Style the header row
+            mixTable[0].format()
+                .font_color(Color::cyan)
+                .font_style({FontStyle::bold});
+            
             for (const auto &mixTrack : m_mixTracks)
             {
+                std::string artistTitle = "???";
+                std::string duration = "";
+                
                 if (const auto it = m_trackInfosMap.find(mixTrack.trackId); it != m_trackInfosMap.end())
                 {
-                    writer.appendFormatted("#{:04}, trackId: {:04}, from {} to {}: {} - {}\n",
-                        mixTrack.orderInMix,
-                        mixTrack.trackId,
-                        durationToString(mixTrack.mixStartTime),
-                        durationToString(mixTrack.mixEndTime),
-                        it->second->artist_name,
-                        it->second->title);
+                    artistTitle = it->second->artist_name + " - " + it->second->title;
+                    duration = durationToString(it->second->duration);
                 }
-                else
+                
+                // Format envelope points as compact string
+                std::string envelopeStr;
+                for (size_t i = 0; i < mixTrack.envelopePoints.size(); ++i)
                 {
-                    writer.appendFormatted("MixProjectLoader: Track info not found for track ID: {}\n", mixTrack.trackId);
+                    if (i > 0) envelopeStr += ", ";
+                    envelopeStr += std::to_string(mixTrack.envelopePoints[i].time.count()) + "ms:" +
+                                  std::to_string(mixTrack.envelopePoints[i].volume);
                 }
+                if (envelopeStr.empty()) envelopeStr = "[none]";
+                
+                mixTable.add_row({
+                    std::to_string(mixTrack.orderInMix),
+                    std::to_string(mixTrack.trackId),
+                    artistTitle,
+                    durationToString(mixTrack.cueStart),
+                    mixTrack.cueEnd.count() < 0 ? "[end]" : durationToString(mixTrack.cueEnd),
+                    durationToString(mixTrack.attachFrom),
+                    durationToString(mixTrack.attachTo),
+                    envelopeStr
+                });
             }
-            spdlog::info("MixProjectLoader: Loaded mix project with ID {}:\n{}", m_mixId, writer.asString());
-#endif
+            
+            // Style the table
+            mixTable.format()
+                .border_top("─")
+                .border_bottom("─")
+                .border_left("│")
+                .border_right("│")
+                .corner("┼");
+            
+            // Make the output both human and machine readable
+            std::ostringstream oss;
+            oss << mixTable;
+            spdlog::info("MixProjectLoader: Dumping mix context for mix ID {}:\n{}", m_mixId, oss.str());
         }
 
         bool MixProjectLoader::reorderSingleTrack(TrackId trackId, int newPosition)
