@@ -128,6 +128,9 @@ namespace jucyaudio
 
         void TimelineComponent::paintOverChildren(juce::Graphics &g)
         {
+            // Draw crossfade lines that span across tracks
+            drawCrossfadeLines(g);
+            
             // Draw click position playhead (thin white line)
             if (m_currentTimePosition >= 0.0)
             {
@@ -731,6 +734,49 @@ namespace jucyaudio
 
             spdlog::info("Recalculated track order for {} tracks", sortedViews.size());
 #endif
+        }
+        
+        void TimelineComponent::drawCrossfadeLines(juce::Graphics &g)
+        {
+            // For each consecutive pair of tracks, draw a line at the crossfade point
+            for (size_t i = 0; i < m_trackViews.size(); ++i)
+            {
+                if (i + 1 >= m_trackViews.size())
+                    break; // No next track to crossfade with
+                    
+                const auto& currentView = m_trackViews[i];
+                const auto& nextView = m_trackViews[i + 1];
+                
+                // Calculate where current track's cueEnd is
+                const auto& currentTrack = *currentView.mixTrackData;
+                const auto* currentTrackInfo = currentView.trackInfoData;
+                
+                Duration_t cueEndPos = currentTrack.cueEnd;
+                if (cueEndPos == Duration_t{0})
+                {
+                    cueEndPos = currentTrackInfo->duration;
+                }
+                else if (cueEndPos < Duration_t{0})
+                {
+                    cueEndPos = currentTrackInfo->duration + cueEndPos;
+                }
+                
+                // Calculate the position on timeline
+                const double currentTrackStart = std::chrono::duration<double>(currentView.calculatedStartTime).count();
+                const double cueEndTime = currentTrackStart + std::chrono::duration<double>(cueEndPos).count();
+                
+                // Draw the crossfade line
+                const float x = static_cast<float>(cueEndTime * m_pixelsPerSecond);
+                
+                // Draw main line
+                g.setColour(juce::Colours::cyan.withAlpha(0.7f));
+                g.drawVerticalLine(juce::roundToInt(x), 0.0f, static_cast<float>(getHeight()));
+                
+                // Draw label at top
+                g.setFont(12.0f);
+                g.setColour(juce::Colours::cyan);
+                g.drawText("MIX", juce::roundToInt(x) - 15, 5, 30, 15, juce::Justification::centred);
+            }
         }
     } // namespace ui
 } // namespace jucyaudio

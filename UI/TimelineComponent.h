@@ -71,6 +71,7 @@ namespace jucyaudio
             void recalculateLayout();
             void maintainViewportPosition(double timeAtMouse, int mouseX);
             void paintOverChildren(juce::Graphics &g) override;
+            void drawCrossfadeLines(juce::Graphics &g);
 
         private:
             // A helper struct to manage UI components and their model data together.

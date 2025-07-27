@@ -537,11 +537,15 @@ namespace jucyaudio
                 
                 // Draw label
                 g.setFont(10.0f);
-                g.drawText(label, juce::roundToInt(x) + 2, area.getY() - 12, 50, 12, juce::Justification::left);
+                g.drawText(label, juce::roundToInt(x) + 2, area.getY() - 12, 60, 12, juce::Justification::left);
             };
             
-            // Draw cue markers (green)
-            drawMarker(m_mixTrack.cueStart, juce::Colours::green, "CS", m_hoveredMarker == MarkerType::CueStart);
+            // Draw cue markers with a more subtle appearance since the main crossfade line is drawn at timeline level
+            // But keep them draggable
+            const auto cueColor = juce::Colours::cyan.withAlpha(0.5f);
+            
+            // Draw cue start as a subtle marker at the track start
+            drawMarker(m_mixTrack.cueStart, cueColor, "", m_hoveredMarker == MarkerType::CueStart);
             
             // For cueEnd, calculate actual position (0 means track end, negative is relative to end)
             Duration_t cueEndPos = m_mixTrack.cueEnd;
@@ -553,11 +557,12 @@ namespace jucyaudio
             {
                 cueEndPos = trackDuration + cueEndPos;
             }
-            drawMarker(cueEndPos, juce::Colours::red, "CE", m_hoveredMarker == MarkerType::CueEnd);
+            drawMarker(cueEndPos, cueColor, "", m_hoveredMarker == MarkerType::CueEnd);
             
-            // Draw attach markers (blue/purple)
-            drawMarker(m_mixTrack.attachFrom, juce::Colours::blue, "AF", m_hoveredMarker == MarkerType::AttachFrom);
-            drawMarker(m_mixTrack.attachTo, juce::Colours::purple, "AT", m_hoveredMarker == MarkerType::AttachTo);
+            // Draw attach markers - these define the crossfade alignment
+            const auto attachColor = juce::Colours::orange;
+            drawMarker(m_mixTrack.attachFrom, attachColor, "Attach From", m_hoveredMarker == MarkerType::AttachFrom);
+            drawMarker(m_mixTrack.attachTo, attachColor, "Attach To", m_hoveredMarker == MarkerType::AttachTo);
         }
         
         MixTrackComponent::MarkerType MixTrackComponent::hitTestMarker(juce::Point<int> mousePos) const
