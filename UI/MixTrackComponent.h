@@ -15,7 +15,7 @@ namespace jucyaudio
         public:
             // We can define the layout constants publicly for the TimelineComponent to use
             static constexpr int textSectionHeight = 20;
-            static constexpr int waveformSectionHeight = 60;
+            static constexpr int waveformSectionHeight = 120;  // Doubled from 60 to 120
             static constexpr int totalHeight = textSectionHeight + waveformSectionHeight;
 
             MixTrackComponent(const database::MixTrack &mixTrack, const database::TrackInfo &trackInfo, juce::AudioFormatManager &formatManager,

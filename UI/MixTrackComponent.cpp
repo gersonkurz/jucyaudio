@@ -15,10 +15,13 @@ namespace jucyaudio
               m_trackInfo{trackInfo},
               m_thumbnail{512, formatManager, thumbnailCache}
         {
-            // Setup the info label
-            juce::String bpmText = trackInfo.bpm.has_value() ? juce::String(trackInfo.bpm.value() / 100.0, 1) + " BPM" : "--- BPM";
+            // Setup the info label with track duration
+            const auto durationSeconds = std::chrono::duration_cast<std::chrono::seconds>(trackInfo.duration).count();
+            const int minutes = durationSeconds / 60;
+            const int seconds = durationSeconds % 60;
+            juce::String durationText = juce::String::formatted("%d:%02d", minutes, seconds);
 
-            juce::String infoText = juce::String(trackInfo.title) + " (" + bpmText + ")";
+            juce::String infoText = juce::String(trackInfo.title) + " (" + durationText + ")";
             m_infoLabel.setText(infoText, juce::dontSendNotification);
             m_infoLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(14.0f)}.boldened());
             m_infoLabel.setJustificationType(juce::Justification::centredLeft);
