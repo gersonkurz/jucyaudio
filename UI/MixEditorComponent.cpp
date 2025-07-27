@@ -144,6 +144,7 @@ namespace jucyaudio
         // Add new methods to MixEditorComponent.cpp
         void MixEditorComponent::updateTrackPositionInData(TrackId trackId, std::chrono::milliseconds newStartTime)
         {
+#if MIX_TRANSITION_TRACK_REORDERING_AVAILABLE
             if (!m_node)
             {
                 spdlog::error("MixEditorComponent::updateTrackPositionInData - No mix node loaded");
@@ -164,6 +165,7 @@ namespace jucyaudio
                     break;
                 }
             }
+#endif
         }
 
         void MixEditorComponent::saveMixChanges()

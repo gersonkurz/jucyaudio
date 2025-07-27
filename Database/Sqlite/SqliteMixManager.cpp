@@ -84,9 +84,6 @@ namespace
         info.trackId = stmt.getInt64(col++);
         info.orderInMix = stmt.getInt32(col++);
         info.envelopePoints = envelopePointsFromJson(stmt.getText(col++));
-        info.mixStartTime = durationFromInt64(stmt.getInt64(col++));
-        info.mixEndTime = durationFromInt64(stmt.getInt64(col++));
-        info.is_active = stmt.getInt32(col++) != 0;
         return info;
     }
 
@@ -97,9 +94,6 @@ namespace
         ok &= stmt.addParam(info.trackId); // track_id = ?
         ok &= stmt.addParam(info.orderInMix);
         ok &= stmt.addParam(envelopePointsToJson(info.envelopePoints));
-        ok &= stmt.addParam(durationToInt64(info.mixStartTime));
-        ok &= stmt.addParam(durationToInt64(info.mixEndTime));
-        ok &= stmt.addParam(info.is_active ? 1 : 0);
 
         if (!ok)
         {
@@ -254,6 +248,7 @@ FROM Mixes m
             {
                 mixInfo.timestamp = std::chrono::system_clock::now();
                 mixInfo.numberOfTracks = static_cast<int64_t>(tracks.size());
+#if MIX_TRANSITION_TOTAL_LENGTH_AVAILABLE
                 if (tracks.empty())
                 {
                     mixInfo.totalDuration = Duration_t::zero();
@@ -263,6 +258,7 @@ FROM Mixes m
                     const auto lastTrack{tracks.back()};
                     mixInfo.totalDuration = lastTrack.mixEndTime;
                 }
+#endif
 
                 // if mixId is not 0, the mix already exists, so we update it - by first removing all existing data
                 if (mixInfo.mixId)
@@ -297,7 +293,7 @@ FROM Mixes m
                 {
                     track.mixId = mixInfo.mixId;
                     SqliteStatement stmt_insert{m_db,
-                        "INSERT INTO MixTracks (mix_id,track_id,order_in_mix,envelopePoints,mix_start_time, mix_end_time, is_active) "
+                        "INSERT INTO MixTracks (mix_id,track_id,order_in_mix,mix_data) "
                         "VALUES (?,?,?,?,?,?,?)"};
                     bindMixTrackToStatement(stmt_insert, track);
                     if (!stmt_insert.execute())
@@ -422,6 +418,7 @@ FROM Mixes m
             WorkingSetId source_ws_id,
             const Duration_t defaultCrossfadeDuration) const
         {
+#if MIX_TRANSITION_AUTOMIX_AVAILABLE
             assert(resultingTracks.empty() && "resultingTracks should be empty before creating a new mix");
             assert(!trackInfos.empty() && "trackInfos should not be empty when creating a new mix");
 
@@ -483,6 +480,9 @@ FROM Mixes m
 
             // ok, this is the definition; store it in the database
             return createOrUpdateMix(mixInfo, resultingTracks);
+            #else
+            return false;
+            #endif
         }
         bool SqliteMixManager::renameMix(MixId mixId, std::string_view name) const
         {

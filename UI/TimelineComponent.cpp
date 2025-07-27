@@ -152,6 +152,7 @@ namespace jucyaudio
 
         void TimelineComponent::recalculateLayout()
         {
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             // Recalculate width based on new zoom
             double maxTimeSecs = 0.0;
             if (!m_trackViews.empty())
@@ -168,6 +169,7 @@ namespace jucyaudio
             // This will trigger resized() which repositions all tracks
             resized();
             repaint();
+#endif
         }
 
         void TimelineComponent::maintainViewportPosition(double timeAtMouse, int mouseX)
@@ -186,6 +188,7 @@ namespace jucyaudio
 
         void TimelineComponent::playFromPosition(double timePosition)
         {
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             // For now, play the first track that covers this time position
             // Later this could play the entire mix from this position
             for (const auto &view : m_trackViews)
@@ -206,10 +209,12 @@ namespace jucyaudio
                     break;
                 }
             }
+#endif
         }
 
         void TimelineComponent::playSelectedTrackFromPosition(double timePosition)
         {
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             if (!m_selectedTrack)
                 return;
 
@@ -232,6 +237,7 @@ namespace jucyaudio
                     break;
                 }
             }
+#endif
         }
 
         void TimelineComponent::mouseDown(const juce::MouseEvent &event)
@@ -344,6 +350,7 @@ namespace jucyaudio
         }
         void TimelineComponent::resized()
         {
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             //spdlog::info("LAYOUT_START: TimelineComponent::resized() -----------------------");
 
             auto visibleArea = getParentComponent()->getLocalBounds();
@@ -407,10 +414,12 @@ namespace jucyaudio
             }
 
             //spdlog::info("LAYOUT_END: TimelineComponent::resized() finished -----------------------");
+#endif
         }
 
         void TimelineComponent::populateFrom(audio::MixProjectLoader &mixLoader)
         {
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             m_selectedTrack = nullptr;
             m_currentTimePosition = -1.0;
             // Clear all existing components
@@ -460,6 +469,7 @@ namespace jucyaudio
             spdlog::info("Forcing resized() call after populateFrom");
             resized();
             repaint();
+#endif
         }
 
         void TimelineComponent::startTrackDrag(MixTrackComponent *track)
@@ -543,6 +553,7 @@ namespace jucyaudio
         // Method to recalculate track order based on new positions
         void TimelineComponent::recalculateTrackOrder()
         {
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             // Sort tracks by their mixStartTime and update orderInMix
             std::vector<TrackView *> sortedViews;
             for (auto &view : m_trackViews)
@@ -566,6 +577,7 @@ namespace jucyaudio
             }
 
             spdlog::info("Recalculated track order for {} tracks", sortedViews.size());
+#endif
         }
     } // namespace ui
 } // namespace jucyaudio

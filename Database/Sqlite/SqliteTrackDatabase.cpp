@@ -130,11 +130,8 @@ CREATE TABLE IF NOT EXISTS Mixes(
 CREATE TABLE IF NOT EXISTS MixTracks(
     mix_id INTEGER NOT NULL,
     track_id INTEGER NOT NULL,
-    order_in_mix INTEGER,
-    envelopePoints TEXT, -- JSON encoded envelope points
-    mix_start_time INTEGER,
-    mix_end_time INTEGER,
-    is_active INTEGER DEFAULT 1,
+    order_in_mix INTEGER NOT NULL,
+    mix_data TEXT NOT NULL, -- JSON with cue, attach, envelope data
     PRIMARY KEY(mix_id, track_id),
     FOREIGN KEY(mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE,
     FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
@@ -166,6 +163,9 @@ CREATE TABLE IF NOT EXISTS VirtualFolders (
 
         // Index to speed up filepath LIKE queries
         "CREATE INDEX IF NOT EXISTS idx_tracks_filepath ON Tracks(filepath);",
+        
+        // Index for MixTracks ordering
+        "CREATE INDEX IF NOT EXISTS idx_mixtracks_order ON MixTracks(mix_id, order_in_mix);",
     };
 
     TrackInfo trackInfoFromStatement(const SqliteStatement &stmt)
@@ -739,6 +739,73 @@ namespace jucyaudio
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
                     }
                     spdlog::info("Successfully migrated database to version 5.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+            }
+
+            if (currentVersion < 6)
+            {
+                spdlog::info("Migrating database from version 5 to 6 - Transition to ATTACH-based mix model...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Drop all mix data (as discussed, it's test data)
+                    spdlog::info("Dropping existing mix data for clean transition...");
+                    
+                    // Delete all mix tracks first (due to foreign key constraints)
+                    if (!m_db.execute("DELETE FROM MixTracks;"))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to delete existing MixTracks.");
+                    }
+                    
+                    // Delete all mixes
+                    if (!m_db.execute("DELETE FROM Mixes;"))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to delete existing Mixes.");
+                    }
+                    
+                    // Drop the old MixTracks table
+                    if (!m_db.execute("DROP TABLE IF EXISTS MixTracks;"))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to drop old MixTracks table.");
+                    }
+                    
+                    // Create new MixTracks table with JSON structure
+                    const char* createMixTracksV6 = R"(
+CREATE TABLE MixTracks(
+    mix_id INTEGER NOT NULL,
+    track_id INTEGER NOT NULL,
+    order_in_mix INTEGER NOT NULL,
+    mix_data TEXT NOT NULL, -- JSON with cue, attach, envelope data
+    PRIMARY KEY(mix_id, track_id),
+    FOREIGN KEY(mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE,
+    FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
+);)";
+                    
+                    if (!m_db.execute(createMixTracksV6))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create new MixTracks table.");
+                    }
+                    
+                    // Create index on order_in_mix for efficient sorting
+                    if (!m_db.execute("CREATE INDEX idx_mixtracks_order ON MixTracks(mix_id, order_in_mix);"))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create order index.");
+                    }
+                    
+                    // Update schema version
+                    if (auto result = setDBSchemaVersion(6); !result.isOk())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 6.");
+                    }
+                    
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated database to version 6 - ATTACH-based model ready.");
                 }
                 else
                 {

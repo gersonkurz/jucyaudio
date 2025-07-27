@@ -38,6 +38,7 @@ namespace jucyaudio
 
         void MixProjectLoader::dumpContext(const char* file, int line) const
         {
+#if 0
             StringWriter writer;
             writer.appendFormatted("MixProjectLoader: Context dump at {}:{}\n", file, line);
             for (const auto &mixTrack : m_mixTracks)
@@ -58,11 +59,12 @@ namespace jucyaudio
                 }
             }
             spdlog::info("MixProjectLoader: Loaded mix project with ID {}:\n{}", m_mixId, writer.asString());
-            
+#endif
         }
 
         bool MixProjectLoader::reorderSingleTrack(TrackId trackId, int newPosition)
         {
+#if MIX_TRANSITION_TRACK_REORDERING_AVAILABLE
             // Find the track
             auto it = std::find_if(m_mixTracks.begin(),
                 m_mixTracks.end(),
@@ -163,6 +165,9 @@ namespace jucyaudio
                 movingTrack.mixStartTime,
                 movingTrack.mixEndTime);
             return true;
+#else
+            return false;
+#endif // MIX_TRANSITION_TRACK_REORDERING_AVAILABLE
         }
 
         bool MixProjectLoader::reorderTracks(const std::vector<std::pair<TrackId, int>> &trackMoves)
