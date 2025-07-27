@@ -738,7 +738,7 @@ namespace jucyaudio
         
         void TimelineComponent::drawCrossfadeLines(juce::Graphics &g)
         {
-            // For each consecutive pair of tracks, draw a line at the crossfade point
+            // For each consecutive pair of tracks, draw the attach/crossfade region
             for (size_t i = 0; i < m_trackViews.size(); ++i)
             {
                 if (i + 1 >= m_trackViews.size())
@@ -747,35 +747,30 @@ namespace jucyaudio
                 const auto& currentView = m_trackViews[i];
                 const auto& nextView = m_trackViews[i + 1];
                 
-                // Calculate where current track's cueEnd is
                 const auto& currentTrack = *currentView.mixTrackData;
-                const auto* currentTrackInfo = currentView.trackInfoData;
+                const auto& nextTrack = *nextView.mixTrackData;
                 
-                Duration_t cueEndPos = currentTrack.cueEnd;
-                if (cueEndPos == Duration_t{0})
-                {
-                    cueEndPos = currentTrackInfo->duration;
-                }
-                else if (cueEndPos < Duration_t{0})
-                {
-                    cueEndPos = currentTrackInfo->duration + cueEndPos;
-                }
-                
-                // Calculate the position on timeline
+                // Calculate where current track's attachTo point is on the timeline
                 const double currentTrackStart = std::chrono::duration<double>(currentView.calculatedStartTime).count();
-                const double cueEndTime = currentTrackStart + std::chrono::duration<double>(cueEndPos).count();
+                const double attachToTime = currentTrackStart + std::chrono::duration<double>(currentTrack.attachTo).count();
                 
-                // Draw the crossfade line
-                const float x = static_cast<float>(cueEndTime * m_pixelsPerSecond);
+                // Calculate where next track's attachFrom point is on the timeline
+                const double nextTrackStart = std::chrono::duration<double>(nextView.calculatedStartTime).count();
+                const double attachFromTime = nextTrackStart + std::chrono::duration<double>(nextTrack.attachFrom).count();
                 
-                // Draw main line
-                g.setColour(juce::Colours::cyan.withAlpha(0.7f));
-                g.drawVerticalLine(juce::roundToInt(x), 0.0f, static_cast<float>(getHeight()));
+                // The attach point is where these two tracks connect
+                // According to ATTACH formula: next track starts at (prev start + prev attachTo - next attachFrom)
+                // So the connection point on the timeline is at attachToTime
+                
+                // Draw vertical line at the attach point
+                const float attachX = static_cast<float>(attachToTime * m_pixelsPerSecond);
+                g.setColour(juce::Colours::orange.withAlpha(0.7f));
+                g.drawVerticalLine(juce::roundToInt(attachX), 0.0f, static_cast<float>(getHeight()));
                 
                 // Draw label at top
-                g.setFont(12.0f);
-                g.setColour(juce::Colours::cyan);
-                g.drawText("MIX", juce::roundToInt(x) - 15, 5, 30, 15, juce::Justification::centred);
+                g.setFont(10.0f);
+                g.setColour(juce::Colours::orange);
+                g.drawText("ATTACH", juce::roundToInt(attachX) - 20, 5, 40, 12, juce::Justification::centred);
             }
         }
     } // namespace ui

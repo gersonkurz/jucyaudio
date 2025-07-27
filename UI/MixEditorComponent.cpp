@@ -187,6 +187,9 @@ namespace jucyaudio
                     
                     // Save changes
                     saveMixChanges();
+                    
+                    // Refresh the timeline since attach points affect track positions
+                    m_timeline.populateFrom(const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()));
                     break;
                 }
             }

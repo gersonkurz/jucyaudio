@@ -182,6 +182,9 @@ namespace jucyaudio
                                     0,                            // channel index to draw (0 = Left)
                                     1.0f);                        // vertical zoom
 
+            // Draw semi-transparent overlay for non-audible portions (outside cue points)
+            drawNonAudibleRegions(g, waveformArea);
+            
             // Draw volume envelope on top
             drawVolumeEnvelope(g, waveformArea);
             
@@ -512,6 +515,50 @@ namespace jucyaudio
             point.time = std::max(point.time, std::chrono::milliseconds(0));
         }
         
+        void MixTrackComponent::drawNonAudibleRegions(juce::Graphics &g, juce::Rectangle<int> area)
+        {
+            const auto trackDuration = m_trackInfo.duration;
+            const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
+            
+            // Add the same margin as envelope points for consistency
+            const int margin = 5;
+            const int usableWidth = area.getWidth() - (2 * margin);
+            
+            // Calculate cue positions in pixels
+            const double cueStartSeconds = std::chrono::duration<double>(m_mixTrack.cueStart).count();
+            const float cueStartX = area.getX() + margin + (cueStartSeconds / trackDurationSeconds) * usableWidth;
+            
+            // Calculate cue end position
+            Duration_t cueEndPos = m_mixTrack.cueEnd;
+            if (cueEndPos == Duration_t{0})
+            {
+                cueEndPos = trackDuration;
+            }
+            else if (cueEndPos < Duration_t{0})
+            {
+                cueEndPos = trackDuration + cueEndPos;
+            }
+            const double cueEndSeconds = std::chrono::duration<double>(cueEndPos).count();
+            const float cueEndX = area.getX() + margin + (cueEndSeconds / trackDurationSeconds) * usableWidth;
+            
+            // Draw semi-transparent overlay for non-audible regions
+            g.setColour(juce::Colours::black.withAlpha(0.5f));
+            
+            // Before cue start
+            if (cueStartX > area.getX())
+            {
+                g.fillRect(area.getX(), area.getY(), 
+                          juce::roundToInt(cueStartX - area.getX()), area.getHeight());
+            }
+            
+            // After cue end
+            if (cueEndX < area.getRight())
+            {
+                g.fillRect(juce::roundToInt(cueEndX), area.getY(), 
+                          juce::roundToInt(area.getRight() - cueEndX), area.getHeight());
+            }
+        }
+        
         void MixTrackComponent::drawCueAndAttachMarkers(juce::Graphics &g, juce::Rectangle<int> area)
         {
             const auto trackDuration = m_trackInfo.duration;
@@ -540,12 +587,11 @@ namespace jucyaudio
                 g.drawText(label, juce::roundToInt(x) + 2, area.getY() - 12, 60, 12, juce::Justification::left);
             };
             
-            // Draw cue markers with a more subtle appearance since the main crossfade line is drawn at timeline level
-            // But keep them draggable
-            const auto cueColor = juce::Colours::cyan.withAlpha(0.5f);
+            // Draw cue markers - these define the audible portion of the track
+            const auto cueColor = juce::Colours::cyan;
             
-            // Draw cue start as a subtle marker at the track start
-            drawMarker(m_mixTrack.cueStart, cueColor, "", m_hoveredMarker == MarkerType::CueStart);
+            // Draw cue start - where playback begins
+            drawMarker(m_mixTrack.cueStart, cueColor, "Cue In", m_hoveredMarker == MarkerType::CueStart);
             
             // For cueEnd, calculate actual position (0 means track end, negative is relative to end)
             Duration_t cueEndPos = m_mixTrack.cueEnd;
@@ -557,12 +603,13 @@ namespace jucyaudio
             {
                 cueEndPos = trackDuration + cueEndPos;
             }
-            drawMarker(cueEndPos, cueColor, "", m_hoveredMarker == MarkerType::CueEnd);
+            drawMarker(cueEndPos, cueColor, "Cue Out", m_hoveredMarker == MarkerType::CueEnd);
             
-            // Draw attach markers - these define the crossfade alignment
-            const auto attachColor = juce::Colours::orange;
-            drawMarker(m_mixTrack.attachFrom, attachColor, "Attach From", m_hoveredMarker == MarkerType::AttachFrom);
-            drawMarker(m_mixTrack.attachTo, attachColor, "Attach To", m_hoveredMarker == MarkerType::AttachTo);
+            // Draw attach markers - these define where crossfades align
+            // Keep them subtle since the main attach line is drawn at timeline level
+            const auto attachColor = juce::Colours::orange.withAlpha(0.5f);
+            drawMarker(m_mixTrack.attachFrom, attachColor, "", m_hoveredMarker == MarkerType::AttachFrom);
+            drawMarker(m_mixTrack.attachTo, attachColor, "", m_hoveredMarker == MarkerType::AttachTo);
         }
         
         MixTrackComponent::MarkerType MixTrackComponent::hitTestMarker(juce::Point<int> mousePos) const
