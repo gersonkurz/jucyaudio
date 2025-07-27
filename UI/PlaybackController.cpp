@@ -8,7 +8,9 @@ namespace jucyaudio
     {
         PlaybackController::PlaybackController(PlaybackToolbarComponent &toolbar)
             : m_playbackToolbar{toolbar}
+#if MIX_TRANSITION_EXPORT_AVAILABLE
             , m_mixPlaybackEngine{std::make_unique<audio::MixPlaybackEngine>()}
+#endif
         {
             m_audioFormatManager.registerBasicFormats();
 
@@ -154,12 +156,13 @@ namespace jucyaudio
             // For now, just store them. The transport source will be prepared when a file is loaded.
             spdlog::info("PlaybackController::prepareToPlay - Device SR: {}, BlockSize: {}", m_deviceSampleRate, m_deviceBlockSize);
             m_audioTransportSource.prepareToPlay(samplesPerBlockExpected, sampleRate);
-            
+#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE            
             // Prepare mix playback engine
             if (m_mixPlaybackEngine)
             {
                 m_mixPlaybackEngine->prepareToPlay(samplesPerBlockExpected, sampleRate);
             }
+#endif // MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE
         }
 
         void PlaybackController::getNextAudioBlock(const juce::AudioSourceChannelInfo &bufferToFill)
@@ -170,12 +173,15 @@ namespace jucyaudio
                 return;
             }
             
+#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE
             if (m_playbackMode == PlaybackMode::MixPreview && m_mixPlaybackEngine && m_mixPlaybackEngine->isMixLoaded())
             {
                 // Use mix playback engine
                 m_mixPlaybackEngine->getNextAudioBlock(bufferToFill);
             }
-            else if (m_currentAudioFileSource != nullptr)
+            else 
+#endif
+            if (m_currentAudioFileSource != nullptr)
             {
                 // Use single track playback
                 m_audioTransportSource.getNextAudioBlock(bufferToFill);
@@ -315,7 +321,11 @@ namespace jucyaudio
         
         bool PlaybackController::loadAndPlayMix(audio::MixProjectLoader* mixLoader, double startPositionSeconds)
         {
-            if (!mixLoader || !m_mixPlaybackEngine)
+            if (!mixLoader 
+#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE
+                || !m_mixPlaybackEngine
+#endif
+                )
             {
                 spdlog::error("PlaybackController::loadAndPlayMix - Invalid mix loader or engine");
                 return false;
@@ -327,6 +337,7 @@ namespace jucyaudio
             // Switch to mix preview mode
             setPlaybackMode(PlaybackMode::MixPreview);
             
+#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE
             // Load the mix
             if (!m_mixPlaybackEngine->loadMix(mixLoader))
             {
@@ -348,7 +359,7 @@ namespace jucyaudio
             
             // Start playback
             changeState(State::Playing);
-            
+#endif            
             spdlog::info("PlaybackController::loadAndPlayMix - Mix loaded and playing from {}s", startPositionSeconds);
             return true;
         }
@@ -423,11 +434,14 @@ namespace jucyaudio
 
         void PlaybackController::seek(double positionSeconds)
         {
+#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE
             if (m_playbackMode == PlaybackMode::MixPreview && m_mixPlaybackEngine && m_mixPlaybackEngine->isMixLoaded())
             {
                 m_mixPlaybackEngine->setPosition(Duration_t{static_cast<int64_t>(positionSeconds * 1000.0)});
             }
-            else if (m_currentAudioFileSource != nullptr)
+            else
+#endif
+            if (m_currentAudioFileSource != nullptr)
             {
                 m_audioTransportSource.setPosition(positionSeconds);
             }
@@ -445,19 +459,23 @@ namespace jucyaudio
 
         double PlaybackController::getCurrentPositionSeconds() const
         {
+#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE
             if (m_playbackMode == PlaybackMode::MixPreview && m_mixPlaybackEngine && m_mixPlaybackEngine->isMixLoaded())
             {
                 return m_mixPlaybackEngine->getPosition().count() / 1000.0;
             }
+#endif
             return m_audioTransportSource.getCurrentPosition();
         }
 
         double PlaybackController::getLengthInSeconds() const
         {
+#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE
             if (m_playbackMode == PlaybackMode::MixPreview && m_mixPlaybackEngine && m_mixPlaybackEngine->isMixLoaded())
             {
                 return m_mixPlaybackEngine->getTotalDuration().count() / 1000.0;
             }
+#endif
             return m_audioTransportSource.getLengthInSeconds();
         }
     } // namespace ui

@@ -231,4 +231,15 @@ namespace jucyaudio
         };
 
     } // namespace database
+    
+    /**
+     * @brief Feature flags for mix transition refactoring
+     * @details These flags temporarily disable features during the transition
+     *          from position-based to attach-based mix model.
+     * @note Set to 1 to enable feature, 0 to disable
+     */
+    #define MIX_TRANSITION_EXPORT_AVAILABLE 0
+    #define MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE 0
+    #define MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE 0
+    
 } // namespace jucyaudio

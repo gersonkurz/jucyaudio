@@ -43,6 +43,7 @@ namespace jucyaudio
                 handleMixPlayback(startTime, true);
             };
             
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             // Initialize audio
             m_mixPlaybackEngine = std::make_unique<audio::MixPlaybackEngine>();
             m_audioDeviceManager = std::make_unique<juce::AudioDeviceManager>();
@@ -50,6 +51,7 @@ namespace jucyaudio
             // Set up audio device
             m_audioDeviceManager->initialiseWithDefaultDevices(0, 2); // 0 inputs, 2 outputs
             m_audioDeviceManager->addAudioCallback(m_mixPlaybackEngine.get());
+#endif
             
             // Set up playback timer
             m_playbackTimer.owner = this;
@@ -63,11 +65,13 @@ namespace jucyaudio
                 stopMixPlayback();
             }
             
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             // Clean up audio
             if (m_audioDeviceManager && m_mixPlaybackEngine)
             {
                 m_audioDeviceManager->removeAudioCallback(m_mixPlaybackEngine.get());
             }
+#endif
             
             // Unload mix before cleanup
             unloadMix();
@@ -192,6 +196,7 @@ namespace jucyaudio
         
         void MixEditorComponent::handleMixPlayback(double startTime, bool alwaysPlay)
         {
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             // Special case: negative value means stop
             if (startTime < 0)
             {
@@ -235,10 +240,15 @@ namespace jucyaudio
                 m_mixPlaybackEngine->setPosition(positionMs);
                 startMixPlayback();
             }
+#else
+            // Playback not available during transition
+            spdlog::info("Mix playback disabled during transition");
+#endif
         }
         
         void MixEditorComponent::startMixPlayback()
         {
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             spdlog::info("MixEditorComponent::startMixPlayback");
             
             if (!m_isPlaying)
@@ -264,10 +274,12 @@ namespace jucyaudio
                 // Update timeline to show we're playing
                 m_timeline.setMixPlaybackPosition(m_mixPlaybackEngine->getPosition().count() / 1000.0);
             }
+#endif
         }
         
         void MixEditorComponent::stopMixPlayback()
         {
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             spdlog::info("MixEditorComponent::stopMixPlayback");
             
             if (m_isPlaying)
@@ -286,10 +298,14 @@ namespace jucyaudio
                 // Reset playback position display
                 m_timeline.setMixPlaybackPosition(-1.0); // Hide the red playhead
             }
+#else
+            m_isPlaying = false;
+#endif
         }
         
         void MixEditorComponent::updatePlaybackPosition()
         {
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             if (m_isPlaying && m_mixPlaybackEngine)
             {
                 // Get current position from engine
@@ -306,6 +322,7 @@ namespace jucyaudio
                     stopMixPlayback();
                 }
             }
+#endif
         }
     } // namespace ui
 } // namespace jucyaudio

@@ -24,7 +24,7 @@ namespace jucyaudio
     namespace audio
     {
         using namespace database;
-
+#if MIX_TRANSITION_EXPORT_AVAILABLE
         class ExportWavMixImplementation final : public ExportMixImplementation
         {
         public:
@@ -39,6 +39,6 @@ namespace jucyaudio
             bool onSetupAudioFormatManagerAndWriter() override;
             bool onRunMixingLoop() override;
         };
-
+#endif
     } // namespace audio
 } // namespace jucyaudio

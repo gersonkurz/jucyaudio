@@ -12,7 +12,9 @@ namespace jucyaudio
 {
     namespace audio 
     {
+#if MIX_TRANSITION_EXPORT_AVAILABLE
         class MixPlaybackEngine;
+#endif
         class MixProjectLoader;
     }
     
@@ -100,7 +102,9 @@ namespace jucyaudio
             juce::AudioTransportSource m_audioTransportSource;
             
             // Mix playback support
+#if MIX_TRANSITION_EXPORT_AVAILABLE
             std::unique_ptr<audio::MixPlaybackEngine> m_mixPlaybackEngine;
+#endif
             PlaybackMode m_playbackMode{PlaybackMode::SingleTrack};
             
             double m_deviceSampleRate{0.0};

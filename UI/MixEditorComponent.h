@@ -10,7 +10,9 @@
 #include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <Audio/MixProjectLoader.h>
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
 #include <Audio/MixPlaybackEngine.h>
+#endif
 
 namespace jucyaudio
 {
@@ -59,8 +61,10 @@ namespace jucyaudio
             database::MixNode *m_node{nullptr};
             
             // Mix playback
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             std::unique_ptr<audio::MixPlaybackEngine> m_mixPlaybackEngine;
             std::unique_ptr<juce::AudioDeviceManager> m_audioDeviceManager;
+#endif
             bool m_isPlaying{false};
             
             // Timer for updating playback position

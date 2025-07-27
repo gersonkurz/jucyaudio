@@ -10,6 +10,9 @@
 
 #include <Audio/ExportMixImplementation.h>
 #include <Utils/AssortedUtils.h>
+#include <Database/Includes/Constants.h>
+
+#if MIX_TRANSITION_EXPORT_AVAILABLE
 
 namespace jucyaudio
 {
@@ -337,3 +340,5 @@ namespace jucyaudio
 
     } // namespace audio
 } // namespace jucyaudio
+
+#endif // MIX_TRANSITION_EXPORT_AVAILABLE

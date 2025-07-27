@@ -3,12 +3,15 @@
 #include <Audio/MixProjectLoader.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
+#include <Database/Includes/Constants.h>
 #include <Audio/Includes/IMixExporter.h>
 #include <Database/TrackLibrary.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <unordered_map>
+
+#if MIX_TRANSITION_EXPORT_AVAILABLE
 
 namespace jucyaudio
 {
@@ -128,3 +131,5 @@ namespace jucyaudio
         };
     } // namespace audio
 } // namespace jucyaudio
+
+#endif // MIX_TRANSITION_EXPORT_AVAILABLE

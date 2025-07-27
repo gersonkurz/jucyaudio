@@ -10,12 +10,12 @@
 
 #include <Audio/ExportMixToWav.h>
 
+#if MIX_TRANSITION_EXPORT_AVAILABLE
 namespace jucyaudio
 {
     namespace audio
     {
         using namespace database;
-
         bool ExportWavMixImplementation::onSetupAudioFormatManagerAndWriter()
         {
             m_formatManager.registerBasicFormats(); // For reading various input formats
@@ -97,6 +97,7 @@ namespace jucyaudio
                 m_progressCallback(1.0f, "Export complete.");
             return true;
         }
-
     } // namespace audio
 } // namespace jucyaudio
+
+#endif

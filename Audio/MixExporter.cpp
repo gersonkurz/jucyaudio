@@ -33,6 +33,7 @@ namespace jucyaudio
         bool MixExporter::exportMixToFile(MixId mixId, const std::filesystem::path &targetFilePath,
                                           MixExporterProgressCallback progressCallback) const
         {
+#if MIX_TRANSITION_EXPORT_AVAILABLE
             const auto targetExtension{getLowercaseExtension(targetFilePath)};
             
             // Handle M3U export separately (doesn't use ExportMixImplementation)
@@ -65,6 +66,9 @@ namespace jucyaudio
             const auto success{implementation->run()};
             delete implementation; // Clean up the implementation
             return success;
+#else
+            return false;
+#endif // MIX_TRANSITION_EXPORT_AVAILABLE
         }
     } // namespace audio
 } // namespace jucyaudio

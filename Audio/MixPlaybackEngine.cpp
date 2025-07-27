@@ -1,7 +1,10 @@
 #include <Audio/MixPlaybackEngine.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
+#include <Database/Includes/Constants.h>
 #include <spdlog/spdlog.h>
+
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
 
 namespace jucyaudio
 {
@@ -445,3 +448,5 @@ namespace jucyaudio
 
     } // namespace audio
 } // namespace jucyaudio
+
+#endif // MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE

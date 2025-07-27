@@ -3,6 +3,7 @@
 #include <Audio/MixProjectLoader.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
+#include <Database/Includes/Constants.h>
 #include <atomic>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -10,6 +11,8 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
 
 namespace jucyaudio
 {
@@ -135,3 +138,5 @@ namespace jucyaudio
 
     } // namespace audio
 } // namespace jucyaudio
+
+#endif // MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
