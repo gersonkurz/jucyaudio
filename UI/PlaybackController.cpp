@@ -8,7 +8,7 @@ namespace jucyaudio
     {
         PlaybackController::PlaybackController(PlaybackToolbarComponent &toolbar)
             : m_playbackToolbar{toolbar}
-#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE && MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             , m_mixPlaybackEngine{std::make_unique<audio::MixPlaybackEngine>()}
 #endif
         {
@@ -156,13 +156,13 @@ namespace jucyaudio
             // For now, just store them. The transport source will be prepared when a file is loaded.
             spdlog::info("PlaybackController::prepareToPlay - Device SR: {}, BlockSize: {}", m_deviceSampleRate, m_deviceBlockSize);
             m_audioTransportSource.prepareToPlay(samplesPerBlockExpected, sampleRate);
-#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE && MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE            
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE            
             // Prepare mix playback engine
             if (m_mixPlaybackEngine)
             {
                 m_mixPlaybackEngine->prepareToPlay(samplesPerBlockExpected, sampleRate);
             }
-#endif // MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE && MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
+#endif // MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
         }
 
         void PlaybackController::getNextAudioBlock(const juce::AudioSourceChannelInfo &bufferToFill)
@@ -173,7 +173,7 @@ namespace jucyaudio
                 return;
             }
             
-#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE && MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             if (m_playbackMode == PlaybackMode::MixPreview && m_mixPlaybackEngine && m_mixPlaybackEngine->isMixLoaded())
             {
                 // Use mix playback engine
@@ -322,7 +322,7 @@ namespace jucyaudio
         bool PlaybackController::loadAndPlayMix(audio::MixProjectLoader* mixLoader, double startPositionSeconds)
         {
             if (!mixLoader 
-#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE && MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
                 || !m_mixPlaybackEngine
 #endif
                 )
@@ -337,7 +337,7 @@ namespace jucyaudio
             // Switch to mix preview mode
             setPlaybackMode(PlaybackMode::MixPreview);
             
-#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE && MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             // Load the mix
             if (!m_mixPlaybackEngine->loadMix(mixLoader))
             {
@@ -434,7 +434,7 @@ namespace jucyaudio
 
         void PlaybackController::seek(double positionSeconds)
         {
-#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE && MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             if (m_playbackMode == PlaybackMode::MixPreview && m_mixPlaybackEngine && m_mixPlaybackEngine->isMixLoaded())
             {
                 m_mixPlaybackEngine->setPosition(Duration_t{static_cast<int64_t>(positionSeconds * 1000.0)});
@@ -459,7 +459,7 @@ namespace jucyaudio
 
         double PlaybackController::getCurrentPositionSeconds() const
         {
-#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE && MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             if (m_playbackMode == PlaybackMode::MixPreview && m_mixPlaybackEngine && m_mixPlaybackEngine->isMixLoaded())
             {
                 return m_mixPlaybackEngine->getPosition().count() / 1000.0;
@@ -470,7 +470,7 @@ namespace jucyaudio
 
         double PlaybackController::getLengthInSeconds() const
         {
-#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE && MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
+#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             if (m_playbackMode == PlaybackMode::MixPreview && m_mixPlaybackEngine && m_mixPlaybackEngine->isMixLoaded())
             {
                 return m_mixPlaybackEngine->getTotalDuration().count() / 1000.0;

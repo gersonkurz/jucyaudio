@@ -172,7 +172,7 @@ namespace jucyaudio
         }
 #endif
 
-#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE && !MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
+#if !MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
         void TimelineComponent::recalculateLayout()
         {
             // Recalculate width based on new zoom and stored positions
@@ -444,7 +444,7 @@ namespace jucyaudio
         }
 #endif
 
-#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE && !MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
+#if !MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
         void TimelineComponent::resized()
         {
             auto visibleArea = getParentComponent()->getLocalBounds();
@@ -541,7 +541,7 @@ namespace jucyaudio
         }
 #endif
 
-#if MIX_TRANSITION_WAVEFORM_EDITOR_AVAILABLE && !MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
+#if !MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
         void TimelineComponent::populateFrom(audio::MixProjectLoader &mixLoader)
         {
             m_selectedTrack = nullptr;
