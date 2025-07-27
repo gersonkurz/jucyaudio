@@ -11,8 +11,6 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <unordered_map>
 
-#if MIX_TRANSITION_EXPORT_AVAILABLE
-
 namespace jucyaudio
 {
     namespace audio
@@ -58,6 +56,9 @@ namespace jucyaudio
             bool run();
 
         protected:
+            // @brief Calculate timeline positions for all tracks using ATTACH model
+            void calculateTrackPositions();
+            
             // @brief Calculate the total mix duration based on the last track's effective duration.
             // This is needed to create the main output buffer or to know how much to write.
             // The end time of the last track (lastTrack.mixStartTime + lastTrackEffectiveDuration)
@@ -104,6 +105,13 @@ namespace jucyaudio
             juce::AudioFormatManager m_formatManager;
             std::unique_ptr<juce::AudioFormatWriter> m_writer;
             std::vector<ActiveTrackSource> m_activeSources;
+            
+            // Calculated timeline positions for ATTACH model
+            struct TrackTimelinePosition {
+                Duration_t startTime{0};
+                Duration_t endTime{0};
+            };
+            std::unordered_map<TrackId, TrackTimelinePosition> m_trackPositions;
 
             // TBD: Determine Output Format Properties (Sample Rate, Channels)
             //    - Iterate through tracks, find the highest sample rate, max channels, or enforce a standard.
@@ -131,5 +139,3 @@ namespace jucyaudio
         };
     } // namespace audio
 } // namespace jucyaudio
-
-#endif // MIX_TRANSITION_EXPORT_AVAILABLE

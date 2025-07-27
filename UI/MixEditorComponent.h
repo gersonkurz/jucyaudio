@@ -47,6 +47,8 @@ namespace jucyaudio
 
         private:
             void updateTrackPositionInData(TrackId trackId, std::chrono::milliseconds newStartTime);
+            void updateCueAttachInData(TrackId trackId, const database::MixTrack& updatedTrack);
+            void updateEnvelopeInData(TrackId trackId, const std::vector<database::EnvelopePoint>& points);
             void saveMixChanges();
             void handleMixPlayback(double startTime, bool alwaysPlay = false);
             void startMixPlayback();

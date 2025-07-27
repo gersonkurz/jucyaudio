@@ -10,7 +10,6 @@
 
 #include <Audio/ExportMixToWav.h>
 
-#if MIX_TRANSITION_EXPORT_AVAILABLE
 namespace jucyaudio
 {
     namespace audio
@@ -99,5 +98,3 @@ namespace jucyaudio
         }
     } // namespace audio
 } // namespace jucyaudio
-
-#endif

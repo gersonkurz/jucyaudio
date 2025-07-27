@@ -3,9 +3,9 @@
 #include <Utils/AssortedUtils.h>
 #include <fstream>
 #include <format>
+#include <unordered_map>
 #include <spdlog/spdlog.h>
 
-#if MIX_TRANSITION_EXPORT_AVAILABLE
 namespace jucyaudio
 {
     namespace audio
@@ -18,9 +18,9 @@ namespace jucyaudio
             // Get mix info and tracks
             const auto &mixManager{theTrackLibrary.getMixManager()};
             const auto mixInfo{mixManager.getMix(mixId)};
-            if (!mixInfo.name.empty())
+            if (mixInfo.name.empty())
             {
-                spdlog::error("ExportMixToM3U: Mix ID {} not found", mixId);
+                spdlog::error("ExportMixToM3U: Mix ID {} has no name", mixId);
                 return false;
             }
 
@@ -51,6 +51,29 @@ namespace jucyaudio
             outFile << "#EXTM3U\n";
             outFile << "#EXTMIX:" << mixInfo.name << "\n";
             outFile << "#EXTMIXDURATION:" << std::chrono::duration_cast<std::chrono::seconds>(mixInfo.totalDuration).count() << "\n\n";
+
+            // Calculate timeline positions using ATTACH model
+            std::unordered_map<TrackId, Duration_t> trackStartTimes;
+            Duration_t previousTrackStart{0};
+            
+            for (size_t i = 0; i < mixTracks.size(); ++i)
+            {
+                const auto& mixTrack = mixTracks[i];
+                Duration_t trackStart{0};
+                
+                if (i == 0)
+                {
+                    trackStart = Duration_t{0};
+                }
+                else
+                {
+                    const auto& prevTrack = mixTracks[i-1];
+                    trackStart = previousTrackStart + prevTrack.attachTo - mixTrack.attachFrom;
+                }
+                
+                trackStartTimes[mixTrack.trackId] = trackStart;
+                previousTrackStart = trackStart;
+            }
 
             // Process each track
             size_t processedTracks{0};
@@ -95,9 +118,18 @@ namespace jucyaudio
                 // Write custom EXTREM line with original filename
                 outFile << std::format("#EXTREM:{}\n", trackInfo->filepath.filename().string());
                 
-                // Write EXTSTART line with mix start time in seconds
-                const auto startSeconds{std::chrono::duration_cast<std::chrono::milliseconds>(mixTrack.mixStartTime).count() / 1000.0};
-                outFile << std::format("#EXTSTART:{:.1f}\n", startSeconds);
+                // Write EXTSTART line with calculated start time in seconds
+                const auto startTimeIt = trackStartTimes.find(mixTrack.trackId);
+                if (startTimeIt != trackStartTimes.end())
+                {
+                    const auto startSeconds{std::chrono::duration_cast<std::chrono::milliseconds>(startTimeIt->second).count() / 1000.0};
+                    outFile << std::format("#EXTSTART:{:.1f}\n", startSeconds);
+                }
+                else
+                {
+                    spdlog::warn("Start time not calculated for track {}", mixTrack.trackId);
+                    outFile << "#EXTSTART:0.0\n";
+                }
                 
                 // Write file path (absolute path as stored in database)
                 outFile << pathToString(trackInfo->filepath) << "\n\n";
@@ -118,5 +150,4 @@ namespace jucyaudio
 
     } // namespace audio
 } // namespace jucyaudio
-#endif
 

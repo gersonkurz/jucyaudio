@@ -577,6 +577,20 @@ namespace jucyaudio
                     view.trackInfoData = trackInfo;
                     view.component = std::make_unique<MixTrackComponent>(*view.mixTrackData, *view.trackInfoData, m_formatManager, m_thumbnailCache);
                     view.calculatedStartTime = trackStart; // Store the calculated start time
+                    
+                    // Set up callbacks
+                    view.component->onCueAttachChanged = [this](TrackId id, const database::MixTrack& updatedTrack)
+                    {
+                        if (onCueAttachChanged)
+                            onCueAttachChanged(id, updatedTrack);
+                    };
+                    
+                    view.component->onEnvelopeChanged = [this](TrackId id, const std::vector<database::EnvelopePoint>& points)
+                    {
+                        if (onEnvelopeChanged)
+                            onEnvelopeChanged(id, points);
+                    };
+                    
                     addAndMakeVisible(*view.component, m_trackViews.size());
                     m_trackViews.push_back(std::move(view));
                     

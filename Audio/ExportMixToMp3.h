@@ -24,7 +24,6 @@ namespace jucyaudio
     namespace audio
     {
         using namespace database;
-#if MIX_TRANSITION_EXPORT_AVAILABLE
         class ExportMp3MixImplementation final : public ExportMixImplementation
         {
         public:
@@ -47,6 +46,5 @@ namespace jucyaudio
             // Override destructor to clean up LAME
             ~ExportMp3MixImplementation() override;
         };
-#endif
     } // namespace audio
 } // namespace jucyaudio

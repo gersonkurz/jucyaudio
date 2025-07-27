@@ -12,8 +12,6 @@
 #include <Utils/AssortedUtils.h>
 #include <Database/Includes/Constants.h>
 
-#if MIX_TRANSITION_EXPORT_AVAILABLE
-
 namespace jucyaudio
 {
     namespace audio
@@ -99,6 +97,51 @@ namespace jucyaudio
             }
             return true;
         }
+        void ExportMixImplementation::calculateTrackPositions()
+        {
+            m_trackPositions.clear();
+            Duration_t previousTrackStart{0};
+            
+            for (size_t i = 0; i < m_mixTracks.size(); ++i)
+            {
+                const auto& mixTrack = m_mixTracks[i];
+                const auto* trackInfo = getTrackInfoForId(mixTrack.trackId);
+                if (!trackInfo)
+                {
+                    spdlog::warn("Track info not found for track ID {} during position calculation", mixTrack.trackId);
+                    continue;
+                }
+                
+                Duration_t trackStart{0};
+                
+                if (i == 0)
+                {
+                    // First track starts at position 0
+                    trackStart = Duration_t{0};
+                }
+                else
+                {
+                    // ATTACH formula: Next track start = Previous track start + Previous track's attachTo - Current track's attachFrom
+                    const auto& prevTrack = m_mixTracks[i-1];
+                    trackStart = previousTrackStart + prevTrack.attachTo - mixTrack.attachFrom;
+                }
+                
+                // Store the calculated position
+                TrackTimelinePosition pos;
+                pos.startTime = trackStart;
+                pos.endTime = trackStart + trackInfo->duration;
+                m_trackPositions[mixTrack.trackId] = pos;
+                
+                // Remember this track's start for the next iteration
+                previousTrackStart = trackStart;
+                
+                spdlog::debug("Track {} positioned at [{}, {}]", 
+                    mixTrack.trackId, 
+                    durationToString(pos.startTime), 
+                    durationToString(pos.endTime));
+            }
+        }
+        
         float interpolateVolumeFromEnvelope(const std::vector<EnvelopePoint> &envelopePoints, Duration_t timeInTrack)
         {
             if (envelopePoints.empty())
@@ -153,18 +196,20 @@ namespace jucyaudio
                 return fail("MTE: No mix tracks found for mix ID " + std::to_string(m_mixId));
             }
 
-            const auto &lastTrackDef = m_mixTracks.back();
-            const auto lastTrackInfoOpt = getTrackInfoForId(lastTrackDef.trackId);
-            if (!lastTrackInfoOpt)
+            // Calculate timeline positions for all tracks using ATTACH model
+            calculateTrackPositions();
+
+            // Find the maximum end time among all tracks
+            Duration_t maxEndTime{0};
+            for (const auto& [trackId, pos] : m_trackPositions)
             {
-                return fail("MTE: Last track ID " + std::to_string(lastTrackDef.trackId) + " not found in database.");
+                if (pos.endTime > maxEndTime)
+                {
+                    maxEndTime = pos.endTime;
+                }
             }
 
-            // With envelope system, tracks play their full duration
-            // The envelope controls audibility, not the track length
-            Duration_t lastTrackEffectiveDuration = lastTrackInfoOpt->duration;
-
-            m_totalMixDurationMs = lastTrackDef.mixStartTime + lastTrackEffectiveDuration;
+            m_totalMixDurationMs = maxEndTime;
 
             if (m_totalMixDurationMs <= Duration_t::zero())
             {
@@ -287,8 +332,14 @@ namespace jucyaudio
             const TrackInfo &trackInfo = *activeSource.trackInfoPtr;
             juce::AudioFormatReader *reader = activeSource.reader.get();
 
-            // --- Calculate timing for *this specific track* based on mixTrackDef ---
-            juce::int64 trackMixStartSamples = static_cast<juce::int64>((mixTrackDef.mixStartTime.count() / 1000.0) * outputSampleRate());
+            // --- Calculate timing for *this specific track* based on calculated positions ---
+            const auto posIt = m_trackPositions.find(mixTrackDef.trackId);
+            if (posIt == m_trackPositions.end())
+            {
+                spdlog::error("Track position not calculated for track {}", mixTrackDef.trackId);
+                return false;
+            }
+            juce::int64 trackMixStartSamples = static_cast<juce::int64>((posIt->second.startTime.count() / 1000.0) * outputSampleRate());
 
             // With envelope system, tracks play their full duration
             Duration_t trackFileEffectiveDurationMs = trackInfo.duration;
@@ -340,5 +391,3 @@ namespace jucyaudio
 
     } // namespace audio
 } // namespace jucyaudio
-
-#endif // MIX_TRANSITION_EXPORT_AVAILABLE

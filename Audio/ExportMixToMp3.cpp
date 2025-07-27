@@ -10,7 +10,6 @@
 
 #include <Audio/ExportMixToMp3.h>
 
-#if MIX_TRANSITION_EXPORT_AVAILABLE
 namespace jucyaudio
 {
     namespace audio
@@ -212,4 +211,3 @@ namespace jucyaudio
         }
     } // namespace audio
 } // namespace jucyaudio
-#endif // MIX_TRANSITION_EXPORT_AVAILABLE

@@ -5,7 +5,6 @@
 #include <functional>
 #include <string>
 
-#if MIX_TRANSITION_EXPORT_AVAILABLE
 namespace jucyaudio
 {
     namespace audio
@@ -35,4 +34,3 @@ namespace jucyaudio
 
     } // namespace audio
 } // namespace jucyaudio
-#endif

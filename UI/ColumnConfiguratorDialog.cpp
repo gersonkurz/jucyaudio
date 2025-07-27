@@ -1,6 +1,6 @@
 #include <UI/ColumnConfiguratorDialog.h>
-#include <algorithm> // For std::sort, std::find_if
 #include <UI/MainComponent.h>
+#include <algorithm> // For std::sort, std::find_if
 
 namespace jucyaudio
 {
@@ -18,9 +18,9 @@ namespace jucyaudio
         } // namespace
 
         ColumnConfigurationDialogComponent::ColumnConfigurationDialogComponent(const juce::String &viewName,
-                                                                               const std::vector<database::DataColumn> &allAvailableColumnsFromNode,
-                                                                               config::TypedValueVector<config::DataViewColumnSection> &columnsConfigToModify,
-                                                                               ColumnsConfiguredCallback onConfiguredCallback)
+            const std::vector<database::DataColumn> &allAvailableColumnsFromNode,
+            config::TypedValueVector<config::DataViewColumnSection> &columnsConfigToModify,
+            ColumnsConfiguredCallback onConfiguredCallback)
             : m_titleLabel("title", "Configure Columns for " + viewName),
               m_columnsListBox("colsListBox", this),
               m_moveUpButton("Move Up"),
@@ -98,11 +98,12 @@ namespace jucyaudio
                 for (const auto &configuredSectionPtr : m_columnsConfigToModifyRef.get())
                 {
                     const auto &configuredSection = *configuredSectionPtr;
-                    auto it = std::find_if(m_allAvailableColumns.begin(), m_allAvailableColumns.end(),
-                                           [&](const database::DataColumn &dc)
-                                           {
-                                               return dc.name == configuredSection.columnName.get();
-                                           });
+                    auto it = std::find_if(m_allAvailableColumns.begin(),
+                        m_allAvailableColumns.end(),
+                        [&](const database::DataColumn &dc)
+                        {
+                            return dc.name == configuredSection.columnName.get();
+                        });
                     if (it != m_allAvailableColumns.end())
                     {
                         m_dialogColumnStates.emplace_back(&(*it), true, configuredSection.columnWidth.get(), order++);
@@ -231,16 +232,26 @@ namespace jucyaudio
 
             // Checkbox for visibility
             juce::Rectangle<int> checkboxBounds(5, (height - 15) / 2, 15, 15);
-            getLookAndFeel().drawTickBox(g, *this, checkboxBounds.getX(), checkboxBounds.getY(), checkboxBounds.getWidth(),
-                                                                   checkboxBounds.getHeight(), colState.isVisible,
-                                                                   true,   // isEnabled
-                                                                   false,  // isMouseOver
-                                                                   false); // isMouseDown
+            getLookAndFeel().drawTickBox(g,
+                *this,
+                checkboxBounds.getX(),
+                checkboxBounds.getY(),
+                checkboxBounds.getWidth(),
+                checkboxBounds.getHeight(),
+                colState.isVisible,
+                true,   // isEnabled
+                false,  // isMouseOver
+                false); // isMouseDown
 
             g.setColour(getLookAndFeel().findColour(juce::ListBox::textColourId));
             g.setFont(height * 0.7f);
-            g.drawText(colState.originalDataColumn->name, checkboxBounds.getRight() + 5, 0, width - (checkboxBounds.getRight() + 10), height,
-                       juce::Justification::centredLeft, true);
+            g.drawText(colState.originalDataColumn->name,
+                checkboxBounds.getRight() + 5,
+                0,
+                width - (checkboxBounds.getRight() + 10),
+                height,
+                juce::Justification::centredLeft,
+                true);
         }
 
         void ColumnConfigurationDialogComponent::listBoxItemClicked(int rowNumber, const juce::MouseEvent &event)

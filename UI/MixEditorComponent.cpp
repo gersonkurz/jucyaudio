@@ -25,6 +25,16 @@ namespace jucyaudio
             {
                 updateTrackPositionInData(trackId, newStartTime);
             };
+            
+            m_timeline.onCueAttachChanged = [this](TrackId trackId, const database::MixTrack& updatedTrack)
+            {
+                updateCueAttachInData(trackId, updatedTrack);
+            };
+            
+            m_timeline.onEnvelopeChanged = [this](TrackId trackId, const std::vector<database::EnvelopePoint>& points)
+            {
+                updateEnvelopeInData(trackId, points);
+            };
 
             m_timeline.onMixChanged = [this]()
             {
@@ -149,6 +159,65 @@ namespace jucyaudio
             // TODO: Implement timeline-based reordering when dragging tracks
             spdlog::info("Track {} dragged to position {}ms - timeline drag reordering not yet implemented for ATTACH model", 
                         trackId, newStartTime.count());
+        }
+        
+        void MixEditorComponent::updateCueAttachInData(TrackId trackId, const database::MixTrack& updatedTrack)
+        {
+            if (!m_node)
+            {
+                spdlog::error("MixEditorComponent::updateCueAttachInData - No mix node loaded");
+                return;
+            }
+            
+            spdlog::info("Updating cue/attach points for track {}", trackId);
+            
+            // Get access to the mix tracks
+            auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
+            
+            // Find and update the track
+            for (auto& track : mixTracks)
+            {
+                if (track.trackId == trackId)
+                {
+                    track.cueStart = updatedTrack.cueStart;
+                    track.cueEnd = updatedTrack.cueEnd;
+                    track.attachFrom = updatedTrack.attachFrom;
+                    track.attachTo = updatedTrack.attachTo;
+                    spdlog::info("Updated cue/attach points for track {}", trackId);
+                    
+                    // Save changes
+                    saveMixChanges();
+                    break;
+                }
+            }
+        }
+        
+        void MixEditorComponent::updateEnvelopeInData(TrackId trackId, const std::vector<database::EnvelopePoint>& points)
+        {
+            if (!m_node)
+            {
+                spdlog::error("MixEditorComponent::updateEnvelopeInData - No mix node loaded");
+                return;
+            }
+            
+            spdlog::info("Updating envelope for track {} with {} points", trackId, points.size());
+            
+            // Get access to the mix tracks
+            auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
+            
+            // Find and update the track
+            for (auto& track : mixTracks)
+            {
+                if (track.trackId == trackId)
+                {
+                    track.envelopePoints = points;
+                    spdlog::info("Updated envelope points for track {}", trackId);
+                    
+                    // Save changes
+                    saveMixChanges();
+                    break;
+                }
+            }
         }
 
         void MixEditorComponent::saveMixChanges()

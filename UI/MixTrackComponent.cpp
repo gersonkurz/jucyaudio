@@ -45,7 +45,24 @@ namespace jucyaudio
         {
             if (event.mods.isLeftButtonDown())
             {
-                // FIRST: Check for envelope point hits (highest priority)
+                // FIRST: Check for marker hits (highest priority)
+                auto markerHit = hitTestMarker(event.position.toInt());
+                if (markerHit != MarkerType::None)
+                {
+                    m_draggedMarker = markerHit;
+                    m_originalMixTrack = m_mixTrack; // Save original state
+                    
+                    // Ensure track is selected
+                    if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                    {
+                        timeline->setSelectedTrack(this);
+                    }
+                    
+                    repaint();
+                    return; // Early exit
+                }
+                
+                // SECOND: Check for envelope point hits
                 if (auto hitPointIndex = hitTestEnvelopePoint(event.position.toInt()))
                 {
                     m_selectedEnvelopePointIndex = hitPointIndex;
@@ -164,6 +181,9 @@ namespace jucyaudio
 
             // Draw volume envelope on top
             drawVolumeEnvelope(g, waveformArea);
+            
+            // Draw cue and attach point markers
+            drawCueAndAttachMarkers(g, waveformArea);
         }
 
         void MixTrackComponent::drawVolumeEnvelope(juce::Graphics &g, juce::Rectangle<int> area)
@@ -256,6 +276,14 @@ namespace jucyaudio
 
         void MixTrackComponent::mouseDrag(const juce::MouseEvent &event)
         {
+            // Handle marker dragging
+            if (m_draggedMarker != MarkerType::None)
+            {
+                updateMarkerPosition(m_draggedMarker, event.position.toInt().x);
+                repaint();
+                return;
+            }
+            
             if (m_isDraggingEnvelopePoint && m_selectedEnvelopePointIndex.has_value())
             {
                 auto newPoint = screenPositionToEnvelopePoint(event.position.toInt());
@@ -299,6 +327,20 @@ namespace jucyaudio
 
         void MixTrackComponent::mouseUp(const juce::MouseEvent &event)
         {
+            // Handle marker drag completion
+            if (m_draggedMarker != MarkerType::None)
+            {
+                // Notify of cue/attach change
+                if (onCueAttachChanged)
+                {
+                    onCueAttachChanged(m_mixTrack.trackId, m_mixTrack);
+                }
+                
+                m_draggedMarker = MarkerType::None;
+                repaint();
+                return;
+            }
+            
             if (m_isDraggingEnvelopePoint)
             {
                 // Notify of envelope change
@@ -328,16 +370,32 @@ namespace jucyaudio
 
         void MixTrackComponent::mouseMove(const juce::MouseEvent &event)
         {
+            // Check for marker hover
+            auto hoveredMarker = hitTestMarker(event.position.toInt());
+            bool needsRepaint = false;
+            
+            if (hoveredMarker != m_hoveredMarker)
+            {
+                m_hoveredMarker = hoveredMarker;
+                needsRepaint = true;
+            }
+            
+            // Check for envelope point hover
             auto hoveredPoint = hitTestEnvelopePoint(event.position.toInt());
 
             if (hoveredPoint != m_hoveredEnvelopePointIndex)
             {
                 m_hoveredEnvelopePointIndex = hoveredPoint;
+                needsRepaint = true;
+            }
+            
+            if (needsRepaint)
+            {
                 repaint();
             }
 
             // Update cursor
-            if (hoveredPoint.has_value())
+            if (hoveredMarker != MarkerType::None || hoveredPoint.has_value())
             {
                 setMouseCursor(juce::MouseCursor::PointingHandCursor);
             }
@@ -384,8 +442,12 @@ namespace jucyaudio
             const auto trackDuration = std::chrono::duration<double>(m_trackInfo.duration).count();
             const double timeInSeconds = std::chrono::duration<double>(point.time).count();
 
+            // Add a small margin so the last point isn't right at the edge
+            const int margin = 5;
+            const int usableWidth = waveformArea.getWidth() - (2 * margin);
+            
             // Convert time to X position (relative to track start)
-            const float x = waveformArea.getX() + (timeInSeconds / trackDuration) * waveformArea.getWidth();
+            const float x = waveformArea.getX() + margin + (timeInSeconds / trackDuration) * usableWidth;
 
             // Convert volume to Y position (0% = bottom, 100% = top)
             const float volumePercent = point.volume / float(database::VOLUME_NORMALIZATION);
@@ -401,8 +463,12 @@ namespace jucyaudio
 
             const auto trackDuration = std::chrono::duration<double>(m_trackInfo.duration).count();
 
+            // Use the same margin as in envelopePointToScreenPosition
+            const int margin = 5;
+            const int usableWidth = waveformArea.getWidth() - (2 * margin);
+
             // Convert X position to time
-            const float relativeX = (screenPos.x - waveformArea.getX()) / float(waveformArea.getWidth());
+            const float relativeX = (screenPos.x - waveformArea.getX() - margin) / float(usableWidth);
             const double timeInSeconds = juce::jlimit(0.0, trackDuration, relativeX * trackDuration);
 
             // Convert Y position to volume
@@ -441,6 +507,189 @@ namespace jucyaudio
             const auto trackDuration = m_trackInfo.duration;
             point.time = std::min(point.time, trackDuration);
             point.time = std::max(point.time, std::chrono::milliseconds(0));
+        }
+        
+        void MixTrackComponent::drawCueAndAttachMarkers(juce::Graphics &g, juce::Rectangle<int> area)
+        {
+            const auto trackDuration = m_trackInfo.duration;
+            
+            // Helper lambda to draw a vertical marker
+            auto drawMarker = [&](Duration_t time, juce::Colour colour, const char* label, bool isHovered)
+            {
+                if (time < Duration_t{0} || time > trackDuration)
+                    return;
+                    
+                const double timeInSeconds = std::chrono::duration<double>(time).count();
+                const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
+                const float x = area.getX() + (timeInSeconds / trackDurationSeconds) * area.getWidth();
+                
+                // Draw vertical line
+                g.setColour(isHovered ? colour.brighter(0.5f) : colour);
+                g.drawVerticalLine(juce::roundToInt(x), area.getY(), area.getBottom());
+                
+                // Draw handle at top
+                const float handleSize = 8.0f;
+                juce::Rectangle<float> handle(x - handleSize/2, area.getY() - handleSize/2, handleSize, handleSize);
+                g.fillEllipse(handle);
+                
+                // Draw label
+                g.setFont(10.0f);
+                g.drawText(label, juce::roundToInt(x) + 2, area.getY() - 12, 50, 12, juce::Justification::left);
+            };
+            
+            // Draw cue markers (green)
+            drawMarker(m_mixTrack.cueStart, juce::Colours::green, "CS", m_hoveredMarker == MarkerType::CueStart);
+            
+            // For cueEnd, calculate actual position (0 means track end, negative is relative to end)
+            Duration_t cueEndPos = m_mixTrack.cueEnd;
+            if (cueEndPos == Duration_t{0})
+            {
+                cueEndPos = trackDuration;
+            }
+            else if (cueEndPos < Duration_t{0})
+            {
+                cueEndPos = trackDuration + cueEndPos;
+            }
+            drawMarker(cueEndPos, juce::Colours::red, "CE", m_hoveredMarker == MarkerType::CueEnd);
+            
+            // Draw attach markers (blue/purple)
+            drawMarker(m_mixTrack.attachFrom, juce::Colours::blue, "AF", m_hoveredMarker == MarkerType::AttachFrom);
+            drawMarker(m_mixTrack.attachTo, juce::Colours::purple, "AT", m_hoveredMarker == MarkerType::AttachTo);
+        }
+        
+        MixTrackComponent::MarkerType MixTrackComponent::hitTestMarker(juce::Point<int> mousePos) const
+        {
+            auto bounds = getLocalBounds();
+            auto waveformArea = bounds.removeFromBottom(waveformSectionHeight);
+            
+            // Only test within waveform area
+            if (!waveformArea.contains(mousePos))
+                return MarkerType::None;
+                
+            const int hitThreshold = 5; // pixels
+            
+            // Test each marker
+            auto testMarker = [&](MarkerType type) -> bool
+            {
+                int markerX = getMarkerXPosition(type);
+                return std::abs(mousePos.x - markerX) <= hitThreshold;
+            };
+            
+            if (testMarker(MarkerType::CueStart)) return MarkerType::CueStart;
+            if (testMarker(MarkerType::CueEnd)) return MarkerType::CueEnd;
+            if (testMarker(MarkerType::AttachFrom)) return MarkerType::AttachFrom;
+            if (testMarker(MarkerType::AttachTo)) return MarkerType::AttachTo;
+            
+            return MarkerType::None;
+        }
+        
+        int MixTrackComponent::getMarkerXPosition(MarkerType marker) const
+        {
+            auto bounds = getLocalBounds();
+            auto waveformArea = bounds.removeFromBottom(waveformSectionHeight);
+            
+            const auto trackDuration = m_trackInfo.duration;
+            const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
+            
+            Duration_t markerTime{0};
+            
+            switch (marker)
+            {
+                case MarkerType::CueStart:
+                    markerTime = m_mixTrack.cueStart;
+                    break;
+                    
+                case MarkerType::CueEnd:
+                    markerTime = m_mixTrack.cueEnd;
+                    if (markerTime == Duration_t{0})
+                        markerTime = trackDuration;
+                    else if (markerTime < Duration_t{0})
+                        markerTime = trackDuration + markerTime;
+                    break;
+                    
+                case MarkerType::AttachFrom:
+                    markerTime = m_mixTrack.attachFrom;
+                    break;
+                    
+                case MarkerType::AttachTo:
+                    markerTime = m_mixTrack.attachTo;
+                    break;
+                    
+                default:
+                    return 0;
+            }
+            
+            const double timeInSeconds = std::chrono::duration<double>(markerTime).count();
+            return waveformArea.getX() + juce::roundToInt((timeInSeconds / trackDurationSeconds) * waveformArea.getWidth());
+        }
+        
+        Duration_t MixTrackComponent::screenXToTrackTime(int screenX) const
+        {
+            auto bounds = getLocalBounds();
+            auto waveformArea = bounds.removeFromBottom(waveformSectionHeight);
+            
+            const auto trackDuration = m_trackInfo.duration;
+            const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
+            
+            const float relativeX = (screenX - waveformArea.getX()) / float(waveformArea.getWidth());
+            const double timeInSeconds = juce::jlimit(0.0, trackDurationSeconds, relativeX * trackDurationSeconds);
+            
+            return std::chrono::milliseconds(static_cast<int64_t>(timeInSeconds * 1000));
+        }
+        
+        void MixTrackComponent::updateMarkerPosition(MarkerType marker, int newX)
+        {
+            Duration_t newTime = screenXToTrackTime(newX);
+            const auto trackDuration = m_trackInfo.duration;
+            
+            // Apply constraints based on marker type
+            switch (marker)
+            {
+                case MarkerType::CueStart:
+                    // Constrain: 0 <= cueStart < cueEnd (or track end if cueEnd is 0)
+                    newTime = std::max(Duration_t{0}, newTime);
+                    if (m_mixTrack.cueEnd > Duration_t{0})
+                    {
+                        newTime = std::min(newTime, m_mixTrack.cueEnd - Duration_t{1}); // At least 1ms before end
+                    }
+                    else
+                    {
+                        newTime = std::min(newTime, trackDuration - Duration_t{1});
+                    }
+                    const_cast<database::MixTrack&>(m_mixTrack).cueStart = newTime;
+                    break;
+                    
+                case MarkerType::CueEnd:
+                    // Convert to relative format for storage
+                    if (newTime >= trackDuration)
+                    {
+                        const_cast<database::MixTrack&>(m_mixTrack).cueEnd = Duration_t{0}; // 0 means track end
+                    }
+                    else
+                    {
+                        // Ensure cueEnd > cueStart
+                        newTime = std::max(newTime, m_mixTrack.cueStart + Duration_t{1});
+                        const_cast<database::MixTrack&>(m_mixTrack).cueEnd = newTime;
+                    }
+                    break;
+                    
+                case MarkerType::AttachFrom:
+                    // Constrain: 0 <= attachFrom < attachTo
+                    newTime = std::max(Duration_t{0}, newTime);
+                    newTime = std::min(newTime, m_mixTrack.attachTo - Duration_t{1});
+                    const_cast<database::MixTrack&>(m_mixTrack).attachFrom = newTime;
+                    break;
+                    
+                case MarkerType::AttachTo:
+                    // Constrain: attachFrom < attachTo <= duration
+                    newTime = std::max(m_mixTrack.attachFrom + Duration_t{1}, newTime);
+                    newTime = std::min(newTime, trackDuration);
+                    const_cast<database::MixTrack&>(m_mixTrack).attachTo = newTime;
+                    break;
+                    
+                default:
+                    break;
+            }
         }
 
     } // namespace ui

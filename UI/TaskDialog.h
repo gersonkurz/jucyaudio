@@ -45,6 +45,8 @@ namespace jucyaudio
             std::optional<int> m_autoCloseOnSuccessDelayMs;
             bool m_waitingForAutoClose = false;
             juce::LookAndFeel_V4 m_lookAndFeel; // Custom LookAndFeel instance
+            int m_lastProgressInPercent;
+            std::string m_lastStatusMessage;
 
             // UI Elements
             juce::Label m_titleLabel;

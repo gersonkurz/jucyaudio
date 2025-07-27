@@ -29,14 +29,32 @@ namespace jucyaudio
             void changeListenerCallback(juce::ChangeBroadcaster *source) override;
             bool isSelected() const;
             void drawVolumeEnvelope(juce::Graphics &g, juce::Rectangle<int> area);
+            void drawCueAndAttachMarkers(juce::Graphics &g, juce::Rectangle<int> area);
 
             std::function<void(TrackId, const std::vector<database::EnvelopePoint>&)> onEnvelopeChanged;
+            std::function<void(TrackId, const database::MixTrack&)> onCueAttachChanged;
 
         private:
+            enum class MarkerType
+            {
+                None,
+                CueStart,
+                CueEnd,
+                AttachFrom,
+                AttachTo
+            };
+            
             std::optional<size_t> hitTestEnvelopePoint(juce::Point<int> mousePos) const;
             juce::Point<int> envelopePointToScreenPosition(const database::EnvelopePoint &point) const;
             database::EnvelopePoint screenPositionToEnvelopePoint(juce::Point<int> screenPos) const;
             void constrainEnvelopePoint(size_t pointIndex, database::EnvelopePoint &point) const;
+            
+            // Marker-related helper methods
+            MarkerType hitTestMarker(juce::Point<int> mousePos) const;
+            int getMarkerXPosition(MarkerType marker) const;
+            Duration_t screenXToTrackTime(int screenX) const;
+            void updateMarkerPosition(MarkerType marker, int newX);
+            
             void mouseDown(const juce::MouseEvent &event) override;
             void mouseDrag(const juce::MouseEvent &event) override;
             void mouseUp(const juce::MouseEvent &event) override;
@@ -90,6 +108,11 @@ namespace jucyaudio
             bool m_isDraggingEnvelopePoint = false;
             juce::Point<int> m_envelopePointDragStart;
             database::EnvelopePoint m_originalEnvelopePoint;
+            
+            // For cue/attach marker dragging
+            MarkerType m_draggedMarker = MarkerType::None;
+            MarkerType m_hoveredMarker = MarkerType::None;
+            database::MixTrack m_originalMixTrack;
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixTrackComponent)
         };
     } // namespace ui

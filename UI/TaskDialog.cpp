@@ -1,7 +1,7 @@
 #include "TaskDialog.h" // Assuming TaskDialog.h is in the same folder or path is set
 #include "ILongRunningTask.h"
-#include <spdlog/spdlog.h> // For logging, if using spdlog
 #include <UI/MainComponent.h>
+#include <spdlog/spdlog.h> // For logging, if using spdlog
 
 using namespace jucyaudio::database; // For easier access to database types
 
@@ -20,6 +20,8 @@ namespace jucyaudio
         TaskDialog::TaskDialog(ILongRunningTask *task, std::function<void()> onCompletion, std::optional<int> autoCloseOnSuccessDelayMs)
             : m_task{task}, // Store raw pointer
               m_onCompletion{std::move(onCompletion)},
+              m_lastProgressInPercent{-1},
+              m_lastStatusMessage{},
               m_autoCloseOnSuccessDelayMs{autoCloseOnSuccessDelayMs},
               // Use taskName from the task object for the title label
               m_titleLabel{"title", task ? juce::String(task->m_taskName) : "Processing Task"},
@@ -141,8 +143,8 @@ namespace jucyaudio
                 juce::FlexItem(m_titleLabel).withHeight(30.0f).withMargin(juce::FlexItem::Margin(mainMargin, mainMargin, interElementMargin, mainMargin)));
             fb.items.add(juce::FlexItem(m_statusLabel).withHeight(25.0f).withMargin(juce::FlexItem::Margin(0, mainMargin, interElementMargin, mainMargin)));
             fb.items.add(juce::FlexItem(m_progressBar)
-                             .withHeight(20.0f)
-                             .withMargin(juce::FlexItem::Margin(0, mainMargin, mainMargin, mainMargin))); // More margin below progress bar
+                    .withHeight(20.0f)
+                    .withMargin(juce::FlexItem::Margin(0, mainMargin, mainMargin, mainMargin))); // More margin below progress bar
 
             juce::FlexBox buttonBoxFb;
             buttonBoxFb.justifyContent = juce::FlexBox::JustifyContent::flexEnd; // Button to the right
@@ -168,8 +170,7 @@ namespace jucyaudio
                     // However, completion should ideally be the last thing.
                     // For now, let's assume taskPtr->run() calls completionCb synchronously from its thread context.
 
-                    ProgressCallback progressCbWrapper =
-                        [this, currentTaskName = taskPtr->m_taskName](int progressPercent, const std::string& statusMsg)
+                    ProgressCallback progressCbWrapper = [this, currentTaskName = taskPtr->m_taskName](int progressPercent, const std::string &statusMsg)
                     {
                         std::string msgCopy(statusMsg);
                         juce::MessageManager::callAsync(
@@ -183,8 +184,7 @@ namespace jucyaudio
                             });
                     };
 
-                    CompletionCallback completionCbWrapper =
-                        [&, this, currentTaskName = taskPtr->m_taskName](bool success, const std::string& resultMsg)
+                    CompletionCallback completionCbWrapper = [&, this, currentTaskName = taskPtr->m_taskName](bool success, const std::string &resultMsg)
                     {
                         cb_called_by_task = true;
                         std::string msgCopy(resultMsg);
@@ -262,16 +262,23 @@ namespace jucyaudio
                 });
         }
 
-        void TaskDialog::handleProgressUpdate(int progressPercent, const std::string& statusMessage)
+        void TaskDialog::handleProgressUpdate(int progressPercent, const std::string &statusMessage)
         {
+            if ((m_lastProgressInPercent == progressPercent) && (m_lastStatusMessage == statusMessage))
+                return;
+
             spdlog::info("TaskDialog: handleProgressUpdate called with progress {} and message '{}'", progressPercent, statusMessage);
+
+            m_lastProgressInPercent = progressPercent;
+            m_lastStatusMessage = statusMessage;
+
             if (m_taskHasCompleted)
                 return;
 
             m_statusLabel.setText(juce::String::fromUTF8(statusMessage.data()), juce::dontSendNotification);
             if (progressPercent < 0)
             {
-                if(m_isProgressBarDeterminate)
+                if (m_isProgressBarDeterminate)
                 {
                     m_progressValue = 0.0; // Reset progress for indeterminate state
                     m_isProgressBarDeterminate = false;
@@ -286,7 +293,7 @@ namespace jucyaudio
             }
         }
 
-        void TaskDialog::handleTaskCompleted(bool success, const std::string& resultMessage)
+        void TaskDialog::handleTaskCompleted(bool success, const std::string &resultMessage)
         {
             spdlog::info("TaskDialog: handleTaskCompleted called with success {} and message '{}'", success, resultMessage);
             if (m_taskHasCompleted.exchange(true))
@@ -327,14 +334,14 @@ namespace jucyaudio
                     // Use SafePointer
                     juce::Component::SafePointer<TaskDialog> self = this;
                     juce::Timer::callAfterDelay(*m_autoCloseOnSuccessDelayMs,
-                                                [self]
-                                                {
-                                                    // Check if 'self' (the TaskDialog) still exists
-                                                    if (self && self->m_waitingForAutoClose)
-                                                    {
-                                                        self->closeDialog(1);
-                                                    }
-                                                });
+                        [self]
+                        {
+                            // Check if 'self' (the TaskDialog) still exists
+                            if (self && self->m_waitingForAutoClose)
+                            {
+                                self->closeDialog(1);
+                            }
+                        });
                 }
             }
         }
@@ -392,13 +399,17 @@ namespace jucyaudio
         }
 
         // Static launcher method in TaskDialog.cpp
-        void TaskDialog::launch(const juce::String &windowTitle, ILongRunningTask *taskToRun, std::optional<int> autoCloseOnSuccessDelayMs,
-                                juce::Component *parentToCenterOn, std::function<void()> onCompletion)
+        void TaskDialog::launch(const juce::String &windowTitle,
+            ILongRunningTask *taskToRun,
+            std::optional<int> autoCloseOnSuccessDelayMs,
+            juce::Component *parentToCenterOn,
+            std::function<void()> onCompletion)
         {
-            spdlog::info("TaskDialog::launchDialog called with title '{}', taskToRun: {}, autoCloseDelay: {}, parent: {}", windowTitle.toStdString(),
-                         taskToRun ? taskToRun->m_taskName : "nullptr",
-                         autoCloseOnSuccessDelayMs.has_value() ? std::to_string(*autoCloseOnSuccessDelayMs) : "none",
-                         parentToCenterOn ? juce::String(parentToCenterOn->getName()).toStdString() : "nullptr");
+            spdlog::info("TaskDialog::launchDialog called with title '{}', taskToRun: {}, autoCloseDelay: {}, parent: {}",
+                windowTitle.toStdString(),
+                taskToRun ? taskToRun->m_taskName : "nullptr",
+                autoCloseOnSuccessDelayMs.has_value() ? std::to_string(*autoCloseOnSuccessDelayMs) : "none",
+                parentToCenterOn ? juce::String(parentToCenterOn->getName()).toStdString() : "nullptr");
 
             if (!taskToRun)
             {
