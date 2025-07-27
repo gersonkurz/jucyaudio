@@ -36,7 +36,7 @@ namespace jucyaudio
 
             // Cue points - define what portion of the track is used
             Duration_t cueStart{0};     // Where to start playing (0 = track beginning)
-            Duration_t cueEnd{-1};      // Where to stop playing (-1 = track end)
+            Duration_t cueEnd{0};       // Where to stop playing (0 = track end, negative = relative to end)
             
             // Attach points - define how tracks connect
             Duration_t attachFrom{0};   // Where this track starts overlapping with previous
@@ -48,8 +48,12 @@ namespace jucyaudio
             // Computed properties (not stored in DB)
             Duration_t getEffectiveDuration(Duration_t trackDuration) const 
             {
-                Duration_t end = (cueEnd.count() < 0) ? trackDuration : cueEnd;
-                return end - cueStart;
+                // Calculate actual end position
+                Duration_t actualEnd = (cueEnd.count() <= 0) ? 
+                    trackDuration + cueEnd :  // 0 or negative: relative to end
+                    cueEnd;                   // positive: absolute position
+                    
+                return actualEnd - cueStart;
             }
        };
 

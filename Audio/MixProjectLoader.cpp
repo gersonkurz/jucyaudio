@@ -51,7 +51,7 @@ namespace jucyaudio
             }
             
             Table mixTable;
-            mixTable.add_row({"#", "Track ID", "Artist - Title", "Cue Start", "Cue End", 
+            mixTable.add_row({"#", "Track ID", "Artist - Title", "Duration", "Cue Start", "Cue End", 
                              "Attach From", "Attach To", "Envelope Points"});
             
             // Style the header row
@@ -75,7 +75,7 @@ namespace jucyaudio
                 for (size_t i = 0; i < mixTrack.envelopePoints.size(); ++i)
                 {
                     if (i > 0) envelopeStr += ", ";
-                    envelopeStr += std::to_string(mixTrack.envelopePoints[i].time.count()) + "ms:" +
+                    envelopeStr += durationToString(mixTrack.envelopePoints[i].time) + ":" +
                                   std::to_string(mixTrack.envelopePoints[i].volume);
                 }
                 if (envelopeStr.empty()) envelopeStr = "[none]";
@@ -84,8 +84,11 @@ namespace jucyaudio
                     std::to_string(mixTrack.orderInMix),
                     std::to_string(mixTrack.trackId),
                     artistTitle,
-                    durationToString(mixTrack.cueStart),
-                    mixTrack.cueEnd.count() < 0 ? "[end]" : durationToString(mixTrack.cueEnd),
+                    duration,
+                    mixTrack.cueStart.count() == 0 ? "[start]" : durationToString(mixTrack.cueStart),
+                    mixTrack.cueEnd.count() == 0 ? "[end]" : 
+                    mixTrack.cueEnd.count() < 0 ? "[end" + std::to_string(mixTrack.cueEnd.count()/1000) + "s]" :
+                    durationToString(mixTrack.cueEnd),
                     durationToString(mixTrack.attachFrom),
                     durationToString(mixTrack.attachTo),
                     envelopeStr
@@ -94,16 +97,58 @@ namespace jucyaudio
             
             // Style the table
             mixTable.format()
-                .border_top("─")
-                .border_bottom("─")
-                .border_left("│")
-                .border_right("│")
-                .corner("┼");
+                .border_top("-")
+                .border_bottom("-")
+                .border_left("|")
+                .border_right("|")
+                .corner("+");
             
             // Make the output both human and machine readable
             std::ostringstream oss;
             oss << mixTable;
             spdlog::info("MixProjectLoader: Dumping mix context for mix ID {}:\n{}", m_mixId, oss.str());
+            
+            // Calculate and display the timeline positions using ATTACH formula
+            spdlog::info("Timeline calculation (ATTACH-based):");
+            Duration_t previousTrackStart{0};
+            Duration_t mixEndPosition{0};
+            
+            for (size_t i = 0; i < m_mixTracks.size(); ++i)
+            {
+                const auto& track = m_mixTracks[i];
+                const auto it = m_trackInfosMap.find(track.trackId);
+                if (it == m_trackInfosMap.end()) continue;
+                
+                const auto& trackInfo = *it->second;
+                Duration_t trackStart{0};
+                
+                if (i == 0)
+                {
+                    trackStart = Duration_t{0};
+                    spdlog::info("  Track {} starts at 0, ends at {}", 
+                        i, durationToString(trackInfo.duration));
+                }
+                else
+                {
+                    const auto& prevTrack = m_mixTracks[i-1];
+                    // ATTACH formula: Next track start = Previous track start + Previous track's attachTo - Current track's attachFrom
+                    trackStart = previousTrackStart + prevTrack.attachTo - track.attachFrom;
+                    Duration_t trackEnd = trackStart + trackInfo.duration;
+                    spdlog::info("  Track {} starts at {} (={}+{}-{}), ends at {}", 
+                        i, durationToString(trackStart),
+                        durationToString(previousTrackStart), durationToString(prevTrack.attachTo), durationToString(track.attachFrom),
+                        durationToString(trackEnd));
+                }
+                
+                Duration_t trackEnd = trackStart + trackInfo.duration;
+                if (trackEnd > mixEndPosition)
+                {
+                    mixEndPosition = trackEnd;
+                }
+                
+                previousTrackStart = trackStart;
+            }
+            spdlog::info("  Total mix duration: {}", durationToString(mixEndPosition));
         }
 
         bool MixProjectLoader::reorderSingleTrack(TrackId trackId, int newPosition)

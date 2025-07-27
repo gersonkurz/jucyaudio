@@ -83,17 +83,30 @@ namespace
         info.mixId = stmt.getInt64(col++);
         info.trackId = stmt.getInt64(col++);
         info.orderInMix = stmt.getInt32(col++);
-        info.envelopePoints = envelopePointsFromJson(stmt.getText(col++));
+        
+        // Deserialize the JSON data
+        const std::string jsonData = stmt.getText(col++);
+        if (!jsonData.empty())
+        {
+            json j = json::parse(jsonData);
+            // This uses the from_json deserializer from MixInfo.h
+            // It only updates the fields stored in JSON (cue, attach, envelope)
+            j.get_to(info);
+        }
+        
         return info;
     }
 
     bool bindMixTrackToStatement(SqliteStatement &stmt, const MixTrack &info)
     {
         bool ok = true;
-        ok &= stmt.addParam(info.mixId);   // For the WHERE mix_id = AND
-        ok &= stmt.addParam(info.trackId); // track_id = ?
+        ok &= stmt.addParam(info.mixId);
+        ok &= stmt.addParam(info.trackId);
         ok &= stmt.addParam(info.orderInMix);
-        ok &= stmt.addParam(envelopePointsToJson(info.envelopePoints));
+        
+        // Serialize the entire MixTrack data to JSON
+        json mixDataJson = info; // This uses the to_json serializer from MixInfo.h
+        ok &= stmt.addParam(mixDataJson.dump());
 
         if (!ok)
         {
@@ -201,7 +214,7 @@ FROM Mixes m
                     mixTracks.emplace_back(mixTrackFromStatement(stmt));
                     return true;
                 },
-                "SELECT * FROM MixTracks WHERE mix_id=? AND is_active = 1 ORDER BY order_in_mix ASC",
+                "SELECT * FROM MixTracks WHERE mix_id=? ORDER BY order_in_mix ASC",
                 mixId);
             return mixTracks;
         }
@@ -231,7 +244,7 @@ FROM Mixes m
         {
             if (SqliteTransaction transaction{m_db})
             {
-                SqliteStatement stmt{m_db, "UPDATE MixTracks SET is_active = 0 WHERE mix_id = ? AND track_id = ?"};
+                SqliteStatement stmt{m_db, "DELETE FROM MixTracks WHERE mix_id = ? AND track_id = ?"};
                 stmt.addParam(mixId);
                 stmt.addParam(trackId);
                 if (stmt.execute())
@@ -294,7 +307,7 @@ FROM Mixes m
                     track.mixId = mixInfo.mixId;
                     SqliteStatement stmt_insert{m_db,
                         "INSERT INTO MixTracks (mix_id,track_id,order_in_mix,mix_data) "
-                        "VALUES (?,?,?,?,?,?,?)"};
+                        "VALUES (?,?,?,?)"};
                     bindMixTrackToStatement(stmt_insert, track);
                     if (!stmt_insert.execute())
                     {
@@ -367,7 +380,7 @@ FROM Mixes m
                     // 3a. Identify all tracks in the mix up to the last active track
                     SqliteStatement stmt_prune{m_db,
                         "SELECT track_id FROM MixTracks WHERE mix_id = ? AND order_in_mix <= "
-                        "(SELECT MAX(order_in_mix) FROM MixTracks WHERE mix_id = ? AND is_active = 1)"};
+                        "(SELECT MAX(order_in_mix) FROM MixTracks WHERE mix_id = ?)"};
                     stmt_prune.addParam(mixId);
                     stmt_prune.addParam(mixId);
 
@@ -418,7 +431,7 @@ FROM Mixes m
             WorkingSetId source_ws_id,
             const Duration_t defaultCrossfadeDuration) const
         {
-#if MIX_TRANSITION_AUTOMIX_AVAILABLE
+            // New ATTACH-based automix implementation
             assert(resultingTracks.empty() && "resultingTracks should be empty before creating a new mix");
             assert(!trackInfos.empty() && "trackInfos should not be empty when creating a new mix");
 
@@ -426,15 +439,15 @@ FROM Mixes m
             mixInfo.source_ws_id = source_ws_id;
 
             const auto minimumExpectedSongLength = 2 * defaultCrossfadeDuration; // Minimum length for a track to be suitable for mixing
-            spdlog::debug("Creating new mix with {} tracks, minimum expected song length: {}", trackInfos.size(), durationToString(minimumExpectedSongLength));
+            spdlog::info("Creating ATTACH-based automix with {} tracks, crossfade duration: {}", 
+                        trackInfos.size(), durationToString(defaultCrossfadeDuration));
 
             int orderInMix = 0;
-            Duration_t totalDuration = Duration_t::zero();
             for (const auto &trackInfo : trackInfos)
             {
                 assert(trackInfo.trackId != 0 && "Track ID should not be zero when creating a new mix");
 
-                // check track is longer than defaultCrossfadeDuration seconds - otherwise it's not suitable for mixing
+                // check track is longer than minimumExpectedSongLength - otherwise it's not suitable for mixing
                 if (trackInfo.duration < minimumExpectedSongLength)
                 {
                     spdlog::debug("Track {} ({}) is only {} long: too short for mixing, skipping",
@@ -449,40 +462,94 @@ FROM Mixes m
                 mixTrack.trackId = trackInfo.trackId;
                 mixTrack.orderInMix = orderInMix++;
 
-                // Create envelope points with smooth fade curve
-                // Time values are relative to track start (0 = beginning of track)
-                const auto fadeInMidpoint = Duration_t{2000};                       // 2 seconds
+                // For the new model:
+                // CUE points - use full track (default behavior)
+                mixTrack.cueStart = Duration_t{0};
+                mixTrack.cueEnd = Duration_t{0}; // 0 means use full track duration
+                
+                // ATTACH points - define where overlaps happen
+                // For a simple automix, let's use symmetrical attach points
+                mixTrack.attachFrom = defaultCrossfadeDuration;  // Start overlapping after 5s into this track
+                mixTrack.attachTo = trackInfo.duration - defaultCrossfadeDuration; // Next track starts 5s before this ends
+                
+                // Create envelope points for crossfade
+                // These are relative to the track's cue start (which is 0 in this case)
+                const auto fadeInMidpoint = Duration_t{2000};  // 2 seconds
                 const auto fadeOutMidpoint = trackInfo.duration - Duration_t{2000}; // 2 seconds before end
 
                 mixTrack.envelopePoints = {
-                    {Duration_t{0}, Volume_t{200}},                                        // Start at 20% (200/1000)
-                    {fadeInMidpoint, Volume_t{700}},                                       // 2s: 70% (700/1000)
-                    {defaultCrossfadeDuration, VOLUME_NORMALIZATION},                      // 5s: 100% (1000/1000)
+                    {Duration_t{0}, Volume_t{200}},                                        // Start at 20%
+                    {fadeInMidpoint, Volume_t{700}},                                       // 2s: 70%
+                    {defaultCrossfadeDuration, VOLUME_NORMALIZATION},                      // 5s: 100%
                     {trackInfo.duration - defaultCrossfadeDuration, VOLUME_NORMALIZATION}, // duration-5s: 100%
                     {fadeOutMidpoint, Volume_t{700}},                                      // duration-2s: 70%
                     {trackInfo.duration, Volume_t{200}}                                    // End at 20%
                 };
 
-                // Calculate mix start time with crossfade overlap
-                if (totalDuration >= defaultCrossfadeDuration)
-                {
-                    mixTrack.mixStartTime = totalDuration - defaultCrossfadeDuration;
-                }
-                else
-                {
-                    mixTrack.mixStartTime = Duration_t::zero();
-                }
-                mixTrack.mixEndTime = mixTrack.mixStartTime + trackInfo.duration;
                 resultingTracks.emplace_back(mixTrack);
-                totalDuration = mixTrack.mixEndTime;
             }
-            mixInfo.totalDuration = totalDuration;
+            
+            // Calculate total duration by walking the chain
+            // This is now computed from the ATTACH points
+            if (!resultingTracks.empty())
+            {
+                Duration_t mixEndPosition{0};
+                Duration_t previousTrackStart{0};
+                
+                for (size_t i = 0; i < resultingTracks.size(); ++i)
+                {
+                    const auto& track = resultingTracks[i];
+                    
+                    // Find the matching trackInfo by track ID
+                    const auto trackInfoIt = std::find_if(trackInfos.begin(), trackInfos.end(),
+                        [&track](const auto& ti) { return ti.trackId == track.trackId; });
+                    
+                    if (trackInfoIt == trackInfos.end())
+                    {
+                        spdlog::error("Could not find track info for track ID {} while calculating duration", track.trackId);
+                        continue;
+                    }
+                    
+                    const auto& trackInfo = *trackInfoIt;
+                    Duration_t trackStart{0};
+                    
+                    if (i == 0)
+                    {
+                        // First track starts at position 0
+                        trackStart = Duration_t{0};
+                    }
+                    else
+                    {
+                        // ATTACH formula: Next track start = Previous track start + Previous track's attachTo - Current track's attachFrom
+                        const auto& prevTrack = resultingTracks[i-1];
+                        trackStart = previousTrackStart + prevTrack.attachTo - track.attachFrom;
+                    }
+                    
+                    // Track end position
+                    Duration_t trackEnd = trackStart + trackInfo.duration;
+                    
+                    // Update mix end to be the latest track end
+                    if (trackEnd > mixEndPosition)
+                    {
+                        mixEndPosition = trackEnd;
+                    }
+                    
+                    // Remember this track's start for the next iteration
+                    previousTrackStart = trackStart;
+                }
+                
+                mixInfo.totalDuration = mixEndPosition;
+            }
+            else
+            {
+                mixInfo.totalDuration = Duration_t{0};
+            }
+            
+            spdlog::info("Automix created: {} tracks, total duration: {}", 
+                        resultingTracks.size(), durationToString(mixInfo.totalDuration));
 
-            // ok, this is the definition; store it in the database
+            // Store in database
             return createOrUpdateMix(mixInfo, resultingTracks);
-            #else
-            return false;
-            #endif
         }
         bool SqliteMixManager::renameMix(MixId mixId, std::string_view name) const
         {
