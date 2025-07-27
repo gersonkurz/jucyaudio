@@ -144,28 +144,11 @@ namespace jucyaudio
         // Add new methods to MixEditorComponent.cpp
         void MixEditorComponent::updateTrackPositionInData(TrackId trackId, std::chrono::milliseconds newStartTime)
         {
-#if MIX_TRANSITION_TRACK_REORDERING_AVAILABLE
-            if (!m_node)
-            {
-                spdlog::error("MixEditorComponent::updateTrackPositionInData - No mix node loaded");
-                return;
-            }
-            spdlog::info("Updating position for track {} to {}ms", trackId, newStartTime.count());
-
-            // Get non-const access to the mix tracks
-            auto &mixTracks = m_node->getMixProjectLoader().getMixTracks(); // This method needs to be added
-
-            // Find and update the track
-            for (auto &track : mixTracks)
-            {
-                if (track.trackId == trackId)
-                {
-                    track.mixStartTime = newStartTime;
-                    spdlog::info("Updated track {} mixStartTime to {}", trackId, newStartTime.count());
-                    break;
-                }
-            }
-#endif
+            // In the ATTACH model, dragging tracks in the timeline doesn't change their start time
+            // Instead, it should reorder them. For now, we'll just log this action.
+            // TODO: Implement timeline-based reordering when dragging tracks
+            spdlog::info("Track {} dragged to position {}ms - timeline drag reordering not yet implemented for ATTACH model", 
+                        trackId, newStartTime.count());
         }
 
         void MixEditorComponent::saveMixChanges()

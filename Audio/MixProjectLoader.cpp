@@ -162,7 +162,6 @@ namespace jucyaudio
 
         bool MixProjectLoader::reorderSingleTrack(TrackId trackId, int newPosition)
         {
-#if MIX_TRANSITION_TRACK_REORDERING_AVAILABLE
             // Find the track
             auto it = std::find_if(m_mixTracks.begin(),
                 m_mixTracks.end(),
@@ -189,63 +188,12 @@ namespace jucyaudio
                 return true; // No change needed
             }
 
-            // Store the moving track's time information
+            spdlog::info("Moving track {} from position {} to {}", trackId, currentPosition, newPosition);
+
+            // In the ATTACH model, we only need to reorder the tracks and update orderInMix
+            // The timeline positions are calculated dynamically based on attach points
             MixTrack movingTrack = *it;
-            const auto holeDuration = movingTrack.mixEndTime - movingTrack.mixStartTime;
-
-            // Determine which tracks need time adjustment
-            const int minPos = std::min(currentPosition, newPosition);
-            const int maxPos = std::max(currentPosition, newPosition);
-            const bool movingForward = newPosition < currentPosition;
-
-            spdlog::info(
-                "Moving track {} from position {} to {}, hole duration: {}ms", trackId, currentPosition, newPosition, durationToString(holeDuration));
-
-            // Calculate new start time for the moved track
-            Duration_t newStartTime{};
-            if (newPosition == 0)
-            {
-                // Moving to first position - start at 0
-                newStartTime = static_cast<Duration_t>(0);
-            }
-            else if (movingForward)
-            {
-                // Moving forward - position after track at (newPosition - 1)
-                newStartTime = m_mixTracks[newPosition - 1].mixEndTime;
-            }
-            else
-            {
-                // Moving backward - position after what will be at (newPosition - 1) after the move
-                // Since we're moving backward, the track currently at newPosition will be at newPosition - 1
-                newStartTime = m_mixTracks[newPosition].mixEndTime;
-            }
-
-            // Adjust times for affected tracks
-            for (int i = minPos; i <= maxPos; ++i)
-            {
-                if (i == currentPosition)
-                    continue; // Skip the moving track
-
-                if (movingForward && i >= newPosition && i < currentPosition)
-                {
-                    // Tracks that need to shift right
-                    m_mixTracks[i].mixStartTime += holeDuration;
-                    m_mixTracks[i].mixEndTime += holeDuration;
-                    spdlog::debug("Shifted track at position {} right by {}ms", i, holeDuration);
-                }
-                else if (!movingForward && i > currentPosition && i <= newPosition)
-                {
-                    // Tracks that need to shift left
-                    m_mixTracks[i].mixStartTime -= holeDuration;
-                    m_mixTracks[i].mixEndTime -= holeDuration;
-                    spdlog::debug("Shifted track at position {} left by {}ms", i, holeDuration);
-                }
-            }
-
-            // Update the moving track's time
-            movingTrack.mixStartTime = newStartTime;
-            movingTrack.mixEndTime = newStartTime + holeDuration;
-
+            
             // Remove and reinsert the track at its new position
             m_mixTracks.erase(it);
             m_mixTracks.insert(m_mixTracks.begin() + newPosition, movingTrack);
@@ -256,16 +204,9 @@ namespace jucyaudio
                 m_mixTracks[i].orderInMix = i;
             }
 
-            spdlog::info("Moved track {} from position {} to {}, new time range: [{}, {}]ms",
-                trackId,
-                currentPosition,
-                newPosition,
-                movingTrack.mixStartTime,
-                movingTrack.mixEndTime);
+            spdlog::info("Successfully moved track {} from position {} to {}", 
+                trackId, currentPosition, newPosition);
             return true;
-#else
-            return false;
-#endif // MIX_TRANSITION_TRACK_REORDERING_AVAILABLE
         }
 
         bool MixProjectLoader::reorderTracks(const std::vector<std::pair<TrackId, int>> &trackMoves)

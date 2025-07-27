@@ -238,8 +238,6 @@ namespace jucyaudio
      *          from position-based to attach-based mix model.
      * @note Set to 1 to enable feature, 0 to disable
      */
-    #define MIX_TRANSITION_EXPORT_AVAILABLE 0
     #define MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE 0
-    #define MIX_TRANSITION_TRACK_REORDERING_AVAILABLE 0
     #define MIX_TRANSITION_AUTOMIX_AVAILABLE 0
 } // namespace jucyaudio
