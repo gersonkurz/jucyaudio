@@ -39,7 +39,7 @@ namespace jucyaudio
                 return m_mixTracks;
             }
             
-            const MixInfo& getMixInfo() const
+            MixInfo& getMixInfo()
             {
                 return m_mixInfo;
             }
@@ -59,6 +59,8 @@ namespace jucyaudio
                 return getTrackInfoForId(m_mixTracks[rowIndex].trackId);
             }
             
+            Duration_t calculateMixDuration() const;
+
             // Reorder tracks in the mix
             // @param trackMoves Vector of pairs where first is the track ID and second is the new position
             // @return true if reordering was successful
@@ -67,7 +69,7 @@ namespace jucyaudio
             // Save the current mix state back to the database
             // @param mixManager The mix manager to use for saving
             // @return true if save was successful
-            bool saveMix(const IMixManager& mixManager) const;
+            bool saveMix(const IMixManager& mixManager);
 
         private:
             void dumpContext(const char *file, int line) const;

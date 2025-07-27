@@ -261,17 +261,7 @@ FROM Mixes m
             {
                 mixInfo.timestamp = std::chrono::system_clock::now();
                 mixInfo.numberOfTracks = static_cast<int64_t>(tracks.size());
-#if MIX_TRANSITION_TOTAL_LENGTH_AVAILABLE
-                if (tracks.empty())
-                {
-                    mixInfo.totalDuration = Duration_t::zero();
-                }
-                else
-                {
-                    const auto lastTrack{tracks.back()};
-                    mixInfo.totalDuration = lastTrack.mixEndTime;
-                }
-#endif
+                assert(mixInfo.totalDuration.count() != 0 || tracks.empty() && "Mix total duration must be set by caller");
 
                 // if mixId is not 0, the mix already exists, so we update it - by first removing all existing data
                 if (mixInfo.mixId)

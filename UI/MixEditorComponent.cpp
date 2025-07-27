@@ -183,7 +183,8 @@ namespace jucyaudio
             auto &mixTracks = mixProjectLoader.getMixTracks();
 
             // Get mix info from database
-            auto mixInfo = database::theTrackLibrary.getMixManager().getMix(mixId);
+            auto &mixInfo = mixProjectLoader.getMixInfo();
+            mixInfo.totalDuration = mixProjectLoader.calculateMixDuration();
 
             // Save changes back to database
             if (database::theTrackLibrary.getMixManager().createOrUpdateMix(mixInfo, mixTracks))

@@ -108,47 +108,56 @@ namespace jucyaudio
             oss << mixTable;
             spdlog::info("MixProjectLoader: Dumping mix context for mix ID {}:\n{}", m_mixId, oss.str());
             
+            calculateMixDuration();
+        }
+
+        Duration_t MixProjectLoader::calculateMixDuration() const
+        {
             // Calculate and display the timeline positions using ATTACH formula
             spdlog::info("Timeline calculation (ATTACH-based):");
             Duration_t previousTrackStart{0};
             Duration_t mixEndPosition{0};
-            
+
             for (size_t i = 0; i < m_mixTracks.size(); ++i)
             {
-                const auto& track = m_mixTracks[i];
+                const auto &track = m_mixTracks[i];
                 const auto it = m_trackInfosMap.find(track.trackId);
-                if (it == m_trackInfosMap.end()) continue;
-                
-                const auto& trackInfo = *it->second;
+                if (it == m_trackInfosMap.end())
+                    continue;
+
+                const auto &trackInfo = *it->second;
                 Duration_t trackStart{0};
-                
+
                 if (i == 0)
                 {
                     trackStart = Duration_t{0};
-                    spdlog::info("  Track {} starts at 0, ends at {}", 
-                        i, durationToString(trackInfo.duration));
+                    spdlog::info("  Track {} starts at 0, ends at {}", i, durationToString(trackInfo.duration));
                 }
                 else
                 {
-                    const auto& prevTrack = m_mixTracks[i-1];
+                    const auto &prevTrack = m_mixTracks[i - 1];
                     // ATTACH formula: Next track start = Previous track start + Previous track's attachTo - Current track's attachFrom
                     trackStart = previousTrackStart + prevTrack.attachTo - track.attachFrom;
                     Duration_t trackEnd = trackStart + trackInfo.duration;
-                    spdlog::info("  Track {} starts at {} (={}+{}-{}), ends at {}", 
-                        i, durationToString(trackStart),
-                        durationToString(previousTrackStart), durationToString(prevTrack.attachTo), durationToString(track.attachFrom),
+                    spdlog::info("  Track {} starts at {} (={}+{}-{}), ends at {}",
+                        i,
+                        durationToString(trackStart),
+                        durationToString(previousTrackStart),
+                        durationToString(prevTrack.attachTo),
+                        durationToString(track.attachFrom),
                         durationToString(trackEnd));
                 }
-                
+
                 Duration_t trackEnd = trackStart + trackInfo.duration;
                 if (trackEnd > mixEndPosition)
                 {
                     mixEndPosition = trackEnd;
                 }
-                
+
                 previousTrackStart = trackStart;
             }
             spdlog::info("  Total mix duration: {}", durationToString(mixEndPosition));
+            return mixEndPosition;
         }
 
         bool MixProjectLoader::reorderSingleTrack(TrackId trackId, int newPosition)
@@ -328,16 +337,24 @@ namespace jucyaudio
             return true;
         }
 
-        bool MixProjectLoader::saveMix(const IMixManager &mixManager) const
+        bool MixProjectLoader::saveMix(const IMixManager &mixManager)
         {
             // Create a copy of mix info and tracks to pass to the manager
-            MixInfo mixInfoCopy = m_mixInfo;
             std::vector<MixTrack> mixTracksCopy = m_mixTracks;
+            m_mixInfo.totalDuration = calculateMixDuration();
 
-            // Save to database
-            if (mixManager.createOrUpdateMix(mixInfoCopy, mixTracksCopy))
+            // Save to database - actually, might also create it
+            if (mixManager.createOrUpdateMix(m_mixInfo, mixTracksCopy))
             {
-                spdlog::info("Successfully saved mix {} with {} tracks", m_mixId, m_mixTracks.size());
+                if (m_mixId == 0)
+                {
+                    m_mixId = m_mixInfo.mixId;
+                    spdlog::info("Created new mix with ID {} for {} tracks", m_mixId, m_mixTracks.size());
+                }
+                else
+                {
+                    spdlog::info("Updated existing mix with ID {} for {} tracks", m_mixId, m_mixTracks.size());
+                }
                 return true;
             }
             else
