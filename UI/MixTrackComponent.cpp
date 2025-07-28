@@ -52,8 +52,40 @@ namespace jucyaudio
                 auto markerHit = hitTestMarker(event.position.toInt());
                 if (markerHit != MarkerType::None)
                 {
-                    m_draggedMarker = markerHit;
-                    m_originalMixTrack = m_mixTrack; // Save original state
+                    // Special handling for cue-end dragging
+                    if (markerHit == MarkerType::CueEnd)
+                    {
+                        m_cueEndDragState.isDragging = true;
+                        m_cueEndDragState.draggedMarker = MarkerType::CueEnd;
+                        
+                        // Cache coordinate system
+                        auto bounds = getLocalBounds();
+                        m_cueEndDragState.cachedWaveformBounds = bounds.removeFromBottom(waveformSectionHeight);
+                        
+                        const double trackDurationSeconds = std::chrono::duration<double>(m_trackInfo.duration).count();
+                        m_cueEndDragState.cachedPixelsPerSecond = 
+                            m_cueEndDragState.cachedWaveformBounds.getWidth() / trackDurationSeconds;
+                        
+                        // Store original cue end position
+                        m_cueEndDragState.originalMarkerTime = m_mixTrack.cueEnd;
+                        if (m_cueEndDragState.originalMarkerTime == Duration_t{0})
+                        {
+                            m_cueEndDragState.originalMarkerTime = m_trackInfo.duration;
+                        }
+                        else if (m_cueEndDragState.originalMarkerTime < Duration_t{0})
+                        {
+                            m_cueEndDragState.originalMarkerTime = m_trackInfo.duration + m_cueEndDragState.originalMarkerTime;
+                        }
+                        
+                        m_cueEndDragState.previewMarkerTime = m_cueEndDragState.originalMarkerTime;
+                        m_cueEndDragState.maxVisualExtension = trackDurationSeconds * 1.5;
+                    }
+                    else
+                    {
+                        // Original behavior for other markers
+                        m_draggedMarker = markerHit;
+                        m_originalMixTrack = m_mixTrack; // Save original state
+                    }
                     
                     // Ensure track is selected
                     if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
@@ -190,6 +222,45 @@ namespace jucyaudio
             
             // Draw cue and attach point markers
             drawCueAndAttachMarkers(g, waveformArea);
+            
+            // Draw cue-end drag preview if active
+            if (m_cueEndDragState.isDragging)
+            {
+                const auto trackDuration = m_trackInfo.duration;
+                const auto previewDuration = m_cueEndDragState.previewMarkerTime;
+                
+                if (previewDuration > trackDuration)
+                {
+                    // Draw semi-transparent grey extension
+                    const double trackSeconds = std::chrono::duration<double>(trackDuration).count();
+                    const double previewSeconds = std::chrono::duration<double>(previewDuration).count();
+                    
+                    const float startX = waveformArea.getRight();
+                    const float endX = waveformArea.getX() + (previewSeconds / trackSeconds) * waveformArea.getWidth();
+                    
+                    g.setColour(juce::Colours::grey.withAlpha(0.3f));
+                    g.fillRect(juce::roundToInt(startX), waveformArea.getY(), 
+                              juce::roundToInt(endX - startX), waveformArea.getHeight());
+                }
+                
+                // Draw preview marker
+                const double previewSeconds = std::chrono::duration<double>(previewDuration).count();
+                const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
+                const float markerX = waveformArea.getX() + (previewSeconds / trackDurationSeconds) * waveformArea.getWidth();
+                
+                // Draw vertical line
+                g.setColour(juce::Colours::cyan.brighter(0.5f));
+                g.drawVerticalLine(juce::roundToInt(markerX), waveformArea.getY(), waveformArea.getBottom());
+                
+                // Draw handle at top
+                const float handleSize = 10.0f; // Slightly larger for preview
+                juce::Rectangle<float> handle(markerX - handleSize/2, waveformArea.getY() - handleSize/2, handleSize, handleSize);
+                g.fillEllipse(handle);
+                
+                // Draw label
+                g.setFont(10.0f);
+                g.drawText("Preview", juce::roundToInt(markerX) + 2, waveformArea.getY() - 12, 60, 12, juce::Justification::left);
+            }
         }
 
         void MixTrackComponent::drawVolumeEnvelope(juce::Graphics &g, juce::Rectangle<int> area)
@@ -282,7 +353,28 @@ namespace jucyaudio
 
         void MixTrackComponent::mouseDrag(const juce::MouseEvent &event)
         {
-            // Handle marker dragging
+            // Handle cue-end dragging with cached coordinates
+            if (m_cueEndDragState.isDragging)
+            {
+                // Use CACHED coordinates, not live ones
+                const int deltaX = event.position.x - event.mouseDownPosition.x;
+                const double deltaSeconds = deltaX / m_cueEndDragState.cachedPixelsPerSecond;
+                
+                // Calculate new preview position
+                const double originalSeconds = std::chrono::duration<double>(m_cueEndDragState.originalMarkerTime).count();
+                double newSeconds = std::max(0.0, originalSeconds + deltaSeconds);
+                
+                // Limit to max visual extension
+                newSeconds = std::min(newSeconds, m_cueEndDragState.maxVisualExtension);
+                
+                m_cueEndDragState.previewMarkerTime = Duration_t(
+                    std::chrono::milliseconds(static_cast<int64_t>(newSeconds * 1000)));
+                
+                repaint(); // Only repaint this component, not timeline
+                return;
+            }
+            
+            // Handle other marker dragging
             if (m_draggedMarker != MarkerType::None)
             {
                 updateMarkerPosition(m_draggedMarker, event.position.toInt().x);
@@ -333,7 +425,42 @@ namespace jucyaudio
 
         void MixTrackComponent::mouseUp(const juce::MouseEvent &event)
         {
-            // Handle marker drag completion
+            // Handle cue-end drag completion
+            if (m_cueEndDragState.isDragging)
+            {
+                // Apply the preview to the actual model
+                database::MixTrack updatedTrack = m_mixTrack;
+                
+                // Convert back to the stored format (0 means track end)
+                const auto trackDuration = m_trackInfo.duration;
+                if (m_cueEndDragState.previewMarkerTime >= trackDuration)
+                {
+                    // Beyond track duration - store as positive value
+                    updatedTrack.cueEnd = m_cueEndDragState.previewMarkerTime;
+                }
+                else if (m_cueEndDragState.previewMarkerTime == trackDuration)
+                {
+                    // Exactly at track end - store as 0
+                    updatedTrack.cueEnd = Duration_t{0};
+                }
+                else
+                {
+                    // Before track end - store as negative offset from end
+                    updatedTrack.cueEnd = m_cueEndDragState.previewMarkerTime - trackDuration;
+                }
+                
+                if (onCueAttachChanged)
+                {
+                    onCueAttachChanged(m_trackInfo.trackId, updatedTrack);
+                }
+                
+                // Clear drag state
+                m_cueEndDragState = DragState{};
+                repaint();
+                return;
+            }
+            
+            // Handle other marker drag completion
             if (m_draggedMarker != MarkerType::None)
             {
                 // Notify of cue/attach change
@@ -564,14 +691,26 @@ namespace jucyaudio
             const auto trackDuration = m_trackInfo.duration;
             
             // Helper lambda to draw a vertical marker
-            auto drawMarker = [&](Duration_t time, juce::Colour colour, const char* label, bool isHovered)
+            auto drawMarker = [&](Duration_t time, juce::Colour colour, const char* label, bool isHovered, bool allowExtension = false)
             {
-                if (time < Duration_t{0} || time > trackDuration)
+                if (time < Duration_t{0})
+                    return;
+                    
+                // For cue-end, allow drawing beyond track duration up to visual limit
+                if (!allowExtension && time > trackDuration)
                     return;
                     
                 const double timeInSeconds = std::chrono::duration<double>(time).count();
                 const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
-                const float x = area.getX() + (timeInSeconds / trackDurationSeconds) * area.getWidth();
+                
+                // Cap visual position for extended markers
+                double visualTimeSeconds = timeInSeconds;
+                if (allowExtension && time > trackDuration)
+                {
+                    visualTimeSeconds = std::min(timeInSeconds, trackDurationSeconds * 1.5);
+                }
+                
+                const float x = area.getX() + (visualTimeSeconds / trackDurationSeconds) * area.getWidth();
                 
                 // Draw vertical line
                 g.setColour(isHovered ? colour.brighter(0.5f) : colour);
@@ -603,7 +742,8 @@ namespace jucyaudio
             {
                 cueEndPos = trackDuration + cueEndPos;
             }
-            drawMarker(cueEndPos, cueColor, "Cue Out", m_hoveredMarker == MarkerType::CueEnd);
+            // Allow extension for cue-end marker
+            drawMarker(cueEndPos, cueColor, "Cue Out", m_hoveredMarker == MarkerType::CueEnd, true);
             
             // Draw attach markers - these define where crossfades align
             // Keep them subtle since the main attach line is drawn at timeline level
@@ -660,6 +800,14 @@ namespace jucyaudio
                         markerTime = trackDuration;
                     else if (markerTime < Duration_t{0})
                         markerTime = trackDuration + markerTime;
+                    
+                    // If cue-end is beyond track duration, cap visual position to prevent marker going off-screen
+                    if (markerTime > trackDuration)
+                    {
+                        const double maxExtension = trackDurationSeconds * 1.5; // 50% extension
+                        markerTime = Duration_t(std::chrono::milliseconds(
+                            static_cast<int64_t>(maxExtension * 1000)));
+                    }
                     break;
                     
                 case MarkerType::AttachFrom:
@@ -715,17 +863,9 @@ namespace jucyaudio
                     break;
                     
                 case MarkerType::CueEnd:
-                    // Convert to relative format for storage
-                    if (newTime >= trackDuration)
-                    {
-                        const_cast<database::MixTrack&>(m_mixTrack).cueEnd = Duration_t{0}; // 0 means track end
-                    }
-                    else
-                    {
-                        // Ensure cueEnd > cueStart
-                        newTime = std::max(newTime, m_mixTrack.cueStart + Duration_t{1});
-                        const_cast<database::MixTrack&>(m_mixTrack).cueEnd = newTime;
-                    }
+                    // CueEnd is now handled by the special drag state
+                    // This case should not be reached
+                    jassertfalse;
                     break;
                     
                 case MarkerType::AttachFrom:

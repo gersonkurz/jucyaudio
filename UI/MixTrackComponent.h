@@ -114,6 +114,24 @@ namespace jucyaudio
             MarkerType m_draggedMarker = MarkerType::None;
             MarkerType m_hoveredMarker = MarkerType::None;
             database::MixTrack m_originalMixTrack;
+            
+            // For cue-end dragging with cached coordinates
+            struct DragState
+            {
+                bool isDragging = false;
+                MarkerType draggedMarker = MarkerType::None;
+                
+                // Cached at drag start:
+                juce::Rectangle<int> cachedWaveformBounds;
+                double cachedPixelsPerSecond = 0.0;
+                Duration_t originalMarkerTime{};
+                Duration_t previewMarkerTime{};
+                
+                // For visual extension:
+                double maxVisualExtension = 0.0; // Track duration * 1.5
+            };
+            DragState m_cueEndDragState;
+            
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixTrackComponent)
         };
     } // namespace ui
