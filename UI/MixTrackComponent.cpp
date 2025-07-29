@@ -260,30 +260,45 @@ namespace jucyaudio
                 const double previewSeconds = std::chrono::duration<double>(previewDuration).count();
                 
                 // Handle three cases:
-                // 1. Extended beyond track duration - show extension box
+                // 1. Extended beyond track duration - show extension indicator
                 // 2. Shortened within track bounds - grey out the end
                 // 3. Exactly at track duration - normal
                 
                 if (previewDuration > trackDuration)
                 {
-                    // Extended: Show extension visualization OUTSIDE waveform area
-                    // The timeline will handle the actual extended bounds
+                    // Extended: Show visual indicator at the right edge
+                    const double extraSeconds = previewSeconds - trackDurationSeconds;
                     
-                    // Draw preview marker at visual limit position
-                    const double visualSeconds = std::min(previewSeconds, trackDurationSeconds * 1.5);
-                    const float markerX = waveformArea.getX() + (visualSeconds / trackDurationSeconds) * waveformArea.getWidth();
+                    // Draw an extension indicator at the right edge of the waveform
+                    const int indicatorWidth = 60;
+                    const int indicatorHeight = 20;
+                    juce::Rectangle<int> indicatorRect(waveformArea.getRight() - indicatorWidth - 5,
+                                                      waveformArea.getY() + 5,
+                                                      indicatorWidth, indicatorHeight);
                     
-                    g.setColour(juce::Colours::cyan.brighter(0.5f));
-                    g.drawVerticalLine(juce::roundToInt(markerX), waveformArea.getY(), waveformArea.getBottom());
+                    // Draw background
+                    g.setColour(juce::Colours::black.withAlpha(0.7f));
+                    g.fillRoundedRectangle(indicatorRect.toFloat(), 3.0f);
                     
-                    // Draw handle
-                    const float handleSize = 10.0f;
-                    juce::Rectangle<float> handle(markerX - handleSize/2, waveformArea.getY() - handleSize/2, handleSize, handleSize);
-                    g.fillEllipse(handle);
+                    // Draw border
+                    g.setColour(juce::Colours::cyan);
+                    g.drawRoundedRectangle(indicatorRect.toFloat(), 3.0f, 1.0f);
                     
-                    // Draw extension indicator
-                    g.setFont(10.0f);
-                    g.drawText("+silence", juce::roundToInt(markerX) + 2, waveformArea.getY() - 12, 60, 12, juce::Justification::left);
+                    // Draw text
+                    g.setColour(juce::Colours::white);
+                    g.setFont(11.0f);
+                    juce::String label = juce::String::formatted("+%.1fs", extraSeconds);
+                    g.drawText(label, indicatorRect, juce::Justification::centred);
+                    
+                    // Draw arrow pointing right
+                    juce::Path arrow;
+                    const float arrowY = waveformArea.getCentreY();
+                    const float arrowX = waveformArea.getRight() - 10;
+                    arrow.startNewSubPath(arrowX - 10, arrowY - 5);
+                    arrow.lineTo(arrowX, arrowY);
+                    arrow.lineTo(arrowX - 10, arrowY + 5);
+                    g.setColour(juce::Colours::cyan);
+                    g.strokePath(arrow, juce::PathStrokeType(2.0f));
                 }
                 else
                 {
@@ -321,8 +336,20 @@ namespace jucyaudio
                 return;
             }
 
+            // For extended tracks, we need to scale the envelope drawing area
+            const auto effectiveDuration = m_mixTrack.getEffectiveDuration(m_trackInfo.duration);
+            const double effectiveDurationSeconds = std::chrono::duration<double>(effectiveDuration).count();
+            const double trackDurationSeconds = std::chrono::duration<double>(m_trackInfo.duration).count();
+            
+            juce::Rectangle<int> envelopeArea = area;
+            if (effectiveDuration > m_trackInfo.duration)
+            {
+                // Scale down the envelope area to match the waveform area
+                const float waveformProportion = trackDurationSeconds / effectiveDurationSeconds;
+                envelopeArea.setWidth(juce::roundToInt(area.getWidth() * waveformProportion));
+            }
+
             juce::Path volumePath;
-            const auto trackDuration = std::chrono::duration<double>(m_trackInfo.duration).count();
 
             // Build the envelope path by connecting all points
             bool pathStarted = false;
@@ -330,6 +357,14 @@ namespace jucyaudio
             {
                 const auto &point = m_mixTrack.envelopePoints[i];
                 auto screenPos = envelopePointToScreenPosition(point);
+                
+                // Adjust screen position for extended tracks
+                if (effectiveDuration > m_trackInfo.duration)
+                {
+                    // Map from full component width to the scaled envelope area
+                    const float relativeX = (screenPos.x - area.getX()) / float(area.getWidth());
+                    screenPos.x = envelopeArea.getX() + juce::roundToInt(relativeX * envelopeArea.getWidth() * (effectiveDurationSeconds / trackDurationSeconds));
+                }
 
                 if (!pathStarted)
                 {
@@ -351,6 +386,13 @@ namespace jucyaudio
             {
                 const auto &point = m_mixTrack.envelopePoints[i];
                 auto screenPos = envelopePointToScreenPosition(point);
+                
+                // Adjust screen position for extended tracks
+                if (effectiveDuration > m_trackInfo.duration)
+                {
+                    const float relativeX = (screenPos.x - area.getX()) / float(area.getWidth());
+                    screenPos.x = envelopeArea.getX() + juce::roundToInt(relativeX * envelopeArea.getWidth() * (effectiveDurationSeconds / trackDurationSeconds));
+                }
 
                 // Choose color based on state
                 juce::Colour pointColor = juce::Colours::orange;
@@ -372,7 +414,7 @@ namespace jucyaudio
             }
 
             // Debug logging for the envelope shape
-            spdlog::debug("Track {}: {} envelope points, duration={:.1f}s", m_mixTrack.trackId, m_mixTrack.envelopePoints.size(), trackDuration);
+            spdlog::debug("Track {}: {} envelope points, duration={:.1f}s", m_mixTrack.trackId, m_mixTrack.envelopePoints.size(), trackDurationSeconds);
         }
 
         void MixTrackComponent::changeListenerCallback(juce::ChangeBroadcaster *source)
@@ -596,10 +638,23 @@ namespace jucyaudio
 
             auto bounds = getLocalBounds();
             auto waveformArea = bounds.removeFromBottom(waveformSectionHeight);
+            
+            // For extended tracks, we need to adjust the test positions
+            const auto effectiveDuration = m_mixTrack.getEffectiveDuration(m_trackInfo.duration);
+            const double effectiveDurationSeconds = std::chrono::duration<double>(effectiveDuration).count();
+            const double trackDurationSeconds = std::chrono::duration<double>(m_trackInfo.duration).count();
 
             for (size_t i = 0; i < m_mixTrack.envelopePoints.size(); ++i)
             {
                 auto pointScreenPos = envelopePointToScreenPosition(m_mixTrack.envelopePoints[i]);
+                
+                // Adjust screen position for extended tracks
+                if (effectiveDuration > m_trackInfo.duration)
+                {
+                    const float relativeX = (pointScreenPos.x - waveformArea.getX()) / float(waveformArea.getWidth());
+                    const float waveformProportion = trackDurationSeconds / effectiveDurationSeconds;
+                    pointScreenPos.x = waveformArea.getX() + juce::roundToInt(relativeX * waveformArea.getWidth() * (effectiveDurationSeconds / trackDurationSeconds));
+                }
 
                 // Only test points within the waveform area
                 if (waveformArea.contains(pointScreenPos))
