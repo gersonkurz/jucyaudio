@@ -329,6 +329,27 @@ namespace jucyaudio
             return nullptr;
         }
 
+        void TimelineComponent::refreshLayout()
+        {
+            // Recalculate timeline width based on effective durations
+            double maxTimeSecs = 0.0;
+            for (const auto& view : m_trackViews)
+            {
+                const double startTime = std::chrono::duration<double>(view.calculatedStartTime).count();
+                const double effectiveDuration = std::chrono::duration<double>(
+                    view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
+                const double endTime = startTime + effectiveDuration;
+                maxTimeSecs = std::max(maxTimeSecs, endTime);
+            }
+            
+            m_calculatedWidth = static_cast<int>(maxTimeSecs * m_pixelsPerSecond) + 200;
+            setSize(m_calculatedWidth, m_calculatedHeight);
+            
+            // Trigger a layout recalculation
+            resized();
+            repaint();
+        }
+
         void TimelineComponent::setSelectedTrack(MixTrackComponent *track)
         {
             if (m_selectedTrack != track)
@@ -466,13 +487,17 @@ namespace jucyaudio
             for (const auto& view : m_trackViews)
             {
                 const auto& trackInfo = *view.trackInfoData;
+                const auto& mixTrack = *view.mixTrackData;
                 
                 // Use the pre-calculated start time from populateFrom
                 const double startTime = std::chrono::duration<double>(view.calculatedStartTime).count();
-                const double trackDuration = std::chrono::duration<double>(trackInfo.duration).count();
+                
+                // Use effective duration which accounts for cue points
+                const double effectiveDuration = std::chrono::duration<double>(
+                    mixTrack.getEffectiveDuration(trackInfo.duration)).count();
                 
                 const int startX = static_cast<int>(startTime * m_pixelsPerSecond);
-                const int width = static_cast<int>(trackDuration * m_pixelsPerSecond);
+                const int width = static_cast<int>(effectiveDuration * m_pixelsPerSecond);
                 const int yPos = rulerHeight + (currentLane * (trackHeight + yGap));
 
                 view.component->setBounds(startX, yPos, width, trackHeight);
@@ -614,8 +639,16 @@ namespace jucyaudio
             m_calculatedHeight = rulerHeight + (numLanesForHeightCalc * (trackHeight + yGap));
 
             // Calculate width based on mix duration
-            const auto mixDuration = mixLoader.calculateMixDuration();
-            const double maxTimeSecs = std::chrono::duration<double>(mixDuration).count();
+            // Need to account for extended tracks beyond their original duration
+            double maxTimeSecs = 0.0;
+            for (const auto& view : m_trackViews)
+            {
+                const double startTime = std::chrono::duration<double>(view.calculatedStartTime).count();
+                const double effectiveDuration = std::chrono::duration<double>(
+                    view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
+                const double endTime = startTime + effectiveDuration;
+                maxTimeSecs = std::max(maxTimeSecs, endTime);
+            }
             m_calculatedWidth = static_cast<int>(maxTimeSecs * m_pixelsPerSecond) + 200;
 
             // Set the component's size to its calculated ideal size

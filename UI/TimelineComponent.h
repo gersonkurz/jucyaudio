@@ -48,6 +48,7 @@ namespace jucyaudio
             void playMixFromPosition(double timePosition);
             bool keyPressed(const juce::KeyPress &key) override;
             void deleteSelectedTrack();
+            void refreshLayout(); // Refresh timeline layout without recreating components
             void startTrackDrag(MixTrackComponent *track);
             void updateTrackDrag(MixTrackComponent *track, double newTime);
             void finishTrackDrag(MixTrackComponent *track, double finalTime);

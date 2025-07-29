@@ -208,11 +208,39 @@ namespace jucyaudio
                 g.drawRoundedRectangle(bounds.toFloat().reduced(1), 4.0f, 2.0f);
             }
 
-            m_thumbnail.drawChannel(g, waveformArea.reduced(2),
-                                    0.0,                          // start time
-                                    m_thumbnail.getTotalLength(), // end time
-                                    0,                            // channel index to draw (0 = Left)
-                                    1.0f);                        // vertical zoom
+            // Calculate if track is extended
+            const auto effectiveDuration = m_mixTrack.getEffectiveDuration(m_trackInfo.duration);
+            const double effectiveDurationSeconds = std::chrono::duration<double>(effectiveDuration).count();
+            const double trackDurationSeconds = std::chrono::duration<double>(m_trackInfo.duration).count();
+            
+            if (effectiveDuration > m_trackInfo.duration)
+            {
+                // Track is extended - draw waveform in proportional space
+                const float waveformProportion = trackDurationSeconds / effectiveDurationSeconds;
+                const int waveformWidth = juce::roundToInt(waveformArea.getWidth() * waveformProportion);
+                auto scaledWaveformArea = waveformArea;
+                scaledWaveformArea.setWidth(waveformWidth);
+                
+                m_thumbnail.drawChannel(g, scaledWaveformArea.reduced(2),
+                                        0.0,                          // start time
+                                        m_thumbnail.getTotalLength(), // end time
+                                        0,                            // channel index to draw (0 = Left)
+                                        1.0f);                        // vertical zoom
+                                        
+                // Draw extension area as grey
+                g.setColour(juce::Colours::grey.withAlpha(0.3f));
+                g.fillRect(scaledWaveformArea.getRight(), waveformArea.getY(),
+                          waveformArea.getRight() - scaledWaveformArea.getRight(), waveformArea.getHeight());
+            }
+            else
+            {
+                // Normal case - draw waveform at full width
+                m_thumbnail.drawChannel(g, waveformArea.reduced(2),
+                                        0.0,                          // start time
+                                        m_thumbnail.getTotalLength(), // end time
+                                        0,                            // channel index to draw (0 = Left)
+                                        1.0f);                        // vertical zoom
+            }
 
             // Draw semi-transparent overlay for non-audible portions (outside cue points)
             drawNonAudibleRegions(g, waveformArea);
@@ -228,38 +256,57 @@ namespace jucyaudio
             {
                 const auto trackDuration = m_trackInfo.duration;
                 const auto previewDuration = m_cueEndDragState.previewMarkerTime;
+                const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
+                const double previewSeconds = std::chrono::duration<double>(previewDuration).count();
+                
+                // Handle three cases:
+                // 1. Extended beyond track duration - show extension box
+                // 2. Shortened within track bounds - grey out the end
+                // 3. Exactly at track duration - normal
                 
                 if (previewDuration > trackDuration)
                 {
-                    // Draw semi-transparent grey extension
-                    const double trackSeconds = std::chrono::duration<double>(trackDuration).count();
-                    const double previewSeconds = std::chrono::duration<double>(previewDuration).count();
+                    // Extended: Show extension visualization OUTSIDE waveform area
+                    // The timeline will handle the actual extended bounds
                     
-                    const float startX = waveformArea.getRight();
-                    const float endX = waveformArea.getX() + (previewSeconds / trackSeconds) * waveformArea.getWidth();
+                    // Draw preview marker at visual limit position
+                    const double visualSeconds = std::min(previewSeconds, trackDurationSeconds * 1.5);
+                    const float markerX = waveformArea.getX() + (visualSeconds / trackDurationSeconds) * waveformArea.getWidth();
                     
-                    g.setColour(juce::Colours::grey.withAlpha(0.3f));
-                    g.fillRect(juce::roundToInt(startX), waveformArea.getY(), 
-                              juce::roundToInt(endX - startX), waveformArea.getHeight());
+                    g.setColour(juce::Colours::cyan.brighter(0.5f));
+                    g.drawVerticalLine(juce::roundToInt(markerX), waveformArea.getY(), waveformArea.getBottom());
+                    
+                    // Draw handle
+                    const float handleSize = 10.0f;
+                    juce::Rectangle<float> handle(markerX - handleSize/2, waveformArea.getY() - handleSize/2, handleSize, handleSize);
+                    g.fillEllipse(handle);
+                    
+                    // Draw extension indicator
+                    g.setFont(10.0f);
+                    g.drawText("+silence", juce::roundToInt(markerX) + 2, waveformArea.getY() - 12, 60, 12, juce::Justification::left);
                 }
-                
-                // Draw preview marker
-                const double previewSeconds = std::chrono::duration<double>(previewDuration).count();
-                const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
-                const float markerX = waveformArea.getX() + (previewSeconds / trackDurationSeconds) * waveformArea.getWidth();
-                
-                // Draw vertical line
-                g.setColour(juce::Colours::cyan.brighter(0.5f));
-                g.drawVerticalLine(juce::roundToInt(markerX), waveformArea.getY(), waveformArea.getBottom());
-                
-                // Draw handle at top
-                const float handleSize = 10.0f; // Slightly larger for preview
-                juce::Rectangle<float> handle(markerX - handleSize/2, waveformArea.getY() - handleSize/2, handleSize, handleSize);
-                g.fillEllipse(handle);
-                
-                // Draw label
-                g.setFont(10.0f);
-                g.drawText("Preview", juce::roundToInt(markerX) + 2, waveformArea.getY() - 12, 60, 12, juce::Justification::left);
+                else
+                {
+                    // Shortened or at exact duration: Show within waveform bounds
+                    const float markerX = waveformArea.getX() + (previewSeconds / trackDurationSeconds) * waveformArea.getWidth();
+                    
+                    // Grey out the portion after cue-end
+                    if (previewDuration < trackDuration)
+                    {
+                        g.setColour(juce::Colours::black.withAlpha(0.5f));
+                        g.fillRect(juce::roundToInt(markerX), waveformArea.getY(), 
+                                  juce::roundToInt(waveformArea.getRight() - markerX), waveformArea.getHeight());
+                    }
+                    
+                    // Draw preview marker
+                    g.setColour(juce::Colours::cyan.brighter(0.5f));
+                    g.drawVerticalLine(juce::roundToInt(markerX), waveformArea.getY(), waveformArea.getBottom());
+                    
+                    // Draw handle
+                    const float handleSize = 10.0f;
+                    juce::Rectangle<float> handle(markerX - handleSize/2, waveformArea.getY() - handleSize/2, handleSize, handleSize);
+                    g.fillEllipse(handle);
+                }
             }
         }
 
@@ -572,7 +619,8 @@ namespace jucyaudio
             auto bounds = getLocalBounds();
             auto waveformArea = bounds.removeFromBottom(waveformSectionHeight);
 
-            const auto trackDuration = std::chrono::duration<double>(m_trackInfo.duration).count();
+            const auto trackDuration = m_trackInfo.duration;
+            const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
             const double timeInSeconds = std::chrono::duration<double>(point.time).count();
 
             // Add a small margin so the last point isn't right at the edge
@@ -580,7 +628,7 @@ namespace jucyaudio
             const int usableWidth = waveformArea.getWidth() - (2 * margin);
             
             // Convert time to X position (relative to track start)
-            const float x = waveformArea.getX() + margin + (timeInSeconds / trackDuration) * usableWidth;
+            const float x = waveformArea.getX() + margin + (timeInSeconds / trackDurationSeconds) * usableWidth;
 
             // Convert volume to Y position (0% = bottom, 100% = top)
             const float volumePercent = point.volume / float(database::VOLUME_NORMALIZATION);
@@ -594,7 +642,8 @@ namespace jucyaudio
             auto bounds = getLocalBounds();
             auto waveformArea = bounds.removeFromBottom(waveformSectionHeight);
 
-            const auto trackDuration = std::chrono::duration<double>(m_trackInfo.duration).count();
+            const auto trackDuration = m_trackInfo.duration;
+            const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
 
             // Use the same margin as in envelopePointToScreenPosition
             const int margin = 5;
@@ -602,7 +651,7 @@ namespace jucyaudio
 
             // Convert X position to time
             const float relativeX = (screenPos.x - waveformArea.getX() - margin) / float(usableWidth);
-            const double timeInSeconds = juce::jlimit(0.0, trackDuration, relativeX * trackDuration);
+            const double timeInSeconds = juce::jlimit(0.0, trackDurationSeconds, relativeX * trackDurationSeconds);
 
             // Convert Y position to volume
             const float relativeY = (waveformArea.getBottom() - screenPos.y) / float(waveformArea.getHeight());
@@ -636,7 +685,7 @@ namespace jucyaudio
                 point.time = std::min(point.time, nextPoint.time);
             }
 
-            // Ensure time is within track bounds
+            // Ensure time is within track duration
             const auto trackDuration = m_trackInfo.duration;
             point.time = std::min(point.time, trackDuration);
             point.time = std::max(point.time, std::chrono::milliseconds(0));
@@ -644,18 +693,15 @@ namespace jucyaudio
         
         void MixTrackComponent::drawNonAudibleRegions(juce::Graphics &g, juce::Rectangle<int> area)
         {
+            // Skip if we're in cue-end drag mode - the drag preview handles visualization
+            if (m_cueEndDragState.isDragging)
+                return;
+                
             const auto trackDuration = m_trackInfo.duration;
             const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
             
-            // Add the same margin as envelope points for consistency
-            const int margin = 5;
-            const int usableWidth = area.getWidth() - (2 * margin);
-            
-            // Calculate cue positions in pixels
+            // Calculate cue positions
             const double cueStartSeconds = std::chrono::duration<double>(m_mixTrack.cueStart).count();
-            const float cueStartX = area.getX() + margin + (cueStartSeconds / trackDurationSeconds) * usableWidth;
-            
-            // Calculate cue end position
             Duration_t cueEndPos = m_mixTrack.cueEnd;
             if (cueEndPos == Duration_t{0})
             {
@@ -666,7 +712,10 @@ namespace jucyaudio
                 cueEndPos = trackDuration + cueEndPos;
             }
             const double cueEndSeconds = std::chrono::duration<double>(cueEndPos).count();
-            const float cueEndX = area.getX() + margin + (cueEndSeconds / trackDurationSeconds) * usableWidth;
+            
+            // Use getMarkerXPosition for consistent positioning
+            const int cueStartX = getMarkerXPosition(MarkerType::CueStart);
+            const int cueEndX = getMarkerXPosition(MarkerType::CueEnd);
             
             // Draw semi-transparent overlay for non-audible regions
             g.setColour(juce::Colours::black.withAlpha(0.5f));
@@ -675,81 +724,78 @@ namespace jucyaudio
             if (cueStartX > area.getX())
             {
                 g.fillRect(area.getX(), area.getY(), 
-                          juce::roundToInt(cueStartX - area.getX()), area.getHeight());
+                          cueStartX - area.getX(), area.getHeight());
             }
             
-            // After cue end
-            if (cueEndX < area.getRight())
+            // After cue end (only if within track bounds)
+            if (cueEndPos <= trackDuration)
             {
-                g.fillRect(juce::roundToInt(cueEndX), area.getY(), 
-                          juce::roundToInt(area.getRight() - cueEndX), area.getHeight());
+                // Calculate where the track waveform ends
+                const auto effectiveDuration = m_mixTrack.getEffectiveDuration(trackDuration);
+                if (effectiveDuration > trackDuration)
+                {
+                    // Extended track - waveform ends before component bounds
+                    const double effectiveDurationSeconds = std::chrono::duration<double>(effectiveDuration).count();
+                    const float waveformProportion = trackDurationSeconds / effectiveDurationSeconds;
+                    const int waveformEndX = area.getX() + juce::roundToInt(area.getWidth() * waveformProportion);
+                    
+                    if (cueEndX < waveformEndX)
+                    {
+                        g.fillRect(cueEndX, area.getY(), 
+                                  waveformEndX - cueEndX, area.getHeight());
+                    }
+                }
+                else
+                {
+                    // Normal track - waveform fills component
+                    if (cueEndX < area.getRight())
+                    {
+                        g.fillRect(cueEndX, area.getY(), 
+                                  area.getRight() - cueEndX, area.getHeight());
+                    }
+                }
             }
         }
         
         void MixTrackComponent::drawCueAndAttachMarkers(juce::Graphics &g, juce::Rectangle<int> area)
         {
-            const auto trackDuration = m_trackInfo.duration;
-            
-            // Helper lambda to draw a vertical marker
-            auto drawMarker = [&](Duration_t time, juce::Colour colour, const char* label, bool isHovered, bool allowExtension = false)
+            // Draw each marker using getMarkerXPosition for consistent positioning
+            auto drawMarker = [&](MarkerType type, juce::Colour colour, const char* label)
             {
-                if (time < Duration_t{0})
-                    return;
-                    
-                // For cue-end, allow drawing beyond track duration up to visual limit
-                if (!allowExtension && time > trackDuration)
-                    return;
-                    
-                const double timeInSeconds = std::chrono::duration<double>(time).count();
-                const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
+                const int x = getMarkerXPosition(type);
+                const bool isHovered = (m_hoveredMarker == type);
                 
-                // Cap visual position for extended markers
-                double visualTimeSeconds = timeInSeconds;
-                if (allowExtension && time > trackDuration)
+                // Only draw if within bounds
+                if (x >= area.getX() && x <= area.getRight())
                 {
-                    visualTimeSeconds = std::min(timeInSeconds, trackDurationSeconds * 1.5);
+                    // Draw vertical line
+                    g.setColour(isHovered ? colour.brighter(0.5f) : colour);
+                    g.drawVerticalLine(x, area.getY(), area.getBottom());
+                    
+                    // Draw handle at top
+                    const float handleSize = 8.0f;
+                    juce::Rectangle<float> handle(x - handleSize/2, area.getY() - handleSize/2, handleSize, handleSize);
+                    g.fillEllipse(handle);
+                    
+                    // Draw label
+                    if (label[0] != '\0') // Only draw label if not empty
+                    {
+                        g.setFont(10.0f);
+                        g.drawText(label, x + 2, area.getY() - 12, 60, 12, juce::Justification::left);
+                    }
                 }
-                
-                const float x = area.getX() + (visualTimeSeconds / trackDurationSeconds) * area.getWidth();
-                
-                // Draw vertical line
-                g.setColour(isHovered ? colour.brighter(0.5f) : colour);
-                g.drawVerticalLine(juce::roundToInt(x), area.getY(), area.getBottom());
-                
-                // Draw handle at top
-                const float handleSize = 8.0f;
-                juce::Rectangle<float> handle(x - handleSize/2, area.getY() - handleSize/2, handleSize, handleSize);
-                g.fillEllipse(handle);
-                
-                // Draw label
-                g.setFont(10.0f);
-                g.drawText(label, juce::roundToInt(x) + 2, area.getY() - 12, 60, 12, juce::Justification::left);
             };
             
             // Draw cue markers - these define the audible portion of the track
             const auto cueColor = juce::Colours::cyan;
-            
-            // Draw cue start - where playback begins
-            drawMarker(m_mixTrack.cueStart, cueColor, "Cue In", m_hoveredMarker == MarkerType::CueStart);
-            
-            // For cueEnd, calculate actual position (0 means track end, negative is relative to end)
-            Duration_t cueEndPos = m_mixTrack.cueEnd;
-            if (cueEndPos == Duration_t{0})
-            {
-                cueEndPos = trackDuration;
-            }
-            else if (cueEndPos < Duration_t{0})
-            {
-                cueEndPos = trackDuration + cueEndPos;
-            }
-            // Allow extension for cue-end marker
-            drawMarker(cueEndPos, cueColor, "Cue Out", m_hoveredMarker == MarkerType::CueEnd, true);
+            drawMarker(MarkerType::CueStart, cueColor, "Cue In");
+            drawMarker(MarkerType::CueEnd, cueColor, "Cue Out");
             
             // Draw attach markers - these define where crossfades align
             // Keep them subtle since the main attach line is drawn at timeline level
             const auto attachColor = juce::Colours::orange.withAlpha(0.5f);
-            drawMarker(m_mixTrack.attachFrom, attachColor, "", m_hoveredMarker == MarkerType::AttachFrom);
-            drawMarker(m_mixTrack.attachTo, attachColor, "", m_hoveredMarker == MarkerType::AttachTo);
+            drawMarker(MarkerType::AttachFrom, attachColor, "");
+            drawMarker(MarkerType::AttachTo, attachColor, "");
         }
         
         MixTrackComponent::MarkerType MixTrackComponent::hitTestMarker(juce::Point<int> mousePos) const
@@ -785,6 +831,8 @@ namespace jucyaudio
             
             const auto trackDuration = m_trackInfo.duration;
             const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
+            const auto effectiveDuration = m_mixTrack.getEffectiveDuration(trackDuration);
+            const double effectiveDurationSeconds = std::chrono::duration<double>(effectiveDuration).count();
             
             Duration_t markerTime{0};
             
@@ -800,14 +848,6 @@ namespace jucyaudio
                         markerTime = trackDuration;
                     else if (markerTime < Duration_t{0})
                         markerTime = trackDuration + markerTime;
-                    
-                    // If cue-end is beyond track duration, cap visual position to prevent marker going off-screen
-                    if (markerTime > trackDuration)
-                    {
-                        const double maxExtension = trackDurationSeconds * 1.5; // 50% extension
-                        markerTime = Duration_t(std::chrono::milliseconds(
-                            static_cast<int64_t>(maxExtension * 1000)));
-                    }
                     break;
                     
                 case MarkerType::AttachFrom:
@@ -823,7 +863,22 @@ namespace jucyaudio
             }
             
             const double timeInSeconds = std::chrono::duration<double>(markerTime).count();
-            return waveformArea.getX() + juce::roundToInt((timeInSeconds / trackDurationSeconds) * waveformArea.getWidth());
+            
+            // If the track is extended and this is the cue-end marker beyond track duration,
+            // scale it to fit within the component bounds
+            if (effectiveDuration > trackDuration && markerTime > trackDuration && marker == MarkerType::CueEnd)
+            {
+                // Map the extended portion to the available space
+                const double extendedProportion = (timeInSeconds - trackDurationSeconds) / (effectiveDurationSeconds - trackDurationSeconds);
+                const int trackEndX = waveformArea.getX() + juce::roundToInt((trackDurationSeconds / effectiveDurationSeconds) * waveformArea.getWidth());
+                const int remainingWidth = waveformArea.getRight() - trackEndX;
+                return trackEndX + juce::roundToInt(extendedProportion * remainingWidth);
+            }
+            else
+            {
+                // Normal case - position based on track duration
+                return waveformArea.getX() + juce::roundToInt((timeInSeconds / trackDurationSeconds) * waveformArea.getWidth());
+            }
         }
         
         Duration_t MixTrackComponent::screenXToTrackTime(int screenX) const
@@ -833,11 +888,38 @@ namespace jucyaudio
             
             const auto trackDuration = m_trackInfo.duration;
             const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
+            const auto effectiveDuration = m_mixTrack.getEffectiveDuration(trackDuration);
+            const double effectiveDurationSeconds = std::chrono::duration<double>(effectiveDuration).count();
             
-            const float relativeX = (screenX - waveformArea.getX()) / float(waveformArea.getWidth());
-            const double timeInSeconds = juce::jlimit(0.0, trackDurationSeconds, relativeX * trackDurationSeconds);
-            
-            return std::chrono::milliseconds(static_cast<int64_t>(timeInSeconds * 1000));
+            // If track is extended, we need to handle the coordinate mapping differently
+            if (effectiveDuration > trackDuration)
+            {
+                // Calculate where the track end would be visually
+                const int trackEndX = waveformArea.getX() + juce::roundToInt((trackDurationSeconds / effectiveDurationSeconds) * waveformArea.getWidth());
+                
+                if (screenX <= trackEndX)
+                {
+                    // Within the track duration - normal mapping
+                    const float relativeX = (screenX - waveformArea.getX()) / float(trackEndX - waveformArea.getX());
+                    const double timeInSeconds = relativeX * trackDurationSeconds;
+                    return std::chrono::milliseconds(static_cast<int64_t>(timeInSeconds * 1000));
+                }
+                else
+                {
+                    // Beyond track duration - in the extended area
+                    const float relativeX = (screenX - trackEndX) / float(waveformArea.getRight() - trackEndX);
+                    const double extraSeconds = relativeX * (effectiveDurationSeconds - trackDurationSeconds);
+                    const double timeInSeconds = trackDurationSeconds + extraSeconds;
+                    return std::chrono::milliseconds(static_cast<int64_t>(timeInSeconds * 1000));
+                }
+            }
+            else
+            {
+                // Normal case - no extension
+                const float relativeX = (screenX - waveformArea.getX()) / float(waveformArea.getWidth());
+                const double timeInSeconds = relativeX * trackDurationSeconds;
+                return std::chrono::milliseconds(static_cast<int64_t>(timeInSeconds * 1000));
+            }
         }
         
         void MixTrackComponent::updateMarkerPosition(MarkerType marker, int newX)
