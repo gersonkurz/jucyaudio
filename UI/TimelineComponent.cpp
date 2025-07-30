@@ -575,31 +575,43 @@ namespace jucyaudio
 
             Duration_t previousAudioStartTime{0};
 
+            // --- FINAL GENERALIZED FIX ---
+            // The global offset is of type Duration_t (milliseconds) to maintain precision.
+            Duration_t globalOffset{0};
+
+            // 1. Determine the global offset from the actual cueStart of the first track.
+            if (!mixLoader.getMixTracks().empty())
+            {
+                auto &firstTrack = mixLoader.getMixTracks().front();
+                if (firstTrack.cueStart < Duration_t{0})
+                {
+                    // The offset is the absolute value of the silence needed.
+                    // No duration_cast is needed as both types are milliseconds.
+                    globalOffset = -firstTrack.cueStart;
+                }
+            }
+
             for (size_t i = 0; i < mixLoader.getMixTracks().size(); ++i)
             {
-                //const auto &mixTrack = mixLoader.getMixTracks()[i];
                 auto &mixTrack = mixLoader.getMixTracks()[i];
                 if (const auto *trackInfo = mixLoader.getTrackInfoForId(mixTrack.trackId))
                 {
-                    // TEST TEST TEST
-                    if (i % 2)
-                        mixTrack.cueEnd = std::chrono::milliseconds(15000);
-                    else
-                        mixTrack.cueStart = -std::chrono::milliseconds(15000); // -5 seconds for even tracks
-
                     Duration_t currentAudioStartTime{0};
-                    if (i > 0)
+                    if (i == 0)
+                    {
+                        // 2. The first track's audio starts at our dynamic global offset.
+                        currentAudioStartTime = globalOffset;
+                    }
+                    else
                     {
                         const auto &prevTrack = mixLoader.getMixTracks()[i - 1];
-                        currentAudioStartTime = previousAudioStartTime + prevTrack.attachTo - mixTrack.attachFrom;
+                        currentAudioStartTime = previousAudioStartTime + prevTrack.attachTo - prevTrack.attachFrom;
                     }
 
                     TrackView view;
-                    view.mixTrackData = &mixLoader.getMixTracks()[i];
+                    view.mixTrackData = &mixTrack;
                     view.trackInfoData = trackInfo;
 
-                    // The component's visual start time is the audio start time plus the cueStart offset.
-                    // This correctly handles both positive (right shift) and negative (left shift) cueStart values.
                     view.audioStartTime = currentAudioStartTime;
                     view.componentStartTime = currentAudioStartTime + mixTrack.cueStart;
 
