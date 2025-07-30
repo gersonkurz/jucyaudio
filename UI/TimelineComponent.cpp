@@ -477,31 +477,34 @@ namespace jucyaudio
             const int yGap = 5;
             const int availableHeightForLanes = visibleArea.getHeight() - rulerHeight;
 
-            int numLanes = availableHeightForLanes / (trackHeight + yGap);
-            if (numLanes < 1)
-                numLanes = 1;
-
+            int numLanes = std::max(1, availableHeightForLanes / (trackHeight + yGap));
             int currentLane = 0;
             int laneDirection = +1;
 
-            for (const auto& view : m_trackViews)
+            // Define our hardcoded test value
+            const double silenceExtensionSeconds = 15.0;
+
+            for (const auto &view : m_trackViews)
             {
-                const auto& trackInfo = *view.trackInfoData;
-                const auto& mixTrack = *view.mixTrackData;
-                
-                // Use the pre-calculated start time from populateFrom
+                const auto &trackInfo = *view.trackInfoData;
+                const auto &mixTrack = *view.mixTrackData;
+
+                // The component's start position does not change.
                 const double startTime = std::chrono::duration<double>(view.calculatedStartTime).count();
-                
-                // Use effective duration which accounts for cue points
-                const double effectiveDuration = std::chrono::duration<double>(
-                    mixTrack.getEffectiveDuration(trackInfo.duration)).count();
-                
                 const int startX = static_cast<int>(startTime * m_pixelsPerSecond);
-                const int width = static_cast<int>(effectiveDuration * m_pixelsPerSecond);
+
+                // Calculate the width based on the REAL effective duration...
+                const double effectiveDuration = std::chrono::duration<double>(mixTrack.getEffectiveDuration(trackInfo.duration)).count();
+                const int baseWidth = static_cast<int>(effectiveDuration * m_pixelsPerSecond);
+
+                // ...and then ADD our hardcoded silence extension.
+                const int extensionWidth = static_cast<int>(silenceExtensionSeconds * m_pixelsPerSecond);
+                const int totalWidth = baseWidth + extensionWidth;
+
                 const int yPos = rulerHeight + (currentLane * (trackHeight + yGap));
 
-                view.component->setBounds(startX, yPos, width, trackHeight);
-                
+                view.component->setBounds(startX, yPos, totalWidth, trackHeight);
+
                 // Update lane logic
                 if ((currentLane + laneDirection) >= numLanes || (currentLane + laneDirection) < 0)
                 {

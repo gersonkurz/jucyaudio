@@ -28,7 +28,7 @@ namespace jucyaudio
 
             void changeListenerCallback(juce::ChangeBroadcaster *source) override;
             bool isSelected() const;
-            void drawVolumeEnvelope(juce::Graphics &g, juce::Rectangle<int> area);
+            void drawVolumeEnvelope(juce::Graphics &g, const juce::Rectangle<int> &envelopeArea);
             void drawCueAndAttachMarkers(juce::Graphics &g, juce::Rectangle<int> area);
             void drawNonAudibleRegions(juce::Graphics &g, juce::Rectangle<int> area);
 

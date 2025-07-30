@@ -188,233 +188,136 @@ namespace jucyaudio
             auto &lf = getLookAndFeel();
             auto bounds = getLocalBounds();
 
-            // Background color - different if selected
+            // Background color
             juce::Colour bgColor = lf.findColour(juce::TextEditor::backgroundColourId);
             if (isSelected())
-            {
-                bgColor = bgColor.brighter(0.2f); // Slightly brighter when selected
-            }
-
+                bgColor = bgColor.brighter(0.2f);
             g.setColour(bgColor);
             g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
 
             auto waveformArea = bounds.removeFromBottom(waveformSectionHeight);
-            g.setColour(lf.findColour(juce::Slider::thumbColourId));
 
             // Selection border
             if (isSelected())
             {
-                g.setColour(juce::Colours::orange); // Or theme color
+                g.setColour(juce::Colours::orange);
                 g.drawRoundedRectangle(bounds.toFloat().reduced(1), 4.0f, 2.0f);
             }
 
-            // Calculate if track is extended
-            const auto effectiveDuration = m_mixTrack.getEffectiveDuration(m_trackInfo.duration);
-            const double effectiveDurationSeconds = std::chrono::duration<double>(effectiveDuration).count();
-            const double trackDurationSeconds = std::chrono::duration<double>(m_trackInfo.duration).count();
-            
-            if (effectiveDuration > m_trackInfo.duration)
-            {
-                // Track is extended - draw waveform in proportional space
-                const float waveformProportion = trackDurationSeconds / effectiveDurationSeconds;
-                const int waveformWidth = juce::roundToInt(waveformArea.getWidth() * waveformProportion);
-                auto scaledWaveformArea = waveformArea;
-                scaledWaveformArea.setWidth(waveformWidth);
-                
-                m_thumbnail.drawChannel(g, scaledWaveformArea.reduced(2),
-                                        0.0,                          // start time
-                                        m_thumbnail.getTotalLength(), // end time
-                                        0,                            // channel index to draw (0 = Left)
-                                        1.0f);                        // vertical zoom
-                                        
-                // Draw extension area as grey
-                g.setColour(juce::Colours::grey.withAlpha(0.3f));
-                g.fillRect(scaledWaveformArea.getRight(), waveformArea.getY(),
-                          waveformArea.getRight() - scaledWaveformArea.getRight(), waveformArea.getHeight());
-            }
-            else
-            {
-                // Normal case - draw waveform at full width
-                m_thumbnail.drawChannel(g, waveformArea.reduced(2),
-                                        0.0,                          // start time
-                                        m_thumbnail.getTotalLength(), // end time
-                                        0,                            // channel index to draw (0 = Left)
-                                        1.0f);                        // vertical zoom
-            }
+            // --- NEW THREE-PART DRAWING LOGIC FOR OUR TEST CASE ---
 
-            // Draw semi-transparent overlay for non-audible portions (outside cue points)
-            drawNonAudibleRegions(g, waveformArea);
-            
-            // Draw volume envelope on top
-            drawVolumeEnvelope(g, waveformArea);
-            
-            // Draw cue and attach point markers
-            drawCueAndAttachMarkers(g, waveformArea);
-            
-            // Draw cue-end drag preview if active
-            if (m_cueEndDragState.isDragging)
-            {
-                const auto trackDuration = m_trackInfo.duration;
-                const auto previewDuration = m_cueEndDragState.previewMarkerTime;
-                const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
-                const double previewSeconds = std::chrono::duration<double>(previewDuration).count();
-                
-                // Handle three cases:
-                // 1. Extended beyond track duration - show extension indicator
-                // 2. Shortened within track bounds - grey out the end
-                // 3. Exactly at track duration - normal
-                
-                if (previewDuration > trackDuration)
-                {
-                    // Extended: Show visual indicator at the right edge
-                    const double extraSeconds = previewSeconds - trackDurationSeconds;
-                    
-                    // Draw an extension indicator at the right edge of the waveform
-                    const int indicatorWidth = 60;
-                    const int indicatorHeight = 20;
-                    juce::Rectangle<int> indicatorRect(waveformArea.getRight() - indicatorWidth - 5,
-                                                      waveformArea.getY() + 5,
-                                                      indicatorWidth, indicatorHeight);
-                    
-                    // Draw background
-                    g.setColour(juce::Colours::black.withAlpha(0.7f));
-                    g.fillRoundedRectangle(indicatorRect.toFloat(), 3.0f);
-                    
-                    // Draw border
-                    g.setColour(juce::Colours::cyan);
-                    g.drawRoundedRectangle(indicatorRect.toFloat(), 3.0f, 1.0f);
-                    
-                    // Draw text
-                    g.setColour(juce::Colours::white);
-                    g.setFont(11.0f);
-                    juce::String label = juce::String::formatted("+%.1fs", extraSeconds);
-                    g.drawText(label, indicatorRect, juce::Justification::centred);
-                    
-                    // Draw arrow pointing right
-                    juce::Path arrow;
-                    const float arrowY = waveformArea.getCentreY();
-                    const float arrowX = waveformArea.getRight() - 10;
-                    arrow.startNewSubPath(arrowX - 10, arrowY - 5);
-                    arrow.lineTo(arrowX, arrowY);
-                    arrow.lineTo(arrowX - 10, arrowY + 5);
-                    g.setColour(juce::Colours::cyan);
-                    g.strokePath(arrow, juce::PathStrokeType(2.0f));
-                }
-                else
-                {
-                    // Shortened or at exact duration: Show within waveform bounds
-                    const float markerX = waveformArea.getX() + (previewSeconds / trackDurationSeconds) * waveformArea.getWidth();
-                    
-                    // Grey out the portion after cue-end
-                    if (previewDuration < trackDuration)
-                    {
-                        g.setColour(juce::Colours::black.withAlpha(0.5f));
-                        g.fillRect(juce::roundToInt(markerX), waveformArea.getY(), 
-                                  juce::roundToInt(waveformArea.getRight() - markerX), waveformArea.getHeight());
-                    }
-                    
-                    // Draw preview marker
-                    g.setColour(juce::Colours::cyan.brighter(0.5f));
-                    g.drawVerticalLine(juce::roundToInt(markerX), waveformArea.getY(), waveformArea.getBottom());
-                    
-                    // Draw handle
-                    const float handleSize = 10.0f;
-                    juce::Rectangle<float> handle(markerX - handleSize/2, waveformArea.getY() - handleSize/2, handleSize, handleSize);
-                    g.fillEllipse(handle);
-                }
-            }
+            // 1. Calculate the durations for our calculation
+            const double originalEffectiveDurationSecs = std::chrono::duration<double>(m_mixTrack.getEffectiveDuration(m_trackInfo.duration)).count();
+            const double silenceExtensionSeconds = 15.0; // Our hardcoded test value
+            const double totalVisibleDurationSecs = originalEffectiveDurationSecs + silenceExtensionSeconds;
+
+            if (totalVisibleDurationSecs <= 0)
+                return; // Avoid division by zero
+
+            // 2. Calculate the proportional width of the waveform content
+            const double waveformProportion = originalEffectiveDurationSecs / totalVisibleDurationSecs;
+            const int waveformDrawWidth = juce::roundToInt(waveformArea.getWidth() * waveformProportion);
+
+            // 3. Define the sub-rectangles for the waveform and the silence
+            auto waveformDrawRect = waveformArea.withWidth(waveformDrawWidth);
+            auto silenceDrawRect = waveformArea.withX(waveformDrawRect.getRight());
+
+            // 4. Draw the actual waveform thumbnail into its specific sub-rectangle
+            g.setColour(lf.findColour(juce::Slider::thumbColourId));
+            m_thumbnail.drawChannel(g,
+                waveformDrawRect.reduced(2),
+                0.0,                          // start time
+                m_thumbnail.getTotalLength(), // end time
+                0,                            // channel index
+                1.0f);                        // vertical zoom
+
+            // 5. Draw the silence area (we just leave it as the background color, so no drawing needed)
+            // For visual debugging, you could uncomment this:
+            // g.setColour(juce::Colours::red.withAlpha(0.2f));
+            // g.fillRect(silenceDrawRect);
+
+            // 6. Draw overlays, passing the CORRECT sub-rectangle where needed
+            drawNonAudibleRegions(g, waveformDrawRect);   // Use waveform rect for overlays on the audio
+            drawVolumeEnvelope(g, waveformDrawRect);      // Use waveform rect for the envelope
+            drawCueAndAttachMarkers(g, waveformDrawRect); // Use waveform rect for markers
         }
 
-        void MixTrackComponent::drawVolumeEnvelope(juce::Graphics &g, juce::Rectangle<int> area)
+        void MixTrackComponent::drawVolumeEnvelope(juce::Graphics &g, const juce::Rectangle<int> &area)
         {
+            // If there are no envelope points, there is nothing to draw.
             if (m_mixTrack.envelopePoints.empty())
             {
-                // No envelope data - just draw a flat line at full volume
-                g.setColour(juce::Colours::yellow.withAlpha(0.8f));
-                float fullVolumeY = area.getY() + (area.getHeight() * 0.2f); // 80% up from bottom
-                g.drawHorizontalLine(juce::roundToInt(fullVolumeY), area.getX(), area.getRight());
                 return;
             }
 
-            // For extended tracks, we need to scale the envelope drawing area
-            const auto effectiveDuration = m_mixTrack.getEffectiveDuration(m_trackInfo.duration);
-            const double effectiveDurationSeconds = std::chrono::duration<double>(effectiveDuration).count();
-            const double trackDurationSeconds = std::chrono::duration<double>(m_trackInfo.duration).count();
-            
-            juce::Rectangle<int> envelopeArea = area;
-            if (effectiveDuration > m_trackInfo.duration)
+            // --- Coordinate Calculation Helper ---
+            // This lambda is a clean way to ensure we use the exact same logic for both
+            // the path and the individual points, all relative to the provided 'area'.
+            auto pointToScreen = [&](const database::EnvelopePoint &point) -> juce::Point<float>
             {
-                // Scale down the envelope area to match the waveform area
-                const float waveformProportion = trackDurationSeconds / effectiveDurationSeconds;
-                envelopeArea.setWidth(juce::roundToInt(area.getWidth() * waveformProportion));
-            }
+                const double timeInSeconds = std::chrono::duration<double>(point.time).count();
+                const double trackDurationSeconds = std::chrono::duration<double>(m_trackInfo.duration).count();
 
+                // Prevent division by zero if track has no duration
+                if (trackDurationSeconds <= 0)
+                {
+                    return {(float)area.getX(), (float)area.getBottom()};
+                }
+
+                // X position is proportional to the point's time relative to the track's total duration,
+                // scaled to the provided 'area' width.
+                const float x = (float)area.getX() + (float)(timeInSeconds / trackDurationSeconds) * (float)area.getWidth();
+
+                // Y position is the volume percentage scaled to the 'area' height.
+                const float y = (float)area.getBottom() - ((float)point.volume / (float)database::VOLUME_NORMALIZATION) * (float)area.getHeight();
+
+                return {x, y};
+            };
+
+            // --- 1. Draw the Envelope Line ---
             juce::Path volumePath;
-
-            // Build the envelope path by connecting all points
-            bool pathStarted = false;
             for (size_t i = 0; i < m_mixTrack.envelopePoints.size(); ++i)
             {
                 const auto &point = m_mixTrack.envelopePoints[i];
-                auto screenPos = envelopePointToScreenPosition(point);
-                
-                // Adjust screen position for extended tracks
-                if (effectiveDuration > m_trackInfo.duration)
-                {
-                    // Map from full component width to the scaled envelope area
-                    const float relativeX = (screenPos.x - area.getX()) / float(area.getWidth());
-                    screenPos.x = envelopeArea.getX() + juce::roundToInt(relativeX * envelopeArea.getWidth() * (effectiveDurationSeconds / trackDurationSeconds));
-                }
+                const auto screenPos = pointToScreen(point);
 
-                if (!pathStarted)
+                if (i == 0)
                 {
-                    volumePath.startNewSubPath(screenPos.x, screenPos.y);
-                    pathStarted = true;
+                    volumePath.startNewSubPath(screenPos);
                 }
                 else
                 {
-                    volumePath.lineTo(screenPos.x, screenPos.y);
+                    volumePath.lineTo(screenPos);
                 }
             }
 
-            // Draw the envelope line FIRST (so points appear on top)
             g.setColour(juce::Colours::yellow.withAlpha(0.8f));
             g.strokePath(volumePath, juce::PathStrokeType(2.0f));
 
-            // Draw envelope points with different states ON TOP of the line
+            // --- 2. Draw the Interactive Points on Top of the Line ---
             for (size_t i = 0; i < m_mixTrack.envelopePoints.size(); ++i)
             {
                 const auto &point = m_mixTrack.envelopePoints[i];
-                auto screenPos = envelopePointToScreenPosition(point);
-                
-                // Adjust screen position for extended tracks
-                if (effectiveDuration > m_trackInfo.duration)
-                {
-                    const float relativeX = (screenPos.x - area.getX()) / float(area.getWidth());
-                    screenPos.x = envelopeArea.getX() + juce::roundToInt(relativeX * envelopeArea.getWidth() * (effectiveDurationSeconds / trackDurationSeconds));
-                }
+                const auto screenPos = pointToScreen(point);
 
-                // Choose color based on state
+                // Determine color and size based on selection or hover state
                 juce::Colour pointColor = juce::Colours::orange;
                 float pointSize = 4.0f;
 
-                if (m_selectedEnvelopePointIndex == i)
+                if (m_selectedEnvelopePointIndex.has_value() && m_selectedEnvelopePointIndex.value() == i)
                 {
                     pointColor = juce::Colours::yellow;
                     pointSize = 6.0f;
                 }
-                else if (m_hoveredEnvelopePointIndex == i)
+                else if (m_hoveredEnvelopePointIndex.has_value() && m_hoveredEnvelopePointIndex.value() == i)
                 {
                     pointColor = juce::Colours::orange.brighter();
                     pointSize = 5.0f;
                 }
 
                 g.setColour(pointColor);
-                g.fillEllipse(screenPos.x - pointSize / 2, screenPos.y - pointSize / 2, pointSize, pointSize);
+                g.fillEllipse(screenPos.x - pointSize / 2.0f, screenPos.y - pointSize / 2.0f, pointSize, pointSize);
             }
-
-            // Debug logging for the envelope shape
-            spdlog::debug("Track {}: {} envelope points, duration={:.1f}s", m_mixTrack.trackId, m_mixTrack.envelopePoints.size(), trackDurationSeconds);
         }
 
         void MixTrackComponent::changeListenerCallback(juce::ChangeBroadcaster *source)
