@@ -204,42 +204,47 @@ namespace jucyaudio
                 g.drawRoundedRectangle(bounds.toFloat().reduced(1), 4.0f, 2.0f);
             }
 
-            // --- NEW THREE-PART DRAWING LOGIC FOR OUR TEST CASE ---
+            // --- THREE-PART DRAWING LOGIC FOR OUR TEST CASE ---
 
-            // 1. Calculate the durations for our calculation
+            // 1. Define the durations for our three-part calculation.
+            const double silenceAtStartSeconds = 15.0;
             const double originalEffectiveDurationSecs = std::chrono::duration<double>(m_mixTrack.getEffectiveDuration(m_trackInfo.duration)).count();
-            const double silenceExtensionSeconds = 15.0; // Our hardcoded test value
-            const double totalVisibleDurationSecs = originalEffectiveDurationSecs + silenceExtensionSeconds;
+            const double silenceAtEndSeconds = 15.0;
+            const double totalVisibleDurationSecs = silenceAtStartSeconds + originalEffectiveDurationSecs + silenceAtEndSeconds;
 
-            if (totalVisibleDurationSecs <= 0)
-                return; // Avoid division by zero
+            // Safety check: if there's no duration to draw, don't do anything.
+            if (totalVisibleDurationSecs <= 0.0)
+            {
+                return;
+            }
 
-            // 2. Calculate the proportional width of the waveform content
+            // 2. Calculate the proportional widths and define the sub-rectangles.
+            const double silenceBeforeProportion = silenceAtStartSeconds / totalVisibleDurationSecs;
             const double waveformProportion = originalEffectiveDurationSecs / totalVisibleDurationSecs;
-            const int waveformDrawWidth = juce::roundToInt(waveformArea.getWidth() * waveformProportion);
 
-            // 3. Define the sub-rectangles for the waveform and the silence
-            auto waveformDrawRect = waveformArea.withWidth(waveformDrawWidth);
-            auto silenceDrawRect = waveformArea.withX(waveformDrawRect.getRight());
+            const int silenceBeforeWidth = juce::roundToInt((float)waveformArea.getWidth() * (float)silenceBeforeProportion);
+            const int waveformDrawWidth = juce::roundToInt((float)waveformArea.getWidth() * (float)waveformProportion);
 
-            // 4. Draw the actual waveform thumbnail into its specific sub-rectangle
-            g.setColour(lf.findColour(juce::Slider::thumbColourId));
-            m_thumbnail.drawChannel(g,
-                waveformDrawRect.reduced(2),
-                0.0,                          // start time
-                m_thumbnail.getTotalLength(), // end time
-                0,                            // channel index
-                1.0f);                        // vertical zoom
+            // Define the rectangle for the actual waveform content.
+            auto waveformDrawRect = waveformArea.withX(waveformArea.getX() + silenceBeforeWidth).withWidth(waveformDrawWidth);
 
-            // 5. Draw the silence area (we just leave it as the background color, so no drawing needed)
-            // For visual debugging, you could uncomment this:
-            // g.setColour(juce::Colours::red.withAlpha(0.2f));
-            // g.fillRect(silenceDrawRect);
+            // 3. Draw the waveform thumbnail ONLY into its specific sub-rectangle.
+            // Safety check: Only draw if the rectangle has a positive width.
+            if (waveformDrawRect.getWidth() > 0)
+            {
+                g.setColour(lf.findColour(juce::Slider::thumbColourId));
+                m_thumbnail.drawChannel(g,
+                    waveformDrawRect.reduced(2),
+                    0.0,                          // start time in source file
+                    m_thumbnail.getTotalLength(), // end time in source file
+                    0,                            // channel index
+                    1.0f);                        // vertical zoom
 
-            // 6. Draw overlays, passing the CORRECT sub-rectangle where needed
-            drawNonAudibleRegions(g, waveformDrawRect);   // Use waveform rect for overlays on the audio
-            drawVolumeEnvelope(g, waveformDrawRect);      // Use waveform rect for the envelope
-            drawCueAndAttachMarkers(g, waveformDrawRect); // Use waveform rect for markers
+                // 4. Draw all overlays relative to the waveform's specific drawing area.
+                drawNonAudibleRegions(g, waveformDrawRect);
+                drawVolumeEnvelope(g, waveformDrawRect);
+                drawCueAndAttachMarkers(g, waveformDrawRect);
+            }
         }
 
         void MixTrackComponent::drawVolumeEnvelope(juce::Graphics &g, const juce::Rectangle<int> &area)

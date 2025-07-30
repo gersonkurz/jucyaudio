@@ -178,19 +178,27 @@ namespace jucyaudio
 #if !MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
         void TimelineComponent::recalculateLayout()
         {
-            // Recalculate width based on new zoom and stored positions
+            // Define our hardcoded test values here as well to ensure consistency.
+            const double silenceAtStartSeconds = 15.0;
+            const double silenceAtEndSeconds = 15.0;
+
             double maxTimeSecs = 0.0;
-            for (const auto& view : m_trackViews)
+            for (const auto &view : m_trackViews)
             {
-                const auto& trackInfo = *view.trackInfoData;
-                const double startTime = std::chrono::duration<double>(view.calculatedStartTime).count();
-                const double trackDuration = std::chrono::duration<double>(trackInfo.duration).count();
-                const double endTime = startTime + trackDuration;
-                
-                if (endTime > maxTimeSecs)
-                {
-                    maxTimeSecs = endTime;
-                }
+                // We must use the exact same logic as resized() and refreshLayout()
+                // to calculate the component's end time.
+
+                // 1. Use componentStartTime for the visual start.
+                const double startTime = std::chrono::duration<double>(view.componentStartTime).count();
+
+                // 2. Calculate the total visible duration including silence.
+                const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
+                const double totalVisibleDuration = silenceAtStartSeconds + effectiveDuration + silenceAtEndSeconds;
+
+                // 3. The end time is the sum of the start and the total duration.
+                const double endTime = startTime + totalVisibleDuration;
+
+                maxTimeSecs = std::max(maxTimeSecs, endTime);
             }
 
             m_calculatedWidth = static_cast<int>(maxTimeSecs * m_pixelsPerSecond) + 200;
@@ -331,21 +339,30 @@ namespace jucyaudio
 
         void TimelineComponent::refreshLayout()
         {
-            // Recalculate timeline width based on effective durations
+            // Define our hardcoded test values here as well to ensure consistency.
+            const double silenceAtStartSeconds = 15.0;
+            const double silenceAtEndSeconds = 15.0;
+
             double maxTimeSecs = 0.0;
-            for (const auto& view : m_trackViews)
+            for (const auto &view : m_trackViews)
             {
-                const double startTime = std::chrono::duration<double>(view.calculatedStartTime).count();
-                const double effectiveDuration = std::chrono::duration<double>(
-                    view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
-                const double endTime = startTime + effectiveDuration;
+                // We must use the exact same logic as resized() to calculate the component's end time.
+                const double startTime = std::chrono::duration<double>(view.componentStartTime).count();
+                const double effectiveDuration =
+                    std::chrono::duration<double>(view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
+
+                const double totalVisibleDuration = silenceAtStartSeconds + effectiveDuration + silenceAtEndSeconds;
+                const double endTime = startTime + totalVisibleDuration;
+
                 maxTimeSecs = std::max(maxTimeSecs, endTime);
             }
-            
-            m_calculatedWidth = static_cast<int>(maxTimeSecs * m_pixelsPerSecond) + 200;
+
+            m_calculatedWidth = static_cast<int>(maxTimeSecs * m_pixelsPerSecond) + 200; // Add padding
+            // Use a reasonable minimum height.
+            m_calculatedHeight = getParentHeight();
+
             setSize(m_calculatedWidth, m_calculatedHeight);
-            
-            // Trigger a layout recalculation
+
             resized();
             repaint();
         }
@@ -481,31 +498,27 @@ namespace jucyaudio
             int currentLane = 0;
             int laneDirection = +1;
 
-            // Define our hardcoded test value
-            const double silenceExtensionSeconds = 15.0;
+            // Define our hardcoded test values for both start and end.
+            const double silenceAtStartSeconds = 15.0;
+            const double silenceAtEndSeconds = 15.0;
 
             for (const auto &view : m_trackViews)
             {
-                const auto &trackInfo = *view.trackInfoData;
-                const auto &mixTrack = *view.mixTrackData;
-
-                // The component's start position does not change.
-                const double startTime = std::chrono::duration<double>(view.calculatedStartTime).count();
+                // 1. Get the component's start position from populateFrom.
+                const double startTime = std::chrono::duration<double>(view.componentStartTime).count();
                 const int startX = static_cast<int>(startTime * m_pixelsPerSecond);
 
-                // Calculate the width based on the REAL effective duration...
-                const double effectiveDuration = std::chrono::duration<double>(mixTrack.getEffectiveDuration(trackInfo.duration)).count();
-                const int baseWidth = static_cast<int>(effectiveDuration * m_pixelsPerSecond);
+                // 2. Calculate the total width based on all three parts.
+                const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
 
-                // ...and then ADD our hardcoded silence extension.
-                const int extensionWidth = static_cast<int>(silenceExtensionSeconds * m_pixelsPerSecond);
-                const int totalWidth = baseWidth + extensionWidth;
+                const double totalVisibleDuration = silenceAtStartSeconds + effectiveDuration + silenceAtEndSeconds;
+                const int totalWidth = static_cast<int>(totalVisibleDuration * m_pixelsPerSecond);
 
                 const int yPos = rulerHeight + (currentLane * (trackHeight + yGap));
 
                 view.component->setBounds(startX, yPos, totalWidth, trackHeight);
 
-                // Update lane logic
+                // Update lane logic.
                 if ((currentLane + laneDirection) >= numLanes || (currentLane + laneDirection) < 0)
                 {
                     laneDirection *= -1;
@@ -577,90 +590,61 @@ namespace jucyaudio
         {
             m_selectedTrack = nullptr;
             m_currentTimePosition = -1.0;
-            // Clear all existing components
             m_trackViews.clear();
             removeAllChildren();
 
-            // Calculate timeline positions using ATTACH model
-            Duration_t previousTrackStart{0};
-            
+            // This variable tracks the start time of the AUDIO DATA for the ATTACH formula.
+            Duration_t previousAudioStartTime{0};
+
+            // Define our hardcoded test value for the silence added at the start.
+            const auto silenceAtStart = std::chrono::seconds(15);
+
             for (size_t i = 0; i < mixLoader.getMixTracks().size(); ++i)
             {
                 const auto &mixTrack = mixLoader.getMixTracks()[i];
                 if (const auto *trackInfo = mixLoader.getTrackInfoForId(mixTrack.trackId))
                 {
-                    Duration_t trackStart{0};
-                    
-                    if (i == 0)
+                    Duration_t currentAudioStartTime{0};
+
+                    if (i > 0)
                     {
-                        // First track starts at position 0
-                        trackStart = Duration_t{0};
+                        const auto &prevTrack = mixLoader.getMixTracks()[i - 1];
+                        currentAudioStartTime = previousAudioStartTime + prevTrack.attachTo - mixTrack.attachFrom;
                     }
-                    else
-                    {
-                        // ATTACH formula: Next track start = Previous track start + Previous track's attachTo - Current track's attachFrom
-                        const auto& prevTrack = mixLoader.getMixTracks()[i-1];
-                        trackStart = previousTrackStart + prevTrack.attachTo - mixTrack.attachFrom;
-                    }
-                    
+
                     TrackView view;
-                    view.mixTrackData = &mixLoader.getMixTracks()[i]; // Point to the actual data
+                    view.mixTrackData = &mixLoader.getMixTracks()[i];
                     view.trackInfoData = trackInfo;
-                    view.component = std::make_unique<MixTrackComponent>(*view.mixTrackData, *view.trackInfoData, m_formatManager, m_thumbnailCache);
-                    view.calculatedStartTime = trackStart; // Store the calculated start time
+
+                    // Store both times explicitly.
+                    view.audioStartTime = currentAudioStartTime;
+                    view.componentStartTime = currentAudioStartTime - silenceAtStart;
                     
+                    view.component = std::make_unique<MixTrackComponent>(*view.mixTrackData, *view.trackInfoData, m_formatManager, m_thumbnailCache);
+
                     // Set up callbacks
-                    view.component->onCueAttachChanged = [this](TrackId id, const database::MixTrack& updatedTrack)
+                    view.component->onCueAttachChanged = [this](TrackId id, const database::MixTrack &updatedTrack)
                     {
                         if (onCueAttachChanged)
                             onCueAttachChanged(id, updatedTrack);
                     };
-                    
-                    view.component->onEnvelopeChanged = [this](TrackId id, const std::vector<database::EnvelopePoint>& points)
+                    view.component->onEnvelopeChanged = [this](TrackId id, const std::vector<database::EnvelopePoint> &points)
                     {
                         if (onEnvelopeChanged)
                             onEnvelopeChanged(id, points);
                     };
-                    
-                    addAndMakeVisible(*view.component, m_trackViews.size());
+
+                    addAndMakeVisible(*view.component);
                     m_trackViews.push_back(std::move(view));
-                    
-                    // Remember this track's start for the next iteration
-                    previousTrackStart = trackStart;
-                }
-                else
-                {
-                    spdlog::warn("Track info not found for track ID: {}", mixTrack.trackId);
+
+                    // IMPORTANT: Remember the AUDIO start time for the next iteration's calculation.
+                    previousAudioStartTime = currentAudioStartTime;
                 }
             }
 
-            // Calculate size
-            const int trackHeight = MixTrackComponent::totalHeight;
-            const int yGap = 5;
-            const int rulerHeight = 30;
-            const int numLanesForHeightCalc = 8;
-            m_calculatedHeight = rulerHeight + (numLanesForHeightCalc * (trackHeight + yGap));
-
-            // Calculate width based on mix duration
-            // Need to account for extended tracks beyond their original duration
-            double maxTimeSecs = 0.0;
-            for (const auto& view : m_trackViews)
-            {
-                const double startTime = std::chrono::duration<double>(view.calculatedStartTime).count();
-                const double effectiveDuration = std::chrono::duration<double>(
-                    view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
-                const double endTime = startTime + effectiveDuration;
-                maxTimeSecs = std::max(maxTimeSecs, endTime);
-            }
-            m_calculatedWidth = static_cast<int>(maxTimeSecs * m_pixelsPerSecond) + 200;
-
-            // Set the component's size to its calculated ideal size
-            setSize(m_calculatedWidth, m_calculatedHeight);
-
-            // Force the layout calculation
-            spdlog::info("Forcing resized() call after populateFrom (ATTACH-based)");
-            resized();
-            repaint();
+            // The component's own size needs to be recalculated to fit the new total mix duration.
+            // This is handled by refreshLayout(), which calls resized().
+            refreshLayout();
         }
 #endif
 
@@ -786,24 +770,14 @@ namespace jucyaudio
                 const auto& currentTrack = *currentView.mixTrackData;
                 const auto& nextTrack = *nextView.mixTrackData;
                 
-                // Calculate where current track's attachTo point is on the timeline
-                const double currentTrackStart = std::chrono::duration<double>(currentView.calculatedStartTime).count();
-                const double attachToTime = currentTrackStart + std::chrono::duration<double>(currentTrack.attachTo).count();
-                
-                // Calculate where next track's attachFrom point is on the timeline
-                const double nextTrackStart = std::chrono::duration<double>(nextView.calculatedStartTime).count();
-                const double attachFromTime = nextTrackStart + std::chrono::duration<double>(nextTrack.attachFrom).count();
-                
-                // The attach point is where these two tracks connect
-                // According to ATTACH formula: next track starts at (prev start + prev attachTo - next attachFrom)
-                // So the connection point on the timeline is at attachToTime
-                
-                // Draw vertical line at the attach point
+                // The ATTACH point is calculated relative to the AUDIO start time, not the component start time.
+                const double currentAudioStart = std::chrono::duration<double>(currentView.audioStartTime).count();
+                const double attachToTime = currentAudioStart + std::chrono::duration<double>(currentTrack.attachTo).count();
+
                 const float attachX = static_cast<float>(attachToTime * m_pixelsPerSecond);
                 g.setColour(juce::Colours::orange.withAlpha(0.7f));
                 g.drawVerticalLine(juce::roundToInt(attachX), 0.0f, static_cast<float>(getHeight()));
-                
-                // Draw label at top
+
                 g.setFont(10.0f);
                 g.setColour(juce::Colours::orange);
                 g.drawText("ATTACH", juce::roundToInt(attachX) - 20, 5, 40, 12, juce::Justification::centred);

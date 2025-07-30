@@ -81,7 +81,8 @@ namespace jucyaudio
                 std::unique_ptr<MixTrackComponent> component;
                 const database::MixTrack *mixTrackData;
                 const database::TrackInfo *trackInfoData;
-                Duration_t calculatedStartTime{0}; // For ATTACH-based positioning
+                Duration_t audioStartTime{0};     // The start time of the audio content, from the ATTACH formula.
+                Duration_t componentStartTime{0}; // The visual start time of the component on the timeline.
             };
             MixTrackComponent *m_draggingTrack = nullptr;
             juce::AudioFormatManager &m_formatManager;
