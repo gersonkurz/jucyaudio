@@ -34,9 +34,24 @@ namespace jucyaudio
             TrackId trackId = 0;
             int orderInMix = 0; // 0-based order within the mix
 
-            // Cue points - define what portion of the track is used
-            Duration_t cueStart{0};     // Where to start playing (0 = track beginning)
-            Duration_t cueEnd{0};       // Where to stop playing (0 = track end, negative = relative to end)
+            // --- CUE POINTS ---
+            // Define the audible portion of the track. Both are relative offsets.
+
+            /**
+             * @brief Offset from the START of the track (time 0).
+             * A negative value means the audible portion starts before the audio, adding silence at the beginning.
+             * A positive value means the audible portion starts after the audio begins, truncating the start.
+             * Example: -5s adds 5s of silence; +5s skips the first 5s of audio.
+             */
+            Duration_t cueStart{0};
+
+            /**
+             * @brief Offset from the END of the track (trackDuration).
+             * A negative value means the audible portion ends before the audio finishes, truncating the end.
+             * A positive value means the audible portion ends after the audio finishes, adding silence at the end.
+             * Example: -5s skips the last 5s of audio; +5s adds 5s of silence.
+             */
+            Duration_t cueEnd{0};
             
             // Attach points - define how tracks connect
             Duration_t attachFrom{0};   // Where this track starts overlapping with previous
@@ -46,14 +61,26 @@ namespace jucyaudio
             std::vector<EnvelopePoint> envelopePoints;
             
             // Computed properties (not stored in DB)
-            Duration_t getEffectiveDuration(Duration_t trackDuration) const 
+            /**
+             * @brief Calculates the actual end time of the audible portion as an absolute time from the track's start.
+             * @param trackDuration The natural duration of the source audio file.
+             * @return The absolute time position where the audible part of this track ends.
+             */
+            Duration_t getCueEndActual(Duration_t trackDuration) const
             {
-                // Calculate actual end position
-                Duration_t actualEnd = (cueEnd.count() <= 0) ? 
-                    trackDuration + cueEnd :  // 0 or negative: relative to end
-                    cueEnd;                   // positive: absolute position
-                    
-                return actualEnd - cueStart;
+                // The actual end is the track's natural duration plus the cueEnd offset.
+                return trackDuration + cueEnd;
+            }
+
+            /**
+             * @brief Calculates the total duration of the component on the timeline.
+             * @param trackDuration The natural duration of the source audio file.
+             * @return The total duration from the (potentially negative) cueStart to the (potentially extended) cueEnd.
+             */
+            Duration_t getEffectiveDuration(Duration_t trackDuration) const
+            {
+                // The total duration is simply the difference between the absolute end time and the start time.
+                return getCueEndActual(trackDuration) - cueStart;
             }
        };
 

@@ -188,59 +188,61 @@ namespace jucyaudio
             auto &lf = getLookAndFeel();
             auto bounds = getLocalBounds();
 
-            // Background color
-            juce::Colour bgColor = lf.findColour(juce::TextEditor::backgroundColourId);
-            if (isSelected())
-                bgColor = bgColor.brighter(0.2f);
-            g.setColour(bgColor);
+            g.setColour(
+                isSelected() ? lf.findColour(juce::TextEditor::backgroundColourId).brighter(0.2f) : lf.findColour(juce::TextEditor::backgroundColourId));
             g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
 
             auto waveformArea = bounds.removeFromBottom(waveformSectionHeight);
 
-            // Selection border
             if (isSelected())
             {
                 g.setColour(juce::Colours::orange);
                 g.drawRoundedRectangle(bounds.toFloat().reduced(1), 4.0f, 2.0f);
             }
 
-            // --- THREE-PART DRAWING LOGIC FOR OUR TEST CASE ---
+            // --- FULLY DYNAMIC THREE-PART DRAWING LOGIC ---
 
-            // 1. Define the durations for our three-part calculation.
-            const double silenceAtStartSeconds = 15.0;
-            const double originalEffectiveDurationSecs = std::chrono::duration<double>(m_mixTrack.getEffectiveDuration(m_trackInfo.duration)).count();
-            const double silenceAtEndSeconds = 15.0;
-            const double totalVisibleDurationSecs = silenceAtStartSeconds + originalEffectiveDurationSecs + silenceAtEndSeconds;
+            const auto trackDuration = m_trackInfo.duration;
+            // Now using the helper method we just added.
+            const auto cueEndActual = m_mixTrack.getCueEndActual(trackDuration);
 
-            // Safety check: if there's no duration to draw, don't do anything.
+            // 1. Calculate durations for the three parts dynamically.
+            const double silenceAtStartSeconds = (m_mixTrack.cueStart < Duration_t{0}) ? std::chrono::duration<double>(-m_mixTrack.cueStart).count() : 0.0;
+
+            const double silenceAtEndSeconds = (cueEndActual > trackDuration) ? std::chrono::duration<double>(cueEndActual - trackDuration).count() : 0.0;
+
+            const double totalVisibleDurationSecs = std::chrono::duration<double>(m_mixTrack.getEffectiveDuration(trackDuration)).count();
+
             if (totalVisibleDurationSecs <= 0.0)
-            {
                 return;
-            }
 
-            // 2. Calculate the proportional widths and define the sub-rectangles.
+            const double waveformDurationOnScreen = totalVisibleDurationSecs - silenceAtStartSeconds - silenceAtEndSeconds;
+
+            // 2. Calculate the sub-rectangles based on the dynamic proportions.
             const double silenceBeforeProportion = silenceAtStartSeconds / totalVisibleDurationSecs;
-            const double waveformProportion = originalEffectiveDurationSecs / totalVisibleDurationSecs;
+            const double waveformProportion = waveformDurationOnScreen / totalVisibleDurationSecs;
 
             const int silenceBeforeWidth = juce::roundToInt((float)waveformArea.getWidth() * (float)silenceBeforeProportion);
             const int waveformDrawWidth = juce::roundToInt((float)waveformArea.getWidth() * (float)waveformProportion);
 
-            // Define the rectangle for the actual waveform content.
             auto waveformDrawRect = waveformArea.withX(waveformArea.getX() + silenceBeforeWidth).withWidth(waveformDrawWidth);
 
-            // 3. Draw the waveform thumbnail ONLY into its specific sub-rectangle.
-            // Safety check: Only draw if the rectangle has a positive width.
+            // 3. Determine which part of the source audio to draw.
+            const double thumbnailStartTime = std::chrono::duration<double>(std::max(Duration_t{0}, m_mixTrack.cueStart)).count();
+            const double thumbnailEndTime = std::chrono::duration<double>(std::min(trackDuration, cueEndActual)).count();
+
+            // 4. Draw the required part of the thumbnail into its specific sub-rectangle.
             if (waveformDrawRect.getWidth() > 0)
             {
                 g.setColour(lf.findColour(juce::Slider::thumbColourId));
                 m_thumbnail.drawChannel(g,
                     waveformDrawRect.reduced(2),
-                    0.0,                          // start time in source file
-                    m_thumbnail.getTotalLength(), // end time in source file
-                    0,                            // channel index
-                    1.0f);                        // vertical zoom
+                    thumbnailStartTime, // Start time in source file
+                    thumbnailEndTime,   // End time in source file
+                    0,
+                    1.0f);
 
-                // 4. Draw all overlays relative to the waveform's specific drawing area.
+                // 5. Draw overlays relative to the waveform's specific drawing area.
                 drawNonAudibleRegions(g, waveformDrawRect);
                 drawVolumeEnvelope(g, waveformDrawRect);
                 drawCueAndAttachMarkers(g, waveformDrawRect);
