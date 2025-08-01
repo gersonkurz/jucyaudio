@@ -23,14 +23,6 @@ namespace jucyaudio
 
             ~MixTrackComponent() override;
 
-            void paint(juce::Graphics &g) override;
-            void resized() override; // We'll add this to position our label
-
-            void changeListenerCallback(juce::ChangeBroadcaster *source) override;
-            bool isSelected() const;
-            void drawVolumeEnvelope(juce::Graphics &g, const juce::Rectangle<int> &envelopeArea);
-            void drawCueAndAttachMarkers(juce::Graphics &g, juce::Rectangle<int> area);
-
             std::function<void(TrackId, const std::vector<database::EnvelopePoint>&)> onEnvelopeChanged;
             std::function<void(TrackId, const database::MixTrack&)> onCueAttachChanged;
 
@@ -43,6 +35,42 @@ namespace jucyaudio
                 AttachFrom,
                 AttachTo
             };
+
+            /**
+             * @brief Renders the visual representation of the track segment.
+             *
+             * This method is the core of the visual system and operates on a "three-part" model.
+             * It does not change the component's size or position; it only draws within its given bounds.
+             *
+             * The logic is as follows:
+             * 1.  It calculates the proportional duration of three distinct regions:
+             *     - [silence-before]: The silence added by a negative cueStart.
+             *     - [waveform-content]: The audible portion of the source audio file.
+             *     - [silence-after]: The silence added by a positive cueEnd.
+             * 2.  It uses these proportions to calculate specific sub-rectangles within the component's bounds for each region.
+             * 3.  It determines which time-slice of the source audio file to use.
+             * 4.  It draws the correct audio thumbnail slice into the calculated [waveform-content] rectangle.
+             * 5.  Finally, it draws overlays (like markers and envelopes) in the correct coordinate spaces.
+             */
+            void paint(juce::Graphics &g) override;
+            void resized() override; // We'll add this to position our label
+
+            void changeListenerCallback(juce::ChangeBroadcaster *source) override;
+            bool isSelected() const;
+
+            /**
+             * @brief Draws the volume envelope line and its interactive points.
+             *
+             * This function renders the envelope across the component's ENTIRE effective duration,
+             * including any silence regions added by cue points. It is therefore crucial that the
+             * 'area' parameter passed to this function is the full waveform area from the parent
+             * component, not just the sub-rectangle containing the visible audio.
+             *
+             * @param g The graphics context to draw into.
+             * @param area The rectangle representing the component's full waveform area.
+             */
+            void drawVolumeEnvelope(juce::Graphics &g, const juce::Rectangle<int> &envelopeArea);
+            void drawCueAndAttachMarkers(juce::Graphics &g, juce::Rectangle<int> area);
             
             std::optional<size_t> hitTestEnvelopePoint(juce::Point<int> mousePos) const;
             juce::Point<int> envelopePointToScreenPosition(const database::EnvelopePoint &point) const;

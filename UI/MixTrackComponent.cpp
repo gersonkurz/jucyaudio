@@ -36,23 +36,7 @@ namespace jucyaudio
         {
             m_thumbnail.removeChangeListener(this);
         }
-
-        /**
-         * @brief Renders the visual representation of the track segment.
-         *
-         * This method is the core of the visual system and operates on a "three-part" model.
-         * It does not change the component's size or position; it only draws within its given bounds.
-         *
-         * The logic is as follows:
-         * 1.  It calculates the proportional duration of three distinct regions:
-         *     - [silence-before]: The silence added by a negative cueStart.
-         *     - [waveform-content]: The audible portion of the source audio file.
-         *     - [silence-after]: The silence added by a positive cueEnd.
-         * 2.  It uses these proportions to calculate specific sub-rectangles within the component's bounds for each region.
-         * 3.  It determines which time-slice of the source audio file to use.
-         * 4.  It draws the correct audio thumbnail slice into the calculated [waveform-content] rectangle.
-         * 5.  Finally, it draws overlays (like markers and envelopes) in the correct coordinate spaces.
-         */
+        
         void MixTrackComponent::paint(juce::Graphics &g)
         {
             // --- 1. Basic Setup & Background ---
@@ -111,7 +95,7 @@ namespace jucyaudio
                     1.0f);
 
                 // Draw overlays tied to the audio content relative to the waveform's rectangle.
-                drawVolumeEnvelope(g, waveformDrawRect);
+                drawVolumeEnvelope(g, waveformArea);
 
                 // Draw markers relative to the full area, as they can exist in silence.
                 drawCueAndAttachMarkers(g, waveformArea);
@@ -122,7 +106,6 @@ namespace jucyaudio
                 drawCueAndAttachMarkers(g, waveformArea);
             }
         }
-
         
         void MixTrackComponent::resized()
         {
@@ -131,7 +114,6 @@ namespace jucyaudio
             m_infoLabel.setBounds(bounds.removeFromTop(textSectionHeight).reduced(4, 0));
         }
 
-        // In MixTrackComponent.cpp
         bool MixTrackComponent::isSelected() const
         {
             // Get parent timeline and check if we're the selected track
@@ -142,39 +124,46 @@ namespace jucyaudio
             return false;
         }
 
+       
         void MixTrackComponent::drawVolumeEnvelope(juce::Graphics &g, const juce::Rectangle<int> &area)
         {
-            // If there are no envelope points, there is nothing to draw.
             if (m_mixTrack.envelopePoints.empty())
             {
                 return;
             }
 
-            // --- Coordinate Calculation Helper ---
-            // This lambda is a clean way to ensure we use the exact same logic for both
-            // the path and the individual points, all relative to the provided 'area'.
+            // --- Correct Coordinate Calculation Helper ---
+            // This lambda now correctly maps an envelope point's time to a screen coordinate
+            // within the component's full effective duration.
             auto pointToScreen = [&](const database::EnvelopePoint &point) -> juce::Point<float>
             {
-                const double timeInSeconds = std::chrono::duration<double>(point.time).count();
-                const double trackDurationSeconds = std::chrono::duration<double>(m_trackInfo.duration).count();
-
-                // Prevent division by zero if track has no duration
-                if (trackDurationSeconds <= 0)
+                // Get the total visible duration of this component, including any silence.
+                const auto effectiveDuration = m_mixTrack.getEffectiveDuration(m_trackInfo.duration);
+                if (effectiveDuration <= Duration_t{0})
                 {
                     return {(float)area.getX(), (float)area.getBottom()};
                 }
 
-                // X position is proportional to the point's time relative to the track's total duration,
-                // scaled to the provided 'area' width.
-                const float x = (float)area.getX() + (float)(timeInSeconds / trackDurationSeconds) * (float)area.getWidth();
+                // To find the point's relative position, we compare its time to the component's start time (cueStart).
+                const auto timeRelativeToComponentStart = point.time - m_mixTrack.cueStart;
 
-                // Y position is the volume percentage scaled to the 'area' height.
+                // Calculate the proportion of this relative time to the total visible duration.
+                // This correctly handles all cases: trimming, extending, and negative time points.
+                const double proportion =
+                    std::chrono::duration<double>(timeRelativeToComponentStart).count() / std::chrono::duration<double>(effectiveDuration).count();
+
+                // Apply that proportion to the component's full width to get the final X coordinate.
+                const float x = (float)area.getX() + (float)proportion * (float)area.getWidth();
+
+                // Y position is the volume percentage scaled to the 'area' height (this remains correct).
                 const float y = (float)area.getBottom() - ((float)point.volume / (float)database::VOLUME_NORMALIZATION) * (float)area.getHeight();
 
                 return {x, y};
             };
 
-            // --- 1. Draw the Envelope Line ---
+            // --- Drawing Logic (This part remains the same) ---
+
+            // 1. Draw the Envelope Line
             juce::Path volumePath;
             for (size_t i = 0; i < m_mixTrack.envelopePoints.size(); ++i)
             {
@@ -335,33 +324,6 @@ namespace jucyaudio
             return result;
         }
 
-        void MixTrackComponent::constrainEnvelopePoint(size_t pointIndex, database::EnvelopePoint &point) const
-        {
-            if (pointIndex >= m_mixTrack.envelopePoints.size())
-                return;
-
-            // Volume constraints (0% to 100%)
-            point.volume = juce::jlimit(Volume_t(0), database::VOLUME_NORMALIZATION, point.volume);
-
-            // Time constraints: maintain ordering between adjacent points
-            if (pointIndex > 0)
-            {
-                const auto &prevPoint = m_mixTrack.envelopePoints[pointIndex - 1];
-                point.time = std::max(point.time, prevPoint.time);
-            }
-
-            if (pointIndex < m_mixTrack.envelopePoints.size() - 1)
-            {
-                const auto &nextPoint = m_mixTrack.envelopePoints[pointIndex + 1];
-                point.time = std::min(point.time, nextPoint.time);
-            }
-
-            // Ensure time is within track duration
-            const auto trackDuration = m_trackInfo.duration;
-            point.time = std::min(point.time, trackDuration);
-            point.time = std::max(point.time, std::chrono::milliseconds(0));
-        }
-        
         void MixTrackComponent::drawCueAndAttachMarkers(juce::Graphics &g, juce::Rectangle<int> area)
         {
             // Draw each marker using getMarkerXPosition for consistent positioning
@@ -705,6 +667,35 @@ namespace jucyaudio
                 }
             }
         }
+
+        
+        void MixTrackComponent::constrainEnvelopePoint(size_t pointIndex, database::EnvelopePoint &point) const
+        {
+            if (pointIndex >= m_mixTrack.envelopePoints.size())
+                return;
+
+            // Volume constraints (0% to 100%)
+            point.volume = juce::jlimit(Volume_t(0), database::VOLUME_NORMALIZATION, point.volume);
+
+            // Time constraints: maintain ordering between adjacent points
+            if (pointIndex > 0)
+            {
+                const auto &prevPoint = m_mixTrack.envelopePoints[pointIndex - 1];
+                point.time = std::max(point.time, prevPoint.time);
+            }
+
+            if (pointIndex < m_mixTrack.envelopePoints.size() - 1)
+            {
+                const auto &nextPoint = m_mixTrack.envelopePoints[pointIndex + 1];
+                point.time = std::min(point.time, nextPoint.time);
+            }
+
+            // Ensure time is within track duration
+            const auto trackDuration = m_trackInfo.duration;
+            point.time = std::min(point.time, trackDuration);
+            point.time = std::max(point.time, std::chrono::milliseconds(0));
+        }
+        
         void MixTrackComponent::mouseUp(const juce::MouseEvent &event)
         {
             if (m_draggedMarker == MarkerType::CueEnd)
