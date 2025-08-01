@@ -191,8 +191,30 @@ namespace jucyaudio
             Duration_t screenXToTrackTime(int screenX) const;
             void updateMarkerPosition(MarkerType marker, int newX);
 
+            /**
+             * @brief Handles the initial mouse down event on the component.
+             *
+             * This function determines which, if any, interactive element was clicked and
+             * sets the initial state for a potential drag operation. It uses a
+             * "first-come, first-served" priority: envelope points are checked before
+             * markers, and a general track selection happens only if no specific
+             * interactive element was hit.
+             *
+             * @param event The mouse event containing the click position and button state.
+             */
             void mouseDown(const juce::MouseEvent &event) override;
+            
+            /**
+             * @brief Handles mouse drag events.
+             *
+             * This function is called continuously after a mouseDown event as long as the
+             * left mouse button is held down and the mouse is moving. It's responsible for
+             * updating the state of the object being dragged.
+             *
+             * @param event The mouse event containing the current cursor position.
+             */
             void mouseDrag(const juce::MouseEvent &event) override;
+
             void mouseUp(const juce::MouseEvent &event) override;
 
             /**

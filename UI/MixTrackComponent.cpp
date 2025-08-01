@@ -423,7 +423,7 @@ namespace jucyaudio
                     {
                         newTime = std::min(newTime, trackDuration - Duration_t{1});
                     }
-                    const_cast<MixTrack&>(m_mixTrack).cueStart = newTime;
+                    m_mixTrack.cueStart = newTime;
                     break;
                     
                 case MarkerType::CueEnd:
@@ -436,14 +436,14 @@ namespace jucyaudio
                     // Constrain: 0 <= attachFrom < attachTo
                     newTime = std::max(Duration_t{0}, newTime);
                     newTime = std::min(newTime, m_mixTrack.attachTo - Duration_t{1});
-                    const_cast<MixTrack&>(m_mixTrack).attachFrom = newTime;
+                    m_mixTrack.attachFrom = newTime;
                     break;
                     
                 case MarkerType::AttachTo:
                     // Constrain: attachFrom < attachTo <= duration
                     newTime = std::max(m_mixTrack.attachFrom + Duration_t{1}, newTime);
                     newTime = std::min(newTime, trackDuration);
-                    const_cast<MixTrack&>(m_mixTrack).attachTo = newTime;
+                    m_mixTrack.attachTo = newTime;
                     break;
                     
                 default:
@@ -470,121 +470,86 @@ namespace jucyaudio
 
 
         // Mouse Event Handlers --------------------------------------------------------
-        
+       
         void MixTrackComponent::mouseDown(const juce::MouseEvent &event)
         {
-            if (event.mods.isLeftButtonDown())
+            if (!event.mods.isLeftButtonDown())
+                return;
+
+            // --- Priority 1: Check for an envelope point hit ---
+            if (const auto hitPointIndex = hitTestEnvelopePoint(event.position.toInt()))
             {
-                spdlog::info("Mouse down on track {} with left button", m_mixTrack.trackId);
+                m_selectedEnvelopePointIndex = hitPointIndex;
+                m_isDraggingEnvelopePoint = true;
+                m_envelopePointDragStart = event.position.toInt();
+                m_originalEnvelopePoint = m_mixTrack.envelopePoints[*hitPointIndex];
 
-                                // We should check for envelope points first: they can be a point on the marker
-                if (const auto hitPointIndex = hitTestEnvelopePoint(event.position.toInt()))
+                // Select this track in the parent timeline.
+                if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
                 {
-                    spdlog::info("Hit Envelope, ignore all the other shit");
-                    m_selectedEnvelopePointIndex = hitPointIndex;
-                    m_isDraggingEnvelopePoint = true;
-                    m_envelopePointDragStart = event.position.toInt();
-                    m_originalEnvelopePoint = m_mixTrack.envelopePoints[*hitPointIndex];
-
-                    // Ensure track is selected but don't start track dragging
-                    if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
-                    {
-                        timeline->setSelectedTrack(this);
-                    }
-                    spdlog::info("Envelope point {} selected for dragging on track {}", *hitPointIndex, m_mixTrack.trackId);
-                    repaint();
-                    return; // Early exit - don't process track selection/dragging
+                    timeline->setSelectedTrack(this);
                 }
 
+                repaint();
+                return; // A specific element was hit, our work here is done.
+            }
 
-                /*// FIRST: Check for marker hits (highest priority)
-                auto markerHit = hitTestMarker(event.position.toInt());
-                if (markerHit != MarkerType::None)
-                {
-                    spdlog::info("Hit test marker, ignore all the other shit");
-
-                    // --- THIS IS THE CORRECT, GENERIC LOGIC ---
-                    m_draggedMarker = markerHit;
-                    m_originalMixTrack = m_mixTrack;
-
-                    if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
-                    {
-                        timeline->setSelectedTrack(this);
-                    }
-
-                    repaint();
-                    return; // Early exit
-                }*/
+            // --- Priority 2: Check for an attach marker hit ---
+            if (const auto markerHit = hitTestMarker(event.position.toInt()); markerHit != MarkerType::None)
+            {
+                m_draggedMarker = markerHit;
+                m_originalMixTrack = m_mixTrack;
 
                 if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
                 {
                     timeline->setSelectedTrack(this);
-
-                    // Calculate and set the click position in the timeline
-                    auto localClick = event.position;
-                    auto trackBounds = getBounds();
-                    double clickTime = (trackBounds.getX() + localClick.x) / timeline->getPixelsPerSecond();
-                    timeline->setCurrentTimePosition(clickTime);
-
-                    // Ensure timeline has keyboard focus for Space/Escape keys
-                    timeline->grabKeyboardFocus();
-
-                    // Only handle click-to-seek if we're not about to start dragging
-                    // (We'll determine this based on whether the mouse moves significantly)
-
-                    if (event.getNumberOfClicks() == 2)
-                    {
-                        // Double-click: Play the entire mix from clicked position
-                        spdlog::info("Double-click on track - requesting mix playback");
-                        auto localClick = event.position;
-                        auto trackBounds = getBounds();
-                        double clickTime = (trackBounds.getX() + localClick.x) / timeline->getPixelsPerSecond();
-
-                        // Use the always-play callback for double-clicks
-                        if (timeline->onMixPlaybackAlwaysRequested)
-                        {
-                            timeline->onMixPlaybackAlwaysRequested(clickTime);
-                        }
-                        else
-                        {
-                            timeline->playMixFromPosition(clickTime);
-                        }
-                    }
-                    else if (event.getNumberOfClicks() == 1)
-                    {
-                        // Single-click logic for seeking in the timeline is handled by the parent.
-                        // We no longer initiate a component-wide drag here, as track positioning
-                        // is strictly controlled by the attach-point model.
-                    }
                 }
+
+                repaint();
+                return; // A specific element was hit, our work here is done.
             }
-            else
+
+            // --- Priority 3: General track selection ---
+            // If no specific interactive element was clicked, treat this as a simple
+            // click to select the track. The parent TimelineComponent will handle
+            // any associated actions, like seeking the playhead.
+            if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
             {
-                spdlog::info("Mouse down on track {} with non-left button", m_mixTrack.trackId);
+                timeline->setSelectedTrack(this);
+
+                // Let the parent component handle the consequences of the click
+                // (e.g., setting the playhead position). We've removed the broken
+                // playback logic that was previously here.
             }
         }
 
+        
         void MixTrackComponent::mouseDrag(const juce::MouseEvent &event)
         {
-            // Handle other marker dragging
+            // If an attach marker drag is in progress (m_draggedMarker is set),
+            // this is where the logic to update its position would go.
+            // Currently not implemented.
             if (m_draggedMarker != MarkerType::None)
             {
-                return;
+                // No-op for now.
             }
-
-            if (m_isDraggingEnvelopePoint && m_selectedEnvelopePointIndex.has_value())
+            // If an envelope point drag is in progress, update its position.
+            else if (m_isDraggingEnvelopePoint && m_selectedEnvelopePointIndex.has_value())
             {
-                spdlog::info("still dragging envelope point {} on track {}", *m_selectedEnvelopePointIndex, m_mixTrack.trackId);
+                // 1. Convert the current mouse position back to a logical EnvelopePoint.
                 auto newPoint = screenPositionToEnvelopePoint(event.position.toInt());
-                spdlog::info("point before constrainEnvelopePoint {}", newPoint.toString());
-                constrainEnvelopePoint(*m_selectedEnvelopePointIndex, newPoint);
-                spdlog::info("point after constrainEnvelopePoint {}", newPoint.toString());
 
-                // Update the envelope point
+                // 2. Apply constraints to the new point (e.g., can't move past neighbors).
+                constrainEnvelopePoint(*m_selectedEnvelopePointIndex, newPoint);
+
+                // 3. Update the data model with the new, constrained point position.
+                //    Note: We must operate on a mutable copy of the MixTrack for this.
+                //    This is a temporary solution; a better architecture would involve
+                //    notifying a parent component to update the master data model.
                 m_mixTrack.envelopePoints[*m_selectedEnvelopePointIndex] = newPoint;
 
+                // 4. Trigger a repaint to show the point in its new position.
                 repaint();
-                return;
             }
         }
 
