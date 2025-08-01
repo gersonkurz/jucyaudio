@@ -30,7 +30,6 @@ namespace jucyaudio
             bool isSelected() const;
             void drawVolumeEnvelope(juce::Graphics &g, const juce::Rectangle<int> &envelopeArea);
             void drawCueAndAttachMarkers(juce::Graphics &g, juce::Rectangle<int> area);
-            void drawNonAudibleRegions(juce::Graphics &g, juce::Rectangle<int> area);
 
             std::function<void(TrackId, const std::vector<database::EnvelopePoint>&)> onEnvelopeChanged;
             std::function<void(TrackId, const database::MixTrack&)> onCueAttachChanged;

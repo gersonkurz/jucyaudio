@@ -37,24 +37,6 @@ namespace jucyaudio
             m_thumbnail.removeChangeListener(this);
         }
 
-        void MixTrackComponent::resized()
-        {
-            auto bounds = getLocalBounds();
-            // Place the label in the top section
-            m_infoLabel.setBounds(bounds.removeFromTop(textSectionHeight).reduced(4, 0));
-        }
-
-        // In MixTrackComponent.cpp
-        bool MixTrackComponent::isSelected() const
-        {
-            // Get parent timeline and check if we're the selected track
-            if (const auto *timeline = findParentComponentOfClass<TimelineComponent>())
-            {
-                return timeline->getSelectedTrack() == this;
-            }
-            return false;
-        }
-
         /**
          * @brief Renders the visual representation of the track segment.
          *
@@ -129,7 +111,6 @@ namespace jucyaudio
                     1.0f);
 
                 // Draw overlays tied to the audio content relative to the waveform's rectangle.
-                drawNonAudibleRegions(g, waveformDrawRect);
                 drawVolumeEnvelope(g, waveformDrawRect);
 
                 // Draw markers relative to the full area, as they can exist in silence.
@@ -140,6 +121,25 @@ namespace jucyaudio
                 // Still draw markers even if there is no waveform visible.
                 drawCueAndAttachMarkers(g, waveformArea);
             }
+        }
+
+        
+        void MixTrackComponent::resized()
+        {
+            auto bounds = getLocalBounds();
+            // Place the label in the top section
+            m_infoLabel.setBounds(bounds.removeFromTop(textSectionHeight).reduced(4, 0));
+        }
+
+        // In MixTrackComponent.cpp
+        bool MixTrackComponent::isSelected() const
+        {
+            // Get parent timeline and check if we're the selected track
+            if (const auto *timeline = findParentComponentOfClass<TimelineComponent>())
+            {
+                return timeline->getSelectedTrack() == this;
+            }
+            return false;
         }
 
         void MixTrackComponent::drawVolumeEnvelope(juce::Graphics &g, const juce::Rectangle<int> &area)
@@ -362,68 +362,6 @@ namespace jucyaudio
             point.time = std::max(point.time, std::chrono::milliseconds(0));
         }
         
-        void MixTrackComponent::drawNonAudibleRegions(juce::Graphics &g, juce::Rectangle<int> area)
-        {
-            const auto trackDuration = m_trackInfo.duration;
-            const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
-            
-            // Calculate cue positions
-            const double cueStartSeconds = std::chrono::duration<double>(m_mixTrack.cueStart).count();
-            Duration_t cueEndPos = m_mixTrack.cueEnd;
-            if (cueEndPos == Duration_t{0})
-            {
-                cueEndPos = trackDuration;
-            }
-            else if (cueEndPos < Duration_t{0})
-            {
-                cueEndPos = trackDuration + cueEndPos;
-            }
-            const double cueEndSeconds = std::chrono::duration<double>(cueEndPos).count();
-            
-            // Use getMarkerXPosition for consistent positioning
-            const int cueStartX = getMarkerXPosition(MarkerType::CueStart);
-            const int cueEndX = getMarkerXPosition(MarkerType::CueEnd);
-            
-            // Draw semi-transparent overlay for non-audible regions
-            g.setColour(juce::Colours::black.withAlpha(0.5f));
-            
-            // Before cue start
-            if (cueStartX > area.getX())
-            {
-                g.fillRect(area.getX(), area.getY(), 
-                          cueStartX - area.getX(), area.getHeight());
-            }
-            
-            // After cue end (only if within track bounds)
-            if (cueEndPos <= trackDuration)
-            {
-                // Calculate where the track waveform ends
-                const auto effectiveDuration = m_mixTrack.getEffectiveDuration(trackDuration);
-                if (effectiveDuration > trackDuration)
-                {
-                    // Extended track - waveform ends before component bounds
-                    const double effectiveDurationSeconds = std::chrono::duration<double>(effectiveDuration).count();
-                    const float waveformProportion = trackDurationSeconds / effectiveDurationSeconds;
-                    const int waveformEndX = area.getX() + juce::roundToInt(area.getWidth() * waveformProportion);
-                    
-                    if (cueEndX < waveformEndX)
-                    {
-                        g.fillRect(cueEndX, area.getY(), 
-                                  waveformEndX - cueEndX, area.getHeight());
-                    }
-                }
-                else
-                {
-                    // Normal track - waveform fills component
-                    if (cueEndX < area.getRight())
-                    {
-                        g.fillRect(cueEndX, area.getY(), 
-                                  area.getRight() - cueEndX, area.getHeight());
-                    }
-                }
-            }
-        }
-        
         void MixTrackComponent::drawCueAndAttachMarkers(juce::Graphics &g, juce::Rectangle<int> area)
         {
             // Draw each marker using getMarkerXPosition for consistent positioning
@@ -637,7 +575,7 @@ namespace jucyaudio
         }
 
 
-        #region Mouse Event Handlers
+        // Mouse Event Handlers --------------------------------------------------------
         
         void MixTrackComponent::mouseDown(const juce::MouseEvent &event)
         {
@@ -867,8 +805,6 @@ namespace jucyaudio
                 setMouseCursor(juce::MouseCursor::NormalCursor);
             }
         }
-
-        #endregion
 
     } // namespace ui
 } // namespace jucyaudio
