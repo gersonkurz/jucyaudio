@@ -638,57 +638,6 @@ namespace jucyaudio
         }
 #endif
 
-        void TimelineComponent::startTrackDrag(MixTrackComponent *track)
-        {
-            m_draggingTrack = track;
-            setSelectedTrack(track);
-
-            spdlog::info("Timeline: Started drag for track at time position: {:.2f}s", track->getX() / m_pixelsPerSecond);
-        }
-
-        void TimelineComponent::updateTrackDrag(MixTrackComponent *track, double newTime)
-        {
-            if (m_draggingTrack == track)
-            {
-                //spdlog::info("TIMELINE_DRAG: Track at time {:.3f}s, draggingTrack={}", newTime, m_draggingTrack != nullptr);
-
-                static double lastUpdateTime = -1.0;
-                if (std::abs(newTime - lastUpdateTime) > 0.1)
-                {
-                    lastUpdateTime = newTime;
-                    //spdlog::info("TIMELINE_UPDATE: Significant time change to {:.3f}s", newTime);
-                }
-            }
-        }
-
-        void TimelineComponent::finishTrackDrag(MixTrackComponent *track, double finalTime)
-        {
-            if (m_draggingTrack == track)
-            {
-                //spdlog::info("Timeline: Finished drag at time: {:.2f}s", finalTime);
-
-                // Find the track data and update it
-                auto trackId = getTrackIdForComponent(track);
-                if (trackId != 0)
-                {
-                    updateTrackPosition(trackId, finalTime);
-                }
-
-                m_draggingTrack = nullptr;
-
-                // Recalculate layout after position change
-                recalculateTrackOrder();
-                resized();
-                repaint();
-
-                // Notify that mix data has changed
-                if (onMixChanged)
-                {
-                    onMixChanged();
-                }
-            }
-        }
-
         // Helper method to get track ID from component
         TrackId TimelineComponent::getTrackIdForComponent(MixTrackComponent *component)
         {

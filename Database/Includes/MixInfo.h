@@ -67,6 +67,11 @@ namespace jucyaudio
              */
             Duration_t time;
             Volume_t volume;
+
+            std::string toString() const
+            {
+                return std::format("EnvelopePoint(time: {}, volume: {})", time.count(), volume);
+            }
         };
 
         /**

@@ -49,9 +49,6 @@ namespace jucyaudio
             bool keyPressed(const juce::KeyPress &key) override;
             void deleteSelectedTrack();
             void refreshLayout(); // Refresh timeline layout without recreating components
-            void startTrackDrag(MixTrackComponent *track);
-            void updateTrackDrag(MixTrackComponent *track, double newTime);
-            void finishTrackDrag(MixTrackComponent *track, double finalTime);
 
             std::function<void(const juce::File &, double)> onPlaybackRequested;
             std::function<void(double)> onSeekRequested;
@@ -79,7 +76,9 @@ namespace jucyaudio
             struct TrackView
             {
                 std::unique_ptr<MixTrackComponent> component;
-                const database::MixTrack *mixTrackData;
+
+                // this is NOT const, because it IS going to be modified (e.g. envelope points)
+                database::MixTrack *mixTrackData;
                 const database::TrackInfo *trackInfoData;
                 Duration_t audioStartTime{0};     // The start time of the audio content, from the ATTACH formula.
                 Duration_t componentStartTime{0}; // The visual start time of the component on the timeline.
