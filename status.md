@@ -117,3 +117,54 @@ Here is a proposed message to add to the top of `status.md`. It captures our cur
 
 **Next Action:**
 *   Implement the parent-draws architecture for the `cue-end` drag preview.
+
+
+Yes, I understand. This is a critical piece of the puzzle. Thank you for adding the constraint and for walking through the `AudioStartTime` formula—confirming that it works for different but equivalent attach values is a huge step forward.
+
+Let's integrate this new information.
+
+### The Attach Point Constraint
+
+I agree with your restriction. It makes perfect sense and adds a necessary boundary to the system. Let me rephrase it in our established terms to ensure I have it right:
+
+For any given track, the time value of its `attachFrom` and `attachTo` points must be constrained to lie **within the track's effective duration**.
+
+*   The lower bound is `cueStart`.
+*   The upper bound is `getCueEndActual(trackDuration)`.
+
+This prevents a user from setting an attachment point in a location that is conceptually "off the edge" of the component they see on the screen. It keeps the *Where* (attach points) logically contained within the *What* (the effective track segment).
+
+### The Core Insight (Confirming My Understanding)
+
+Your example highlights the most important principle of the attach system: what matters is not the absolute value of `attachTo` or `attachFrom`, but the **difference** between them.
+
+The formula `AudioStartTime(N) = AudioStartTime(N-1) + Track(N-1).attachTo - Track(N).attachFrom` works precisely because it operates on this difference. It correctly calculates that the audio of Track 2 should start 4 minutes after the audio of Track 1 begins, regardless of whether that overlap is defined as `(4min -> 0min)` or `(5min -> 1min)`. We are in full agreement on this.
+
+---
+
+With this, let's formulate our final, shared, and documented conceptual model.
+
+### **Final Model Definition**
+
+**1. The Track Segment (The *What*)**
+*   Each track in a mix is a conceptual block defined by `cueStart` and `cueEnd` relative to its source waveform.
+*   This block consists of three parts: `[silence-before] - [waveform-content] - [silence-after]`.
+*   The `Envelope Points` control the volume over this entire block. Their time values are relative to the start of the source waveform, allowing them to exist in the silence regions.
+
+**2. Attach Points (The *Where*)**
+*   Each track has two sync markers, `attachFrom` and `attachTo`, whose time values are relative to the start of the source waveform.
+*   **Constraint:** These markers must be located within the track segment's effective duration. That is, `cueStart <= attach_point_time <= getCueEndActual(trackDuration)`.
+*   They are independent of the audio content and define where one track segment links to the next.
+
+**3. Mix Flow (The Algorithm)**
+*   The final timeline is built iteratively.
+*   **Anchor:** Track 1's audio begins at an absolute time of `max(0, -Track1.cueStart)`. This establishes the `AudioStartTime` for the first track and may create initial silence for the whole mix.
+*   **Placement Rule:** For every subsequent track `N`, its audio content is placed on the timeline according to the confirmed formula:
+    `AudioStartTime(N) = AudioStartTime(N-1) + Track(N-1).attachTo - Track(N).attachFrom`
+*   **Result:** A deterministic sequence of precisely positioned audio blocks whose content and volume are defined by their individual cue and envelope points.
+
+---
+
+This feels complete, internally consistent, and robust. It accounts for all the edge cases we've discussed (initial silence, trimming/extending, envelope placement) and is built on a simple, verifiable formula for placement.
+
+Does this final, constrained model represent our complete and shared understanding of the data system?

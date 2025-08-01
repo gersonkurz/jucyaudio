@@ -30,107 +30,11 @@ namespace jucyaudio
             // Load the thumbnail source
             m_thumbnail.setSource(new juce::FileInputSource(juce::File(trackInfo.filepath.string())));
             m_thumbnail.addChangeListener(this);
-
-            // Set up drag constraints for horizontal-only movement
-            m_constrainer.setMinimumOnscreenAmounts(0xffffff, 0xffffff, 0xffffff, 0xffffff);
-
-            // Restrict to horizontal movement only by setting fixed Y position
-            // We'll update this in resized() to match the actual Y position
-            m_constrainer.setFixedAspectRatio(0.0); // Allow any aspect ratio
         }
 
         MixTrackComponent::~MixTrackComponent()
         {
             m_thumbnail.removeChangeListener(this);
-        }
-
-        void MixTrackComponent::mouseDown(const juce::MouseEvent &event)
-        {
-            if (event.mods.isLeftButtonDown())
-            {
-                // FIRST: Check for marker hits (highest priority)
-                auto markerHit = hitTestMarker(event.position.toInt());
-                if (markerHit != MarkerType::None)
-                {
-                    // --- THIS IS THE CORRECT, GENERIC LOGIC ---
-                    m_draggedMarker = markerHit;
-                    m_originalMixTrack = m_mixTrack;
-
-                    if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
-                    {
-                        timeline->setSelectedTrack(this);
-                    }
-
-                    repaint();
-                    return; // Early exit
-                }        
-                
-                // SECOND: Check for envelope point hits
-                if (auto hitPointIndex = hitTestEnvelopePoint(event.position.toInt()))
-                {
-                    m_selectedEnvelopePointIndex = hitPointIndex;
-                    m_isDraggingEnvelopePoint = true;
-                    m_envelopePointDragStart = event.position.toInt();
-                    m_originalEnvelopePoint = m_mixTrack.envelopePoints[*hitPointIndex];
-
-                    // Ensure track is selected but don't start track dragging
-                    if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
-                    {
-                        timeline->setSelectedTrack(this);
-                    }
-
-                    repaint();
-                    return; // Early exit - don't process track selection/dragging
-                }
-
-                if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
-                {
-                    timeline->setSelectedTrack(this);
-                    
-                    // Calculate and set the click position in the timeline
-                    auto localClick = event.position;
-                    auto trackBounds = getBounds();
-                    double clickTime = (trackBounds.getX() + localClick.x) / timeline->getPixelsPerSecond();
-                    timeline->setCurrentTimePosition(clickTime);
-                    
-                    // Ensure timeline has keyboard focus for Space/Escape keys
-                    timeline->grabKeyboardFocus();
-
-                    // Only handle click-to-seek if we're not about to start dragging
-                    // (We'll determine this based on whether the mouse moves significantly)
-
-                    if (event.getNumberOfClicks() == 2)
-                    {
-                        // Double-click: Play the entire mix from clicked position
-                        spdlog::info("Double-click on track - requesting mix playback");
-                        auto localClick = event.position;
-                        auto trackBounds = getBounds();
-                        double clickTime = (trackBounds.getX() + localClick.x) / timeline->getPixelsPerSecond();
-                        
-                        // Use the always-play callback for double-clicks
-                        if (timeline->onMixPlaybackAlwaysRequested)
-                        {
-                            timeline->onMixPlaybackAlwaysRequested(clickTime);
-                        }
-                        else
-                        {
-                            timeline->playMixFromPosition(clickTime);
-                        }
-                    }
-                    else if (event.getNumberOfClicks() == 1)
-                    {
-                        // **FIX: Initialize drag state here**
-                        m_originalTrackX = getX();
-                        int currentY = getY();
-                        m_constrainer.setLockedY(currentY);
-
-                        // Tell ComponentDragger where the drag started
-                        m_dragger.startDraggingComponent(this, event);
-
-                        // Single-click behavior will be handled in mouseUp if no drag occurred
-                    }
-                }
-            }
         }
 
         void MixTrackComponent::resized()
@@ -144,15 +48,32 @@ namespace jucyaudio
         bool MixTrackComponent::isSelected() const
         {
             // Get parent timeline and check if we're the selected track
-            if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+            if (const auto *timeline = findParentComponentOfClass<TimelineComponent>())
             {
                 return timeline->getSelectedTrack() == this;
             }
             return false;
         }
 
+        /**
+         * @brief Renders the visual representation of the track segment.
+         *
+         * This method is the core of the visual system and operates on a "three-part" model.
+         * It does not change the component's size or position; it only draws within its given bounds.
+         *
+         * The logic is as follows:
+         * 1.  It calculates the proportional duration of three distinct regions:
+         *     - [silence-before]: The silence added by a negative cueStart.
+         *     - [waveform-content]: The audible portion of the source audio file.
+         *     - [silence-after]: The silence added by a positive cueEnd.
+         * 2.  It uses these proportions to calculate specific sub-rectangles within the component's bounds for each region.
+         * 3.  It determines which time-slice of the source audio file to use.
+         * 4.  It draws the correct audio thumbnail slice into the calculated [waveform-content] rectangle.
+         * 5.  Finally, it draws overlays (like markers and envelopes) in the correct coordinate spaces.
+         */
         void MixTrackComponent::paint(juce::Graphics &g)
         {
+            // --- 1. Basic Setup & Background ---
             auto &lf = getLookAndFeel();
             auto bounds = getLocalBounds();
 
@@ -168,25 +89,21 @@ namespace jucyaudio
                 g.drawRoundedRectangle(bounds.toFloat().reduced(1), 4.0f, 2.0f);
             }
 
-            // --- FULLY DYNAMIC THREE-PART DRAWING LOGIC ---
-
+            // --- 2. The "Three-Part Model" Calculation ---
             const auto trackDuration = m_trackInfo.duration;
-            // Now using the helper method we just added.
             const auto cueEndActual = m_mixTrack.getCueEndActual(trackDuration);
+            const auto totalEffectiveDuration = m_mixTrack.getEffectiveDuration(trackDuration);
+            const double totalVisibleDurationSecs = std::chrono::duration<double>(totalEffectiveDuration).count();
 
-            // 1. Calculate durations for the three parts dynamically.
-            const double silenceAtStartSeconds = (m_mixTrack.cueStart < Duration_t{0}) ? std::chrono::duration<double>(-m_mixTrack.cueStart).count() : 0.0;
-
-            const double silenceAtEndSeconds = (cueEndActual > trackDuration) ? std::chrono::duration<double>(cueEndActual - trackDuration).count() : 0.0;
-
-            const double totalVisibleDurationSecs = std::chrono::duration<double>(m_mixTrack.getEffectiveDuration(trackDuration)).count();
-
+            // Safety check: Do not proceed if there is nothing to draw.
             if (totalVisibleDurationSecs <= 0.0)
                 return;
 
+            const double silenceAtStartSeconds = (m_mixTrack.cueStart < Duration_t{0}) ? std::chrono::duration<double>(-m_mixTrack.cueStart).count() : 0.0;
+            const double silenceAtEndSeconds = (cueEndActual > trackDuration) ? std::chrono::duration<double>(cueEndActual - trackDuration).count() : 0.0;
             const double waveformDurationOnScreen = totalVisibleDurationSecs - silenceAtStartSeconds - silenceAtEndSeconds;
 
-            // 2. Calculate the sub-rectangles based on the dynamic proportions.
+            // --- 3. Sub-Rectangle Calculation ---
             const double silenceBeforeProportion = silenceAtStartSeconds / totalVisibleDurationSecs;
             const double waveformProportion = waveformDurationOnScreen / totalVisibleDurationSecs;
 
@@ -195,31 +112,32 @@ namespace jucyaudio
 
             auto waveformDrawRect = waveformArea.withX(waveformArea.getX() + silenceBeforeWidth).withWidth(waveformDrawWidth);
 
-            // 3. Determine which part of the source audio to draw.
+            // --- 4. Source Audio Range Calculation ---
             const double thumbnailStartTime = std::chrono::duration<double>(std::max(Duration_t{0}, m_mixTrack.cueStart)).count();
             const double thumbnailEndTime = std::chrono::duration<double>(std::min(trackDuration, cueEndActual)).count();
 
-            // 4. Draw the required part of the thumbnail into its specific sub-rectangle.
+            // --- 5. Drawing ---
             if (waveformDrawRect.getWidth() > 0)
             {
                 g.setColour(lf.findColour(juce::Slider::thumbColourId));
+                // Draw the waveform from the source file into its designated sub-rectangle.
                 m_thumbnail.drawChannel(g,
                     waveformDrawRect.reduced(2),
-                    thumbnailStartTime, // Start time in source file
-                    thumbnailEndTime,   // End time in source file
-                    0,
+                    thumbnailStartTime,
+                    thumbnailEndTime,
+                    0, // Drawing channel 0 (left channel)
                     1.0f);
 
-                // --- THIS IS THE FIX ---
-                // 5. Draw overlays using the correct coordinate spaces.
-                // Non-audible regions and the envelope are tied to the audio content.
+                // Draw overlays tied to the audio content relative to the waveform's rectangle.
                 drawNonAudibleRegions(g, waveformDrawRect);
                 drawVolumeEnvelope(g, waveformDrawRect);
-                // Markers can exist outside the audio content (in the silence), so they use the full area.
+
+                // Draw markers relative to the full area, as they can exist in silence.
                 drawCueAndAttachMarkers(g, waveformArea);
             }
             else
             {
+                // Still draw markers even if there is no waveform visible.
                 drawCueAndAttachMarkers(g, waveformArea);
             }
         }
@@ -322,173 +240,6 @@ namespace jucyaudio
             if (newPos.x != newX || newPos.y != newY)
             {
                 spdlog::warn("POSITION_CONSTRAINED: Track {}, requested ({},{}), actual ({},{})", m_mixTrack.trackId, newX, newY, newPos.x, newPos.y);
-            }
-        }
-
-        void MixTrackComponent::mouseDrag(const juce::MouseEvent &event)
-        {            
-            // Handle other marker dragging
-            if (m_draggedMarker != MarkerType::None)
-            {
-                return;
-            }
-            
-            if (m_isDraggingEnvelopePoint && m_selectedEnvelopePointIndex.has_value())
-            {
-                auto newPoint = screenPositionToEnvelopePoint(event.position.toInt());
-                constrainEnvelopePoint(*m_selectedEnvelopePointIndex, newPoint);
-
-                // Update the envelope point
-                const_cast<database::MixTrack &>(m_mixTrack).envelopePoints[*m_selectedEnvelopePointIndex] = newPoint;
-
-                repaint();
-                return;
-            }
-
-            if (event.mods.isLeftButtonDown() && !m_isDraggingEnvelopePoint)
-            {
-                if (!m_isDragging)
-                {
-                    m_isDragging = true;
-
-                    spdlog::info("DRAG_START: Track {}, originalX={}, locking Y to {}", m_mixTrack.trackId, m_originalTrackX, getY());
-
-                    if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
-                    {
-                        timeline->startTrackDrag(this);
-                    }
-                }
-
-                // Use JUCE's ComponentDragger - it now knows the original mouse position
-                m_dragger.dragComponent(this, event, &m_constrainer);
-
-                // Log the result
-                spdlog::debug("DRAG_MOVE: Track {}, position=({},{})", m_mixTrack.trackId, getX(), getY());
-
-                // Notify timeline of new position
-                if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
-                {
-                    double newTime = getX() / timeline->getPixelsPerSecond();
-                    timeline->updateTrackDrag(this, newTime);
-                }
-            }
-        }
-        
-         Duration_t MixTrackComponent::xToTime(int x) const
-        {
-            const auto effectiveDuration = m_mixTrack.getEffectiveDuration(m_trackInfo.duration);
-            if (getWidth() <= 0)
-                return Duration_t{0};
-
-            // Calculate the proportional position of the mouse click within the component's total width.
-            const double proportion = (double)(x - getLocalBounds().getX()) / (double)getWidth();
-
-            // Apply this proportion to the total effective duration to get the time offset.
-            const auto timeOffset = std::chrono::duration<double>(proportion * std::chrono::duration<double>(effectiveDuration).count());
-
-            // The absolute time is the component's start time (which is cueStart) plus the calculated offset.
-            return m_mixTrack.cueStart + std::chrono::duration_cast<Duration_t>(timeOffset);
-        }
-
-        void MixTrackComponent::mouseUp(const juce::MouseEvent &event)
-        {
-            if (m_draggedMarker == MarkerType::CueEnd)
-            {
-                // 1. Calculate the new absolute time based on the mouse release position.
-                Duration_t newAbsoluteTime = xToTime(event.position.x);
-
-                // 2. Convert this absolute time to our storage format (offset from track end).
-                database::MixTrack updatedTrack = m_mixTrack;
-                updatedTrack.cueEnd = newAbsoluteTime - m_trackInfo.duration;
-
-                // 3. Fire the callback to update the data model and trigger a layout refresh.
-                if (onCueAttachChanged)
-                {
-                    onCueAttachChanged(m_trackInfo.trackId, updatedTrack);
-                }
-
-                // 4. Reset the drag state.
-                m_draggedMarker = MarkerType::None;
-                repaint(); // Repaint to show the new marker position after the layout has changed.
-                return;    // Early exit
-            }
-            
-
-            // Handle other marker drag completion
-            if (m_draggedMarker != MarkerType::None)
-            {
-                // Notify of cue/attach change
-                if (onCueAttachChanged)
-                {
-                    onCueAttachChanged(m_mixTrack.trackId, m_mixTrack);
-                }
-                
-                m_draggedMarker = MarkerType::None;
-                repaint();
-                return;
-            }
-            
-            if (m_isDraggingEnvelopePoint)
-            {
-                // Notify of envelope change
-                if (onEnvelopeChanged)
-                {
-                    onEnvelopeChanged(m_mixTrack.trackId, m_mixTrack.envelopePoints);
-                }
-
-                m_isDraggingEnvelopePoint = false;
-                return;
-            }
-
-            if (m_isDragging)
-            {
-                spdlog::info("Finished dragging track ID: {}", m_mixTrack.trackId);
-
-                // Notify timeline that drag is complete
-                if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
-                {
-                    double finalTime = getX() / timeline->getPixelsPerSecond();
-                    timeline->finishTrackDrag(this, finalTime);
-                }
-
-                m_isDragging = false;
-            }
-        }
-
-        void MixTrackComponent::mouseMove(const juce::MouseEvent &event)
-        {
-            // Check for marker hover
-            auto hoveredMarker = hitTestMarker(event.position.toInt());
-            bool needsRepaint = false;
-            
-            if (hoveredMarker != m_hoveredMarker)
-            {
-                m_hoveredMarker = hoveredMarker;
-                needsRepaint = true;
-            }
-            
-            // Check for envelope point hover
-            auto hoveredPoint = hitTestEnvelopePoint(event.position.toInt());
-
-            if (hoveredPoint != m_hoveredEnvelopePointIndex)
-            {
-                m_hoveredEnvelopePointIndex = hoveredPoint;
-                needsRepaint = true;
-            }
-            
-            if (needsRepaint)
-            {
-                repaint();
-            }
-
-            // Update cursor
-            if (hoveredMarker != MarkerType::None || hoveredPoint.has_value())
-            {
-                setMouseCursor(juce::MouseCursor::PointingHandCursor);
-            }
-            else
-            {
-                setMouseCursor(juce::MouseCursor::NormalCursor);
             }
         }
 
@@ -867,6 +618,257 @@ namespace jucyaudio
                     break;
             }
         }
+
+        
+        Duration_t MixTrackComponent::xToTime(int x) const
+        {
+            const auto effectiveDuration = m_mixTrack.getEffectiveDuration(m_trackInfo.duration);
+            if (getWidth() <= 0)
+                return Duration_t{0};
+
+            // Calculate the proportional position of the mouse click within the component's total width.
+            const double proportion = (double)(x - getLocalBounds().getX()) / (double)getWidth();
+
+            // Apply this proportion to the total effective duration to get the time offset.
+            const auto timeOffset = std::chrono::duration<double>(proportion * std::chrono::duration<double>(effectiveDuration).count());
+
+            // The absolute time is the component's start time (which is cueStart) plus the calculated offset.
+            return m_mixTrack.cueStart + std::chrono::duration_cast<Duration_t>(timeOffset);
+        }
+
+
+        #region Mouse Event Handlers
+        
+        void MixTrackComponent::mouseDown(const juce::MouseEvent &event)
+        {
+            if (event.mods.isLeftButtonDown())
+            {
+                // FIRST: Check for marker hits (highest priority)
+                auto markerHit = hitTestMarker(event.position.toInt());
+                if (markerHit != MarkerType::None)
+                {
+                    // --- THIS IS THE CORRECT, GENERIC LOGIC ---
+                    m_draggedMarker = markerHit;
+                    m_originalMixTrack = m_mixTrack;
+
+                    if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                    {
+                        timeline->setSelectedTrack(this);
+                    }
+
+                    repaint();
+                    return; // Early exit
+                }
+
+                // SECOND: Check for envelope point hits
+                if (auto hitPointIndex = hitTestEnvelopePoint(event.position.toInt()))
+                {
+                    m_selectedEnvelopePointIndex = hitPointIndex;
+                    m_isDraggingEnvelopePoint = true;
+                    m_envelopePointDragStart = event.position.toInt();
+                    m_originalEnvelopePoint = m_mixTrack.envelopePoints[*hitPointIndex];
+
+                    // Ensure track is selected but don't start track dragging
+                    if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                    {
+                        timeline->setSelectedTrack(this);
+                    }
+
+                    repaint();
+                    return; // Early exit - don't process track selection/dragging
+                }
+
+                if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                {
+                    timeline->setSelectedTrack(this);
+
+                    // Calculate and set the click position in the timeline
+                    auto localClick = event.position;
+                    auto trackBounds = getBounds();
+                    double clickTime = (trackBounds.getX() + localClick.x) / timeline->getPixelsPerSecond();
+                    timeline->setCurrentTimePosition(clickTime);
+
+                    // Ensure timeline has keyboard focus for Space/Escape keys
+                    timeline->grabKeyboardFocus();
+
+                    // Only handle click-to-seek if we're not about to start dragging
+                    // (We'll determine this based on whether the mouse moves significantly)
+
+                    if (event.getNumberOfClicks() == 2)
+                    {
+                        // Double-click: Play the entire mix from clicked position
+                        spdlog::info("Double-click on track - requesting mix playback");
+                        auto localClick = event.position;
+                        auto trackBounds = getBounds();
+                        double clickTime = (trackBounds.getX() + localClick.x) / timeline->getPixelsPerSecond();
+
+                        // Use the always-play callback for double-clicks
+                        if (timeline->onMixPlaybackAlwaysRequested)
+                        {
+                            timeline->onMixPlaybackAlwaysRequested(clickTime);
+                        }
+                        else
+                        {
+                            timeline->playMixFromPosition(clickTime);
+                        }
+                    }
+                    else if (event.getNumberOfClicks() == 1)
+                    {
+                        // Single-click logic for seeking in the timeline is handled by the parent.
+                        // We no longer initiate a component-wide drag here, as track positioning
+                        // is strictly controlled by the attach-point model.
+                    }
+                }
+            }
+        }
+
+        void MixTrackComponent::mouseDrag(const juce::MouseEvent &event)
+        {
+            // Handle other marker dragging
+            if (m_draggedMarker != MarkerType::None)
+            {
+                return;
+            }
+
+            if (m_isDraggingEnvelopePoint && m_selectedEnvelopePointIndex.has_value())
+            {
+                auto newPoint = screenPositionToEnvelopePoint(event.position.toInt());
+                constrainEnvelopePoint(*m_selectedEnvelopePointIndex, newPoint);
+
+                // Update the envelope point
+                const_cast<database::MixTrack &>(m_mixTrack).envelopePoints[*m_selectedEnvelopePointIndex] = newPoint;
+
+                repaint();
+                return;
+            }
+
+            if (event.mods.isLeftButtonDown() && !m_isDraggingEnvelopePoint)
+            {
+                if (!m_isDragging)
+                {
+                    m_isDragging = true;
+
+                    spdlog::info("DRAG_START: Track {}, originalX={}, locking Y to {}", m_mixTrack.trackId, m_originalTrackX, getY());
+
+                    if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                    {
+                        timeline->startTrackDrag(this);
+                    }
+                }
+
+                // Log the result
+                spdlog::debug("DRAG_MOVE: Track {}, position=({},{})", m_mixTrack.trackId, getX(), getY());
+
+                // Notify timeline of new position
+                if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                {
+                    double newTime = getX() / timeline->getPixelsPerSecond();
+                    timeline->updateTrackDrag(this, newTime);
+                }
+            }
+        }
+        void MixTrackComponent::mouseUp(const juce::MouseEvent &event)
+        {
+            if (m_draggedMarker == MarkerType::CueEnd)
+            {
+                // 1. Calculate the new absolute time based on the mouse release position.
+                Duration_t newAbsoluteTime = xToTime(event.position.x);
+
+                // 2. Convert this absolute time to our storage format (offset from track end).
+                database::MixTrack updatedTrack = m_mixTrack;
+                updatedTrack.cueEnd = newAbsoluteTime - m_trackInfo.duration;
+
+                // 3. Fire the callback to update the data model and trigger a layout refresh.
+                if (onCueAttachChanged)
+                {
+                    onCueAttachChanged(m_trackInfo.trackId, updatedTrack);
+                }
+
+                // 4. Reset the drag state.
+                m_draggedMarker = MarkerType::None;
+                repaint(); // Repaint to show the new marker position after the layout has changed.
+                return;    // Early exit
+            }
+
+            // Handle other marker drag completion
+            if (m_draggedMarker != MarkerType::None)
+            {
+                // Notify of cue/attach change
+                if (onCueAttachChanged)
+                {
+                    onCueAttachChanged(m_mixTrack.trackId, m_mixTrack);
+                }
+
+                m_draggedMarker = MarkerType::None;
+                repaint();
+                return;
+            }
+
+            if (m_isDraggingEnvelopePoint)
+            {
+                // Notify of envelope change
+                if (onEnvelopeChanged)
+                {
+                    onEnvelopeChanged(m_mixTrack.trackId, m_mixTrack.envelopePoints);
+                }
+
+                m_isDraggingEnvelopePoint = false;
+                return;
+            }
+
+            if (m_isDragging)
+            {
+                spdlog::info("Finished dragging track ID: {}", m_mixTrack.trackId);
+
+                // Notify timeline that drag is complete
+                if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                {
+                    double finalTime = getX() / timeline->getPixelsPerSecond();
+                    timeline->finishTrackDrag(this, finalTime);
+                }
+
+                m_isDragging = false;
+            }
+        }
+
+        void MixTrackComponent::mouseMove(const juce::MouseEvent &event)
+        {
+            // Check for marker hover
+            auto hoveredMarker = hitTestMarker(event.position.toInt());
+            bool needsRepaint = false;
+
+            if (hoveredMarker != m_hoveredMarker)
+            {
+                m_hoveredMarker = hoveredMarker;
+                needsRepaint = true;
+            }
+
+            // Check for envelope point hover
+            auto hoveredPoint = hitTestEnvelopePoint(event.position.toInt());
+
+            if (hoveredPoint != m_hoveredEnvelopePointIndex)
+            {
+                m_hoveredEnvelopePointIndex = hoveredPoint;
+                needsRepaint = true;
+            }
+
+            if (needsRepaint)
+            {
+                repaint();
+            }
+
+            // Update cursor
+            if (hoveredMarker != MarkerType::None || hoveredPoint.has_value())
+            {
+                setMouseCursor(juce::MouseCursor::PointingHandCursor);
+            }
+            else
+            {
+                setMouseCursor(juce::MouseCursor::NormalCursor);
+            }
+        }
+
+        #endregion
 
     } // namespace ui
 } // namespace jucyaudio

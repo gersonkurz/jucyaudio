@@ -91,8 +91,6 @@ namespace jucyaudio
             const database::TrackInfo &m_trackInfo;
             juce::AudioThumbnail m_thumbnail;
             juce::Label m_infoLabel;
-            juce::ComponentDragger m_dragger;
-            HorizontalOnlyConstrainer m_constrainer;
 
             bool m_isDragging = false;
             juce::Point<int> m_dragStartPosition;
