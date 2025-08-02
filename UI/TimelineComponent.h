@@ -166,13 +166,13 @@ namespace jucyaudio
             /**
              * @brief Handles mouse wheel events to control the timeline's zoom level.
              *
-             * This function implements a "zoom-to-cursor" behavior. When the user holds the
-             * Control key and scrolls the mouse wheel, it calculates a new zoom level
-             * (pixels-per-second). It then recalculates the entire timeline layout and adjusts
-             * the parent viewport's scroll position to ensure that the time point directly
-             * under the mouse cursor remains stationary, creating an intuitive zoom experience.
+             * This function implements a "zoom-to-cursor" behavior. When the user scrolls
+             * the mouse wheel, it calculates a new zoom level (pixels-per-second). It then
+             * recalculates the entire timeline layout and adjusts the parent viewport's
+             * scroll position to ensure that the time point directly under the mouse cursor
+             * remains stationary, creating an intuitive zoom experience.
              *
-             * @param event The mouse event, used to check for modifier keys and get cursor position.
+             * @param event The mouse event, used to get cursor position.
              * @param wheel The mouse wheel details, used to determine the direction and amount of scroll.
              */
             void mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel) override;
@@ -302,10 +302,37 @@ namespace jucyaudio
              * A higher value means the timeline is more "zoomed in". This value is
              * modified by the mouseWheelMove function.
              */
-            double m_pixelsPerSecond = 2.5;             // A reasonable default zoom level.
-            static constexpr double MIN_ZOOM = 1.0;     // 1 pixel per second (zoomed out)
-            static constexpr double MAX_ZOOM = 100.0;   // 100 pixels per second (zoomed in)
-            static constexpr double ZOOM_FACTOR = 1.2;  // 20% zoom steps
+            // ------ Constants -------
+            /** @brief Minimum zoom level (pixels per second) */
+            static constexpr double MIN_ZOOM = 1.0;
+            
+            /** @brief Maximum zoom level (pixels per second) */
+            static constexpr double MAX_ZOOM = 100.0;
+            
+            /** @brief Zoom factor for mouse wheel operations (20% steps) */
+            static constexpr double ZOOM_FACTOR = 1.2;
+            
+            /** @brief Vertical gap between track lanes (pixels) */
+            static constexpr int TRACK_LANE_GAP = 5;
+            
+            /** @brief Height of the time ruler at the top (pixels) */
+            static constexpr int RULER_HEIGHT = 30;
+            
+            /** @brief Default number of lanes for height calculation */
+            static constexpr int DEFAULT_NUM_LANES = 8;
+            
+            /** @brief Extra width added after the last track (pixels) */
+            static constexpr int TIMELINE_PADDING = 200;
+            
+            /** @brief Interval between time markers in seconds */
+            static constexpr int TIME_MARKER_INTERVAL = 30;
+            
+            /** @brief Hit threshold for marker detection (pixels) */
+            static constexpr int MARKER_HIT_THRESHOLD = 5;
+            
+            // ------ Member Variables -------
+            /** @brief The core scaling factor for the timeline (pixels per second) */
+            double m_pixelsPerSecond = 2.5;
 
             /** @brief The preview time for cue drag operations, showing where the edge will be if released. */
             std::optional<Duration_t> m_cueDragPreviewTime;

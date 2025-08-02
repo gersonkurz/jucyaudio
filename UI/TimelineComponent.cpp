@@ -387,26 +387,23 @@ namespace jucyaudio
 
         void TimelineComponent::mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel)
         {
-            if (event.mods.isCtrlDown())
+            // Get mouse position relative to timeline
+            auto mousePos = event.getPosition();
+
+            // Calculate time position at mouse cursor
+            double timeAtMouse = mousePos.x / m_pixelsPerSecond;
+
+            // Calculate new zoom level
+            double zoomDelta = wheel.deltaY > 0 ? ZOOM_FACTOR : (1.0 / ZOOM_FACTOR);
+            double newZoom = juce::jlimit(MIN_ZOOM, MAX_ZOOM, m_pixelsPerSecond * zoomDelta);
+
+            if (newZoom != m_pixelsPerSecond)
             {
-                // Get mouse position relative to timeline
-                auto mousePos = event.getPosition();
+                m_pixelsPerSecond = newZoom;
+                refreshLayout();
 
-                // Calculate time position at mouse cursor
-                double timeAtMouse = mousePos.x / m_pixelsPerSecond;
-
-                // Calculate new zoom level
-                double zoomDelta = wheel.deltaY > 0 ? ZOOM_FACTOR : (1.0 / ZOOM_FACTOR);
-                double newZoom = juce::jlimit(MIN_ZOOM, MAX_ZOOM, m_pixelsPerSecond * zoomDelta);
-
-                if (newZoom != m_pixelsPerSecond)
-                {
-                    m_pixelsPerSecond = newZoom;
-                    refreshLayout();
-
-                    // Keep the time position under the mouse cursor stable
-                    maintainViewportPosition(timeAtMouse, mousePos.x);
-                }
+                // Keep the time position under the mouse cursor stable
+                maintainViewportPosition(timeAtMouse, mousePos.x);
             }
         }
 
@@ -414,7 +411,7 @@ namespace jucyaudio
         {
             auto visibleArea = getParentComponent()->getLocalBounds();
             const int rulerHeight = 30;
-            const int trackHeight = MixTrackComponent::totalHeight;
+            const int trackHeight = MixTrackComponent::TOTAL_COMPONENT_HEIGHT;
             const int yGap = 5;
             const int availableHeightForLanes = visibleArea.getHeight() - rulerHeight;
 
@@ -523,7 +520,7 @@ namespace jucyaudio
             // --- THIS IS THE FIX ---
             // We must calculate a reasonable height for the timeline component itself
             // before we can calculate its width and trigger a layout refresh.
-            const int trackHeight = MixTrackComponent::totalHeight;
+            const int trackHeight = MixTrackComponent::TOTAL_COMPONENT_HEIGHT;
             const int yGap = 5;
             const int rulerHeight = 30;
             const int numLanesForHeightCalc = 8; // A default number of lanes to ensure a reasonable minimum height.

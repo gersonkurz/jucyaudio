@@ -7,15 +7,7 @@
 
 namespace jucyaudio
 {
-    namespace
-    {
-        const auto ENVELOPE_PATH_LINE_THINKESS = 4.0f;
 
-        // regular points are 10 pixels, active points are 20 pixels (visibly bigger)
-        const auto ENVELOPE_POINT_STANDARD_RADIUS = 10.0f;
-        const auto ENVELOPE_POINT_ACTIVE_RADIUS = 20.0f;
-
-    }
 
     namespace ui
     {
@@ -60,7 +52,7 @@ namespace jucyaudio
                 isSelected() ? lf.findColour(juce::TextEditor::backgroundColourId).brighter(0.2f) : lf.findColour(juce::TextEditor::backgroundColourId));
             g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
 
-            auto waveformArea = bounds.removeFromBottom(waveformSectionHeight);
+            auto waveformArea = bounds.removeFromBottom(WAVEFORM_SECTION_HEIGHT);
 
             if (isSelected())
             {
@@ -142,7 +134,7 @@ namespace jucyaudio
             }
 
             g.setColour(juce::Colours::yellow.withAlpha(0.8f));
-            g.strokePath(volumePath, juce::PathStrokeType(ENVELOPE_PATH_LINE_THINKESS));
+            g.strokePath(volumePath, juce::PathStrokeType(ENVELOPE_PATH_LINE_THICKESS));
 
             // --- 2. Draw the Interactive Points on Top of the Line ---
             for (size_t i = 0; i < m_mixTrack.envelopePoints.size(); ++i)
@@ -245,7 +237,7 @@ namespace jucyaudio
         {
             auto bounds = getLocalBounds();
             // Place the label in the top section
-            m_infoLabel.setBounds(bounds.removeFromTop(textSectionHeight).reduced(4, 0));
+            m_infoLabel.setBounds(bounds.removeFromTop(TEXT_SECTION_HEIGHT).reduced(4, 0));
         }
 
         bool MixTrackComponent::isSelected() const
@@ -286,7 +278,7 @@ namespace jucyaudio
 
         juce::Point<float> MixTrackComponent::envelopePointToScreenPosition(const EnvelopePoint &point) const
         {
-            auto area = getLocalBounds().removeFromBottom(waveformSectionHeight);
+            auto area = getLocalBounds().removeFromBottom(WAVEFORM_SECTION_HEIGHT);
 
             const auto effectiveDuration = m_mixTrack.getEffectiveDuration(m_trackInfo.duration);
             if (effectiveDuration <= Duration_t{0})
@@ -312,7 +304,7 @@ namespace jucyaudio
             const auto newTime = xToTime(screenPos.x, true /* clampToComponentBounds */);
 
             // --- Volume Calculation (Y-axis) ---
-            auto area = getLocalBounds().removeFromBottom(waveformSectionHeight);
+            auto area = getLocalBounds().removeFromBottom(WAVEFORM_SECTION_HEIGHT);
             const float relativeY = (float)(area.getBottom() - screenPos.y) / (float)area.getHeight();
             const float volumePercent = juce::jlimit(0.0f, 1.0f, relativeY);
 
@@ -325,7 +317,7 @@ namespace jucyaudio
         MixTrackComponent::MarkerType MixTrackComponent::hitTestMarker(juce::Point<int> mousePos) const
         {
             auto bounds = getLocalBounds();
-            auto waveformArea = bounds.removeFromBottom(waveformSectionHeight);
+            auto waveformArea = bounds.removeFromBottom(WAVEFORM_SECTION_HEIGHT);
             
             // Only test within waveform area
             if (!waveformArea.contains(mousePos))
