@@ -104,6 +104,18 @@ namespace jucyaudio
              * the layout of all child components.
              */
             void refreshLayout();
+
+            /**
+             * @brief Repositions a specific track after its cue points have changed.
+             *
+             * This function recalculates the position of a single track component when its
+             * cueStart changes, which affects its position on the timeline. It updates the
+             * componentStartTime and then calls resized() to reposition the component.
+             *
+             * @param trackId The ID of the track to reposition.
+             */
+            void repositionTrack(TrackId trackId);
+
         private:
             /**
              * @brief Handles key press events when the timeline has focus.
@@ -221,6 +233,15 @@ namespace jucyaudio
             MixTrackComponent *getTrackAtPosition(juce::Point<int> position) const;
 
             /**
+             * @brief Recalculates all track positions without recreating components.
+             *
+             * This function updates the audioStartTime and componentStartTime for all tracks
+             * based on the current mix data, following the Mix Flow algorithm. It's used when
+             * the first track's cueStart changes, which affects the global offset.
+             */
+            void recalculateTrackPositions();
+
+            /**
              * @brief A helper struct that tightly couples a UI component with its underlying data.
              *
              * This struct is the primary internal data structure for the timeline. It holds the
@@ -285,6 +306,9 @@ namespace jucyaudio
             static constexpr double MIN_ZOOM = 1.0;     // 1 pixel per second (zoomed out)
             static constexpr double MAX_ZOOM = 100.0;   // 100 pixels per second (zoomed in)
             static constexpr double ZOOM_FACTOR = 1.2;  // 20% zoom steps
+
+            /** @brief The preview time for cue drag operations, showing where the edge will be if released. */
+            std::optional<Duration_t> m_cueDragPreviewTime;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimelineComponent)
         };

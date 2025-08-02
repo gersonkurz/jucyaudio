@@ -29,6 +29,7 @@ namespace jucyaudio
 
             std::function<void(TrackId, const std::vector<EnvelopePoint> &)> onEnvelopeChanged;
             std::function<void(TrackId, const MixTrack &)> onCueAttachChanged;
+            std::function<void(TrackId, std::optional<Duration_t>)> onCueDragInProgress;
 
             /**
              * @brief Returns the track ID of this mix track.
@@ -241,6 +242,14 @@ namespace jucyaudio
              * @param event Position on the screen
              */
             void mouseMove(const juce::MouseEvent &event) override;
+
+            /**
+             * @brief Handles key press events, specifically ESC to cancel drag operations.
+             *
+             * @param key The key that was pressed.
+             * @return true if the key was handled, false otherwise.
+             */
+            bool keyPressed(const juce::KeyPress &key) override;
 
             /**
              * @brief Converts a horizontal pixel coordinate into a logical time value.

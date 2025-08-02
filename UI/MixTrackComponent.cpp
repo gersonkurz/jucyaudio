@@ -380,11 +380,13 @@ namespace jucyaudio
                     m_isDraggingEnvelopePoint = true;
                     m_envelopePointDragStart = event.position.toInt();
                     m_originalEnvelopePoint = m_mixTrack.envelopePoints[*hitPointIndex];
+                    grabKeyboardFocus(); // Ensure we can receive ESC key
                 }
                 // --- Priority 2: Check for an attach marker hit ---
                 else if (const auto markerHit = hitTestMarker(event.position.toInt()); markerHit != MarkerType::None)
                 {
                     m_draggedMarker = markerHit;
+                    grabKeyboardFocus(); // Ensure we can receive ESC key
                 }
                 if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
                 {
@@ -397,12 +399,21 @@ namespace jucyaudio
         
         void MixTrackComponent::mouseDrag(const juce::MouseEvent &event)
         {
-            // If an attach marker drag is in progress (m_draggedMarker is set),
-            // this is where the logic to update its position would go.
-            // Currently not implemented.
-            if (m_draggedMarker != MarkerType::None)
+            // If a cue marker drag is in progress, calculate preview position
+            if (m_draggedMarker == MarkerType::CueStart || m_draggedMarker == MarkerType::CueEnd)
             {
-                // No-op for now.
+                // Calculate the new absolute time based on current mouse position
+                const auto previewTime = xToTime(event.position.x, false /* clampToComponentBounds */);
+                
+                // Fire the callback to show preview line
+                if (onCueDragInProgress)
+                {
+                    onCueDragInProgress(m_mixTrack.trackId, previewTime);
+                }
+            }
+            else if (m_draggedMarker != MarkerType::None)
+            {
+                // Other markers (attach points) - no preview for now
             }
             // If an envelope point drag is in progress, update its position.
             else if (m_isDraggingEnvelopePoint && m_selectedEnvelopePointIndex.has_value())
@@ -459,7 +470,32 @@ namespace jucyaudio
         
         void MixTrackComponent::mouseUp(const juce::MouseEvent &event)
         {
-            if (m_draggedMarker == MarkerType::CueEnd)
+            if (m_draggedMarker == MarkerType::CueStart)
+            {
+                // 1. Calculate the new absolute time based on the mouse release position.
+                const auto newAbsoluteTime = xToTime(event.position.x, false /* clampToComponentBounds */);
+
+                // 2. Update cueStart directly with the new absolute time.
+                MixTrack updatedTrack = m_mixTrack;
+                updatedTrack.cueStart = newAbsoluteTime;
+
+                // 3. Fire the callback to update the data model and trigger a layout refresh.
+                if (onCueAttachChanged)
+                {
+                    onCueAttachChanged(m_trackInfo.trackId, updatedTrack);
+                }
+
+                // 4. Clear the preview line
+                if (onCueDragInProgress)
+                {
+                    onCueDragInProgress(m_mixTrack.trackId, std::nullopt);
+                }
+
+                // 5. Reset the drag state.
+                m_draggedMarker = MarkerType::None;
+                repaint();
+            }
+            else if (m_draggedMarker == MarkerType::CueEnd)
             {
                 // 1. Calculate the new absolute time based on the mouse release position.
                 const auto newAbsoluteTime = xToTime(event.position.x, false /* clampToComponentBounds */);
@@ -474,12 +510,24 @@ namespace jucyaudio
                     onCueAttachChanged(m_trackInfo.trackId, updatedTrack);
                 }
 
-                // 4. Reset the drag state.
+                // 4. Clear the preview line
+                if (onCueDragInProgress)
+                {
+                    onCueDragInProgress(m_mixTrack.trackId, std::nullopt);
+                }
+
+                // 5. Reset the drag state.
                 m_draggedMarker = MarkerType::None;
                 repaint(); // Repaint to show the new marker position after the layout has changed.
             }
             else if (m_draggedMarker != MarkerType::None)
             {
+                // Clear preview line if it was a cue marker
+                if ((m_draggedMarker == MarkerType::CueStart || m_draggedMarker == MarkerType::CueEnd) && onCueDragInProgress)
+                {
+                    onCueDragInProgress(m_mixTrack.trackId, std::nullopt);
+                }
+
                 // Notify of cue/attach change
                 if (onCueAttachChanged)
                 {
@@ -547,6 +595,38 @@ namespace jucyaudio
             {
                 setMouseCursor(juce::MouseCursor::NormalCursor);
             }
+        }
+
+        bool MixTrackComponent::keyPressed(const juce::KeyPress &key)
+        {
+            if (key == juce::KeyPress::escapeKey)
+            {
+                // Cancel any ongoing drag operation
+                if (m_draggedMarker != MarkerType::None || m_isDraggingEnvelopePoint)
+                {
+                    // Clear the preview line
+                    if ((m_draggedMarker == MarkerType::CueStart || m_draggedMarker == MarkerType::CueEnd) && onCueDragInProgress)
+                    {
+                        onCueDragInProgress(m_mixTrack.trackId, std::nullopt);
+                    }
+                    
+                    // Reset drag state
+                    m_draggedMarker = MarkerType::None;
+                    m_isDraggingEnvelopePoint = false;
+                    m_selectedEnvelopePointIndex = std::nullopt;
+                    
+                    // Restore original envelope point if we were dragging one
+                    if (m_selectedEnvelopePointIndex.has_value() && m_selectedEnvelopePointIndex.value() < m_mixTrack.envelopePoints.size())
+                    {
+                        m_mixTrack.envelopePoints[*m_selectedEnvelopePointIndex] = m_originalEnvelopePoint;
+                    }
+                    
+                    repaint();
+                    return true; // Key was handled
+                }
+            }
+            
+            return false; // Key not handled
         }
 
     } // namespace ui

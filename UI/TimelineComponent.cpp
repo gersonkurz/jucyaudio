@@ -158,6 +158,20 @@ namespace jucyaudio
                 playheadMarker.addTriangle(playheadX - 6, 0, playheadX + 6, 0, playheadX, 12);
                 g.fillPath(playheadMarker);
             }
+
+            // Draw cue drag preview line (dashed orange line)
+            if (m_cueDragPreviewTime.has_value())
+            {
+                const auto previewTimeSeconds = std::chrono::duration<double>(*m_cueDragPreviewTime).count();
+                const float previewX = static_cast<float>(previewTimeSeconds * m_pixelsPerSecond);
+                
+                g.setColour(juce::Colours::orange.withAlpha(0.8f));
+                
+                // Draw a dashed line
+                float dashLengths[] = { 4.0f, 4.0f };
+                juce::Line<float> previewLine(previewX, 0.0f, previewX, static_cast<float>(getHeight()));
+                g.drawDashedLine(previewLine, dashLengths, 2);
+            }
         }
 
         void TimelineComponent::refreshLayout()
@@ -180,6 +194,80 @@ namespace jucyaudio
 
             resized();
             repaint();
+        }
+
+        void TimelineComponent::repositionTrack(TrackId trackId)
+        {
+            // Check if this is the first track
+            if (!m_trackViews.empty() && m_trackViews[0].mixTrackData && m_trackViews[0].mixTrackData->trackId == trackId)
+            {
+                // First track's cueStart affects the entire timeline's global offset
+                // Recalculate all positions without recreating components
+                recalculateTrackPositions();
+                return;
+            }
+            
+            // For non-first tracks, just update the single track
+            for (auto& view : m_trackViews)
+            {
+                if (view.mixTrackData && view.mixTrackData->trackId == trackId)
+                {
+                    // Recalculate the componentStartTime based on the updated cueStart
+                    view.componentStartTime = view.audioStartTime + view.mixTrackData->cueStart;
+                    
+                    // Trigger a layout update to reposition the component
+                    resized();
+                    repaint();
+                    break;
+                }
+            }
+        }
+
+        void TimelineComponent::recalculateTrackPositions()
+        {
+            if (!m_mixLoader || m_trackViews.empty())
+            {
+                spdlog::warn("TimelineComponent::recalculateTrackPositions - No loader or tracks");
+                return;
+            }
+            
+            spdlog::info("TimelineComponent::recalculateTrackPositions - Processing {} tracks", m_trackViews.size());
+
+            // Calculate the global offset from the first track's cueStart
+            Duration_t globalOffset{0};
+            if (m_trackViews[0].mixTrackData && m_trackViews[0].mixTrackData->cueStart < Duration_t{0})
+            {
+                globalOffset = -m_trackViews[0].mixTrackData->cueStart;
+            }
+
+            // Recalculate positions for all tracks
+            Duration_t previousAudioStartTime{0};
+            
+            for (size_t i = 0; i < m_trackViews.size(); ++i)
+            {
+                auto& view = m_trackViews[i];
+                if (!view.mixTrackData)
+                    continue;
+
+                // Calculate audio start time according to Mix Flow algorithm
+                if (i == 0)
+                {
+                    view.audioStartTime = globalOffset;
+                }
+                else
+                {
+                    const auto& prevTrack = *m_trackViews[i - 1].mixTrackData;
+                    view.audioStartTime = previousAudioStartTime + prevTrack.attachTo - view.mixTrackData->attachFrom;
+                }
+
+                // Update component start time
+                view.componentStartTime = view.audioStartTime + view.mixTrackData->cueStart;
+                
+                previousAudioStartTime = view.audioStartTime;
+            }
+
+            // Refresh the layout with the new positions
+            refreshLayout();
         }
 
         void TimelineComponent::maintainViewportPosition(double timeAtMouse, int mouseX)
@@ -357,48 +445,21 @@ namespace jucyaudio
             m_currentTimePosition = -1.0;
             m_trackViews.clear();
             removeAllChildren();
+            
+            spdlog::info("TimelineComponent::populateFrom - Starting with {} tracks", mixLoader->getMixTracks().size());
 
-            Duration_t previousAudioStartTime{0};
-
-            // --- FINAL GENERALIZED FIX ---
-            // The global offset is of type Duration_t (milliseconds) to maintain precision.
-            Duration_t globalOffset{0};
-
-            // 1. Determine the global offset from the actual cueStart of the first track.
-            if (!mixLoader->getMixTracks().empty())
-            {
-                auto &firstTrack = mixLoader->getMixTracks().front();
-                if (firstTrack.cueStart < Duration_t{0})
-                {
-                    // The offset is the absolute value of the silence needed.
-                    // No duration_cast is needed as both types are milliseconds.
-                    globalOffset = -firstTrack.cueStart;
-                }
-            }
-
+            // Create TrackView objects for each track
             for (size_t i = 0; i < mixLoader->getMixTracks().size(); ++i)
             {
                 auto &mixTrack = mixLoader->getMixTracks()[i];
                 if (const auto *trackInfo = mixLoader->getTrackInfoForId(mixTrack.trackId))
                 {
-                    Duration_t currentAudioStartTime{0};
-                    if (i == 0)
-                    {
-                        // 2. The first track's audio starts at our dynamic global offset.
-                        currentAudioStartTime = globalOffset;
-                    }
-                    else
-                    {
-                        const auto &prevTrack = mixLoader->getMixTracks()[i - 1];
-                        currentAudioStartTime = previousAudioStartTime + prevTrack.attachTo - prevTrack.attachFrom;
-                    }
-
                     TrackView view;
                     view.mixTrackData = &mixTrack;
                     view.trackInfoData = trackInfo;
-
-                    view.audioStartTime = currentAudioStartTime;
-                    view.componentStartTime = currentAudioStartTime + mixTrack.cueStart;
+                    // Initialize with default values - will be recalculated
+                    view.audioStartTime = Duration_t{0};
+                    view.componentStartTime = Duration_t{0};
 
                     view.component = std::make_unique<MixTrackComponent>(*view.mixTrackData, *view.trackInfoData, m_formatManager, m_thumbnailCache);
 
@@ -412,13 +473,26 @@ namespace jucyaudio
                         if (onEnvelopeChanged)
                             onEnvelopeChanged(id, points);
                     };
+                    view.component->onCueDragInProgress = [this, audioStartTime = view.audioStartTime](TrackId trackId, std::optional<Duration_t> previewTime)
+                    {
+                        if (previewTime.has_value())
+                        {
+                            // The preview time from MixTrackComponent is already absolute time relative to the track's audio
+                            // We need to add the track's audio start time to get absolute timeline position
+                            m_cueDragPreviewTime = audioStartTime + *previewTime;
+                        }
+                        else
+                        {
+                            m_cueDragPreviewTime = std::nullopt;
+                        }
+                        repaint();
+                    };
 
                     addAndMakeVisible(*view.component);
                     m_trackViews.push_back(std::move(view));
-
-                    previousAudioStartTime = currentAudioStartTime;
                 }
             }
+            
             // --- THIS IS THE FIX ---
             // We must calculate a reasonable height for the timeline component itself
             // before we can calculate its width and trigger a layout refresh.
@@ -427,7 +501,11 @@ namespace jucyaudio
             const int rulerHeight = 30;
             const int numLanesForHeightCalc = 8; // A default number of lanes to ensure a reasonable minimum height.
             m_calculatedHeight = rulerHeight + (numLanesForHeightCalc * (trackHeight + yGap));
-            refreshLayout();
+            
+            // Calculate positions for all tracks using the shared logic
+            // This must be called AFTER setting m_calculatedHeight
+            recalculateTrackPositions();
+            
             return true;
         }
 

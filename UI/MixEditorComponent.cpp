@@ -167,8 +167,8 @@ namespace jucyaudio
                     // Save changes
                     saveMixChanges();
                     
-                    // Just refresh the layout without recreating components
-                    m_timeline.refreshLayout();
+                    // Tell timeline to reposition this specific track
+                    m_timeline.repositionTrack(trackId);
                     break;
                 }
             }

@@ -72,15 +72,15 @@ The immediate goal is to implement the full interactive dragging of the `cueEnd`
     - Add logic to `MixTrackComponent::mouseMove` to detect when the cursor is hovering over the left or right edge of the component.
     - Change the mouse cursor to a resize arrow (`LeftRightResizeCursor`) to indicate interactivity.
 
-2.  **Implement Drag Initiation:**
+2.  **Implement Drag Initiation:** - Done ✓
     - Add logic to `MixTrackComponent::mouseDown` to detect a click on an edge "hot zone" and set a state variable (e.g., `m_draggedEdge = EdgeType::End`).
 
-3.  **Implement Live Feedback (Parent-Draws Architecture):**
+3.  **Implement Live Feedback (Parent-Draws Architecture):** - Done ✓
     - Add a new callback to `MixTrackComponent`, e.g., `onCueDragInProgress(std::optional<Duration_t> time)`.
     - In `MixTrackComponent::mouseDrag`, calculate the new time of the edge and fire this callback.
     - In `TimelineComponent`, implement the callback to draw a timeline-wide vertical preview line at the received time.
 
-4.  **Implement Drag Finalization:**
+4.  **Implement Drag Finalization:** - Done ✓
     - In `MixTrackComponent::mouseUp`, finalize the drag, fire the `onCueAttachChanged` callback with the updated `MixTrack` data, and call `onCueDragInProgress(std::nullopt)` to hide the preview line.
 
     Excellent point. It's crucial that the hard-won context of this difficulty is not lost. You are absolutely right to insist on this. It will prevent my next instance from becoming overconfident and repeating the same mistakes.
