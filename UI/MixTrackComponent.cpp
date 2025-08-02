@@ -331,7 +331,7 @@ namespace jucyaudio
             if (!waveformArea.contains(mousePos))
                 return MarkerType::None;
                 
-            const int hitThreshold = ((int)ENVELOPE_POINT_ACTIVE_RADIUS); // pixels
+            const int hitThreshold = 5; // pixels
             
             // Test each marker
             auto testMarker = [&](MarkerType type) -> bool
@@ -504,21 +504,21 @@ namespace jucyaudio
 
         void MixTrackComponent::mouseMove(const juce::MouseEvent &event)
         {
-            // Check for marker hover - that is, over the attach lines, or the start/end of the track.
-            const auto hoveredMarker = hitTestMarker(event.position.toInt());
             bool needsRepaint = false;
 
-            if (hoveredMarker != m_hoveredMarker)
-            {
-                m_hoveredMarker = hoveredMarker;
-                needsRepaint = true;
-            }
-
-            // Check for envelope point hover - both can be true at the same time
+            // Check for envelope point hover first (higher priority)
             const auto hoveredPoint = hitTestEnvelopePoint(event.position.toInt());
             if (hoveredPoint != m_hoveredEnvelopePointIndex)
             {
                 m_hoveredEnvelopePointIndex = hoveredPoint;
+                needsRepaint = true;
+            }
+
+            // Check for marker hover only if no envelope point is hovered
+            const auto hoveredMarker = hoveredPoint.has_value() ? MarkerType::None : hitTestMarker(event.position.toInt());
+            if (hoveredMarker != m_hoveredMarker)
+            {
+                m_hoveredMarker = hoveredMarker;
                 needsRepaint = true;
             }
 
@@ -527,9 +527,20 @@ namespace jucyaudio
                 repaint();
             }
 
-            // Update cursor if we're in j. edgar hoover land
-            if (hoveredMarker != MarkerType::None || hoveredPoint.has_value())
+            // Update cursor based on what we're hovering over (envelope points have priority)
+            if (hoveredPoint.has_value())
             {
+                // Envelope points always get pointing hand cursor
+                setMouseCursor(juce::MouseCursor::PointingHandCursor);
+            }
+            else if (hoveredMarker == MarkerType::CueStart || hoveredMarker == MarkerType::CueEnd)
+            {
+                // Use resize cursor for edge dragging
+                setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            }
+            else if (hoveredMarker != MarkerType::None)
+            {
+                // Use pointing hand for other markers
                 setMouseCursor(juce::MouseCursor::PointingHandCursor);
             }
             else

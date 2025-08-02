@@ -68,7 +68,7 @@ This is the deterministic process for building the timeline.
 
 The immediate goal is to implement the full interactive dragging of the `cueEnd` edge. This will be broken down into the following small, verifiable steps:
 
-1.  **Implement Hover Affordance:**
+1.  **Implement Hover Affordance:** - Done ✓
     - Add logic to `MixTrackComponent::mouseMove` to detect when the cursor is hovering over the left or right edge of the component.
     - Change the mouse cursor to a resize arrow (`LeftRightResizeCursor`) to indicate interactivity.
 
