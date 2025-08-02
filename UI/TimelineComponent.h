@@ -33,7 +33,7 @@ namespace jucyaudio
              *
              * @param mixLoader A reference to the MixProjectLoader that holds the mix data.
              */
-            void populateFrom(audio::MixProjectLoader &mixLoader);
+            bool populateFrom(audio::MixProjectLoader* mixLoader = nullptr);
 
             MixTrackComponent *getSelectedTrack() const
             {
@@ -55,22 +55,13 @@ namespace jucyaudio
                 m_mixPlaybackPosition = position;
                 repaint();
             }
-
-            double getPixelsPerSecond() const
-            {
-                return m_pixelsPerSecond;
-            }
-
-            void setSelectedTrack(MixTrackComponent *track);
             void setCurrentTimePosition(double timeInSeconds);
             void playFromPosition(double timePosition);
             void playSelectedTrackFromPosition(double timePosition);
             void playMixFromPosition(double timePosition);
-            void refreshLayout(); // Refresh timeline layout without recreating components
 
             std::function<void(const juce::File &, double)> onPlaybackRequested;
             std::function<void(double)> onSeekRequested;
-            std::function<void(TrackId)> onTrackDeleted;
             std::function<void(TrackId, std::chrono::milliseconds)> onTrackPositionChanged;
             std::function<void()> onMixChanged;
             std::function<void(double)> onMixPlaybackRequested;
@@ -78,6 +69,41 @@ namespace jucyaudio
             std::function<void(TrackId, const database::MixTrack&)> onCueAttachChanged;
             std::function<void(TrackId, const std::vector<database::EnvelopePoint>&)> onEnvelopeChanged;
 
+
+            /**
+             * @brief Sets the currently selected track, handling the repainting of components.
+             *
+             * This function manages the m_selectedTrack state. To ensure visual correctness,
+             * it repaints the previously selected track (to remove its highlight) before
+             * setting the new one, and then repaints the newly selected track (to add its
+             * highlight).
+             *
+             * @param track A pointer to the MixTrackComponent to be selected, or nullptr to clear the selection.
+             */
+            void setSelectedTrack(MixTrackComponent *track);
+
+            /**
+             * @brief Releases the MixProjectLoader reference.
+             *
+             * This function is called when the timeline component is no longer needed.
+             * It clears the internal mix loader pointer to release resources.
+             */
+            void releaseMixLoader()
+            {
+                m_mixLoader = nullptr;
+            }
+
+            /**
+             * @brief Recalculates the timeline's total width and repositions all child components.
+             *
+             * This function should be called whenever a change occurs that could affect the
+             * overall size or layout of the timeline, such as a change in zoom level or
+             * the addition/removal of tracks. It iterates through all managed tracks to find
+             * the maximum end time, calculates the required width to display the entire mix,
+             * sets the component's size, and then triggers a call to resized() to update
+             * the layout of all child components.
+             */
+            void refreshLayout();
         private:
             /**
              * @brief Handles key press events when the timeline has focus.
@@ -93,14 +119,18 @@ namespace jucyaudio
             bool keyPressed(const juce::KeyPress &key) override;
             
             /**
-             * @brief Deletes the currently selected track from the timeline and data model.
+             * @brief Deletes the currently selected track and triggers a full UI refresh.
              *
-             * This function is triggered by the keyPressed handler. It identifies the selected
-             * track, removes its UI component, notifies the parent via the onTrackDeleted
-             * callback to update the master data model, and then attempts to trigger a
-             * visual refresh.
+             * This function orchestrates the entire delete-and-refresh process in a self-contained manner:
+             * 1.  It identifies the selected track's ID.
+             * 2.  It calls the MixManager to remove the track from the database.
+             * 3.  It instructs its internal MixProjectLoader to reload its data from the database,
+             *     ensuring the in-memory model is synchronized with the change.
+             * 4.  It triggers a full repopulation of the timeline UI from the refreshed loader data.
+             *
+             * @return true if the track was successfully deleted and the UI was refreshed, false otherwise.
              */
-            void deleteSelectedTrack();
+            bool deleteSelectedTrack();
             
             /**
              * @brief Draws the background and the time grid of the timeline.
@@ -135,6 +165,20 @@ namespace jucyaudio
              */
             void mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel) override;
 
+            /**
+             * @brief Handles mouse down events on the timeline's background area.
+             *
+             * This function is the primary entry point for direct interaction with the timeline.
+             * Its responsibilities are:
+             * 1.  To grab keyboard focus so it can respond to key presses (e.g., Delete).
+             * 2.  To calculate the time corresponding to the click position.
+             * 3.  To set the visual position of the playhead (via setCurrentTimePosition).
+             * 4.  To identify and select the track component that was clicked (if any).
+             * 5.  To fire callbacks (onSeekRequested, onMixPlaybackAlwaysRequested) to notify
+             *     the parent component of the user's intent to seek or play.
+             *
+             * @param event The mouse event containing the click position and click count.
+             */
             void mouseDown(const juce::MouseEvent &event) override;
             
             /**
@@ -165,35 +209,71 @@ namespace jucyaudio
              */
             void drawCrossfadeLines(juce::Graphics &g);
 
-            // A helper struct to manage UI components and their model data together.
+            /**
+             * @brief Finds the track component located at a specific pixel position.
+             *
+             * Iterates through the managed TrackViews and performs a bounds check to see
+             * if the given position is within any of the child components.
+             *
+             * @param position The pixel coordinate to test.
+             * @return A pointer to the MixTrackComponent at the given position, or nullptr if no track was found.
+             */
+            MixTrackComponent *getTrackAtPosition(juce::Point<int> position) const;
+
+            /**
+             * @brief A helper struct that tightly couples a UI component with its underlying data.
+             *
+             * This struct is the primary internal data structure for the timeline. It holds the
+             * visual component (MixTrackComponent), pointers to the relevant data model objects
+             * (MixTrack and TrackInfo), and the crucial calculated start times that determine
+             * the component's position on the timeline.
+             */
             struct TrackView
             {
+                /** @brief The JUCE component that visually represents the track. This owns the component's memory. */
                 std::unique_ptr<MixTrackComponent> component;
 
-                // this is NOT const, because it IS going to be modified (e.g. envelope points)
+                /** @brief A non-owning pointer to the mutable mix data (cues, attaches, envelopes). */
                 database::MixTrack *mixTrackData;
+
+                /** @brief A non-owning pointer to the immutable source audio file data (duration, title, etc.). */
                 const database::TrackInfo *trackInfoData;
-                Duration_t audioStartTime{0};     // The start time of the audio content, from the ATTACH formula.
-                Duration_t componentStartTime{0}; // The visual start time of the component on the timeline.
+
+                /** @brief The calculated absolute start time of the track's *audio content* on the mix timeline. */
+                Duration_t audioStartTime{0};
+
+                /** @brief The calculated absolute start time of the track's *visual component* on the mix timeline.
+                 *         This is equal to `audioStartTime + cueStart`. */
+                Duration_t componentStartTime{0};
             };
 
-            MixTrackComponent *m_draggingTrack = nullptr;
+            /** @brief A non-owning pointer to the MixProjectLoader that serves as the master data source for this timeline. */
+            audio::MixProjectLoader *m_mixLoader = nullptr;
+
+            /** @brief A cache of the audio format readers (e.g., for MP3, WAV) required to generate thumbnails. */
             juce::AudioFormatManager &m_formatManager;
+
+            /** @brief A cache that stores generated audio thumbnails to avoid re-reading files from disk. */
             juce::AudioThumbnailCache &m_thumbnailCache;
+
+            /** @brief The primary data store for the timeline, containing all the TrackView instances. */
             std::vector<TrackView> m_trackViews;
+
+            /** @brief The calculated total width in pixels required to display the entire mix at the current zoom level. */
             int m_calculatedWidth = 0;
+
+            /** @brief The calculated total height in pixels for the timeline component. */
             int m_calculatedHeight = 0;
 
+            /** @brief A non-owning pointer to the currently selected MixTrackComponent. */
             MixTrackComponent *m_selectedTrack = nullptr;
-            double m_currentTimePosition = -1.0; // in seconds (for click position, -1 means not set)
-            double m_mixPlaybackPosition = -1.0; // in seconds (for mix playback, -1 means not playing)
 
-            // Helper methods
-            MixTrackComponent *getTrackAtPosition(juce::Point<int> position);
-            TrackId getTrackIdForComponent(MixTrackComponent *component);
-            void updateTrackPosition(TrackId trackId, double newTimeInSeconds);
+            /** @brief The current position of the user-controlled playhead (the white line), in seconds. A value of -1.0 indicates it is not set. */
+            double m_currentTimePosition = -1.0;
 
-            
+            /** @brief The current position of the actual mix playback engine (the red line), in seconds. A value of -1.0 indicates no playback. */
+            double m_mixPlaybackPosition = -1.0;
+
             // ------ zooming -------
             /**
              * @brief The core scaling factor for the timeline, representing the number of
@@ -205,7 +285,7 @@ namespace jucyaudio
             static constexpr double MIN_ZOOM = 1.0;     // 1 pixel per second (zoomed out)
             static constexpr double MAX_ZOOM = 100.0;   // 100 pixels per second (zoomed in)
             static constexpr double ZOOM_FACTOR = 1.2;  // 20% zoom steps
-            
+
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimelineComponent)
         };
     } // namespace ui

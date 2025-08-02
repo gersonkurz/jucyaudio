@@ -16,11 +16,16 @@ namespace jucyaudio
         {
         }
 
-        void MixProjectLoader::loadMix(MixId mixId)
+        bool MixProjectLoader::loadMix(MixId mixId)
         {
             spdlog::debug("MixProjectLoader: Loading mix with ID {}", mixId);
             m_mixId = mixId;
             m_mixInfo = theTrackLibrary.getMixManager().getMix(m_mixId);
+            if (m_mixInfo.mixId == 0)
+            {
+                spdlog::error("MixProjectLoader: No mix found with ID {}", m_mixId);
+                return false; // No mix found
+            }
             m_mixTracks = theTrackLibrary.getMixManager().getMixTracks(m_mixId);
             spdlog::info("MixProjectLoader: Loaded {} tracks for mix ID {}", m_mixTracks.size(), m_mixId);
             m_trackInfos = theTrackLibrary.getTracks(getMixTrackQueryArgs(m_mixId));
@@ -36,6 +41,12 @@ namespace jucyaudio
             
             dumpContext(__FILE__, __LINE__);
             spdlog::info("MixProjectLoader: Indexed {} track infos for mix ID {}", m_trackInfosMap.size(), m_mixId);
+            return true;
+        }
+
+        bool MixProjectLoader::reloadFromDatabase()
+        {
+            return loadMix(m_mixId);
         }
 
         void MixProjectLoader::dumpContext(const char* file, int line) const

@@ -30,7 +30,7 @@ namespace jucyaudio
             void loadMix(database::MixNode* node);
             void unloadMix();
             void forceRefresh();
-            void setTrackDeletionCallback(std::function<void(TrackId)> callback);
+
             void setPlaybackCallback(std::function<void(const juce::File &, double)> callback);
             void setSeekCallback(std::function<void(double)> callback);
             void setMixPlaybackCallback(std::function<void(double)> callback);
@@ -40,13 +40,7 @@ namespace jucyaudio
                 return m_timeline;
             }
 
-            /* audio::MixProjectLoader *getMixProjectLoader()
-            {
-                return m_mixProjectLoader;
-            }*/
-
         private:
-            void updateTrackPositionInData(TrackId trackId, std::chrono::milliseconds newStartTime);
             void updateCueAttachInData(TrackId trackId, const database::MixTrack& updatedTrack);
             void updateEnvelopeInData(TrackId trackId, const std::vector<database::EnvelopePoint>& points);
             void saveMixChanges();

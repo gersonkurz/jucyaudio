@@ -19,13 +19,7 @@ namespace jucyaudio
             m_viewport.setViewedComponent(&m_timeline, false); // false = don't delete when replaced
             m_viewport.setScrollBarsShown(true, true);
             addAndMakeVisible(m_viewport);
-
-            // Set up the new drag-related callbacks
-            m_timeline.onTrackPositionChanged = [this](TrackId trackId, std::chrono::milliseconds newStartTime)
-            {
-                updateTrackPositionInData(trackId, newStartTime);
-            };
-            
+                        
             m_timeline.onCueAttachChanged = [this](TrackId trackId, const database::MixTrack& updatedTrack)
             {
                 updateCueAttachInData(trackId, updatedTrack);
@@ -94,11 +88,6 @@ namespace jucyaudio
             resized(); // Recalculate viewport content
         }
 
-        void MixEditorComponent::setTrackDeletionCallback(std::function<void(TrackId)> callback)
-        {
-            m_timeline.onTrackDeleted = callback;
-        }
-
         void MixEditorComponent::setPlaybackCallback(std::function<void(const juce::File &, double)> callback)
         {
             m_timeline.onPlaybackRequested = callback;
@@ -123,6 +112,7 @@ namespace jucyaudio
         {
             if (m_node)
             {
+                m_timeline.releaseMixLoader();
                 m_node->release(REFCOUNT_DEBUG_ARGS);
                 m_node = nullptr;
             }
@@ -138,7 +128,7 @@ namespace jucyaudio
             m_node = node; // Take ownership of the new node
             node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid
             node->refreshCache(false);
-            m_timeline.populateFrom(node->getMixProjectLoader());
+            m_timeline.populateFrom(&(node->getMixProjectLoader()));
             
             // Ensure timeline has keyboard focus for playback controls
             m_timeline.grabKeyboardFocus();
@@ -150,17 +140,6 @@ namespace jucyaudio
             m_viewport.setBounds(getLocalBounds());
         }
 
-
-        // Add new methods to MixEditorComponent.cpp
-        void MixEditorComponent::updateTrackPositionInData(TrackId trackId, std::chrono::milliseconds newStartTime)
-        {
-            // In the ATTACH model, dragging tracks in the timeline doesn't change their start time
-            // Instead, it should reorder them. For now, we'll just log this action.
-            // TODO: Implement timeline-based reordering when dragging tracks
-            spdlog::info("Track {} dragged to position {}ms - timeline drag reordering not yet implemented for ATTACH model", 
-                        trackId, newStartTime.count());
-        }
-        
         void MixEditorComponent::updateCueAttachInData(TrackId trackId, const database::MixTrack& updatedTrack)
         {
             if (!m_node)

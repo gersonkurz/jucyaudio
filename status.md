@@ -1,170 +1,119 @@
-# JucyAudio Mix Model Refactoring - Implementation Status
 
-## Date: 2025-07-30 (End of Day Update)
+# JucyAudio Mix Editor - Architecture & Status (2025-08-02)
 
-### Overview
-The core layout and drawing logic for the ATTACH-based mix model is now **stable and correct**. Through a series of methodical, diagnostic-driven steps, we have successfully refactored the system to correctly visualize `cueStart` and `cueEnd` points, including the addition of silence at the beginning or end of tracks. The underlying data model for cue points has been clarified and made symmetrical.
+## 1. Executive Summary
 
-However, key interactive functionality is still missing:
-- **Cue point manipulation is NOT implemented** (the static display is correct, but markers are not yet draggable).
-- **Mix playback is NOT implemented** (no audio output of the actual mix).
+This document outlines the state of the Mix Editor following an intensive, first-principles review and refactoring session. The previous implementation, while partially functional, contained significant architectural flaws, logical inconsistencies, and redundant code.
 
-### Completed This Session
+The session successfully established a **robust and consistent conceptual model** for the mix timeline, known as the "What vs. Where" architecture. The entire codebase for `MixTrackComponent` and `TimelineComponent` has been reviewed, documented, and refactored to align with this new model.
 
-#### 1. Symmetrical Cue Point Model Refactoring ✓
-- Identified and fixed a critical design flaw where `cueStart` and `cueEnd` had asymmetrical meanings.
-- Refactored the `MixTrack` data model to a clear, symmetrical system:
-  - `cueStart`: An offset from the track's **start**. Negative adds silence, positive truncates.
-  - `cueEnd`: An offset from the track's **end**. Positive adds silence, negative truncates.
-- Updated documentation and helper methods (`getEffectiveDuration`, `getCueEndActual`) to match the new, robust model.
+The system is now in a **clean, stable, and well-documented state**. The static display of mixes is correct, and a solid foundation has been laid for the implementation of all remaining interactive features.
 
-#### 2. Timeline Layout Overhaul ✓
-- Diagnosed and fixed the root cause of incorrect track positioning.
-- Identified that the timeline coordinate system cannot begin at a negative value.
-- Implemented a `globalOffset` system in `TimelineComponent` that correctly shifts the entire mix to the right to accommodate any initial silence from the first track.
-- The timeline now correctly calculates the position and width of all tracks based on their dynamic `effectiveDuration`.
+## 2. The Canonical Data Model ("What vs. Where")
 
-#### 3. Component Drawing Overhaul ("Three-Part Model") ✓
-- Re-implemented the `MixTrackComponent::paint` method from the ground up based on a robust "three-part" model: `[silence-before] - [waveform-content] - [silence-after]`.
-- The component now correctly calculates the proportions of these three regions based on the `cueStart` and `cueEnd` values.
-- The waveform thumbnail is now correctly drawn *only* in its designated sub-rectangle, fixing all previous visual artifacts (incorrect truncation, stretching, etc.).
+This model is the ground truth for all layout and interaction logic.
 
-#### 4. Fixed All Overlay Coordinate Systems ✓
-- Fixed a critical bug where overlay drawings (envelope, markers) were in a different coordinate system from the waveform.
-- All drawing helper functions (`drawVolumeEnvelope`, `drawCueAndAttachMarkers`, etc.) now operate relative to the waveform's specific drawing area, ensuring they are always perfectly synchronized with the audio content.
+#### The Track Segment (The *What*)
+This defines the content of a track segment on the timeline.
+- It is controlled by `cueStart` and `cueEnd`, which define a `[silence-before] - [waveform-content] - [silence-after]` block.
+- `Envelope Points` control the volume over this entire block. Their time values are relative to the start of the source waveform, allowing them to exist in the silence regions.
 
-### Current Architecture
+#### Attach Points (The *Where*)
+This defines the position of a track segment on the timeline.
+- It is controlled by `attachFrom` and `attachTo`, which are time-based sync markers relative to the start of the source waveform.
+- **Constraint:** These markers must logically exist within the track's effective duration (`cueStart` to `cueEndActual`).
 
-#### Data Model
-The `MixTrack` struct now has a clear, symmetrical, and well-documented interpretation of cue points.
+#### The Mix Flow Algorithm
+This is the deterministic process for building the timeline.
+- **Anchor:** The first track's audio begins at absolute time `max(0, -Track1.cueStart)`, establishing a potential global offset for the entire mix.
+- **Placement Rule:** Every subsequent track `N` is positioned with the formula:
+  `AudioStartTime(N) = AudioStartTime(N-1) + Track(N-1).attachTo - Track(N).attachFrom`
 
-```cpp
-/**
- * @brief Offset from the START of the track (time 0).
- * A negative value adds silence; a positive value truncates.
- */
-Duration_t cueStart{0};
+## 3. Session Accomplishments: Code Review & Refactoring
 
-/**
- * @brief Offset from the END of the track (trackDuration).
- * A positive value adds silence; a negative value truncates.
- */
-Duration_t cueEnd{0};
-```
+- **Full Code Review:** Completed a line-by-line review and documentation of `MixTrackComponent` and `TimelineComponent`.
+- **Removed Obsolete Logic:** Surgically removed all code related to the previous, flawed models, including:
+    - Obsolete whole-track dragging (`ComponentDragger`).
+    - Redundant coordinate conversion functions (`xToTime`, `screenXToTrackTime`).
+    - Non-functional drawing code (`drawNonAudibleRegions`).
+    - Broken playback logic and callbacks (`onTrackPositionChanged`).
+- **Fixed Core Bugs:**
+    - Corrected the coordinate systems for envelope point drawing and hit-testing, making them fully functional across the entire effective duration (including silence).
+    - Fixed the track deletion UI logic to be robust and prevent visual state corruption.
+- **Unified and Simplified Code:** Consolidated redundant logic into single, robust helper functions (e.g., `envelopePointToScreenPosition`).
+- **Aligned Code with Model:** Added extensive documentation to all functions, ensuring the code's intent is clear and perfectly aligned with the "What vs. Where" architecture.
 
-#### Visual System
-- The `TimelineComponent` correctly calculates a `globalOffset` to ensure the first track is always rendered at `x >= 0`.
-- Each `MixTrackComponent` correctly paints its three internal regions (silence/waveform/silence) based on the data model.
-- All visual elements (waveform, envelope, markers) are now guaranteed to be in sync.
+## 4. Current Functionality Status
 
-### Known Issues & Open Points
+#### What Works Correctly (✓)
+- **Static Mix Display:** `populateFrom` correctly implements the Mix Flow algorithm and can reliably display any valid mix.
+- **Envelope Point Interaction:** Envelope points can be created, hovered, selected, and dragged correctly across the entire component, including into silence regions. The data model and visuals are perfectly synchronized.
+- **Track Deletion:** Deleting a track from the timeline correctly updates the data model and triggers a full, correct UI refresh.
+- **Timeline Zoom:** Zooming in and out centered on the mouse cursor is functional and robust.
+- **Track Selection:** Clicking to select tracks is functional.
 
-1.  **Cue Point Manipulation (Interaction)** ✗
-    - The core achievement of this session was fixing the static display. The next critical step is to implement the interactive dragging of `cueStart` and `cueEnd` markers.
-    - The existing `mouseDown`/`mouseDrag`/`mouseUp` logic is from a previous, non-working implementation and needs to be rebuilt on the new, stable foundation.
+#### Known Gaps & Next Steps (✗)
+- **Cue Point Interaction:** This is the highest priority. 
+    - No ability to drag the start (`cueStart`) . `cueEnd` can be dragged, but only after a click on the edge. 
+    - No visual affordance (e.g., mouse cursor change) to indicate the edges are interactive.
+    - No visual feedback during dragging (e.g., a vertical preview line).
+- **Attach Point Interaction:**
+    - Attach markers are displayed correctly but are not yet interactive.
+- **Live Drag Feedback:**
+    - There is no live visual feedback (e.g., a vertical preview line) during any drag operation. All visual updates currently happen only on `mouseUp`.
+- **Playback Engine:**
+    - All previous playback logic has been removed. A new playback engine needs to be designed and implemented from scratch based on the current data model.
 
-2.  **Playback Engine** ✗
-    - `MixPlaybackEngine` is not implemented for the ATTACH-based model. No mixed audio output is available.
+## 5. Next Action Plan
 
-3.  **Export Functionality** ✗
-    - Needs to be tested and validated with the new cue point model to ensure silence regions are handled correctly in the final output.
+The immediate goal is to implement the full interactive dragging of the `cueEnd` edge. This will be broken down into the following small, verifiable steps:
 
-4.  **Performance Considerations**
-    - The `refreshLayout()` call, which is now the basis for updates, might be expensive for very large mixes. This should be monitored as new features are added.
+1.  **Implement Hover Affordance:**
+    - Add logic to `MixTrackComponent::mouseMove` to detect when the cursor is hovering over the left or right edge of the component.
+    - Change the mouse cursor to a resize arrow (`LeftRightResizeCursor`) to indicate interactivity.
 
-### Next Steps
+2.  **Implement Drag Initiation:**
+    - Add logic to `MixTrackComponent::mouseDown` to detect a click on an edge "hot zone" and set a state variable (e.g., `m_draggedEdge = EdgeType::End`).
 
-1.  **Implement Cue Point Dragging**
-    - Implement `mouseDown`, `mouseDrag`, and `mouseUp` logic for the `cueStart` marker.
-    - Re-implement the same logic for the `cueEnd` marker, ensuring it uses the new symmetrical data model.
-    - This is the highest priority task and unblocks all further UI work.
+3.  **Implement Live Feedback (Parent-Draws Architecture):**
+    - Add a new callback to `MixTrackComponent`, e.g., `onCueDragInProgress(std::optional<Duration_t> time)`.
+    - In `MixTrackComponent::mouseDrag`, calculate the new time of the edge and fire this callback.
+    - In `TimelineComponent`, implement the callback to draw a timeline-wide vertical preview line at the received time.
 
-2.  **UI Polish**
-    - Add visual indicators for extension/truncation during the drag operation (e.g., tooltips, info boxes).
+4.  **Implement Drag Finalization:**
+    - In `MixTrackComponent::mouseUp`, finalize the drag, fire the `onCueAttachChanged` callback with the updated `MixTrack` data, and call `onCueDragInProgress(std::nullopt)` to hide the preview line.
 
-3.  **Testing & Validation**
-    - Test mix export with tracks that have added silence.
-    - Begin design and implementation of the `MixPlaybackEngine`.
+    Excellent point. It's crucial that the hard-won context of this difficulty is not lost. You are absolutely right to insist on this. It will prevent my next instance from becoming overconfident and repeating the same mistakes.
 
-### Session Summary
-This was a highly focused, diagnostic-driven session that successfully repaired the foundational layout and drawing logic of the mix editor. By methodically testing, logging, and analyzing component behavior, we uncovered and fixed deep-seated architectural flaws. The key breakthroughs were the implementation of a symmetrical cue point data model and a `globalOffset`-based layout system. The system can now **correctly and reliably visualize** any combination of `cueStart` and `cueEnd` values, providing a stable foundation upon which to build the necessary user interaction features.
-
-
-Yes, absolutely. That is a very wise idea. Restarting the session will give us a clean slate, and a concise summary is the perfect way to ensure the next instance of me is immediately up to speed.
-
-Here is a proposed message to add to the top of `status.md`. It captures our current position, the successful refactoring, and the specific challenge we are about to tackle.
+I will add a direct, explicit warning to the memo.
 
 ---
 
-### **Session Continuation Memo: 2025-07-30**
+### **Handoff Memo for Next Instance**
 
-**Objective:** To correctly implement interactive cue point dragging on top of the newly refactored layout and drawing system.
+Hello. This is a handoff memo for my next instance.
 
-**Current State of the Codebase (Last-Known-Good):**
-*   The underlying data model (`MixTrack`) for `cueStart` and `cueEnd` is now **symmetrical and robust**.
-*   The static layout (`TimelineComponent`) and drawing (`MixTrackComponent`) systems are **correctly implemented**. They can accurately display any combination of `cueStart`/`cueEnd` values, including silence at the beginning or end of tracks.
-*   **Dragging `cue-end` (both left and right) is partially implemented and works correctly at the data level.** The model is updated on `mouseUp`, and the component resizes properly *after* the drag is complete.
-*   There is currently **NO live visual feedback** during the drag operation.
+The user and I have just completed a session that was a major breakthrough. We succeeded only after abandoning a "code-first" approach and instead building a robust conceptual model from first principles. **This is the most important lesson from our work.**
 
-**The Immediate Next Step:**
-*   Implement live visual feedback for dragging the `cue-end` marker.
-*   The agreed-upon design is a **timeline-wide vertical preview line** that follows the mouse, similar to the playhead.
+Our entire success is built on two non-negotiable principles:
 
-**Key Context for the Next Session (The Core Challenge):**
-*   Previous attempts to implement this visual feedback failed due to a repeated, fundamental misunderstanding of JUCE's nested coordinate systems.
-*   The critical mistake was trying to calculate absolute timeline coordinates from within the `MixTrackComponent`'s local context, or trying to have the child component draw outside its own bounds. This led to the preview line appearing at incorrect positions for any track after the first one.
-*   **The agreed-upon architectural principle is:** The parent (`TimelineComponent`) **must** be responsible for drawing timeline-wide feedback. The child (`MixTrackComponent`) is only responsible for calculating the absolute **time** value during a drag and communicating it upwards to the parent.
+1.  **The "What vs. Where" Architecture:** This is the canonical data model detailed in `status.md`. All future code must respect it.
+2.  **The "Parent-Draws" Principle for UI Feedback:** The child (`MixTrackComponent`) calculates time; the parent (`TimelineComponent`) is responsible for all timeline-wide drawing to avoid coordinate system bugs.
 
-**Next Action:**
-*   Implement the parent-draws architecture for the `cue-end` drag preview.
+We have just finished an exhaustive, line-by-line review, refactoring, and documentation of `MixTrackComponent` and `TimelineComponent`. The codebase for these components is now clean, correct, and fully aligned with our model. **Trust the current state of the code.** Do not refer to old, flawed patterns from the git history.
 
+### A Critical Warning Regarding the Next Steps
 
-Yes, I understand. This is a critical piece of the puzzle. Thank you for adding the constraint and for walking through the `AudioStartTime` formula—confirming that it works for different but equivalent attach values is a huge step forward.
+The upcoming task—implementing interactive edge-dragging for cue points—appears simple on the surface. **It is not.**
 
-Let's integrate this new information.
+In previous sessions, both this model and others have had significant, repeated failures attempting to implement this exact functionality. The failures were not simple bugs; they stemmed from deep **conceptual misunderstandings** of JUCE's coordinate systems and the data model. Therefore, you must proceed with extreme caution and humility.
 
-### The Attach Point Constraint
+Our recent success was achieved *only* by abandoning a code-first approach. Adhere strictly to this proven workflow: **Discuss first. Propose one small, verifiable change. Get the user's confirmation. Then, and only then, implement.**
 
-I agree with your restriction. It makes perfect sense and adds a necessary boundary to the system. Let me rephrase it in our established terms to ensure I have it right:
+### Next Action
 
-For any given track, the time value of its `attachFrom` and `attachTo` points must be constrained to lie **within the track's effective duration**.
+Your immediate next action is **Step 1 from above**: Implement the hover affordance (the resize cursor) for the track edges. Do this one small thing, get it working, and then move to the next step.
 
-*   The lower bound is `cueStart`.
-*   The upper bound is `getCueEndActual(trackDuration)`.
+Do not repeat my past mistakes of jumping ahead. Our successful workflow is the only path forward.
 
-This prevents a user from setting an attachment point in a location that is conceptually "off the edge" of the component they see on the screen. It keeps the *Where* (attach points) logically contained within the *What* (the effective track segment).
-
-### The Core Insight (Confirming My Understanding)
-
-Your example highlights the most important principle of the attach system: what matters is not the absolute value of `attachTo` or `attachFrom`, but the **difference** between them.
-
-The formula `AudioStartTime(N) = AudioStartTime(N-1) + Track(N-1).attachTo - Track(N).attachFrom` works precisely because it operates on this difference. It correctly calculates that the audio of Track 2 should start 4 minutes after the audio of Track 1 begins, regardless of whether that overlap is defined as `(4min -> 0min)` or `(5min -> 1min)`. We are in full agreement on this.
-
----
-
-With this, let's formulate our final, shared, and documented conceptual model.
-
-### **Final Model Definition**
-
-**1. The Track Segment (The *What*)**
-*   Each track in a mix is a conceptual block defined by `cueStart` and `cueEnd` relative to its source waveform.
-*   This block consists of three parts: `[silence-before] - [waveform-content] - [silence-after]`.
-*   The `Envelope Points` control the volume over this entire block. Their time values are relative to the start of the source waveform, allowing them to exist in the silence regions.
-
-**2. Attach Points (The *Where*)**
-*   Each track has two sync markers, `attachFrom` and `attachTo`, whose time values are relative to the start of the source waveform.
-*   **Constraint:** These markers must be located within the track segment's effective duration. That is, `cueStart <= attach_point_time <= getCueEndActual(trackDuration)`.
-*   They are independent of the audio content and define where one track segment links to the next.
-
-**3. Mix Flow (The Algorithm)**
-*   The final timeline is built iteratively.
-*   **Anchor:** Track 1's audio begins at an absolute time of `max(0, -Track1.cueStart)`. This establishes the `AudioStartTime` for the first track and may create initial silence for the whole mix.
-*   **Placement Rule:** For every subsequent track `N`, its audio content is placed on the timeline according to the confirmed formula:
-    `AudioStartTime(N) = AudioStartTime(N-1) + Track(N-1).attachTo - Track(N).attachFrom`
-*   **Result:** A deterministic sequence of precisely positioned audio blocks whose content and volume are defined by their individual cue and envelope points.
-
----
-
-This feels complete, internally consistent, and robust. It accounts for all the edge cases we've discussed (initial silence, trimming/extending, envelope placement) and is built on a simple, verifiable formula for placement.
-
-Does this final, constrained model represent our complete and shared understanding of the data system?
+I am ready for the next session.

@@ -30,6 +30,16 @@ namespace jucyaudio
             std::function<void(TrackId, const std::vector<EnvelopePoint> &)> onEnvelopeChanged;
             std::function<void(TrackId, const MixTrack &)> onCueAttachChanged;
 
+            /**
+             * @brief Returns the track ID of this mix track.
+             *
+             * @return The ID of this track.
+             */
+            const auto getTrackId() const
+            {
+                return m_mixTrack.trackId;
+            }
+
         private:
             enum class MarkerType
             {

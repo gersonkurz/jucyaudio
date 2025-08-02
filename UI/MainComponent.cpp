@@ -596,13 +596,6 @@ namespace jucyaudio
                         {
                             this->seekToTimelinePosition(timePosition);
                         });
-
-                    // Set up track deletion callback
-                    m_mixEditorComponent.setTrackDeletionCallback(
-                        [this](TrackId trackId)
-                        {
-                            this->removeTrackFromMix(trackId);
-                        });
                 }
                 else
                 {

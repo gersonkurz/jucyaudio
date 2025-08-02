@@ -1,4 +1,4 @@
-# JucyAudio - AI Introduction Prompt (v5)
+# JucyAudio - AI Introduction Prompt (v6)
 
 **Objective:** To collaboratively develop **JucyAudio**, a sophisticated audio curation and mixing application for macOS (primary target, Apple Silicon) and Windows. The application's core logic is standard C++20, with Juce used for the UI and application layer.
 
@@ -13,7 +13,7 @@
 *   **Architecture over implementation:** Focus on clean design, interfaces, and long-term project direction.
 *   Human has a strong C++20 background. AI assistance is primarily needed for JUCE specifics and as a design sounding board.
 *   Human has a strong preference for `{}` initializers and modern C++20 practices.
-*   **No apologies for mistakes or sycophancy; focus on the tasks ahead.**
+*   **No apologies for mistakes or sycophancy; focus on the tasks ahead.*
 *   **Remember to use 'const auto' or 'auto' where suitable, not static types.**
 
 **Core Functional Pillars:**

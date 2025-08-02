@@ -26,20 +26,21 @@ namespace jucyaudio
             MixProjectLoader &operator=(MixProjectLoader &&) = delete;      // No move assignment
 
             // Public method to explicitly reload data if needed
-            void loadMix(MixId mixId);
+            bool loadMix(MixId mixId);
+            bool reloadFromDatabase();
 
             // --- Public Accessors ---
-            MixId getMixId() const
+            auto getMixId() const
             {
                 return m_mixId;
             }
 
-            std::vector<MixTrack> &getMixTracks()
+            auto &getMixTracks()
             {
                 return m_mixTracks;
             }
             
-            MixInfo& getMixInfo()
+            auto& getMixInfo()
             {
                 return m_mixInfo;
             }
