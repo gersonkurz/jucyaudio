@@ -14,6 +14,7 @@ namespace jucyaudio
             : m_timeline{m_formatManager, m_thumbnailCache}
         {
             m_formatManager.registerBasicFormats();
+            setWantsKeyboardFocus(true);
 
             // Set the timeline as the component to be viewed by the viewport.
             m_viewport.setViewedComponent(&m_timeline, false); // false = don't delete when replaced
@@ -106,6 +107,71 @@ namespace jucyaudio
         void MixEditorComponent::paint(juce::Graphics &g)
         {
             g.fillAll(getLookAndFeel().findColour(juce::ListBox::backgroundColourId).darker());
+        }
+
+        bool MixEditorComponent::keyPressed(const juce::KeyPress &key)
+        {
+            if (!m_node)
+                return false;
+
+            // Ctrl+Z for undo
+            if (key == juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0))
+            {
+                spdlog::info("MixEditorComponent: Undo requested");
+                
+                auto& undoManager = database::theTrackLibrary.getUndoManager();
+                const auto mixId = m_node->getMixProjectLoader().getMixId();
+                
+                if (undoManager.canUndo(mixId))
+                {
+                    undoManager.undo(mixId, [this]() {
+                        // Refresh the mix after undo
+                        if (m_node)
+                        {
+                            spdlog::info("Refreshing mix after undo");
+                            m_node->refreshCache(true);  // Force a complete refresh
+                            m_timeline.populateFrom(&(m_node->getMixProjectLoader()));
+                            m_timeline.repaint();
+                            m_viewport.repaint();
+                        }
+                    });
+                }
+                else
+                {
+                    spdlog::info("No undo available for mix {}", mixId);
+                }
+                return true;
+            }
+            // Ctrl+Y for redo
+            else if (key == juce::KeyPress('y', juce::ModifierKeys::commandModifier, 0))
+            {
+                spdlog::info("MixEditorComponent: Redo requested");
+                
+                auto& undoManager = database::theTrackLibrary.getUndoManager();
+                const auto mixId = m_node->getMixProjectLoader().getMixId();
+                
+                if (undoManager.canRedo(mixId))
+                {
+                    undoManager.redo(mixId, [this]() {
+                        // Refresh the mix after redo
+                        if (m_node)
+                        {
+                            spdlog::info("Refreshing mix after redo");
+                            m_node->refreshCache(true);  // Force a complete refresh
+                            m_timeline.populateFrom(&(m_node->getMixProjectLoader()));
+                            m_timeline.repaint();
+                            m_viewport.repaint();
+                        }
+                    });
+                }
+                else
+                {
+                    spdlog::info("No redo available for mix {}", mixId);
+                }
+                return true;
+            }
+            
+            return false;
         }
 
         void MixEditorComponent::unloadMix()
@@ -221,6 +287,7 @@ namespace jucyaudio
             mixInfo.totalDuration = mixProjectLoader.calculateMixDuration();
 
             // Save changes back to database
+            spdlog::info("About to call createOrUpdateMix for mix {} with {} tracks", mixInfo.mixId, mixTracks.size());
             if (database::theTrackLibrary.getMixManager().createOrUpdateMix(mixInfo, mixTracks))
             {
                 spdlog::info("Successfully saved mix changes");

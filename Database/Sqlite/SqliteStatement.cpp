@@ -119,6 +119,15 @@ namespace jucyaudio
             return true;
         }
 
+        bool SqliteStatement::addNullableParam(const std::string& text)
+        {
+            if (text.empty())
+            {
+                return addNullParam();
+            }
+            return addParam(std::string_view{text});
+        }
+
         bool SqliteStatement::addParam(int64_t value)
         {
             const int rc = sqlite3_bind_int64(m_statement, m_param_index++, value);

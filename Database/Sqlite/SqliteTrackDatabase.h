@@ -5,9 +5,11 @@
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteTagManager.h>
 #include <Database/Sqlite/SqliteMixManager.h>
+#include <Database/Sqlite/SqliteMixManagerWithUndo.h>
 #include <Database/Sqlite/SqliteFolderDatabase.h>
 #include <Database/Sqlite/SqliteWorkingSetManager.h>
 #include <Database/Sqlite/SqliteMarkerManager.h>
+#include <Database/Sqlite/SqliteUndoManager.h>
 #include <Database/Sqlite/sqlite3.h>
 #include <filesystem>
 #include <optional>
@@ -87,6 +89,9 @@ namespace jucyaudio
             
             IMarkerManager &getMarkerManager() override;
             const IMarkerManager &getMarkerManager() const override;
+            
+            IUndoManager &getUndoManager() override;
+            const IUndoManager &getUndoManager() const override;
 
             DbResult updateTrackTags(TrackId trackId, const std::vector<TagId>& tagIds) override;
             std::vector<TagId> getTrackTags(TrackId trackId) const override;
@@ -116,6 +121,8 @@ namespace jucyaudio
             mutable SqliteWorkingSetManager m_workingSetManager; // Working set manager instance
             mutable SqliteFolderDatabase m_folderDatabase; // Folder database instance
             mutable SqliteMarkerManager m_markerManager; // Marker manager instance
+            mutable SqliteUndoManager m_undoManager; // Undo manager instance
+            mutable SqliteMixManagerWithUndo m_mixManagerWithUndo;
             std::filesystem::path m_databaseFilePath; // Store the path
             mutable std::string m_lastErrorMessage;   // For getLastError()
 

@@ -166,6 +166,23 @@ CREATE TABLE IF NOT EXISTS VirtualFolders (
         
         // Index for MixTracks ordering
         "CREATE INDEX IF NOT EXISTS idx_mixtracks_order ON MixTracks(mix_id, order_in_mix);",
+        
+        // MixUndoHistory table for undo/redo functionality
+        R"SQL(
+CREATE TABLE IF NOT EXISTS MixUndoHistory (
+    undo_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mix_id INTEGER NOT NULL,
+    operation_id INTEGER NOT NULL,      -- Groups related changes together
+    operation_type TEXT NOT NULL,       -- 'INSERT', 'UPDATE', 'DELETE'
+    table_name TEXT NOT NULL,           -- 'MixTracks' or 'Mixes'
+    record_id INTEGER,                   -- track_id or mix_id
+    old_state TEXT,                      -- JSON of previous state
+    new_state TEXT,                      -- JSON of new state
+    timestamp INTEGER DEFAULT (strftime('%s', 'now')),  -- When the operation occurred
+    FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
+);)SQL",
+        "CREATE INDEX IF NOT EXISTS idx_mixundohistory_mix_id ON MixUndoHistory (mix_id);",
+        "CREATE INDEX IF NOT EXISTS idx_mixundohistory_operation_id ON MixUndoHistory (operation_id);",
     };
 
     TrackInfo trackInfoFromStatement(const SqliteStatement &stmt)
@@ -327,6 +344,8 @@ namespace jucyaudio
               m_workingSetManager{m_db},
               m_folderDatabase{m_db},
               m_markerManager{m_db},
+              m_undoManager{m_db},
+              m_mixManagerWithUndo{m_mixManager, m_undoManager},
               m_databaseFilePath{},
               m_lastErrorMessage{},
               m_cachedTotalTrackCount{0},
@@ -364,13 +383,13 @@ namespace jucyaudio
         IMixManager &SqliteTrackDatabase::getMixManager()
         {
             assert(isOpen() && "Cannot get mix manager when database is not open");
-            return m_mixManager;
+            return m_mixManagerWithUndo;
         }
 
         const IMixManager &SqliteTrackDatabase::getMixManager() const
         {
             assert(isOpen() && "Cannot get mix manager when database is not open");
-            return m_mixManager;
+            return m_mixManagerWithUndo;
         }
 
         IWorkingSetManager &SqliteTrackDatabase::getWorkingSetManager()
@@ -395,6 +414,18 @@ namespace jucyaudio
         {
             assert(isOpen() && "Cannot get marker manager when database is not open");
             return m_markerManager;
+        }
+
+        IUndoManager &SqliteTrackDatabase::getUndoManager()
+        {
+            assert(isOpen() && "Cannot get undo manager when database is not open");
+            return m_undoManager;
+        }
+
+        const IUndoManager &SqliteTrackDatabase::getUndoManager() const
+        {
+            assert(isOpen() && "Cannot get undo manager when database is not open");
+            return m_undoManager;
         }
 
         std::string SqliteTrackDatabase::getLastError() const
@@ -517,7 +548,7 @@ namespace jucyaudio
                 return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
             stmt.addParam("schema_version");
-            stmt.addParam("1"); // Initial schema version
+            stmt.addParam("7"); // Initial schema version
             if (!stmt.execute())
             {
                 m_lastErrorMessage = "Failed to insert initial schema version: " + m_db.getLastError();
@@ -806,6 +837,55 @@ CREATE TABLE MixTracks(
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
                     }
                     spdlog::info("Successfully migrated database to version 6 - ATTACH-based model ready.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                
+                currentVersion = 6; // Update for next check
+            }
+
+            if (currentVersion < 7)
+            {
+                spdlog::info("Migrating database from version 6 to 7 - Adding MixUndoHistory table...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Create MixUndoHistory table for undo/redo functionality
+                    const char* createMixUndoHistory = R"SQL(
+CREATE TABLE IF NOT EXISTS MixUndoHistory (
+    undo_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mix_id INTEGER NOT NULL,
+    operation_type TEXT NOT NULL,      -- 'INSERT', 'UPDATE', 'DELETE'
+    table_name TEXT NOT NULL,          -- 'MixTracks' or 'Mixes'
+    record_id INTEGER,                  -- track_id or mix_id
+    old_state TEXT,                     -- JSON of previous state
+    new_state TEXT,                     -- JSON of new state
+    FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
+);)SQL";
+                    
+                    if (!m_db.execute(createMixUndoHistory))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create MixUndoHistory table.");
+                    }
+                    
+                    // Create index for efficient mix lookups
+                    if (!m_db.execute("CREATE INDEX IF NOT EXISTS idx_mixundohistory_mix_id ON MixUndoHistory (mix_id);"))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create MixUndoHistory index.");
+                    }
+                    
+                    // Update schema version
+                    if (auto result = setDBSchemaVersion(7); !result.isOk())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 7.");
+                    }
+                    
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated database to version 7 - MixUndoHistory table ready.");
                 }
                 else
                 {

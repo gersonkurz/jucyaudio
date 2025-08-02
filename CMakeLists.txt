@@ -201,6 +201,7 @@ target_sources(jucyaudio PRIVATE
     Database/Includes/IMixManager.h
     Database/Includes/IMarkerManager.h
     Database/Includes/INavigationNode.h
+    Database/Includes/IUndoManager.h
     Database/Includes/IRefCounted.h
     Database/Includes/ITagManager.h
     Database/Includes/ITrackDatabase.h
@@ -221,8 +222,12 @@ target_sources(jucyaudio PRIVATE
     Database/Sqlite/SqliteFolderDatabase.h
     Database/Sqlite/SqliteMixManager.cpp
     Database/Sqlite/SqliteMixManager.h
+    Database/Sqlite/SqliteMixManagerWithUndo.cpp
+    Database/Sqlite/SqliteMixManagerWithUndo.h
     Database/Sqlite/SqliteMarkerManager.cpp
     Database/Sqlite/SqliteMarkerManager.h
+    Database/Sqlite/SqliteUndoManager.cpp
+    Database/Sqlite/SqliteUndoManager.h
     Database/Sqlite/SqliteStatement.cpp
     Database/Sqlite/SqliteStatement.h
     Database/Sqlite/SqliteStatementConstruction.cpp

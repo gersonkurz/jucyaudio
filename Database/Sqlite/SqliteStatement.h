@@ -40,6 +40,7 @@ namespace jucyaudio
             void reset();
             bool addNullParam();
             bool addParam(std::string_view text);
+            bool addNullableParam(const std::string& ref);
             bool addParam(int64_t value);
             bool addParam(int32_t value);
             bool addParam(nullptr_t parameter1);
