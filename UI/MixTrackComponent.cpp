@@ -25,6 +25,7 @@ namespace jucyaudio
                                              juce::AudioThumbnailCache &thumbnailCache)
             : m_mixTrack{mixTrack},
               m_trackInfo{trackInfo},
+              m_originalEnvelopePoint{},
               m_thumbnail{512, formatManager, thumbnailCache}
         {
             // Setup the info label with track duration
@@ -307,33 +308,17 @@ namespace jucyaudio
 
         EnvelopePoint MixTrackComponent::screenPositionToEnvelopePoint(juce::Point<int> screenPos) const
         {
-            auto area = getLocalBounds().removeFromBottom(waveformSectionHeight);
-            const auto effectiveDuration = m_mixTrack.getEffectiveDuration(m_trackInfo.duration);
-
-            // --- Time Calculation (X-axis) ---
-
-            // 1. Calculate the proportional position of the mouse click within the component's total width.
-            // We clamp this between 0.0 and 1.0 to prevent dragging outside the component's bounds.
-            const double proportion = juce::jlimit(0.0, 1.0, (double)(screenPos.x - area.getX()) / (double)area.getWidth());
-
-            // 2. Apply this proportion to the total effective duration to get the time offset from the component's start.
-            const auto timeOffset = std::chrono::duration<double>(proportion * std::chrono::duration<double>(effectiveDuration).count());
-
-            // 3. The absolute time is the component's start time (which is cueStart) plus the calculated offset.
-            // This correctly calculates negative times if cueStart is negative and the click is in the silence region.
-            const auto newTime = m_mixTrack.cueStart + std::chrono::duration_cast<Duration_t>(timeOffset);
+            // Use the unified helper to get the time, clamped to the component's bounds.
+            const auto newTime = xToTime(screenPos.x, true /* clampToComponentBounds */);
 
             // --- Volume Calculation (Y-axis) ---
-
-            // This logic remains the same, but is now more robust as it's not tied to flawed helpers.
+            auto area = getLocalBounds().removeFromBottom(waveformSectionHeight);
             const float relativeY = (float)(area.getBottom() - screenPos.y) / (float)area.getHeight();
             const float volumePercent = juce::jlimit(0.0f, 1.0f, relativeY);
 
-            // --- Construct and return the result ---
-            EnvelopePoint result;
+            database::EnvelopePoint result;
             result.time = newTime;
-            result.volume = static_cast<Volume_t>(volumePercent * VOLUME_NORMALIZATION);
-
+            result.volume = static_cast<Volume_t>(volumePercent * database::VOLUME_NORMALIZATION);
             return result;
         }
 
@@ -363,108 +348,21 @@ namespace jucyaudio
             return MarkerType::None;
         }
         
-        Duration_t MixTrackComponent::screenXToTrackTime(int screenX) const
-        {
-            auto bounds = getLocalBounds();
-            auto waveformArea = bounds.removeFromBottom(waveformSectionHeight);
-            
-            const auto trackDuration = m_trackInfo.duration;
-            const double trackDurationSeconds = std::chrono::duration<double>(trackDuration).count();
-            const auto effectiveDuration = m_mixTrack.getEffectiveDuration(trackDuration);
-            const double effectiveDurationSeconds = std::chrono::duration<double>(effectiveDuration).count();
-            
-            // If track is extended, we need to handle the coordinate mapping differently
-            if (effectiveDuration > trackDuration)
-            {
-                // Calculate where the track end would be visually
-                const int trackEndX = waveformArea.getX() + juce::roundToInt((trackDurationSeconds / effectiveDurationSeconds) * waveformArea.getWidth());
-                
-                if (screenX <= trackEndX)
-                {
-                    // Within the track duration - normal mapping
-                    const float relativeX = (screenX - waveformArea.getX()) / float(trackEndX - waveformArea.getX());
-                    const double timeInSeconds = relativeX * trackDurationSeconds;
-                    return std::chrono::milliseconds(static_cast<int64_t>(timeInSeconds * 1000));
-                }
-                else
-                {
-                    // Beyond track duration - in the extended area
-                    const float relativeX = (screenX - trackEndX) / float(waveformArea.getRight() - trackEndX);
-                    const double extraSeconds = relativeX * (effectiveDurationSeconds - trackDurationSeconds);
-                    const double timeInSeconds = trackDurationSeconds + extraSeconds;
-                    return std::chrono::milliseconds(static_cast<int64_t>(timeInSeconds * 1000));
-                }
-            }
-            else
-            {
-                // Normal case - no extension
-                const float relativeX = (screenX - waveformArea.getX()) / float(waveformArea.getWidth());
-                const double timeInSeconds = relativeX * trackDurationSeconds;
-                return std::chrono::milliseconds(static_cast<int64_t>(timeInSeconds * 1000));
-            }
-        }
         
-        void MixTrackComponent::updateMarkerPosition(MarkerType marker, int newX)
-        {
-            Duration_t newTime = screenXToTrackTime(newX);
-            const auto trackDuration = m_trackInfo.duration;
-            
-            // Apply constraints based on marker type
-            switch (marker)
-            {
-                case MarkerType::CueStart:
-                    // Constrain: 0 <= cueStart < cueEnd (or track end if cueEnd is 0)
-                    newTime = std::max(Duration_t{0}, newTime);
-                    if (m_mixTrack.cueEnd > Duration_t{0})
-                    {
-                        newTime = std::min(newTime, m_mixTrack.cueEnd - Duration_t{1}); // At least 1ms before end
-                    }
-                    else
-                    {
-                        newTime = std::min(newTime, trackDuration - Duration_t{1});
-                    }
-                    m_mixTrack.cueStart = newTime;
-                    break;
-                    
-                case MarkerType::CueEnd:
-                    // CueEnd is now handled by the special drag state
-                    // This case should not be reached
-                    jassertfalse;
-                    break;
-                    
-                case MarkerType::AttachFrom:
-                    // Constrain: 0 <= attachFrom < attachTo
-                    newTime = std::max(Duration_t{0}, newTime);
-                    newTime = std::min(newTime, m_mixTrack.attachTo - Duration_t{1});
-                    m_mixTrack.attachFrom = newTime;
-                    break;
-                    
-                case MarkerType::AttachTo:
-                    // Constrain: attachFrom < attachTo <= duration
-                    newTime = std::max(m_mixTrack.attachFrom + Duration_t{1}, newTime);
-                    newTime = std::min(newTime, trackDuration);
-                    m_mixTrack.attachTo = newTime;
-                    break;
-                    
-                default:
-                    break;
-            }
-        }
-
-        
-        Duration_t MixTrackComponent::xToTime(int x) const
+        Duration_t MixTrackComponent::xToTime(int x, bool clampToComponentBounds) const
         {
             const auto effectiveDuration = m_mixTrack.getEffectiveDuration(m_trackInfo.duration);
             if (getWidth() <= 0)
                 return Duration_t{0};
 
-            // Calculate the proportional position of the mouse click within the component's total width.
-            const double proportion = (double)(x - getLocalBounds().getX()) / (double)getWidth();
+            double proportion = (double)(x - getLocalBounds().getX()) / (double)getWidth();
 
-            // Apply this proportion to the total effective duration to get the time offset.
+            if (clampToComponentBounds)
+            {
+                proportion = juce::jlimit(0.0, 1.0, proportion);
+            }
+
             const auto timeOffset = std::chrono::duration<double>(proportion * std::chrono::duration<double>(effectiveDuration).count());
-
-            // The absolute time is the component's start time (which is cueStart) plus the calculated offset.
             return m_mixTrack.cueStart + std::chrono::duration_cast<Duration_t>(timeOffset);
         }
 
@@ -473,53 +371,26 @@ namespace jucyaudio
        
         void MixTrackComponent::mouseDown(const juce::MouseEvent &event)
         {
-            if (!event.mods.isLeftButtonDown())
-                return;
-
-            // --- Priority 1: Check for an envelope point hit ---
-            if (const auto hitPointIndex = hitTestEnvelopePoint(event.position.toInt()))
+            if (event.mods.isLeftButtonDown())
             {
-                m_selectedEnvelopePointIndex = hitPointIndex;
-                m_isDraggingEnvelopePoint = true;
-                m_envelopePointDragStart = event.position.toInt();
-                m_originalEnvelopePoint = m_mixTrack.envelopePoints[*hitPointIndex];
-
-                // Select this track in the parent timeline.
+                // --- Priority 1: Check for an envelope point hit ---
+                if (const auto hitPointIndex = hitTestEnvelopePoint(event.position.toInt()))
+                {
+                    m_selectedEnvelopePointIndex = hitPointIndex;
+                    m_isDraggingEnvelopePoint = true;
+                    m_envelopePointDragStart = event.position.toInt();
+                    m_originalEnvelopePoint = m_mixTrack.envelopePoints[*hitPointIndex];
+                }
+                // --- Priority 2: Check for an attach marker hit ---
+                else if (const auto markerHit = hitTestMarker(event.position.toInt()); markerHit != MarkerType::None)
+                {
+                    m_draggedMarker = markerHit;
+                }
                 if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
                 {
                     timeline->setSelectedTrack(this);
                 }
-
                 repaint();
-                return; // A specific element was hit, our work here is done.
-            }
-
-            // --- Priority 2: Check for an attach marker hit ---
-            if (const auto markerHit = hitTestMarker(event.position.toInt()); markerHit != MarkerType::None)
-            {
-                m_draggedMarker = markerHit;
-                m_originalMixTrack = m_mixTrack;
-
-                if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
-                {
-                    timeline->setSelectedTrack(this);
-                }
-
-                repaint();
-                return; // A specific element was hit, our work here is done.
-            }
-
-            // --- Priority 3: General track selection ---
-            // If no specific interactive element was clicked, treat this as a simple
-            // click to select the track. The parent TimelineComponent will handle
-            // any associated actions, like seeking the playhead.
-            if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
-            {
-                timeline->setSelectedTrack(this);
-
-                // Let the parent component handle the consequences of the click
-                // (e.g., setting the playhead position). We've removed the broken
-                // playback logic that was previously here.
             }
         }
 
@@ -591,7 +462,7 @@ namespace jucyaudio
             if (m_draggedMarker == MarkerType::CueEnd)
             {
                 // 1. Calculate the new absolute time based on the mouse release position.
-                Duration_t newAbsoluteTime = xToTime(event.position.x);
+                const auto newAbsoluteTime = xToTime(event.position.x, false /* clampToComponentBounds */);
 
                 // 2. Convert this absolute time to our storage format (offset from track end).
                 MixTrack updatedTrack = m_mixTrack;
@@ -606,11 +477,8 @@ namespace jucyaudio
                 // 4. Reset the drag state.
                 m_draggedMarker = MarkerType::None;
                 repaint(); // Repaint to show the new marker position after the layout has changed.
-                return;    // Early exit
             }
-
-            // Handle other marker drag completion
-            if (m_draggedMarker != MarkerType::None)
+            else if (m_draggedMarker != MarkerType::None)
             {
                 // Notify of cue/attach change
                 if (onCueAttachChanged)
@@ -620,10 +488,8 @@ namespace jucyaudio
 
                 m_draggedMarker = MarkerType::None;
                 repaint();
-                return;
             }
-
-            if (m_isDraggingEnvelopePoint)
+            else if (m_isDraggingEnvelopePoint)
             {
                 // Notify of envelope change
                 if (onEnvelopeChanged)
@@ -632,7 +498,7 @@ namespace jucyaudio
                 }
 
                 m_isDraggingEnvelopePoint = false;
-                return;
+                m_selectedEnvelopePointIndex = std::nullopt;
             }
         }
 

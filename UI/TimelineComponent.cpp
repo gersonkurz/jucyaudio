@@ -153,30 +153,7 @@ namespace jucyaudio
             }
         }
 
-#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
-        void TimelineComponent::recalculateLayout()
-        {
-            // Recalculate width based on new zoom
-            double maxTimeSecs = 0.0;
-            if (!m_trackViews.empty())
-            {
-                const auto &lastView = m_trackViews.back();
-                const auto startTime = std::chrono::duration<double>(lastView.mixTrackData->mixStartTime).count();
-                const auto duration = std::chrono::duration<double>(lastView.trackInfoData->duration).count();
-                maxTimeSecs = startTime + duration;
-            }
-
-            m_calculatedWidth = static_cast<int>(maxTimeSecs * m_pixelsPerSecond) + 200;
-            setSize(m_calculatedWidth, m_calculatedHeight);
-
-            // This will trigger resized() which repositions all tracks
-            resized();
-            repaint();
-        }
-#endif
-
-#if !MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
-        void TimelineComponent::recalculateLayout()
+        void TimelineComponent::refreshLayout()
         {
             double maxTimeSecs = 0.0;
             for (const auto &view : m_trackViews)
@@ -197,7 +174,6 @@ namespace jucyaudio
             resized();
             repaint();
         }
-#endif
 
         void TimelineComponent::maintainViewportPosition(double timeAtMouse, int mouseX)
         {
@@ -215,56 +191,10 @@ namespace jucyaudio
 
         void TimelineComponent::playFromPosition(double timePosition)
         {
-#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
-            // For now, play the first track that covers this time position
-            // Later this could play the entire mix from this position
-            for (const auto &view : m_trackViews)
-            {
-                const auto startTime = std::chrono::duration<double>(view.mixTrackData->mixStartTime).count();
-                const auto endTime = startTime + std::chrono::duration<double>(view.trackInfoData->duration).count();
-
-                if (timePosition >= startTime && timePosition <= endTime)
-                {
-                    // Calculate offset within the track
-                    double trackOffset = timePosition - startTime;
-
-                    juce::File audioFile(view.trackInfoData->filepath.string());
-                    if (onPlaybackRequested)
-                    {
-                        onPlaybackRequested(audioFile, trackOffset);
-                    }
-                    break;
-                }
-            }
-#endif
         }
 
         void TimelineComponent::playSelectedTrackFromPosition(double timePosition)
         {
-#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
-            if (!m_selectedTrack)
-                return;
-
-            // Find the corresponding track data
-            for (const auto &view : m_trackViews)
-            {
-                if (view.component.get() == m_selectedTrack)
-                {
-                    const auto startTime = std::chrono::duration<double>(view.mixTrackData->mixStartTime).count();
-                    double trackOffset = timePosition - startTime;
-
-                    // Clamp to valid range
-                    trackOffset = juce::jlimit(0.0, std::chrono::duration<double>(view.trackInfoData->duration).count(), trackOffset);
-
-                    juce::File audioFile(view.trackInfoData->filepath.string());
-                    if (onPlaybackRequested)
-                    {
-                        onPlaybackRequested(audioFile, trackOffset);
-                    }
-                    break;
-                }
-            }
-#endif
         }
 
         void TimelineComponent::mouseDown(const juce::MouseEvent &event)
@@ -326,36 +256,6 @@ namespace jucyaudio
             return nullptr;
         }
 
-        void TimelineComponent::refreshLayout()
-        {
-            // Define our hardcoded test values here as well to ensure consistency.
-            const double silenceAtStartSeconds = 15.0;
-            const double silenceAtEndSeconds = 15.0;
-
-            double maxTimeSecs = 0.0;
-            for (const auto &view : m_trackViews)
-            {
-                // We must use the exact same logic as resized() to calculate the component's end time.
-                const double startTime = std::chrono::duration<double>(view.componentStartTime).count();
-                const double effectiveDuration =
-                    std::chrono::duration<double>(view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
-
-                const double totalVisibleDuration = silenceAtStartSeconds + effectiveDuration + silenceAtEndSeconds;
-                const double endTime = startTime + totalVisibleDuration;
-
-                maxTimeSecs = std::max(maxTimeSecs, endTime);
-            }
-
-            m_calculatedWidth = static_cast<int>(maxTimeSecs * m_pixelsPerSecond) + 200; // Add padding
-            // Use a reasonable minimum height.
-            m_calculatedHeight = getParentHeight();
-
-            setSize(m_calculatedWidth, m_calculatedHeight);
-
-            resized();
-            repaint();
-        }
-
         void TimelineComponent::setSelectedTrack(MixTrackComponent *track)
         {
             if (m_selectedTrack != track)
@@ -398,83 +298,14 @@ namespace jucyaudio
                 if (newZoom != m_pixelsPerSecond)
                 {
                     m_pixelsPerSecond = newZoom;
-                    recalculateLayout();
+                    refreshLayout();
 
                     // Keep the time position under the mouse cursor stable
                     maintainViewportPosition(timeAtMouse, mousePos.x);
                 }
             }
         }
-#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
-        void TimelineComponent::resized()
-        {
-            //spdlog::info("LAYOUT_START: TimelineComponent::resized() -----------------------");
 
-            auto visibleArea = getParentComponent()->getLocalBounds();
-            const int rulerHeight = 30;
-            const int trackHeight = MixTrackComponent::totalHeight;
-            const int yGap = 5;
-            const int availableHeightForLanes = visibleArea.getHeight() - rulerHeight;
-
-            //spdlog::info("LAYOUT_INFO: visibleArea={}x{}, availableHeight={}", visibleArea.getWidth(), visibleArea.getHeight(), availableHeightForLanes);
-
-            int numLanes = availableHeightForLanes / (trackHeight + yGap);
-            if (numLanes < 1)
-                numLanes = 1;
-
-            int currentLane = 0;
-            int laneDirection = +1;
-
-            for (const auto &view : m_trackViews)
-            {
-                const auto startTime = std::chrono::duration<double>(view.mixTrackData->mixStartTime).count();
-
-                // With envelope system, tracks play their full duration
-                const auto trackDuration = std::chrono::duration<double>(view.trackInfoData->duration).count();
-
-                const int startX = static_cast<int>(startTime * m_pixelsPerSecond);
-                const int width = static_cast<int>(trackDuration * m_pixelsPerSecond);
-                const int yPos = rulerHeight + (currentLane * (trackHeight + yGap));
-
-                // Log BEFORE setting bounds
-                /* spdlog::info("LAYOUT_TRACK: Track {}, startTime={:.3f}s, duration={:.3f}s, startX={}, width={}, yPos={}, currentBounds=({},{},{}x{})",
-                    view.mixTrackData->trackId,
-                    startTime,
-                    trackDuration,
-                    startX,
-                    width,
-                    yPos,
-                    view.component->getX(),
-                    view.component->getY(),
-                    view.component->getWidth(),
-                    view.component->getHeight());
-                    */
-
-                view.component->setBounds(startX, yPos, width, trackHeight);
-
-                // Log AFTER setting bounds
-                /* spdlog::info("LAYOUT_SET: Track {}, newBounds=({},{},{}x{})",
-                    view.mixTrackData->trackId,
-                    view.component->getX(),
-                    view.component->getY(),
-                    view.component->getWidth(),
-                    view.component->getHeight());
-                    */
-                // Update lane logic
-                if ((currentLane + laneDirection) >= numLanes || (currentLane + laneDirection) < 0)
-                {
-                    laneDirection *= -1;
-                }
-                currentLane += laneDirection;
-                if (numLanes == 1)
-                    currentLane = 0;
-            }
-
-            //spdlog::info("LAYOUT_END: TimelineComponent::resized() finished -----------------------");
-        }
-#endif
-
-#if !MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
         void TimelineComponent::resized()
         {
             auto visibleArea = getParentComponent()->getLocalBounds();
@@ -508,64 +339,7 @@ namespace jucyaudio
                     currentLane = 0;
             }
         }
-#endif
-
-#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
-        void TimelineComponent::populateFrom(audio::MixProjectLoader &mixLoader)
-        {
-            m_selectedTrack = nullptr;
-            m_currentTimePosition = -1.0;
-            // Clear all existing components
-            m_trackViews.clear();
-            removeAllChildren();
-
-            for (const auto &mixTrack : mixLoader.getMixTracks())
-            {
-                if (const auto *trackInfo = mixLoader.getTrackInfoForId(mixTrack.trackId))
-                {
-                    //spdlog::info("Adding track ID: {} to timeline: {}-{}", mixTrack.trackId,
-                    //    trackInfo->artist_name, trackInfo->title);
-                    TrackView view;
-                    view.mixTrackData = &mixTrack;
-                    view.trackInfoData = trackInfo;
-                    view.component = std::make_unique<MixTrackComponent>(*view.mixTrackData, *view.trackInfoData, m_formatManager, m_thumbnailCache);
-                    addAndMakeVisible(*view.component, m_trackViews.size());
-                    m_trackViews.push_back(std::move(view));
-                }
-                else
-                {
-                    spdlog::warn("Track info not found for track ID: {}", mixTrack.trackId);
-                }
-            }
-
-            // Calculate size
-            const int trackHeight = MixTrackComponent::totalHeight;
-            const int yGap = 5;
-            const int rulerHeight = 30;
-            const int numLanesForHeightCalc = 8;
-            m_calculatedHeight = rulerHeight + (numLanesForHeightCalc * (trackHeight + yGap));
-
-            double maxTimeSecs = 0.0;
-            if (!m_trackViews.empty())
-            {
-                const auto &lastView = m_trackViews.back();
-                const auto startTime = std::chrono::duration<double>(lastView.mixTrackData->mixStartTime).count();
-                const auto duration = std::chrono::duration<double>(lastView.trackInfoData->duration).count();
-                maxTimeSecs = startTime + duration;
-            }
-            m_calculatedWidth = static_cast<int>(maxTimeSecs * m_pixelsPerSecond) + 200;
-
-            // Set the component's size to its calculated ideal size
-            setSize(m_calculatedWidth, m_calculatedHeight);
-
-            // FORCE the layout calculation - this is the missing piece!
-            spdlog::info("Forcing resized() call after populateFrom");
-            resized();
-            repaint();
-        }
-#endif
-
-#if !MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
+        
         void TimelineComponent::populateFrom(audio::MixProjectLoader &mixLoader)
         {
             m_selectedTrack = nullptr;
@@ -634,9 +408,16 @@ namespace jucyaudio
                     previousAudioStartTime = currentAudioStartTime;
                 }
             }
+            // --- THIS IS THE FIX ---
+            // We must calculate a reasonable height for the timeline component itself
+            // before we can calculate its width and trigger a layout refresh.
+            const int trackHeight = MixTrackComponent::totalHeight;
+            const int yGap = 5;
+            const int rulerHeight = 30;
+            const int numLanesForHeightCalc = 8; // A default number of lanes to ensure a reasonable minimum height.
+            m_calculatedHeight = rulerHeight + (numLanesForHeightCalc * (trackHeight + yGap));
             refreshLayout();
         }
-#endif
 
         // Helper method to get track ID from component
         TrackId TimelineComponent::getTrackIdForComponent(MixTrackComponent *component)
@@ -665,35 +446,6 @@ namespace jucyaudio
             }
         }
 
-        // Method to recalculate track order based on new positions
-        void TimelineComponent::recalculateTrackOrder()
-        {
-#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
-            // Sort tracks by their mixStartTime and update orderInMix
-            std::vector<TrackView *> sortedViews;
-            for (auto &view : m_trackViews)
-            {
-                sortedViews.push_back(&view);
-            }
-
-            std::sort(sortedViews.begin(),
-                sortedViews.end(),
-                [](const TrackView *a, const TrackView *b)
-                {
-                    return a->mixTrackData->mixStartTime < b->mixTrackData->mixStartTime;
-                });
-
-            // Update orderInMix values
-            for (size_t i = 0; i < sortedViews.size(); ++i)
-            {
-                // This is a const_cast because we need to modify the data
-                // We'll need to get non-const access to the mix data
-                const_cast<database::MixTrack *>(sortedViews[i]->mixTrackData)->orderInMix = static_cast<int>(i);
-            }
-
-            spdlog::info("Recalculated track order for {} tracks", sortedViews.size());
-#endif
-        }
         
         void TimelineComponent::drawCrossfadeLines(juce::Graphics &g)
         {

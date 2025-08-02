@@ -188,9 +188,6 @@ namespace jucyaudio
              */
             int getMarkerXPosition(MarkerType marker) const;
 
-            Duration_t screenXToTrackTime(int screenX) const;
-            void updateMarkerPosition(MarkerType marker, int newX);
-
             /**
              * @brief Handles the initial mouse down event on the component.
              *
@@ -215,31 +212,40 @@ namespace jucyaudio
              */
             void mouseDrag(const juce::MouseEvent &event) override;
 
+            /**
+             * @brief Handles the mouse button release event, finalizing any drag operations.
+             *
+             * This function is called when a drag is completed. It calculates the final state of
+             * the dragged object, notifies the parent TimelineComponent via callbacks to update the
+             * master data model, and resets the component's internal drag state.
+             *
+             * @param event The mouse event containing the release position.
+             */
             void mouseUp(const juce::MouseEvent &event) override;
 
             /**
              * @brief Handle mouse-move event to update the position of attach markers.
-             *
+             * This function is called when the mouse moves over the component.
              * If you hover over an enevelope point and/or marker , highlight it visually to indicate you can drag it,
              *
              * @param event Position on the screen
              */
             void mouseMove(const juce::MouseEvent &event) override;
 
-            Duration_t xToTime(int x) const;
+            /**
+             * @brief Converts a horizontal pixel coordinate into a logical time value.
+             * @param x The horizontal pixel position relative to the component's left edge.
+             * @param clampToComponentBounds If true, the time will be clamped to the component's
+             *                               visual start/end. If false, it can report times
+             *                               outside the component's bounds (e.g., when dragging).
+             * @return The calculated time as a Duration_t.
+             */
+            Duration_t xToTime(int x, bool clampToComponentBounds) const;
 
             MixTrack &m_mixTrack;
             const TrackInfo &m_trackInfo;
             juce::AudioThumbnail m_thumbnail;
             juce::Label m_infoLabel;
-
-            enum class EnvelopePointState
-            {
-                Normal,
-                Hovered,
-                Selected
-            };
-
             std::optional<size_t> m_selectedEnvelopePointIndex;
             std::optional<size_t> m_hoveredEnvelopePointIndex;
             bool m_isDraggingEnvelopePoint = false;
@@ -249,7 +255,6 @@ namespace jucyaudio
             // For cue/attach marker dragging
             MarkerType m_draggedMarker = MarkerType::None;
             MarkerType m_hoveredMarker = MarkerType::None;
-            MixTrack m_originalMixTrack;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixTrackComponent)
         };
