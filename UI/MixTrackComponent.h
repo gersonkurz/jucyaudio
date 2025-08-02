@@ -29,7 +29,7 @@ namespace jucyaudio
 
             std::function<void(TrackId, const std::vector<EnvelopePoint> &)> onEnvelopeChanged;
             std::function<void(TrackId, const MixTrack &)> onCueAttachChanged;
-            std::function<void(TrackId, std::optional<Duration_t>)> onCueDragInProgress;
+            std::function<void(TrackId, bool isAttachPoint, std::optional<Duration_t>)> onCueDragInProgress;
 
             /**
              * @brief Returns the track ID of this mix track.

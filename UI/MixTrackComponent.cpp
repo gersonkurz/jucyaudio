@@ -408,12 +408,25 @@ namespace jucyaudio
                 // Fire the callback to show preview line
                 if (onCueDragInProgress)
                 {
-                    onCueDragInProgress(m_mixTrack.trackId, previewTime);
+                    onCueDragInProgress(m_mixTrack.trackId, false /* not attach point */, previewTime);
                 }
             }
-            else if (m_draggedMarker != MarkerType::None)
+            else if (m_draggedMarker == MarkerType::AttachFrom || m_draggedMarker == MarkerType::AttachTo)
             {
-                // Other markers (attach points) - no preview for now
+                // Calculate the new time for the attach point
+                auto previewTime = xToTime(event.position.x, false /* clampToComponentBounds */);
+                
+                // Constrain attach points to valid range
+                const auto effectiveStart = m_mixTrack.cueStart;
+                const auto effectiveEnd = m_mixTrack.getCueEndActual(m_trackInfo.duration);
+                previewTime = std::max(previewTime, effectiveStart);
+                previewTime = std::min(previewTime, effectiveEnd);
+                
+                // Show preview line for attach points too
+                if (onCueDragInProgress)
+                {
+                    onCueDragInProgress(m_mixTrack.trackId, true /* is attach point */, previewTime);
+                }
             }
             // If an envelope point drag is in progress, update its position.
             else if (m_isDraggingEnvelopePoint && m_selectedEnvelopePointIndex.has_value())
@@ -488,7 +501,7 @@ namespace jucyaudio
                 // 4. Clear the preview line
                 if (onCueDragInProgress)
                 {
-                    onCueDragInProgress(m_mixTrack.trackId, std::nullopt);
+                    onCueDragInProgress(m_mixTrack.trackId, false, std::nullopt);
                 }
 
                 // 5. Reset the drag state.
@@ -513,27 +526,53 @@ namespace jucyaudio
                 // 4. Clear the preview line
                 if (onCueDragInProgress)
                 {
-                    onCueDragInProgress(m_mixTrack.trackId, std::nullopt);
+                    onCueDragInProgress(m_mixTrack.trackId, false, std::nullopt);
                 }
 
                 // 5. Reset the drag state.
                 m_draggedMarker = MarkerType::None;
                 repaint(); // Repaint to show the new marker position after the layout has changed.
             }
-            else if (m_draggedMarker != MarkerType::None)
+            else if (m_draggedMarker == MarkerType::AttachFrom || m_draggedMarker == MarkerType::AttachTo)
             {
-                // Clear preview line if it was a cue marker
-                if ((m_draggedMarker == MarkerType::CueStart || m_draggedMarker == MarkerType::CueEnd) && onCueDragInProgress)
+                // Calculate the new time for the attach point
+                auto newTime = xToTime(event.position.x, false /* clampToComponentBounds */);
+                
+                // Constrain attach points to valid range
+                const auto effectiveStart = m_mixTrack.cueStart;
+                const auto effectiveEnd = m_mixTrack.getCueEndActual(m_trackInfo.duration);
+                newTime = std::max(newTime, effectiveStart);
+                newTime = std::min(newTime, effectiveEnd);
+                
+                // Update the appropriate attach point
+                MixTrack updatedTrack = m_mixTrack;
+                if (m_draggedMarker == MarkerType::AttachFrom)
                 {
-                    onCueDragInProgress(m_mixTrack.trackId, std::nullopt);
+                    updatedTrack.attachFrom = newTime;
                 }
-
-                // Notify of cue/attach change
+                else // AttachTo
+                {
+                    updatedTrack.attachTo = newTime;
+                }
+                
+                // Fire the callback
                 if (onCueAttachChanged)
                 {
-                    onCueAttachChanged(m_mixTrack.trackId, m_mixTrack);
+                    onCueAttachChanged(m_trackInfo.trackId, updatedTrack);
                 }
-
+                
+                // Clear preview line
+                if (onCueDragInProgress)
+                {
+                    onCueDragInProgress(m_mixTrack.trackId, true, std::nullopt);
+                }
+                
+                m_draggedMarker = MarkerType::None;
+                repaint();
+            }
+            else if (m_draggedMarker != MarkerType::None)
+            {
+                // This shouldn't happen, but just in case
                 m_draggedMarker = MarkerType::None;
                 repaint();
             }
@@ -586,9 +625,9 @@ namespace jucyaudio
                 // Use resize cursor for edge dragging
                 setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
             }
-            else if (hoveredMarker != MarkerType::None)
+            else if (hoveredMarker == MarkerType::AttachFrom || hoveredMarker == MarkerType::AttachTo)
             {
-                // Use pointing hand for other markers
+                // Use pointing hand for attach markers
                 setMouseCursor(juce::MouseCursor::PointingHandCursor);
             }
             else
@@ -605,9 +644,10 @@ namespace jucyaudio
                 if (m_draggedMarker != MarkerType::None || m_isDraggingEnvelopePoint)
                 {
                     // Clear the preview line
-                    if ((m_draggedMarker == MarkerType::CueStart || m_draggedMarker == MarkerType::CueEnd) && onCueDragInProgress)
+                    if (m_draggedMarker != MarkerType::None && onCueDragInProgress)
                     {
-                        onCueDragInProgress(m_mixTrack.trackId, std::nullopt);
+                        bool isAttach = (m_draggedMarker == MarkerType::AttachFrom || m_draggedMarker == MarkerType::AttachTo);
+                        onCueDragInProgress(m_mixTrack.trackId, isAttach, std::nullopt);
                     }
                     
                     // Reset drag state

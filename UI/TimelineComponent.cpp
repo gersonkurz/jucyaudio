@@ -198,28 +198,46 @@ namespace jucyaudio
 
         void TimelineComponent::repositionTrack(TrackId trackId)
         {
-            // Check if this is the first track
-            if (!m_trackViews.empty() && m_trackViews[0].mixTrackData && m_trackViews[0].mixTrackData->trackId == trackId)
+            // Find which track index this is
+            int trackIndex = -1;
+            for (size_t i = 0; i < m_trackViews.size(); ++i)
             {
-                // First track's cueStart affects the entire timeline's global offset
-                // Recalculate all positions without recreating components
-                recalculateTrackPositions();
-                return;
-            }
-            
-            // For non-first tracks, just update the single track
-            for (auto& view : m_trackViews)
-            {
-                if (view.mixTrackData && view.mixTrackData->trackId == trackId)
+                if (m_trackViews[i].mixTrackData && m_trackViews[i].mixTrackData->trackId == trackId)
                 {
-                    // Recalculate the componentStartTime based on the updated cueStart
-                    view.componentStartTime = view.audioStartTime + view.mixTrackData->cueStart;
-                    
-                    // Trigger a layout update to reposition the component
-                    resized();
-                    repaint();
+                    trackIndex = static_cast<int>(i);
                     break;
                 }
+            }
+            
+            if (trackIndex == -1)
+                return;
+            
+            // Check if this is the first track or if attach points changed
+            // For now, let's check if we need full recalculation
+            bool needsFullRecalculation = (trackIndex == 0);
+            
+            // Also check if this track's attach points affect others
+            // If attachTo changed, all subsequent tracks need updating
+            // We can't easily detect what changed, so for safety, recalculate all if it's not the last track
+            if (trackIndex < static_cast<int>(m_trackViews.size()) - 1)
+            {
+                needsFullRecalculation = true;
+            }
+            
+            if (needsFullRecalculation)
+            {
+                // Recalculate all positions without recreating components
+                recalculateTrackPositions();
+            }
+            else
+            {
+                // For the last track with only cueStart/cueEnd changes, just update that track
+                auto& view = m_trackViews[trackIndex];
+                view.componentStartTime = view.audioStartTime + view.mixTrackData->cueStart;
+                
+                // Trigger a layout update to reposition the component
+                resized();
+                repaint();
             }
         }
 
@@ -473,13 +491,22 @@ namespace jucyaudio
                         if (onEnvelopeChanged)
                             onEnvelopeChanged(id, points);
                     };
-                    view.component->onCueDragInProgress = [this, audioStartTime = view.audioStartTime](TrackId trackId, std::optional<Duration_t> previewTime)
+                    view.component->onCueDragInProgress = [this](TrackId trackId, bool isAttachPoint, std::optional<Duration_t> previewTime)
                     {
                         if (previewTime.has_value())
                         {
-                            // The preview time from MixTrackComponent is already absolute time relative to the track's audio
-                            // We need to add the track's audio start time to get absolute timeline position
-                            m_cueDragPreviewTime = audioStartTime + *previewTime;
+                            // Find the track view for this trackId
+                            for (const auto& tv : m_trackViews)
+                            {
+                                if (tv.mixTrackData && tv.mixTrackData->trackId == trackId)
+                                {
+                                    // xToTime returns cueStart + offset_within_component
+                                    // componentStartTime is where the component starts on the timeline
+                                    // So absolute position = componentStartTime + offset_within_component
+                                    m_cueDragPreviewTime = tv.componentStartTime + (*previewTime - tv.mixTrackData->cueStart);
+                                    break;
+                                }
+                            }
                         }
                         else
                         {
