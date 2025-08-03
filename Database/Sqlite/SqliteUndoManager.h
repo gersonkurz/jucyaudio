@@ -44,6 +44,20 @@ namespace jucyaudio
             void clearHistory(MixId mixId) override;
 
         private:
+            // Enums for operation types and table names
+            enum class OperationType : int
+            {
+                Insert = 1,
+                Update = 2,
+                Delete = 3
+            };
+
+            enum class TableName : int
+            {
+                MixTracks = 1,
+                Mixes = 2
+            };
+
             /**
              * @brief Represents a single undoable operation.
              */
@@ -51,8 +65,8 @@ namespace jucyaudio
             {
                 int64_t undoId;
                 int64_t operationId;       // Groups related changes
-                std::string operationType;  // INSERT, UPDATE, DELETE
-                std::string tableName;      // MixTracks or Mixes
+                OperationType operationType;
+                TableName tableName;
                 int64_t recordId;          // track_id or mix_id
                 std::string oldState;      // JSON
                 std::string newState;      // JSON
@@ -81,8 +95,8 @@ namespace jucyaudio
             /**
              * @brief Adds an undo record to the database.
              */
-            bool addUndoRecord(MixId mixId, int64_t operationId, const std::string& operationType,
-                             const std::string& tableName, int64_t recordId,
+            bool addUndoRecord(MixId mixId, int64_t operationId, OperationType operationType,
+                             TableName tableName, int64_t recordId,
                              const std::string& oldState, const std::string& newState);
 
             /**

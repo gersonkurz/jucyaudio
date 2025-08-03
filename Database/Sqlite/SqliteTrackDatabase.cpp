@@ -174,12 +174,11 @@ CREATE TABLE IF NOT EXISTS MixUndoHistory (
     undo_id INTEGER PRIMARY KEY AUTOINCREMENT,
     mix_id INTEGER NOT NULL,
     operation_id INTEGER NOT NULL,      -- Groups related changes together
-    operation_type TEXT NOT NULL,       -- 'INSERT', 'UPDATE', 'DELETE'
-    table_name TEXT NOT NULL,           -- 'MixTracks' or 'Mixes'
-    record_id INTEGER,                   -- track_id or mix_id
-    old_state TEXT,                      -- JSON of previous state
-    new_state TEXT,                      -- JSON of new state
-    timestamp INTEGER DEFAULT (strftime('%s', 'now')),  -- When the operation occurred
+    operation_type INTEGER NOT NULL,    -- 1=INSERT, 2=UPDATE, 3=DELETE
+    table_name INTEGER NOT NULL,        -- 1=MixTracks, 2=Mixes
+    record_id INTEGER,                  -- track_id or mix_id
+    old_state TEXT,                     -- JSON of previous state
+    new_state TEXT,                     -- JSON of new state
     FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
 );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_mixundohistory_mix_id ON MixUndoHistory (mix_id);",

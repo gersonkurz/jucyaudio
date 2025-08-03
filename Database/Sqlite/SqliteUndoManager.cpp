@@ -39,24 +39,24 @@ namespace jucyaudio
             spdlog::info("SqliteUndoManager::recordMixTrackChange called for mix {} track {} operation {}", 
                         mixId, trackId, operationId);
             
-            std::string operationType;
+            OperationType operationType;
             std::string oldState;
             std::string newState;
 
             if (!oldTrack && newTrack)
             {
-                operationType = "INSERT";
+                operationType = OperationType::Insert;
                 newState = mixTrackToJson(*newTrack);
             }
             else if (oldTrack && newTrack)
             {
-                operationType = "UPDATE";
+                operationType = OperationType::Update;
                 oldState = mixTrackToJson(*oldTrack);
                 newState = mixTrackToJson(*newTrack);
             }
             else if (oldTrack && !newTrack)
             {
-                operationType = "DELETE";
+                operationType = OperationType::Delete;
                 oldState = mixTrackToJson(*oldTrack);
             }
             else
@@ -68,13 +68,13 @@ namespace jucyaudio
             // Delete any records beyond current stack position
             deleteRecordsBeyondStackPosition(mixId);
 
-            if (!addUndoRecord(mixId, operationId, operationType, "MixTracks", trackId, oldState, newState))
+            if (!addUndoRecord(mixId, operationId, operationType, TableName::MixTracks, trackId, oldState, newState))
             {
                 spdlog::error("Failed to record MixTrack change for undo");
             }
             else
             {
-                spdlog::info("Successfully recorded {} operation for track {} in mix {}", operationType, trackId, mixId);
+                spdlog::info("Successfully recorded operation {} for track {} in mix {}", static_cast<int>(operationType), trackId, mixId);
                 // Update stack position to this operation
                 updateStackPosition(mixId, operationId);
             }
@@ -85,24 +85,24 @@ namespace jucyaudio
                                                    const MixInfo* newInfo,
                                                    int64_t operationId)
         {
-            std::string operationType;
+            OperationType operationType;
             std::string oldState;
             std::string newState;
 
             if (!oldInfo && newInfo)
             {
-                operationType = "INSERT";
+                operationType = OperationType::Insert;
                 newState = mixInfoToJson(*newInfo);
             }
             else if (oldInfo && newInfo)
             {
-                operationType = "UPDATE";
+                operationType = OperationType::Update;
                 oldState = mixInfoToJson(*oldInfo);
                 newState = mixInfoToJson(*newInfo);
             }
             else if (oldInfo && !newInfo)
             {
-                operationType = "DELETE";
+                operationType = OperationType::Delete;
                 oldState = mixInfoToJson(*oldInfo);
             }
             else
@@ -114,7 +114,7 @@ namespace jucyaudio
             // Delete any records beyond current stack position
             deleteRecordsBeyondStackPosition(mixId);
 
-            if (!addUndoRecord(mixId, operationId, operationType, "Mixes", mixId, oldState, newState))
+            if (!addUndoRecord(mixId, operationId, operationType, TableName::Mixes, mixId, oldState, newState))
             {
                 spdlog::error("Failed to record MixInfo change for undo");
             }
@@ -363,8 +363,8 @@ namespace jucyaudio
             return info;
         }
 
-        bool SqliteUndoManager::addUndoRecord(MixId mixId, int64_t operationId, const std::string& operationType,
-                                            const std::string& tableName, int64_t recordId,
+        bool SqliteUndoManager::addUndoRecord(MixId mixId, int64_t operationId, OperationType operationType,
+                                            TableName tableName, int64_t recordId,
                                             const std::string& oldState, const std::string& newState)
         {
             SqliteStatement stmt{m_db, R"SQL(
@@ -374,8 +374,8 @@ namespace jucyaudio
             
             stmt.addParam(mixId);
             stmt.addParam(operationId);
-            stmt.addParam(operationType);
-            stmt.addParam(tableName);
+            stmt.addParam(static_cast<int>(operationType));
+            stmt.addParam(static_cast<int>(tableName));
             stmt.addParam(recordId);
             stmt.addNullableParam(oldState);
             stmt.addNullableParam(newState);
@@ -401,8 +401,8 @@ namespace jucyaudio
                 UndoRecord record;
                 record.undoId = stmt.getInt64(0);
                 record.operationId = stmt.getInt64(1);
-                record.operationType = stmt.getText(2);
-                record.tableName = stmt.getText(3);
+                record.operationType = static_cast<OperationType>(stmt.getInt32(2));
+                record.tableName = static_cast<TableName>(stmt.getInt32(3));
                 record.recordId = stmt.getInt64(4);
                 if (!stmt.isNull(5))
                     record.oldState = stmt.getText(5);
@@ -416,19 +416,19 @@ namespace jucyaudio
 
         bool SqliteUndoManager::applyUndoRecord(const UndoRecord& record)
         {
-            spdlog::info("Applying undo for {} operation on {} table, record_id: {}", 
-                        record.operationType, record.tableName, record.recordId);
+            spdlog::info("Applying undo for operation {} on table {}, record_id: {}", 
+                        static_cast<int>(record.operationType), static_cast<int>(record.tableName), record.recordId);
             
-            if (record.tableName == "MixTracks")
+            if (record.tableName == TableName::MixTracks)
             {
-                if (record.operationType == "INSERT")
+                if (record.operationType == OperationType::Insert)
                 {
                     // Undo an insert by deleting
                     SqliteStatement stmt{m_db, "DELETE FROM MixTracks WHERE track_id = ?;"};
                     stmt.addParam(record.recordId);
                     return stmt.execute();
                 }
-                else if (record.operationType == "UPDATE")
+                else if (record.operationType == OperationType::Update)
                 {
                     // Undo an update by restoring old state
                     auto oldTrack = mixTrackFromJson(record.oldState);
@@ -456,7 +456,7 @@ namespace jucyaudio
                     }
                     return success;
                 }
-                else if (record.operationType == "DELETE")
+                else if (record.operationType == OperationType::Delete)
                 {
                     // Undo a delete by re-inserting
                     auto oldTrack = mixTrackFromJson(record.oldState);
@@ -474,9 +474,9 @@ namespace jucyaudio
                     return stmt.execute();
                 }
             }
-            else if (record.tableName == "Mixes")
+            else if (record.tableName == TableName::Mixes)
             {
-                if (record.operationType == "UPDATE")
+                if (record.operationType == OperationType::Update)
                 {
                     // Undo an update by restoring old state
                     auto oldInfo = mixInfoFromJson(record.oldState);
@@ -503,9 +503,9 @@ namespace jucyaudio
 
         bool SqliteUndoManager::applyRedoRecord(const UndoRecord& record)
         {
-            if (record.tableName == "MixTracks")
+            if (record.tableName == TableName::MixTracks)
             {
-                if (record.operationType == "INSERT")
+                if (record.operationType == OperationType::Insert)
                 {
                     // Redo an insert by inserting again
                     auto newTrack = mixTrackFromJson(record.newState);
@@ -522,7 +522,7 @@ namespace jucyaudio
                     stmt.addParam(j["mix_data"].dump());
                     return stmt.execute();
                 }
-                else if (record.operationType == "UPDATE")
+                else if (record.operationType == OperationType::Update)
                 {
                     // Redo an update by applying new state
                     auto newTrack = mixTrackFromJson(record.newState);
@@ -538,7 +538,7 @@ namespace jucyaudio
                     stmt.addParam(record.recordId);
                     return stmt.execute();
                 }
-                else if (record.operationType == "DELETE")
+                else if (record.operationType == OperationType::Delete)
                 {
                     // Redo a delete by deleting again
                     SqliteStatement stmt{m_db, "DELETE FROM MixTracks WHERE track_id = ?;"};
@@ -546,9 +546,9 @@ namespace jucyaudio
                     return stmt.execute();
                 }
             }
-            else if (record.tableName == "Mixes")
+            else if (record.tableName == TableName::Mixes)
             {
-                if (record.operationType == "UPDATE")
+                if (record.operationType == OperationType::Update)
                 {
                     // Redo an update by applying new state
                     auto newInfo = mixInfoFromJson(record.newState);
