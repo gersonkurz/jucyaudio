@@ -123,6 +123,7 @@ CREATE TABLE IF NOT EXISTS Mixes(
     total_length INTEGER,
     source_ws_id INTEGER,
     status TEXT DEFAULT 'New',
+    undo_stack_position INTEGER DEFAULT 0,
     FOREIGN KEY(source_ws_id) REFERENCES WorkingSets(ws_id)
 );)SQL",
 
@@ -548,7 +549,7 @@ namespace jucyaudio
                 return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
             stmt.addParam("schema_version");
-            stmt.addParam("7"); // Initial schema version
+            stmt.addParam("8"); // Initial schema version
             if (!stmt.execute())
             {
                 m_lastErrorMessage = "Failed to insert initial schema version: " + m_db.getLastError();
@@ -886,6 +887,68 @@ CREATE TABLE IF NOT EXISTS MixUndoHistory (
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
                     }
                     spdlog::info("Successfully migrated database to version 7 - MixUndoHistory table ready.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+            }
+            
+            if (currentVersion < 8)
+            {
+                spdlog::info("Migrating database from version 7 to 8 - Adding undo stack tracking...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Drop and recreate MixUndoHistory with operation_id
+                    if (!m_db.execute("DROP TABLE IF EXISTS MixUndoHistory;"))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to drop old MixUndoHistory table.");
+                    }
+                    
+                    // Recreate with operation_id
+                    const char* createMixUndoHistory = R"SQL(
+CREATE TABLE MixUndoHistory (
+    undo_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mix_id INTEGER NOT NULL,
+    operation_id INTEGER NOT NULL,
+    operation_type TEXT NOT NULL,
+    table_name TEXT NOT NULL,
+    record_id INTEGER,
+    old_state TEXT,
+    new_state TEXT,
+    timestamp INTEGER DEFAULT (strftime('%s', 'now')),
+    FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
+);)SQL";
+                    
+                    if (!m_db.execute(createMixUndoHistory))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to recreate MixUndoHistory table.");
+                    }
+                    
+                    // Create indexes
+                    if (!m_db.execute("CREATE INDEX idx_mixundohistory_mix_id ON MixUndoHistory (mix_id);") ||
+                        !m_db.execute("CREATE INDEX idx_mixundohistory_operation_id ON MixUndoHistory (operation_id);"))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create MixUndoHistory indexes.");
+                    }
+                    
+                    // Add undo_stack_position to Mixes table
+                    if (!m_db.execute("ALTER TABLE Mixes ADD COLUMN undo_stack_position INTEGER DEFAULT 0;"))
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to add undo_stack_position to Mixes table.");
+                    }
+                    
+                    // Update schema version
+                    if (auto result = setDBSchemaVersion(8); !result.isOk())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 8.");
+                    }
+                    
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated database to version 8 - Stack-based undo/redo ready.");
                 }
                 else
                 {

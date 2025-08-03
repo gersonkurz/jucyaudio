@@ -65,8 +65,8 @@ namespace jucyaudio
                 return;
             }
 
-            // Clear redo stack for this mix when a new operation is recorded
-            m_redoStacks[mixId] = std::stack<int64_t>();
+            // Delete any records beyond current stack position
+            deleteRecordsBeyondStackPosition(mixId);
 
             if (!addUndoRecord(mixId, operationId, operationType, "MixTracks", trackId, oldState, newState))
             {
@@ -75,6 +75,8 @@ namespace jucyaudio
             else
             {
                 spdlog::info("Successfully recorded {} operation for track {} in mix {}", operationType, trackId, mixId);
+                // Update stack position to this operation
+                updateStackPosition(mixId, operationId);
             }
         }
 
@@ -109,29 +111,34 @@ namespace jucyaudio
                 return;
             }
 
-            // Clear redo stack for this mix when a new operation is recorded
-            m_redoStacks[mixId] = std::stack<int64_t>();
+            // Delete any records beyond current stack position
+            deleteRecordsBeyondStackPosition(mixId);
 
             if (!addUndoRecord(mixId, operationId, operationType, "Mixes", mixId, oldState, newState))
             {
                 spdlog::error("Failed to record MixInfo change for undo");
             }
+            else
+            {
+                // Update stack position to this operation
+                updateStackPosition(mixId, operationId);
+            }
         }
 
         bool SqliteUndoManager::undo(MixId mixId, std::function<void()> onComplete)
         {
-            const auto lastOpId = getLastOperationId(mixId);
-            if (lastOpId == 0)
+            const auto currentPos = getCurrentStackPosition(mixId);
+            if (currentPos == 0)
             {
                 spdlog::info("No undo available for mix {}", mixId);
                 return false;
             }
 
-            spdlog::info("Undoing operation {} for mix {}", lastOpId, mixId);
-            const auto records = getOperationRecords(lastOpId);
+            spdlog::info("Undoing from position {} for mix {}", currentPos, mixId);
+            const auto records = getOperationRecords(currentPos);
             if (records.empty())
             {
-                spdlog::error("No records found for operation {}", lastOpId);
+                spdlog::error("No records found for operation {}", currentPos);
                 return false;
             }
 
@@ -153,18 +160,25 @@ namespace jucyaudio
                 }
             }
 
-            // Remove all records for this operation from undo history
-            SqliteStatement deleteStmt{m_db, "DELETE FROM MixUndoHistory WHERE operation_id = ?;"};
-            deleteStmt.addParam(lastOpId);
-            if (!deleteStmt.execute())
+            // Get the previous operation ID (for the new stack position)
+            SqliteStatement prevStmt{m_db, R"SQL(
+                SELECT DISTINCT operation_id
+                FROM MixUndoHistory
+                WHERE mix_id = ? AND operation_id < ?
+                ORDER BY operation_id DESC
+                LIMIT 1;
+            )SQL"};
+            prevStmt.addParam(mixId);
+            prevStmt.addParam(currentPos);
+            
+            int64_t newPosition = 0;
+            if (prevStmt.getNextResult())
             {
-                spdlog::error("Failed to delete undo records for operation {}", lastOpId);
-                transaction.rollback();
-                return false;
+                newPosition = prevStmt.getInt64(0);
             }
-
-            // Add operation ID to redo stack
-            m_redoStacks[mixId].push(lastOpId);
+            
+            // Update stack position
+            updateStackPosition(mixId, newPosition);
 
             if (!transaction.commit())
             {
@@ -172,7 +186,8 @@ namespace jucyaudio
                 return false;
             }
 
-            spdlog::info("Successfully undid operation {} for mix {} ({} changes)", lastOpId, mixId, records.size());
+            spdlog::info("Successfully undid operation {} for mix {} ({} changes), new position: {}", 
+                        currentPos, mixId, records.size(), newPosition);
             
             if (onComplete)
             {
@@ -184,36 +199,92 @@ namespace jucyaudio
 
         bool SqliteUndoManager::redo(MixId mixId, std::function<void()> onComplete)
         {
-            auto it = m_redoStacks.find(mixId);
-            if (it == m_redoStacks.end() || it->second.empty())
+            const auto currentPos = getCurrentStackPosition(mixId);
+            
+            // Find the next operation after current position
+            SqliteStatement nextStmt{m_db, R"SQL(
+                SELECT DISTINCT operation_id
+                FROM MixUndoHistory
+                WHERE mix_id = ? AND operation_id > ?
+                ORDER BY operation_id ASC
+                LIMIT 1;
+            )SQL"};
+            nextStmt.addParam(mixId);
+            nextStmt.addParam(currentPos);
+            
+            if (!nextStmt.getNextResult())
             {
                 spdlog::info("No redo available for mix {}", mixId);
                 return false;
             }
-
-            auto& redoStack = it->second;
-            const auto operationId = redoStack.top();
-            redoStack.pop();
-
-            spdlog::info("Redoing operation {} for mix {}", operationId, mixId);
             
-            // Note: We need to store the redo records somewhere when we undo
-            // For now, let's re-read them from a temporary storage
-            // This is a limitation - we'd need to enhance this to store redo data
+            const auto nextOpId = nextStmt.getInt64(0);
+            spdlog::info("Redoing operation {} for mix {}", nextOpId, mixId);
             
-            spdlog::error("Redo not fully implemented yet - needs redo record storage");
-            return false;
+            const auto records = getOperationRecords(nextOpId);
+            if (records.empty())
+            {
+                spdlog::error("No records found for operation {}", nextOpId);
+                return false;
+            }
+
+            SqliteTransaction transaction{m_db};
+            if (!transaction)
+            {
+                spdlog::error("Failed to begin redo transaction");
+                return false;
+            }
+
+            // Apply all redo records in forward order
+            for (const auto& record : records)
+            {
+                if (!applyRedoRecord(record))
+                {
+                    spdlog::error("Failed to apply redo record {}", record.undoId);
+                    transaction.rollback();
+                    return false;
+                }
+            }
+
+            // Update stack position to the redone operation
+            updateStackPosition(mixId, nextOpId);
+
+            if (!transaction.commit())
+            {
+                spdlog::error("Failed to commit redo transaction");
+                return false;
+            }
+
+            spdlog::info("Successfully redid operation {} for mix {} ({} changes)", 
+                        nextOpId, mixId, records.size());
+            
+            if (onComplete)
+            {
+                onComplete();
+            }
+
+            return true;
         }
 
         bool SqliteUndoManager::canUndo(MixId mixId) const
         {
-            return getLastOperationId(mixId) != 0;
+            return getCurrentStackPosition(mixId) > 0;
         }
 
         bool SqliteUndoManager::canRedo(MixId mixId) const
         {
-            auto it = m_redoStacks.find(mixId);
-            return it != m_redoStacks.end() && !it->second.empty();
+            const auto currentPos = getCurrentStackPosition(mixId);
+            
+            // Check if there's an operation after current position
+            SqliteStatement stmt{m_db, R"SQL(
+                SELECT 1 FROM MixUndoHistory
+                WHERE mix_id = ? AND operation_id > ?
+                LIMIT 1;
+            )SQL"};
+            stmt.addParam(mixId);
+            stmt.addParam(currentPos);
+            
+            return stmt.getNextResult();
         }
 
         void SqliteUndoManager::clearHistory(MixId mixId)
@@ -225,8 +296,7 @@ namespace jucyaudio
                 spdlog::error("Failed to clear undo history for mix {}", mixId);
             }
 
-            // Clear redo stack
-            m_redoStacks.erase(mixId);
+            // Note: Redo is handled via stack position, no separate redo stack needed
         }
 
         std::string SqliteUndoManager::mixTrackToJson(const MixTrack& track) const
@@ -313,26 +383,6 @@ namespace jucyaudio
             return stmt.execute();
         }
 
-        int64_t SqliteUndoManager::getLastOperationId(MixId mixId) const
-        {
-            SqliteStatement stmt{m_db, R"SQL(
-                SELECT DISTINCT operation_id
-                FROM MixUndoHistory
-                WHERE mix_id = ?
-                ORDER BY operation_id DESC
-                LIMIT 1;
-            )SQL"};
-            
-            stmt.addParam(mixId);
-            
-            if (stmt.getNextResult())
-            {
-                return stmt.getInt64(0);
-            }
-            
-            return 0;
-        }
-        
         std::vector<SqliteUndoManager::UndoRecord> SqliteUndoManager::getOperationRecords(int64_t operationId) const
         {
             std::vector<UndoRecord> records;
@@ -520,6 +570,58 @@ namespace jucyaudio
             }
             
             return false;
+        }
+        
+        int64_t SqliteUndoManager::getCurrentStackPosition(MixId mixId) const
+        {
+            SqliteStatement stmt{m_db, "SELECT undo_stack_position FROM Mixes WHERE mix_id = ?;"};
+            stmt.addParam(mixId);
+            
+            if (stmt.getNextResult())
+            {
+                return stmt.getInt64(0);
+            }
+            
+            return 0;
+        }
+        
+        void SqliteUndoManager::updateStackPosition(MixId mixId, int64_t operationId)
+        {
+            SqliteStatement stmt{m_db, "UPDATE Mixes SET undo_stack_position = ? WHERE mix_id = ?;"};
+            stmt.addParam(operationId);
+            stmt.addParam(mixId);
+            
+            if (!stmt.execute())
+            {
+                spdlog::error("Failed to update stack position for mix {} to {}", mixId, operationId);
+            }
+            else
+            {
+                spdlog::info("Updated stack position for mix {} to {}", mixId, operationId);
+            }
+        }
+        
+        void SqliteUndoManager::deleteRecordsBeyondStackPosition(MixId mixId)
+        {
+            const auto currentPos = getCurrentStackPosition(mixId);
+            
+            SqliteStatement stmt{m_db, "DELETE FROM MixUndoHistory WHERE mix_id = ? AND operation_id > ?;"};
+            stmt.addParam(mixId);
+            stmt.addParam(currentPos);
+            
+            if (stmt.execute())
+            {
+                const auto deletedCount = m_db.getChangesCount();
+                if (deletedCount > 0)
+                {
+                    spdlog::info("Deleted {} undo records beyond position {} for mix {}", 
+                                deletedCount, currentPos, mixId);
+                }
+            }
+            else
+            {
+                spdlog::error("Failed to delete records beyond stack position for mix {}", mixId);
+            }
         }
 
     } // namespace database

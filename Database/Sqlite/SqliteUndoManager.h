@@ -86,11 +86,6 @@ namespace jucyaudio
                              const std::string& oldState, const std::string& newState);
 
             /**
-             * @brief Gets the most recent operation ID for a mix.
-             */
-            int64_t getLastOperationId(MixId mixId) const;
-            
-            /**
              * @brief Gets all records for a given operation.
              */
             std::vector<UndoRecord> getOperationRecords(int64_t operationId) const;
@@ -107,8 +102,20 @@ namespace jucyaudio
 
             SqliteDatabase& m_db;
             
-            // In-memory redo stacks per mix (stores operation IDs)
-            mutable std::unordered_map<MixId, std::stack<int64_t>> m_redoStacks;
+            /**
+             * @brief Gets the current stack position for a mix.
+             */
+            int64_t getCurrentStackPosition(MixId mixId) const;
+            
+            /**
+             * @brief Updates the stack position for a mix.
+             */
+            void updateStackPosition(MixId mixId, int64_t operationId);
+            
+            /**
+             * @brief Deletes all undo records beyond the current stack position.
+             */
+            void deleteRecordsBeyondStackPosition(MixId mixId);
             
             // Operation ID generator
             mutable std::atomic<int64_t> m_nextOperationId{0};
