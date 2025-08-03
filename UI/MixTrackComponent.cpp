@@ -363,8 +363,36 @@ namespace jucyaudio
        
         void MixTrackComponent::mouseDown(const juce::MouseEvent &event)
         {
+            spdlog::info("[MixTrackComponent] mouseDown - clicks: {}, position: ({}, {})", 
+                        event.getNumberOfClicks(), event.position.x, event.position.y);
+            
             if (event.mods.isLeftButtonDown())
             {
+                // Check for double-click first - pass it to the timeline for playback
+                if (event.getNumberOfClicks() == 2)
+                {
+                    spdlog::info("[MixTrackComponent] Double-click detected, forwarding to timeline");
+                    if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                    {
+                        // Convert local coordinates to timeline coordinates
+                        auto timelinePos = timeline->getLocalPoint(this, event.position);
+                        spdlog::info("[MixTrackComponent] Local pos: ({}, {}), Timeline pos: ({}, {})", 
+                                    event.position.x, event.position.y, timelinePos.x, timelinePos.y);
+                        
+                        // Create a new mouse event in timeline's coordinate space
+                        juce::MouseEvent timelineEvent(event.source, timelinePos, event.mods, 
+                                                      event.pressure, event.orientation, event.rotation,
+                                                      event.tiltX, event.tiltY, event.eventComponent,
+                                                      event.originalComponent, event.eventTime,
+                                                      event.mouseDownPosition, event.mouseDownTime,
+                                                      event.getNumberOfClicks(), event.mouseWasDraggedSinceMouseDown());
+                        
+                        // Forward the event to timeline
+                        timeline->mouseDown(timelineEvent);
+                        return;  // Don't process further
+                    }
+                }
+                
                 // --- Priority 1: Check for an envelope point hit ---
                 if (const auto hitPointIndex = hitTestEnvelopePoint(event.position.toInt()))
                 {

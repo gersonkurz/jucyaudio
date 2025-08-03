@@ -11,7 +11,10 @@ namespace jucyaudio
               m_thumbnailCache{thumbnailCache},
               m_mixLoader{nullptr}
         {
+            spdlog::info("[Timeline] Constructor called");
             setWantsKeyboardFocus(true);
+            setInterceptsMouseClicks(true, true);  // Make sure we receive mouse clicks
+            spdlog::info("[Timeline] Mouse interception enabled");
         }
 
         void TimelineComponent::playMixFromPosition(double timePosition)
@@ -312,6 +315,9 @@ namespace jucyaudio
 
         void TimelineComponent::mouseDown(const juce::MouseEvent &event)
         {
+            spdlog::info("[Timeline] mouseDown - position: ({}, {}), clicks: {}, leftButton: {}", 
+                        event.position.x, event.position.y, event.getNumberOfClicks(), event.mods.isLeftButtonDown());
+            
             // Always grab keyboard focus when the timeline is clicked.
             grabKeyboardFocus();
 
@@ -319,6 +325,8 @@ namespace jucyaudio
             {
                 // Convert the pixel x-coordinate to a time in seconds.
                 double clickTime = event.position.x / m_pixelsPerSecond;
+                spdlog::info("[Timeline] Click time: {} seconds (x={}, pixelsPerSecond={})", 
+                            clickTime, event.position.x, m_pixelsPerSecond);
 
                 // Update the visual playhead position.
                 setCurrentTimePosition(clickTime);
@@ -326,6 +334,7 @@ namespace jucyaudio
                 // Determine which track, if any, was under the cursor and select it.
                 if (const auto clickedTrack = getTrackAtPosition(event.position.toInt()))
                 {
+                    spdlog::info("[Timeline] Track clicked at position");
                     setSelectedTrack(clickedTrack);
                 }
 
@@ -335,13 +344,22 @@ namespace jucyaudio
 
                 if (event.getNumberOfClicks() == 2 && onMixPlaybackAlwaysRequested)
                 {
+                    spdlog::info("[Timeline] Double-click detected, calling onMixPlaybackAlwaysRequested callback");
                     // A double-click is a request to start playback immediately.
                     onMixPlaybackAlwaysRequested(clickTime);
                 }
                 else if (event.getNumberOfClicks() == 1 && onSeekRequested)
                 {
+                    spdlog::info("[Timeline] Single-click detected, calling onSeekRequested callback");
                     // A single-click is a request to seek the transport.
                     onSeekRequested(clickTime);
+                }
+                else
+                {
+                    spdlog::info("[Timeline] Click detected but no callback set - clicks: {}, onMixPlaybackAlwaysRequested: {}, onSeekRequested: {}", 
+                                event.getNumberOfClicks(), 
+                                onMixPlaybackAlwaysRequested ? "set" : "null",
+                                onSeekRequested ? "set" : "null");
                 }
 
                 repaint();

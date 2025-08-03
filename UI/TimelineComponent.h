@@ -116,6 +116,22 @@ namespace jucyaudio
              */
             void repositionTrack(TrackId trackId);
 
+            /**
+             * @brief Handles mouse down events on the timeline's background area.
+             *
+             * This function is the primary entry point for direct interaction with the timeline.
+             * Its responsibilities are:
+             * 1.  To grab keyboard focus so it can respond to key presses (e.g., Delete).
+             * 2.  To calculate the time corresponding to the click position.
+             * 3.  To set the visual position of the playhead (via setCurrentTimePosition).
+             * 4.  To identify and select the track component that was clicked (if any).
+             * 5.  To fire callbacks (onSeekRequested, onMixPlaybackAlwaysRequested) to notify
+             *     the parent component of the user's intent to seek or play.
+             *
+             * @param event The mouse event containing the click position and click count.
+             */
+            void mouseDown(const juce::MouseEvent &event) override;
+            
         private:
             /**
              * @brief Handles key press events when the timeline has focus.
@@ -177,22 +193,6 @@ namespace jucyaudio
              */
             void mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel) override;
 
-            /**
-             * @brief Handles mouse down events on the timeline's background area.
-             *
-             * This function is the primary entry point for direct interaction with the timeline.
-             * Its responsibilities are:
-             * 1.  To grab keyboard focus so it can respond to key presses (e.g., Delete).
-             * 2.  To calculate the time corresponding to the click position.
-             * 3.  To set the visual position of the playhead (via setCurrentTimePosition).
-             * 4.  To identify and select the track component that was clicked (if any).
-             * 5.  To fire callbacks (onSeekRequested, onMixPlaybackAlwaysRequested) to notify
-             *     the parent component of the user's intent to seek or play.
-             *
-             * @param event The mouse event containing the click position and click count.
-             */
-            void mouseDown(const juce::MouseEvent &event) override;
-            
             /**
              * @brief Adjusts the parent viewport's scroll position to keep a specific time point stable under the mouse cursor during a zoom operation.
              *

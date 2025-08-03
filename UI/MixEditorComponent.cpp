@@ -48,15 +48,11 @@ namespace jucyaudio
                 handleMixPlayback(startTime, true);
             };
             
-#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             // Initialize audio
             m_mixPlaybackEngine = std::make_unique<audio::MixPlaybackEngine>();
             m_audioDeviceManager = std::make_unique<juce::AudioDeviceManager>();
             
-            // Set up audio device
-            m_audioDeviceManager->initialiseWithDefaultDevices(0, 2); // 0 inputs, 2 outputs
-            m_audioDeviceManager->addAudioCallback(m_mixPlaybackEngine.get());
-#endif
+            // Set up audio device - but don't add callback yet (will be added when playback starts)
             
             // Set up playback timer
             m_playbackTimer.owner = this;
@@ -70,13 +66,11 @@ namespace jucyaudio
                 stopMixPlayback();
             }
             
-#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             // Clean up audio
             if (m_audioDeviceManager && m_mixPlaybackEngine)
             {
                 m_audioDeviceManager->removeAudioCallback(m_mixPlaybackEngine.get());
             }
-#endif
             
             // Unload mix before cleanup
             unloadMix();
@@ -186,15 +180,32 @@ namespace jucyaudio
 
         void MixEditorComponent::loadMix(database::MixNode *node)
         {
+            spdlog::info("[MixEditor] loadMix called with node: {}", node ? "valid" : "null");
             assert(node != nullptr && "MixNode should not be null in loadMix()");
             if (m_node)
             {
+                spdlog::info("[MixEditor] Releasing previous node");
                 m_node->release(REFCOUNT_DEBUG_ARGS); // Release previous node if any
             }
             m_node = node; // Take ownership of the new node
             node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid
             node->refreshCache(false);
-            m_timeline.populateFrom(&(node->getMixProjectLoader()));
+            
+            auto& loader = node->getMixProjectLoader();
+            spdlog::info("[MixEditor] Loading mix with {} tracks into timeline", loader.getMixTracks().size());
+            
+            // Load the mix into the playback engine
+            if (m_mixPlaybackEngine)
+            {
+                bool loadSuccess = m_mixPlaybackEngine->loadMix(&loader);
+                spdlog::info("[MixEditor] Mix loaded into playback engine: {}", loadSuccess ? "success" : "failed");
+            }
+            else
+            {
+                spdlog::error("[MixEditor] m_mixPlaybackEngine is null!");
+            }
+            
+            m_timeline.populateFrom(&loader);
             
             // Ensure timeline has keyboard focus for playback controls
             m_timeline.grabKeyboardFocus();
@@ -300,90 +311,138 @@ namespace jucyaudio
         
         void MixEditorComponent::handleMixPlayback(double startTime, bool alwaysPlay)
         {
-#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
+            spdlog::info("[MixEditor] handleMixPlayback called - startTime: {}, alwaysPlay: {}, m_isPlaying: {}", 
+                        startTime, alwaysPlay, m_isPlaying);
+            
             // Special case: negative value means stop
             if (startTime < 0)
             {
                 if (m_isPlaying)
                 {
-                    spdlog::info("MixEditorComponent::handleMixPlayback - Stopping playback");
+                    spdlog::info("[MixEditor] Stopping playback (negative startTime)");
                     stopMixPlayback();
                 }
                 return;
             }
             
-            spdlog::info("MixEditorComponent::handleMixPlayback - {} playback at {:.2f}s", 
+            spdlog::info("[MixEditor] {} playback at {:.2f}s", 
                         alwaysPlay ? "Starting" : "Toggling", startTime);
             
             if (!m_node)
             {
-                spdlog::error("No mix loaded");
+                spdlog::error("[MixEditor] No mix node loaded");
+                return;
+            }
+            
+            if (!m_mixPlaybackEngine)
+            {
+                spdlog::error("[MixEditor] m_mixPlaybackEngine is null!");
                 return;
             }
             
             if (m_isPlaying && !alwaysPlay)
             {
                 // Toggle off (only for space key)
+                spdlog::info("[MixEditor] Toggling playback off");
                 stopMixPlayback();
             }
             else
             {
                 // Load the mix into the playback engine if not already loaded
-                if (!m_mixPlaybackEngine->isMixLoaded() || m_mixPlaybackEngine->getMixLoader() != &m_node->getMixProjectLoader())
+                bool mixLoaded = m_mixPlaybackEngine->isMixLoaded();
+                bool correctLoader = m_mixPlaybackEngine->getMixLoader() == &m_node->getMixProjectLoader();
+                spdlog::info("[MixEditor] Mix loaded: {}, Correct loader: {}", mixLoaded, correctLoader);
+                
+                if (!mixLoaded || !correctLoader)
                 {
+                    spdlog::info("[MixEditor] Loading mix into playback engine");
                     if (!m_mixPlaybackEngine->loadMix(&m_node->getMixProjectLoader()))
                     {
-                        spdlog::error("Failed to load mix into playback engine");
+                        spdlog::error("[MixEditor] Failed to load mix into playback engine");
                         return;
                     }
+                    spdlog::info("[MixEditor] Mix successfully loaded into playback engine");
                 }
                 
                 // Set position and start playback
                 auto positionMs = std::chrono::milliseconds(static_cast<int64_t>(startTime * 1000));
-                spdlog::info("Setting playback position to {} ms", positionMs.count());
+                spdlog::info("[MixEditor] Setting playback position to {} ms", positionMs.count());
                 m_mixPlaybackEngine->setPosition(positionMs);
                 startMixPlayback();
             }
-#else
-            // Playback not available during transition
-            spdlog::info("Mix playback disabled during transition");
-#endif
         }
         
         void MixEditorComponent::startMixPlayback()
         {
-#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
-            spdlog::info("MixEditorComponent::startMixPlayback");
+            spdlog::info("[MixEditor] startMixPlayback called, m_isPlaying={}", m_isPlaying);
             
             if (!m_isPlaying)
             {
                 // Ensure audio device is open
-                if (m_audioDeviceManager && !m_audioDeviceManager->getCurrentAudioDevice())
+                if (m_audioDeviceManager)
                 {
-                    m_audioDeviceManager->initialiseWithDefaultDevices(0, 2);
-                    m_audioDeviceManager->addAudioCallback(m_mixPlaybackEngine.get());
+                    auto* currentDevice = m_audioDeviceManager->getCurrentAudioDevice();
+                    spdlog::info("[MixEditor] Current audio device: {}", currentDevice ? currentDevice->getName().toStdString() : "none");
+                    
+                    if (!currentDevice)
+                    {
+                        spdlog::info("[MixEditor] Initializing audio device with default settings");
+                        auto result = m_audioDeviceManager->initialiseWithDefaultDevices(0, 2);
+                        if (result.isNotEmpty())
+                        {
+                            spdlog::error("[MixEditor] Failed to initialize audio device: {}", result.toStdString());
+                            return;
+                        }
+                        
+                        currentDevice = m_audioDeviceManager->getCurrentAudioDevice();
+                        if (currentDevice)
+                        {
+                            spdlog::info("[MixEditor] Audio device initialized: {}", currentDevice->getName().toStdString());
+                            spdlog::info("[MixEditor] Sample rate: {}, Buffer size: {}", 
+                                currentDevice->getCurrentSampleRate(), 
+                                currentDevice->getCurrentBufferSizeSamples());
+                        }
+                        
+                        spdlog::info("[MixEditor] Adding audio callback to device");
+                        m_audioDeviceManager->addAudioCallback(m_mixPlaybackEngine.get());
+                    }
+                }
+                else
+                {
+                    spdlog::error("[MixEditor] m_audioDeviceManager is null!");
+                    return;
                 }
                 
                 m_isPlaying = true;
+                spdlog::info("[MixEditor] Set m_isPlaying to true");
                 
                 // Unpause the playback engine
                 if (m_mixPlaybackEngine)
                 {
+                    spdlog::info("[MixEditor] Unpausing playback engine");
                     m_mixPlaybackEngine->setPaused(false);
+                    
+                    auto position = m_mixPlaybackEngine->getPosition();
+                    spdlog::info("[MixEditor] Current playback position: {} ms", position.count());
                 }
                 
                 // Start the timer to update playback position
+                spdlog::info("[MixEditor] Starting playback timer");
                 m_playbackTimer.startTimer(50); // Update at 20Hz
                 
                 // Update timeline to show we're playing
-                m_timeline.setMixPlaybackPosition(m_mixPlaybackEngine->getPosition().count() / 1000.0);
+                auto positionSeconds = m_mixPlaybackEngine->getPosition().count() / 1000.0;
+                spdlog::info("[MixEditor] Setting timeline playback position to {} seconds", positionSeconds);
+                m_timeline.setMixPlaybackPosition(positionSeconds);
             }
-#endif
+            else
+            {
+                spdlog::info("[MixEditor] Already playing, ignoring start request");
+            }
         }
         
         void MixEditorComponent::stopMixPlayback()
         {
-#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             spdlog::info("MixEditorComponent::stopMixPlayback");
             
             if (m_isPlaying)
@@ -402,14 +461,10 @@ namespace jucyaudio
                 // Reset playback position display
                 m_timeline.setMixPlaybackPosition(-1.0); // Hide the red playhead
             }
-#else
-            m_isPlaying = false;
-#endif
         }
         
         void MixEditorComponent::updatePlaybackPosition()
         {
-#if MIX_TRANSITION_OLD_PLAYBACK_AVAILABLE
             if (m_isPlaying && m_mixPlaybackEngine)
             {
                 // Get current position from engine
@@ -426,7 +481,6 @@ namespace jucyaudio
                     stopMixPlayback();
                 }
             }
-#endif
         }
     } // namespace ui
 } // namespace jucyaudio
