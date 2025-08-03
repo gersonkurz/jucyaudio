@@ -35,40 +35,47 @@ FetchContent_MakeAvailable(JUCE nlohmann_json tabulate)
 
 # Platform-specific library paths and includes
 if(WIN32)
+     set(WIN32_DEPS_ROOT "C:/Projects/jucyaudio_deps_win32_x64")
+
     # Windows paths from jucer file
-    set(AUBIO_LIB_PATH "C:/Projects/jucyaudio_deps_win32_x64/aubio/lib")
-    set(SPDLOG_LIB_PATH_DEBUG "C:/Projects/jucyaudio_deps_win32_x64/spdlog/out/install/x64-Debug/lib")
-    set(SPDLOG_LIB_PATH_RELEASE "C:/Projects/jucyaudio_deps_win32_x64/spdlog/out/install/x64-Release/lib")
-    set(TAGLIB_LIB_PATH_DEBUG "C:/Projects/jucyaudio_deps_win32_x64/taglib/out/install/x64-Debug/lib")
-    set(TAGLIB_LIB_PATH_RELEASE "C:/Projects/jucyaudio_deps_win32_x64/taglib/out/install/x64-Release/lib")
-    set(LAME_LIB_PATH "C:/Projects/jucyaudio_deps_win32_x64/lame")
-    set(PTHREADS_LIB_PATH "C:/Projects/jucyaudio_deps_win32_x64/pthreads-w32/lib")
-    set(FFTW_LIB_PATH "C:/Projects/jucyaudio_deps_win32_x64/fftw")
-    set(LIBSNDFILE_LIB_PATH "C:/Projects/jucyaudio_deps_win32_x64/libsndfile/lib")
-    set(FFMPEG_LIB_PATH "C:/Projects/jucyaudio_deps_win32_x64/ffmpeg/lib")
+    set(AUBIO_LIB_PATH "${WIN32_DEPS_ROOT}/aubio/lib")
+    set(SPDLOG_LIB_PATH_DEBUG "${WIN32_DEPS_ROOT}/spdlog/out/install/x64-Debug/lib")
+    set(SPDLOG_LIB_PATH_RELEASE "${WIN32_DEPS_ROOT}/spdlog/out/install/x64-Release/lib")
+    set(TAGLIB_LIB_PATH_DEBUG "${WIN32_DEPS_ROOT}/taglib/out/install/x64-Debug/lib")
+    set(TAGLIB_LIB_PATH_RELEASE "${WIN32_DEPS_ROOT}/taglib/out/install/x64-Release/lib")
+    set(LAME_LIB_PATH "${WIN32_DEPS_ROOT}/lame")
+    set(PTHREADS_LIB_PATH "${WIN32_DEPS_ROOT}/pthreads-w32/lib")
+    set(FFTW_LIB_PATH "${WIN32_DEPS_ROOT}/fftw")
+    set(LIBSNDFILE_LIB_PATH "${WIN32_DEPS_ROOT}/libsndfile/lib")
+    set(FFMPEG_LIB_PATH "${WIN32_DEPS_ROOT}/ffmpeg/lib")
 
     
-    set(AUBIO_INCLUDE_PATH "C:/Projects/jucyaudio_deps_win32_x64/aubio/include")
-    set(SPDLOG_INCLUDE_PATH_DEBUG "C:/Projects/jucyaudio_deps_win32_x64/spdlog/out/install/x64-Debug/include")
-    set(SPDLOG_INCLUDE_PATH_RELEASE "C:/Projects/jucyaudio_deps_win32_x64/spdlog/out/install/x64-Release/include")
-    set(TAGLIB_INCLUDE_PATH_DEBUG "C:/Projects/jucyaudio_deps_win32_x64/taglib/out/install/x64-Debug/include")
-    set(TAGLIB_INCLUDE_PATH_RELEASE "C:/Projects/jucyaudio_deps_win32_x64/taglib/out/install/x64-Release/include")
-    set(LAME_INCLUDE_PATH "C:/Projects/jucyaudio_deps_win32_x64/lame/include")
-    set(TOMLPLUSPLUS_INCLUDE_PATH "C:/Projects/jucyaudio_deps_win32_x64/tomlplusplus/include")
-    set(PTHREADS_INCLUDE_PATH "C:/Projects/jucyaudio_deps_win32_x64/pthreads-w32/include")
-    set(FFTW_INCLUDE_PATH "C:/Projects/jucyaudio_deps_win32_x64/fftw")
+    set(AUBIO_INCLUDE_PATH "${WIN32_DEPS_ROOT}/aubio/include")
+    set(SPDLOG_INCLUDE_PATH_DEBUG "${WIN32_DEPS_ROOT}/spdlog/out/install/x64-Debug/include")
+    set(SPDLOG_INCLUDE_PATH_RELEASE "${WIN32_DEPS_ROOT}/spdlog/out/install/x64-Release/include")
+    set(TAGLIB_INCLUDE_PATH_DEBUG "${WIN32_DEPS_ROOT}/taglib/out/install/x64-Debug/include")
+    set(TAGLIB_INCLUDE_PATH_RELEASE "${WIN32_DEPS_ROOT}/taglib/out/install/x64-Release/include")
+    set(LAME_INCLUDE_PATH "${WIN32_DEPS_ROOT}/lame/include")
+    set(TOMLPLUSPLUS_INCLUDE_PATH "${WIN32_DEPS_ROOT}/tomlplusplus/include")
+    set(PTHREADS_INCLUDE_PATH "${WIN32_DEPS_ROOT}/pthreads-w32/include")
+    set(FFTW_INCLUDE_PATH "${WIN32_DEPS_ROOT}/fftw")
     set(LIBSNDFILE_INCLUDE_PATH "C:/Projects/libsndfile/include")
-    set(FFMPEG_INCLUDE_PATH "C:/Projects/jucyaudio_deps_win32_x64/ffmpeg/include")
+    set(FFMPEG_INCLUDE_PATH "${WIN32_DEPS_ROOT}/ffmpeg/include")   
+    set(ICU_LIB_PATH_DEBUG "${WIN32_DEPS_ROOT}/icu/lib")
+    set(ICU_LIB_PATH_RELEASE "${WIN32_DEPS_ROOT}/icu/lib")
+    set(ICU_INCLUDE_PATH "${WIN32_DEPS_ROOT}/icu/include")
     
     # Use debug or release paths based on build type
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         set(SPDLOG_LIB_PATH ${SPDLOG_LIB_PATH_DEBUG})
         set(TAGLIB_LIB_PATH ${TAGLIB_LIB_PATH_DEBUG})
+        set(ICU_LIB_PATH ${ICU_LIB_PATH_DEBUG}) 
         set(SPDLOG_INCLUDE_PATH ${SPDLOG_INCLUDE_PATH_DEBUG})
         set(TAGLIB_INCLUDE_PATH ${TAGLIB_INCLUDE_PATH_DEBUG})
     else()
         set(SPDLOG_LIB_PATH ${SPDLOG_LIB_PATH_RELEASE})
         set(TAGLIB_LIB_PATH ${TAGLIB_LIB_PATH_RELEASE})
+        set(ICU_LIB_PATH ${ICU_LIB_PATH_RELEASE})
         set(SPDLOG_INCLUDE_PATH ${SPDLOG_INCLUDE_PATH_RELEASE})
         set(TAGLIB_INCLUDE_PATH ${TAGLIB_INCLUDE_PATH_RELEASE})
     endif()
@@ -89,6 +96,14 @@ if(WIN32)
     find_library(AVUTIL_LIBRARY avutil PATHS ${FFMPEG_LIB_PATH} REQUIRED)
     find_library(SWRESAMPLE_LIBRARY swresample PATHS ${FFMPEG_LIB_PATH} REQUIRED)
     find_library(LAME_LIBRARY libmp3lame PATHS ${LAME_LIB_PATH} REQUIRED)
+    # Find ICU libraries (uc = common, in = internationalization)
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        find_library(ICU_UC_LIBRARY icuucd PATHS ${ICU_LIB_PATH} REQUIRED)
+        find_library(ICU_I18N_LIBRARY icuind PATHS ${ICU_LIB_PATH} REQUIRED)
+    else()
+        find_library(ICU_UC_LIBRARY icuuc PATHS ${ICU_LIB_PATH} REQUIRED)
+        find_library(ICU_I18N_LIBRARY icuin PATHS ${ICU_LIB_PATH} REQUIRED)
+    endif()
 
     # Windows external includes
     set(EXTERNAL_INCLUDES
@@ -100,6 +115,7 @@ if(WIN32)
         ${PTHREADS_INCLUDE_PATH}
         ${FFTW_INCLUDE_PATH}
         ${LIBSNDFILE_INCLUDE_PATH}
+        ${ICU_INCLUDE_PATH} 
         ${CMAKE_CURRENT_SOURCE_DIR}
     )
     
@@ -381,6 +397,8 @@ if(WIN32)
         ${FFTW3F_LIBRARY}
         ${LIBSNDFILE_LIBRARY}
 
+        ${ICU_UC_LIBRARY}
+        ${ICU_I18N_LIBRARY}
     )
 else()
     target_link_libraries(jucyaudio PRIVATE
@@ -413,6 +431,9 @@ else()
         ${MP3LAME_LIBRARY}
         
         z  # zlib
+
+        ICU::uc
+        ICU::i18n
     )
 endif()
 
