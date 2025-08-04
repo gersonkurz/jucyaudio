@@ -1,5 +1,5 @@
-#include <Database/Nodes/VirtualFoldersOverview.h>
 #include <Database/Nodes/VirtualFolderNode.h>
+#include <Database/Nodes/VirtualFoldersOverview.h>
 #include <Database/TrackLibrary.h>
 #include <spdlog/spdlog.h>
 
@@ -13,32 +13,26 @@ namespace jucyaudio
         }
 
         VirtualFoldersOverview::VirtualFoldersOverview(INavigationNode *parent)
-            : BaseNode{parent, "Folders", 
-            "Folder", "Folders"}
+            : BaseNode{parent, "Folders", "Folder", "Folders"}
         {
             // The name "Folders" will appear in the navigation tree
         }
 
         bool VirtualFoldersOverview::expand(std::vector<INavigationNode *> &outChildren)
         {
-            auto* trackDb{theTrackLibrary.getTrackDatabase()};
-            if (!trackDb)
+            const auto &folderDb = theTrackLibrary.getFolderDatabase();
+
+            // Get the root folders (parentId = -1) from our new, fast, cached folder database.
+            const auto rootFolders = folderDb.getChildFolders(-1);
+
+            for (const auto &folderInfo : rootFolders)
             {
-                spdlog::error("VirtualFoldersOverview: Track database not available");
-                return false;
+                // Create the new VirtualFolderNode for each root folder.
+                outChildren.push_back(new VirtualFolderNode{this, folderInfo});
             }
 
-            // Get root folders (parent_id = -1 means root)
-            auto rootFolders{trackDb->getVirtualFolderChildren(-1)};
-            
-            for (const auto& folderInfo : rootFolders)
-            {
-                auto* folderNode{new VirtualFolderNode{this, folderInfo.folderId, folderInfo.folderName}};
-                outChildren.push_back(folderNode);
-            }
-            
-            spdlog::debug("VirtualFoldersOverview loaded {} root folders", rootFolders.size());
-            return true;
+            spdlog::debug("VirtualFoldersOverview loaded {} root folders from the database cache.", rootFolders.size());
+            return !rootFolders.empty();
         }
 
         const DataActions &VirtualFoldersOverview::getNodeActions() const

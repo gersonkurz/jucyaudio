@@ -117,6 +117,7 @@ namespace jucyaudio
             std::lock_guard lock(m_cacheMutex);
             m_isCacheValid = false;
             m_folderCache.clear();
+            m_childIndexCache.clear(); // Clear the new cache as well
             spdlog::debug("Folder cache invalidated.");
         }
 
@@ -130,6 +131,7 @@ namespace jucyaudio
 
             spdlog::debug("Building folder cache...");
             m_folderCache.clear();
+            m_childIndexCache.clear();
 
             SqliteStatement stmt{m_db, "SELECT folder_id, parent_id, name, root_path FROM Folders;"};
             if (!stmt.isValid())
@@ -142,6 +144,9 @@ namespace jucyaudio
             {
                 FolderInfo info = getFolderInfoFromStatement(stmt);
                 m_folderCache[info.folderId] = info;
+
+                // Populate the parent-to-child index cache.
+                m_childIndexCache[info.parentId].push_back(info.folderId);
             }
             m_isCacheValid = true;
             spdlog::debug("Folder cache built with {} entries.", m_folderCache.size());
@@ -170,28 +175,62 @@ namespace jucyaudio
             return std::nullopt;
         }
 
+        bool SqliteFolderDatabase::hasChildren(FolderId parentId) const
+        {
+            buildCacheIfNeeded();
+            std::lock_guard lock(m_cacheMutex);
+
+            // This is an O(1) average time lookup. Incredibly fast.
+            auto it = m_childIndexCache.find(parentId);
+            if (it != m_childIndexCache.end())
+            {
+                // If an entry exists for this parent, it must have children.
+                // We also check that the vector is not empty for robustness.
+                return !it->second.empty();
+            }
+
+            // No entry in the child index means no children.
+            return false;
+        }
+
         std::vector<FolderInfo> SqliteFolderDatabase::getChildFolders(FolderId parentId) const
         {
             buildCacheIfNeeded();
             std::lock_guard lock(m_cacheMutex);
 
             std::vector<FolderInfo> children;
-            for (const auto &[id, folder] : m_folderCache)
+
+            // 1. Perform a fast lookup in our child index cache.
+            auto it = m_childIndexCache.find(parentId);
+            if (it != m_childIndexCache.end())
             {
-                if (folder.parentId == parentId)
+                const auto &childIds = it->second;
+                children.reserve(childIds.size());
+
+                // 2. For each child ID, get the full FolderInfo from the main cache.
+                for (FolderId childId : childIds)
                 {
-                    children.push_back(folder);
+                    auto folderIt = m_folderCache.find(childId);
+                    if (folderIt != m_folderCache.end())
+                    {
+                        children.push_back(folderIt->second);
+                    }
                 }
             }
 
-            // Sort children by name for consistent UI presentation
+            // 3. Sort the final list for consistent UI presentation.
             std::sort(children.begin(),
                 children.end(),
                 [](const FolderInfo &a, const FolderInfo &b)
                 {
-                    return a.name < b.name; // This should ideally be a case-insensitive, natural sort
+                    // A proper natural/locale-aware sort would be better here,
+                    // but a simple case-insensitive one is a good start.
+                    auto normA = normalizeForCache(a.name);
+                    auto normB = normalizeForCache(b.name);
+                    if (normA && normB)
+                        return *normA < *normB;
+                    return a.name < b.name;
                 });
-
             return children;
         }
 

@@ -32,19 +32,6 @@ namespace jucyaudio
             bool hasOutro = false;
         };
 
-        struct VirtualFolderInfo
-        {
-            int64_t folderId = -1;
-            int64_t parentId = -1;  // -1 for root folders
-            std::string folderName;
-            std::string fullPath;
-            int depth = 0;
-            int directTrackCount = 0;
-            int totalTrackCount = 0;
-            int64_t directSizeBytes = 0;
-            int64_t totalSizeBytes = 0;
-        };
-
         // Simple status for operations, can be expanded
         enum class DbResultStatus
         {
@@ -189,43 +176,6 @@ namespace jucyaudio
             /// @brief  Get all tags in the database.
             /// @return set of all tag IDs in the database.
             virtual std::vector<TagId> getAllTags() const = 0; // For tag clouds/lists
-
-            /// @brief Build virtual folders from existing tracks in the database.
-            /// @details Analyzes all track paths and creates VirtualFolders entries 
-            ///          to enable fast folder navigation without filesystem access.
-            ///          This is a one-time operation that can be run after initial scan.
-            /// @param progressCallback Optional callback for progress updates
-            /// @return Result indicating success or failure
-            virtual DbResult buildVirtualFolders(
-                std::function<void(float /*progress*/, const std::string& /*status*/)> progressCallback = nullptr) = 0;
-
-            // --- Virtual Folder queries ---
-            
-            /// @brief Get child folders of a parent folder
-            /// @param parentId Parent folder ID, or -1 for root folders
-            /// @return Vector of child folder information
-            virtual std::vector<VirtualFolderInfo> getVirtualFolderChildren(int64_t parentId) const = 0;
-
-            /// @brief Get information about a specific virtual folder
-            /// @param folderId The folder ID to query
-            /// @return Folder information if found
-            virtual std::optional<VirtualFolderInfo> getVirtualFolderInfo(int64_t folderId) const = 0;
-
-            /// @brief Get tracks directly in a virtual folder
-            /// @param folderId The folder ID to query
-            /// @return Vector of tracks in the folder
-            virtual std::vector<TrackInfo> getTracksInVirtualFolder(int64_t folderId) const = 0;
-
-            /// @brief Get the total track count for a virtual folder (including all subfolders)
-            /// @param folderId The folder ID to query
-            /// @return Total track count including all descendants, or nullopt on error
-            virtual std::optional<int64_t> getVirtualFolderTotalTrackCount(int64_t folderId) const = 0;
-            
-            /// @brief Check if a virtual folder has any subfolders
-            /// @param folderId The folder ID to check
-            /// @return True if the folder has subfolders
-            virtual bool virtualFolderHasChildren(int64_t folderId) const = 0;
-
         };
 
     } // namespace database

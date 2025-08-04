@@ -25,6 +25,7 @@ namespace jucyaudio
 
         bool LogicalFolderNode::expand(std::vector<INavigationNode *> &outChildren)
         {
+            spdlog::info("BEGIN Expanding LogicalFolderNode '{}' (ID: {})", this->getName(), m_folderId);
             assert(outChildren.empty());
 
             // Get all child folders from the database. This is fast due to the cache.
@@ -38,7 +39,7 @@ namespace jucyaudio
 
             // The sorting is now handled by the IFolderDatabase::getChildFolders method,
             // so we don't need to sort here anymore.
-
+            spdlog::info("DONE Expanding LogicalFolderNode '{}' (ID: {})", this->getName(), m_folderId);
             return !outChildren.empty();
         }
 

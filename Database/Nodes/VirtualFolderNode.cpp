@@ -6,66 +6,35 @@ namespace jucyaudio
 {
     namespace database
     {
-        VirtualFolderNode::VirtualFolderNode(INavigationNode *parent, int64_t folderId, const std::string &folderName)
-            : LibraryNode{parent, folderName, "Folder", "Folders"},
-              m_folderId{folderId}
+        VirtualFolderNode::VirtualFolderNode(INavigationNode *parent, const FolderInfo &folderInfo)
+            : LibraryNode{parent, folderInfo.name, "Folder", "Folders"},
+              m_folderId{folderInfo.folderId}
         {
+            // Set the query args to filter tracks by this folder AND ALL ITS CHILDREN.
+            m_queryArgs.folderIds.push_back(m_folderId);
+            m_queryArgs.recursive = true;
         }
 
         bool VirtualFolderNode::canExpand()
         {
-            // Check if this folder has any subfolders
-            auto *trackDb{theTrackLibrary.getTrackDatabase()};
-            if (!trackDb)
-                return false;
-
-            return trackDb->virtualFolderHasChildren(m_folderId);
+            return theTrackLibrary.getFolderDatabase().hasChildren(m_folderId);
         }
 
         bool VirtualFolderNode::expand(std::vector<INavigationNode *> &outChildren)
         {
-            auto *trackDb{theTrackLibrary.getTrackDatabase()};
-            if (!trackDb)
-                return false;
+            spdlog::debug("Expanding VirtualFolderNode '{}' (ID: {})", this->getName(), m_folderId);
+            auto &folderDb = theTrackLibrary.getFolderDatabase();
+            auto folderChildren = folderDb.getChildFolders(m_folderId);
 
-            auto folderChildren{trackDb->getVirtualFolderChildren(m_folderId)};
+            spdlog::debug("Found {} children for folder ID {}", folderChildren.size(), m_folderId);
 
             for (const auto &childInfo : folderChildren)
             {
-                auto *childNode{new VirtualFolderNode{this, childInfo.folderId, childInfo.folderName}};
-                outChildren.push_back(childNode);
+                spdlog::debug("  -> Creating child node for '{}' (ID: {})", childInfo.name, childInfo.folderId);
+                outChildren.push_back(new VirtualFolderNode(this, childInfo));
             }
 
-            return true;
-        }
-
-        bool VirtualFolderNode::prepareToShowData()
-        {
-            // Set the virtual folder filter in our query args
-            m_queryArgs.virtualFolderId = m_folderId;
-
-            // Call parent implementation
-            return LibraryNode::prepareToShowData();
-        }
-
-        bool VirtualFolderNode::getTotalTrackCount(int64_t &outCount) const
-        {
-            auto *trackDb{theTrackLibrary.getTrackDatabase()};
-            if (!trackDb)
-            {
-                outCount = 0;
-                return false;
-            }
-
-            auto totalCount{trackDb->getVirtualFolderTotalTrackCount(m_folderId)};
-            if (totalCount.has_value())
-            {
-                outCount = totalCount.value();
-                return true;
-            }
-
-            outCount = 0;
-            return false;
+            return !folderChildren.empty();
         }
 
     } // namespace database

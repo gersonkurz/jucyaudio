@@ -95,7 +95,6 @@ namespace jucyaudio
             // menu management --------------------------------
             bool onShowScanDialog();
             bool onShowMaintenanceDialog();
-            bool onBuildVirtualFolders();
             bool onShowConfigureColumnsDialog();
             bool onShowAboutDialog();
             bool onApplyThemeByIndex(size_t themeIndex);
