@@ -14,7 +14,7 @@ namespace jucyaudio
         namespace scanners
         {
 
-            bool Id3TagScanner::processTrack(TrackInfo &trackInfo)
+            bool Id3TagScanner::processTrack(TrackInfo &trackInfo, const std::filesystem::path &trackPath)
             {
                 // TagLib uses C-style strings for paths, and often expects system native encoding.
                 // On macOS/Linux, filePath.string() (UTF-8 if locale is UTF-8) is usually fine.
@@ -24,13 +24,11 @@ namespace jucyaudio
                 // filePath.c_str() is problematic if path contains non-ASCII and not UTF-8 aware.
                 // Using native() for TagLib is often recommended.
 
-                // TagLib::FileRef f(filePath.c_str()); // Potentially problematic with non-ASCII paths
-                // Using native path representation is safer with TagLib:
-                TagLib::FileRef f{trackInfo.filepath.c_str(), true, TagLib::AudioProperties::Accurate};
+                TagLib::FileRef f{trackPath.c_str(), true, TagLib::AudioProperties::Accurate};
 
                 if (f.isNull() || !f.tag())
                 {
-                    spdlog::warn("TagLib: Could not read tags for: {}", pathToString(trackInfo.filepath));
+                    spdlog::warn("TagLib: Could not read tags for: {}", pathToString(trackPath));
                     return false;
                 }
 
@@ -71,7 +69,7 @@ namespace jucyaudio
                             }
                             else
                             {
-                                spdlog::warn("Id3TagScanner: Could not get/create TagId for genre '{}' from file {}", genreName, pathToString(trackInfo.filepath));
+                                spdlog::warn("Id3TagScanner: Could not get/create TagId for genre '{}' from file {}", genreName, pathToString(trackPath));
                             }
                         }
                     }
@@ -109,7 +107,7 @@ namespace jucyaudio
                     trackInfo.channels = properties->channels();
                 }
 
-                spdlog::debug("TagLib: Extracted tags for: {}", pathToString(trackInfo.filepath));
+                spdlog::debug("TagLib: Extracted tags for: {}", pathToString(trackPath));
                 return true;
             }
 

@@ -1,209 +1,177 @@
-
 #include <Database/Includes/Constants.h>
 #include <Database/Sqlite/SqliteStatementConstruction.h>
 #include <Utils/AssortedUtils.h>
 #include <spdlog/spdlog.h>
+#include <string>
+#include <vector>
 
 namespace jucyaudio
 {
     namespace database
     {
-
-        void SqliteStatementConstruction::addWhereClause(StringWriter &writer, const TrackQueryArgs &trackQueryArgs)
+        SqliteStatementConstruction::SqliteStatementConstruction(SqliteStatement &stmt)
+            : m_stmt(stmt),
+              m_paramIndex(1)
         {
-            bool bWhereAdded = false;
-            for (const auto &searchTerm : trackQueryArgs.searchTerms)
+        }
+
+        void SqliteStatementConstruction::addWhereClause(StringWriter &writer, const TrackQueryArgs &args)
+        {
+            bool whereAdded = false;
+
+            auto addCondition = [&](const std::string &condition)
             {
-                if (!searchTerm.empty())
-                {
-                    if (!bWhereAdded)
-                    {
-                        writer.append(" WHERE (");
-                        bWhereAdded = true;
-                    }
-                    else
-                    {
-                        writer.append(" AND (");
-                    }
-                    writer.appendFormatted("title LIKE ?{} OR artist_name LIKE ?{} OR album_title LIKE ?{} OR filepath LIKE ?{})",
-                                            m_searchTermIndex, m_searchTermIndex, m_searchTermIndex, m_searchTermIndex, m_searchTermIndex);
-                    ++m_searchTermIndex;
-                }
-            }
-            if (trackQueryArgs.pathFilter.has_value())
-            {
-                if (!bWhereAdded)
+                if (!whereAdded)
                 {
                     writer.append(" WHERE ");
-                    bWhereAdded = true;
+                    whereAdded = true;
                 }
                 else
                 {
                     writer.append(" AND ");
                 }
-                writer.appendFormatted("filepath LIKE ?{}", m_searchTermIndex); // Assuming pathFilter is a string with
-                ++m_searchTermIndex;
-            }
-            if (trackQueryArgs.workingSetId)
+                writer.append(condition);
+            };
+
+            if (!args.searchTerms.empty())
             {
-                if (!bWhereAdded)
+                StringWriter searchCondition;
+                searchCondition.append("(");
+                for (size_t i = 0; i < args.searchTerms.size(); ++i)
                 {
-                    writer.append(" WHERE ");
-                    bWhereAdded = true;
+                    searchCondition.append(i == 0 ? "" : " OR ");
+                    searchCondition.appendFormatted("title LIKE ?{} OR artist_name LIKE ?{} OR album_title LIKE ?{} OR filename LIKE ?{}",
+                        m_paramIndex,
+                        m_paramIndex,
+                        m_paramIndex,
+                        m_paramIndex);
+                    m_paramIndex++;
                 }
-                else
-                {
-                    writer.append(" AND ");
-                }
-                writer.appendFormatted("track_id IN (SELECT track_id FROM WorkingSetTracks WHERE ws_id = ?{})", m_searchTermIndex);
-                ++m_searchTermIndex;
+                searchCondition.append(")");
+                addCondition(searchCondition.asString());
             }
-            if (trackQueryArgs.mixId)
+
+            if (args.workingSetId > 0)
             {
-                if (!bWhereAdded)
-                {
-                    writer.append(" WHERE ");
-                    bWhereAdded = true;
-                }
-                else
-                {
-                    writer.append(" AND ");
-                }
-                writer.appendFormatted("track_id IN (SELECT track_id FROM MixTracks WHERE mix_id = ?{})", m_searchTermIndex);
-                ++m_searchTermIndex;
+                addCondition(std::format("track_id IN (SELECT track_id FROM WorkingSetTracks WHERE ws_id = ?{})", m_paramIndex++));
             }
-            if (trackQueryArgs.virtualFolderId.has_value())
+            if (args.mixId > 0)
             {
-                if (!bWhereAdded)
+                addCondition(std::format("track_id IN (SELECT track_id FROM MixTracks WHERE mix_id = ?{})", m_paramIndex++));
+            }
+            if (!args.folderIds.empty())
+            {
+                StringWriter folderCondition;
+                folderCondition.append("folder_id IN (");
+                for (size_t i = 0; i < args.folderIds.size(); ++i)
                 {
-                    writer.append(" WHERE ");
-                    bWhereAdded = true;
+                    folderCondition.append(i == 0 ? std::format("?{}", m_paramIndex++) : std::format(", ?{}", m_paramIndex++));
                 }
-                else
-                {
-                    writer.append(" AND ");
-                }
-                writer.appendFormatted("filepath LIKE (SELECT full_path || '%' FROM VirtualFolders WHERE folder_id = ?{})", m_searchTermIndex);
-                ++m_searchTermIndex;
+                folderCondition.append(")");
+                addCondition(folderCondition.asString());
             }
         }
 
-        void SqliteStatementConstruction::addOrderByClause(StringWriter &writer, const TrackQueryArgs &trackQueryArgs)
+        void SqliteStatementConstruction::addOrderByClause(StringWriter &writer, const TrackQueryArgs &args)
         {
-            bool bOrderByAdded = false;
-            for (const auto &orderCriterion : trackQueryArgs.sortBy)
+            if (args.sortBy.empty())
+                return;
+            writer.append(" ORDER BY ");
+            for (size_t i = 0; i < args.sortBy.size(); ++i)
             {
-                if (!bOrderByAdded)
-                {
-                    writer.append(" ORDER BY ");
-                    bOrderByAdded = true;
-                }
-                else
-                {
-                    writer.append(", ");
-                }
-                writer.append(orderCriterion.columnName);
-                if (orderCriterion.descending)
-                {
-                    writer.append(" COLLATE NOCASE DESC");
-                }
-                else
-                {
-                    writer.append(" COLLATE NOCASE ASC");
-                }
+                writer.append(i == 0 ? "" : ", ");
+                writer.append(args.sortBy[i].columnName);
+                writer.append(args.sortBy[i].descending ? " COLLATE NOCASE DESC" : " COLLATE NOCASE ASC");
             }
         }
 
-        bool SqliteStatementConstruction::finalizeStatement(StringWriter &writer, const TrackQueryArgs &trackQueryArgs, WorkingSetId wsId)
+        bool SqliteStatementConstruction::finalizeStatement(StringWriter &writer, const TrackQueryArgs &args, WorkingSetId wsId)
         {
-            if (wsId)
+            // The logic for INSERT...SELECT needs a closing parenthesis
+            if (wsId > 0)
             {
-                writer.append(")"); // Close the WHERE clause if it was opened
+                writer.append(")");
             }
+
             const auto sqlStatement = writer.asString();
             if (!m_stmt.bindStatement(sqlStatement))
             {
-                spdlog::error("Failed to bind count statement: {}", sqlStatement);
+                spdlog::error("Failed to bind statement: {}", sqlStatement);
                 return false;
             }
-            if (wsId)
+
+            // Bind parameters in the exact order they were added
+            if (wsId > 0)
             {
-                m_stmt.addParam(wsId); // Bind each search term with wildcards
+                m_stmt.addParam(wsId);
             }
-            for (const auto &searchTerm : trackQueryArgs.searchTerms)
+            for (const auto &searchTerm : args.searchTerms)
             {
-                if (!searchTerm.empty())
-                {
-                    m_stmt.addParam("%" + searchTerm + "%"); // Bind each search term with wildcards
-                }
+                const std::string wildcardTerm = "%" + searchTerm + "%";
+                m_stmt.addParam(wildcardTerm);
+                m_stmt.addParam(wildcardTerm);
+                m_stmt.addParam(wildcardTerm);
+                m_stmt.addParam(wildcardTerm);
             }
-            if (trackQueryArgs.pathFilter.has_value())
+            if (args.workingSetId > 0)
             {
-                m_stmt.addParam(pathToString(trackQueryArgs.pathFilter.value()) + "%"); // Bind path filter with wildcards
+                m_stmt.addParam(args.workingSetId);
             }
-            if (trackQueryArgs.workingSetId)
+            if (args.mixId > 0)
             {
-                m_stmt.addParam(trackQueryArgs.workingSetId);
+                m_stmt.addParam(args.mixId);
             }
-            if (trackQueryArgs.mixId)
+            for (const auto &folderId : args.folderIds)
             {
-                m_stmt.addParam(trackQueryArgs.mixId);
-            }
-            if (trackQueryArgs.virtualFolderId.has_value())
-            {
-                m_stmt.addParam(trackQueryArgs.virtualFolderId.value());
+                m_stmt.addParam(folderId);
             }
             return true;
         }
 
-        bool SqliteStatementConstruction::createSelectStatement(const TrackQueryArgs &trackQueryArgs)
+        bool SqliteStatementConstruction::createSelectStatement(const TrackQueryArgs &args)
         {
-            m_searchTermIndex = 1;
+            m_paramIndex = 1;
             StringWriter writer;
             writer.append("SELECT ");
-            if (trackQueryArgs.columns.empty())
+            if (args.columns.empty())
             {
                 writer.append("*");
             }
             else
             {
-                for (size_t i = 0; i < trackQueryArgs.columns.size(); ++i)
+                for (size_t i = 0; i < args.columns.size(); ++i)
                 {
-                    writer.append(trackQueryArgs.columns[i]);
-                    if (i < trackQueryArgs.columns.size() - 1)
-                    {
-                        writer.append(", ");
-                    }
+                    writer.append(i == 0 ? "" : ", ");
+                    writer.append(args.columns[i]);
                 }
             }
             writer.append(" FROM Tracks");
-            addWhereClause(writer, trackQueryArgs);
-            addOrderByClause(writer, trackQueryArgs);
-            if (trackQueryArgs.usePaging)
+            addWhereClause(writer, args);
+            addOrderByClause(writer, args);
+            if (args.usePaging)
             {
-                writer.appendFormatted(" LIMIT {} OFFSET {}", QUERY_PAGE_SIZE, trackQueryArgs.offset);
+                writer.appendFormatted(" LIMIT {} OFFSET {}", QUERY_PAGE_SIZE, args.offset);
             }
-            return finalizeStatement(writer, trackQueryArgs);
+            return finalizeStatement(writer, args);
         }
 
-        bool SqliteStatementConstruction::createInsertIntoSelectTrackIdsStatement(const TrackQueryArgs &trackQueryArgs, WorkingSetId wsId)
+        bool SqliteStatementConstruction::createCountStatement(const TrackQueryArgs &args)
         {
-            m_searchTermIndex = 1;
-            StringWriter writer;
-            writer.appendFormatted("INSERT INTO WorkingSetTracks (ws_id, track_id) SELECT ?{}, track_id FROM (SELECT track_id FROM Tracks", m_searchTermIndex);
-            ++m_searchTermIndex;
-            addWhereClause(writer, trackQueryArgs); // no sort order, because we're adding this into a new table
-            return finalizeStatement(writer, trackQueryArgs, wsId);
-        }
-
-        bool SqliteStatementConstruction::createCountStatement(const TrackQueryArgs &trackQueryArgs)
-        {
-            m_searchTermIndex = 1;
+            m_paramIndex = 1;
             StringWriter writer;
             writer.append("SELECT COUNT(*) FROM Tracks");
+            addWhereClause(writer, args);
+            return finalizeStatement(writer, args);
+        }
 
-            addWhereClause(writer, trackQueryArgs);
-            return finalizeStatement(writer, trackQueryArgs);
+        bool SqliteStatementConstruction::createInsertIntoSelectTrackIdsStatement(const TrackQueryArgs &args, WorkingSetId wsId)
+        {
+            m_paramIndex = 1;
+            StringWriter writer;
+            writer.appendFormatted("INSERT INTO WorkingSetTracks (ws_id, track_id) SELECT ?{}, track_id FROM (SELECT track_id FROM Tracks", m_paramIndex++);
+            addWhereClause(writer, args);
+            // Note: `finalizeStatement` adds the closing parenthesis.
+            return finalizeStatement(writer, args, wsId);
         }
     } // namespace database
 } // namespace jucyaudio

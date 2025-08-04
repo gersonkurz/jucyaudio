@@ -36,6 +36,19 @@ namespace jucyaudio
             /// @param statement 
             bool bindStatement(std::string_view statement);
 
+            size_t getNumberOfColumns() const
+            {
+                return sqlite3_column_count(m_statement);
+            }
+
+            /**
+             * @brief Binds a parameter using a value from a column of another statement.
+             * This function is type-agnostic and will correctly copy INTEGER, TEXT, BLOB, etc.
+             * @param sourceStmt The statement to read the value from.
+             * @param columnIndex The index of the column in the source statement.
+             * @return True on success, false on failure.
+             */
+            bool bindColumnFrom(const SqliteStatement &sourceStmt, int columnIndex);
         public:
             void reset();
             bool addNullParam();
@@ -89,11 +102,6 @@ namespace jucyaudio
             std::string getText(int index) const;
 
             std::vector<unsigned char> getBlob(int index) const;
-
-            size_t getNumberOfColumns() const
-            {
-                return sqlite3_column_count(m_statement);
-            }
 
             // Add this to your SqliteStatement class or as a free function
             using Callback = std::function<bool()>;

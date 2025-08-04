@@ -1,162 +1,54 @@
 #include <Database/Nodes/LogicalFolderNode.h>
+#include <Database/TrackLibrary.h> // For theTrackLibrary
 #include <Utils/AssortedUtils.h>
-#include <Utils/UiUtils.h>
-#include <algorithm>
-#include <cassert>
-#include <cctype>
-#include <spdlog/spdlog.h>
 
 namespace jucyaudio
 {
     namespace database
     {
-
-        LogicalFolderNode::LogicalFolderNode(INavigationNode *parent, const std::filesystem::path &folderPath, const std::string &displayName)
-            : LibraryNode{parent, displayName, "Folder", "Folders"}, // Call base constructor
-              m_thisFolderPath{folderPath}
+        LogicalFolderNode::LogicalFolderNode(INavigationNode *parent, const FolderInfo &folderInfo)
+            : LibraryNode{parent, folderInfo.name, "Folder", "Folders"},
+              m_folderId{folderInfo.folderId}
         {
-            // IMPORTANT: Initialize this instance's query to be specific to its path
-            m_queryArgs.pathFilter = m_thisFolderPath;
-            // BaseNode part (if LibraryNode inherits from BaseNode for name/id) needs its name set.
-            // If BaseNode is a direct base of LibraryNode:
-            // this->m_name = displayName; // If m_name is protected in BaseNode and not const
-            // Or LibraryNode's constructor needs to pass name to BaseNode's constructor.
-            // This detail depends on how BaseNode/LibraryNode constructors are set up.
-            // The main point is this LogicalFolderNode instance must configure its inherited
-            // m_queryArgs to filter by its own path.
+            // Set the query args for this node to filter tracks by its folder ID.
+            // This is the critical link between the navigation node and the data it displays.
+            m_queryArgs.folderIds.push_back(m_folderId);
+            m_queryArgs.recursive = false; // Only show tracks directly in this folder
         }
 
         bool LogicalFolderNode::canExpand()
         {
-            // Use std::filesystem to check for the existence of any subdirectories
-            // This avoids iterating through all entries if we just need to know if AT LEAST ONE exists.
-            std::error_code ec; // To catch potential errors without throwing exceptions
-            for (const auto &entry : std::filesystem::directory_iterator(m_thisFolderPath, ec))
-            {
-                if (ec)
-                {
-                    // Handle error, e.g., path doesn't exist, permissions issue
-                    spdlog::warn("LogicalFolderNode::canExpand - Error iterating directory {}: {}", m_thisFolderPath.string(), ec.message());
-                    return false; // No accessible children or error
-                }
-                if (entry.is_directory(ec))
-                {
-                    if (ec)
-                    { // Error checking is_directory
-                        spdlog::warn("LogicalFolderNode::canExpand - Error checking entry type for {}: {}", entry.path().string(), ec.message());
-                        continue; // Skip this problematic entry
-                    }
-                    return true; // Found at least one subdirectory
-                }
-            }
-            if (ec)
-            { // Check for error if the loop itself didn't run (e.g. path not found initially)
-                spdlog::warn("LogicalFolderNode::canExpand - Initial error iterating directory {}: {}", m_thisFolderPath.string(), ec.message());
-            }
-            return false; // No subdirectories found or error occurred
+            // The folder can expand if it has any child folders in the database.
+            // We query the IFolderDatabase instead of the filesystem.
+            return !theTrackLibrary.getFolderDatabase().getChildFolders(m_folderId).empty();
         }
 
         bool LogicalFolderNode::expand(std::vector<INavigationNode *> &outChildren)
         {
-            assert(outChildren.empty()); // Precondition
+            assert(outChildren.empty());
 
-            std::error_code ec;
-            try
+            // Get all child folders from the database. This is fast due to the cache.
+            auto childFolderData = theTrackLibrary.getFolderDatabase().getChildFolders(m_folderId);
+
+            for (const auto &folderInfo : childFolderData)
             {
-                // Check if the path exists and is a directory before iterating
-                if (!std::filesystem::exists(m_thisFolderPath, ec) || !std::filesystem::is_directory(m_thisFolderPath, ec))
-                {
-                    if (ec)
-                    {
-                        spdlog::warn("LogicalFolderNode::expand - Filesystem error accessing path {}: {}", m_thisFolderPath.string(), ec.message());
-                    }
-                    else
-                    {
-                        spdlog::warn("LogicalFolderNode::expand - Path {} is not a directory or does not exist.", m_thisFolderPath.string());
-                    }
-                    return false; // Cannot get children if path is invalid
-                }
-
-                for (const auto &entry : std::filesystem::directory_iterator(m_thisFolderPath, ec))
-                {
-                    if (ec)
-                    { // Error during iteration
-                        spdlog::warn("LogicalFolderNode::expand - Error iterating directory {}: {}", m_thisFolderPath.string(), ec.message());
-                        // Decide whether to stop or skip this entry. For robustness, maybe stop.
-                        return false; // Or clear outChildren and return false
-                    }
-
-                    if (entry.is_directory(ec))
-                    {
-                        if (ec)
-                        { // Error checking entry type
-                            spdlog::warn("LogicalFolderNode::expand - Error checking entry type for {}: {}", entry.path().string(), ec.message());
-                            continue; // Skip this problematic entry
-                        }
-
-                        // Create new LogicalFolderNode for each sub-directory
-                        auto *childFolderNode = new LogicalFolderNode{
-                            this,                                 // Parent node
-                            entry.path(),                         // Full path of the subdirectory
-                            pathToString(entry.path().filename()) // Display name (just the folder name)
-                                                                  // u8string() then convert to std::string as needed
-                        };
-                        outChildren.push_back(childFolderNode);
-                    }
-                    // We are only interested in directories as children for this node type
-                }
-                if (ec)
-                { // Check for error if the loop didn't run (e.g. path not found initially before check above)
-                    spdlog::warn("LogicalFolderNode::expand - Initial error iterating directory {}: {}", m_thisFolderPath.string(), ec.message());
-                    return false;
-                }
-
-                // Sort children by name (case-insensitive, Unicode-aware)
-                std::sort(outChildren.begin(),
-                    outChildren.end(),
-                    [](const INavigationNode *a, const INavigationNode *b)
-                    {
-                        std::string nameA = a->getName();
-                        std::string nameB = b->getName();
-
-                        // Convert to lowercase for case-insensitive comparison
-                        std::transform(nameA.begin(),
-                            nameA.end(),
-                            nameA.begin(),
-                            [](unsigned char c)
-                            {
-                                return std::tolower(c);
-                            });
-                        std::transform(nameB.begin(),
-                            nameB.end(),
-                            nameB.begin(),
-                            [](unsigned char c)
-                            {
-                                return std::tolower(c);
-                            });
-
-                        return nameA < nameB;
-                    });
+                // For each child folder record, create a new node.
+                outChildren.push_back(new LogicalFolderNode(this, folderInfo));
             }
-            catch (const std::filesystem::filesystem_error &e)
-            {
-                // Catch other potential filesystem exceptions
-                spdlog::error("LogicalFolderNode::expand - Filesystem exception for path {}: {}", m_thisFolderPath.string(), e.what());
-                return false;
-            }
+
+            // The sorting is now handled by the IFolderDatabase::getChildFolders method,
+            // so we don't need to sort here anymore.
 
             return !outChildren.empty();
         }
 
-        void LogicalFolderNode::createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children)
+        void LogicalFolderNode::createRootFolderNodes(INavigationNode *parent, std::vector<INavigationNode *> &children)
         {
-            std::vector<FolderInfo> folders;
-            if (theTrackLibrary.getFolderDatabase().getFolders(folders))
+            // This static method is the entry point. It gets the top-level folders (parentId = -1).
+            auto rootFolders = theTrackLibrary.getFolderDatabase().getChildFolders(-1);
+            for (const auto &folderInfo : rootFolders)
             {
-                for (const auto &folder : folders)
-                {
-                    children.emplace_back(new LogicalFolderNode{parent, folder.path, pathToString(folder.path.filename())});
-                }
+                children.emplace_back(new LogicalFolderNode(parent, folderInfo));
             }
         }
 

@@ -14,9 +14,9 @@ namespace jucyaudio
     {
         namespace scanners
         {
-            bool AubioScanner::processTrack(TrackInfo &trackInfo)
+            bool AubioScanner::processTrack(TrackInfo &trackInfo, const std::filesystem::path &trackPath)
             {
-                juce::File audioFile{ui::jucePathFromFs(trackInfo.filepath)};
+                juce::File audioFile{ui::jucePathFromFs(trackPath)};
 
                 // Use JUCE to read the audio file
                 juce::AudioFormatManager formatManager;
@@ -25,7 +25,7 @@ namespace jucyaudio
                 std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(audioFile));
                 if (!reader)
                 {
-                    spdlog::error("JUCE: Could not create reader for {}", pathToString(trackInfo.filepath));
+                    spdlog::error("JUCE: Could not create reader for {}", pathToString(trackPath));
                     return false;
                 }
 

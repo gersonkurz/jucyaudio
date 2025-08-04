@@ -33,7 +33,8 @@ namespace jucyaudio
             addAndMakeVisible(m_infoLabel);
 
             // Load the thumbnail source
-            m_thumbnail.setSource(new juce::FileInputSource(juce::File(trackInfo.filepath.string())));
+            const auto trackPath{trackInfo.reconstructFullPath()};
+            m_thumbnail.setSource(new juce::FileInputSource(juce::File(trackPath.string())));
             m_thumbnail.addChangeListener(this);
         }
 

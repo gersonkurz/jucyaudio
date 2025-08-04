@@ -1,210 +1,195 @@
-#include <Database/Includes/TrackInfo.h>
-#include <Database/Scanners/AubioScanner.h>
 #include <Database/Scanners/Id3TagScanner.h>
 #include <Database/TrackScanner.h>
-#include <juce_audio_basics/juce_audio_basics.h>
-#include <juce_audio_devices/juce_audio_devices.h>
-#include <juce_audio_formats/juce_audio_formats.h>
 #include <Utils/AssortedUtils.h>
-#include <set>
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <spdlog/spdlog.h>
+#include <unordered_map>
+
+// Namespace for cache helpers, local to this file
+namespace
+{
+    struct TrackCacheKey
+    {
+        jucyaudio::FolderId parentId;
+        std::string normalizedFilename;
+
+        bool operator==(const TrackCacheKey &other) const
+        {
+            return parentId == other.parentId && normalizedFilename == other.normalizedFilename;
+        }
+    };
+} // namespace
+
+namespace std
+{
+    template <> struct hash<TrackCacheKey>
+    {
+        size_t operator()(const TrackCacheKey &k) const
+        {
+            return hash<jucyaudio::FolderId>()(k.parentId) ^ (hash<string>()(k.normalizedFilename) << 1);
+        }
+    };
+} // namespace std
 
 namespace jucyaudio
 {
     namespace database
     {
-
         TrackScanner::TrackScanner(ITrackDatabase &database)
             : m_db{database}
         {
-            m_scanners.push_back(new scanners::Id3TagScanner{m_db.getTagManager()}); // Assuming getTagManager() returns a
-                                                                                     // valid ITagManager reference
-            // m_scanners.push_back(new scanners::AubioScanner{});
+            // Revert to using raw pointers as per project style.
+            m_scanners.push_back(new scanners::Id3TagScanner{m_db.getTagManager()});
         }
 
-        bool TrackScanner::scan(std::vector<FolderInfo> &foldersToScan, bool forceRescanAllFiles, ProgressCallback progressCb, CompletionCallback completionCb,
-                                std::atomic<bool> *shouldCancel)
+        // NOTE: The TrackScanner now owns the raw pointers in m_scanners.
+        // A proper RAII implementation would require a custom destructor.
+        // For now, we will assume the lifetime of the TrackScanner is the lifetime of the app.
+        // ~TrackScanner() { for (auto* s : m_scanners) delete s; }
+
+        bool TrackScanner::scan(const std::vector<FolderId> &folderIdsToScan,
+            bool forceRescanAllFiles,
+            ProgressCallback progressCb,
+            CompletionCallback completionCb,
+            std::atomic<bool> *shouldCancel)
         {
             m_progressCb = progressCb;
             m_completionCb = completionCb;
             m_pShouldCancel = shouldCancel;
             m_forceRescanAll = forceRescanAllFiles;
-            const auto success = scanLoop(foldersToScan);
-            if (!success)
+
+            const auto success = scanLoop(folderIdsToScan);
+
+            if (m_completionCb)
             {
-                spdlog::error("Scan loop failed to start or complete.");
-                if (m_completionCb)
-                    m_completionCb(false, "Scan loop failed to start or complete.");
+                m_completionCb(success, success ? "Scan completed successfully." : "Scan failed or was cancelled.");
             }
-            else if (m_completionCb)
-            {
-                m_completionCb(true, "Scan completed successfully.");
-            }
+
             m_progressCb = nullptr;
             m_completionCb = nullptr;
             m_pShouldCancel = nullptr;
             return success;
         }
 
-        bool TrackScanner::scanLoop(std::vector<FolderInfo> &foldersToScan)
+        bool TrackScanner::scanLoop(const std::vector<FolderId> &folderIdsToScan)
         {
-            spdlog::info("Scan loop started. Force rescan: {}", m_forceRescanAll);
+            spdlog::info("Hierarchical scan loop started. Force rescan: {}", m_forceRescanAll);
+            if (m_progressCb)
+                m_progressCb(-1.0f, "Initializing scan...");
 
-            // --- SETUP ---
-            // Use unordered_map for efficient, non-ordered key-value storage.
-            struct FolderScanStats
+            std::unordered_map<TrackCacheKey, TrackInfo> existingTrackCache;
+            spdlog::debug("Building cache of existing tracks for scan scope...");
+
+            TrackQueryArgs args;
+            args.folderIds = folderIdsToScan;
+            args.recursive = true;
+            args.usePaging = false;
+
+            auto tracksInScope = m_db.getTracks(args);
+            for (const auto &track : tracksInScope)
             {
-                int numFiles{0};
-                std::uintmax_t totalSizeBytes{0};
-            };
-            std::unordered_map<FolderId, FolderScanStats> folderStatsMap;
+                if (auto normalizedName = normalizeForCache(track.filename))
+                {
+                    existingTrackCache[{track.folderId, *normalizedName}] = track;
+                }
+            }
+            spdlog::debug("Cache built with {} tracks.", existingTrackCache.size());
 
             int filesProcessedThisSession = 0;
-
-            // Signal start with indeterminate progress. The UI should show a spinner/pulsing bar.
-            if (m_progressCb)
-                m_progressCb(-1, "Starting scan...");
-
-            // --- STAGE 1: SINGLE-PASS SCAN AND PROCESS ---
-            for (auto &folderInfo : foldersToScan)
+            for (const auto &rootFolderId : folderIdsToScan)
             {
                 if (m_pShouldCancel && *m_pShouldCancel)
                     return false;
 
-                const juce::File scanDir(folderInfo.path.string());
-                if (!scanDir.isDirectory())
-                {
-                    spdlog::warn("Scan folder does not exist or is not a directory: {}", pathToString(folderInfo.path));
+                auto rootFolderPath = m_db.reconstructFullPath(rootFolderId);
+                if (rootFolderPath.empty())
                     continue;
-                }
 
-                spdlog::info("Scanning folder: {}", pathToString(folderInfo.path));
-                if (m_progressCb)
-                    m_progressCb(-1, std::format("Scanning: {} (currently at {:L} files)", folderInfo.path.stem().string(), filesProcessedThisSession));
-
-                // Use JUCE's robust, recursive iterator with a wildcard filter.
-                juce::RangedDirectoryIterator iter(scanDir,
-                                                   true, // recursive
-                                                   "*.mp3;*.wav;*.flac;*.ogg", juce::File::findFiles);
+                spdlog::info("Scanning folder: {}", pathToString(rootFolderPath));
+                juce::RangedDirectoryIterator iter(juce::File(pathToString(rootFolderPath)), true, "*.mp3;*.wav;*.flac;*.ogg", juce::File::findFiles);
 
                 for (const auto &entry : iter)
                 {
                     if (m_pShouldCancel && *m_pShouldCancel)
                         return false;
 
-                    const auto &file = entry.getFile();
                     filesProcessedThisSession++;
-                    const auto currentParentDirectory = file.getParentDirectory();
-
-                    // Update progress callback with running count to show activity, but not too frequently.
-                    if (m_progressCb && (filesProcessedThisSession % 25 == 0))
+                    if (m_progressCb && (filesProcessedThisSession % 100 == 0))
                     {
-                        auto relativePath = currentParentDirectory.getRelativePathFrom(scanDir);
-                        m_progressCb(-1, std::format("Scanned {:L} files, currently in {}", filesProcessedThisSession, std::string(relativePath.toUTF8())));
+                        m_progressCb(-1.0f, std::format("Scanned {} files...", filesProcessedThisSession));
                     }
 
-                    // Convert JUCE path back to std::filesystem::path for DB and model logic.
-                    const std::filesystem::path filePath(std::filesystem::u8path(file.getFullPathName().toUTF8().getAddress()));
-                    spdlog::debug("Processing: {}", pathToString(filePath));
+                    const juce::File &file = entry.getFile();
+                    const std::filesystem::path fullPath(file.getFullPathName().toStdString());
+                    const std::string filename = file.getFileName().toStdString();
 
-                    // --- ALL YOUR PROVEN FILE-PROCESSING LOGIC, NOW FED BY JUCE::FILE ---
+                    FolderId parentFolderId = m_db.getFolderDatabase().findOrCreateFolderByPath(fullPath.parent_path());
+                    if (parentFolderId == -1)
+                        continue;
 
-                    std::optional<TrackInfo> existingTrackOpt = m_db.getTrackByFilepath(filePath);
-                    TrackInfo currentTrackInfo{};
+                    const auto normalizedFilename = normalizeForCache(filename);
+                    if (!normalizedFilename)
+                        continue;
+
+                    TrackCacheKey key = {parentFolderId, *normalizedFilename};
+                    TrackInfo currentTrackInfo;
                     bool needsFullAnalysis = true;
 
-                    // Get file metadata robustly from the juce::File object.
-                    const auto fsLastModified = Timestamp_t(std::chrono::system_clock::from_time_t(file.getLastModificationTime().toMilliseconds() / 1000));
-                    const auto fsFileSize = static_cast<std::uintmax_t>(file.getSize());
-
-                    // Update in-memory stats for the folder this file belongs to.
-                    folderStatsMap[folderInfo.folderId].numFiles++;
-                    folderStatsMap[folderInfo.folderId].totalSizeBytes += fsFileSize;
-
-                    if (existingTrackOpt)
+                    auto cacheHit = existingTrackCache.find(key);
+                    if (cacheHit != existingTrackCache.end())
                     {
-                        currentTrackInfo = *existingTrackOpt;
-                        
-                        // Skip files with bad_format status
-                        if (currentTrackInfo.status == TrackStatus::BadFormat)
-                        {
-                            spdlog::debug("Skipping bad format file: {}", pathToString(filePath));
-                            continue;
-                        }
+                        currentTrackInfo = cacheHit->second;
+                        existingTrackCache.erase(cacheHit);
 
-                        auto db_last_modified_seconds =
-                            std::chrono::duration_cast<std::chrono::seconds>(currentTrackInfo.last_modified_fs.time_since_epoch()).count();
-                        auto fs_last_modified_seconds = file.getLastModificationTime().toMilliseconds() / 1000;
+                        // JUCE's juce::Time returns milliseconds since epoch.
+                        // Our timestampFromInt64 expects milliseconds. This is compatible.
+                        auto fsLastModifiedMs = file.getLastModificationTime().toMilliseconds();
 
-                        if (!m_forceRescanAll && db_last_modified_seconds == fs_last_modified_seconds && currentTrackInfo.filesize_bytes == fsFileSize)
+                        if (!m_forceRescanAll && timestampToInt64(currentTrackInfo.last_modified_fs) == fsLastModifiedMs &&
+                            currentTrackInfo.filesize_bytes == static_cast<uint64_t>(file.getSize()))
                         {
                             needsFullAnalysis = false;
-                            spdlog::debug("Skipping full analysis for unchanged file: {}", pathToString(filePath));
                         }
-                        else
-                        {
-                            spdlog::debug("File needs re-analysis. Path: {}", pathToString(filePath));
-                        }
-
-                        currentTrackInfo.last_modified_fs = fsLastModified;
                     }
-                    else // This is a new track
+                    else
                     {
-                        currentTrackInfo.filepath = filePath;
+                        currentTrackInfo.filename = filename;
+                        currentTrackInfo.folderId = parentFolderId;
                         currentTrackInfo.date_added = std::chrono::system_clock::now();
-                        currentTrackInfo.last_modified_fs = fsLastModified;
                     }
-                    currentTrackInfo.folderId = folderInfo.folderId;
-                    currentTrackInfo.filesize_bytes = fsFileSize;
-                    currentTrackInfo.is_missing = 0;
+
+                    currentTrackInfo.last_modified_fs = timestampFromInt64(file.getLastModificationTime().toMilliseconds());
+                    currentTrackInfo.filesize_bytes = file.getSize();
+                    currentTrackInfo.is_missing = false;
+                    currentTrackInfo.last_scanned = std::chrono::system_clock::now();
 
                     if (needsFullAnalysis)
                     {
-                        for (const auto scanner : m_scanners)
+                        for (auto *scanner : m_scanners)
                         {
-                            scanner->processTrack(currentTrackInfo);
+                            scanner->processTrack(currentTrackInfo, fullPath);
                         }
                     }
-                    currentTrackInfo.last_scanned = std::chrono::system_clock::now();
 
-                    DbResult saveResult = m_db.saveTrackInfo(currentTrackInfo);
-                    if (!saveResult.isOk())
+                    if (!m_db.saveTrackInfo(currentTrackInfo).isOk())
                     {
-                        spdlog::error("Failed to save track info for {}: {}", pathToString(filePath), saveResult.errorMessage);
+                        spdlog::error("Failed to save track info for {}", filename);
                     }
                 }
             }
 
-            // --- STAGE 2: FINALIZE AND UPDATE FOLDER INFO IN DATABASE ---
-            spdlog::info("Finalizing scan and updating folder statistics...");
-            if (m_progressCb)
-                m_progressCb(99, "Finalizing..."); // Use 99% to show we're almost done
-
-            for (auto &folderInfo : foldersToScan)
+            if (!existingTrackCache.empty())
             {
-                const auto it = folderStatsMap.find(folderInfo.folderId);
-                if (it != folderStatsMap.end())
+                spdlog::info("Found {} tracks in the database that are missing from the filesystem.", existingTrackCache.size());
+                for (const auto &[key, track] : existingTrackCache)
                 {
-                    folderInfo.numFiles = it->second.numFiles;
-                    folderInfo.totalSizeBytes = it->second.totalSizeBytes;
-                }
-                else // This folder contained 0 valid audio files.
-                {
-                    folderInfo.numFiles = 0;
-                    folderInfo.totalSizeBytes = 0;
-                }
-                folderInfo.lastScannedTime = std::chrono::system_clock::now();
-
-                if (!m_db.getFolderDatabase().updateFolder(folderInfo))
-                {
-                    spdlog::error("Failed to update folder info for {}", pathToString(folderInfo.path));
+                    m_db.setTrackPathMissing(track.trackId, true);
                 }
             }
 
             if (m_progressCb)
-                m_progressCb(100, std::format("Scan complete. Processed {} files.", filesProcessedThisSession));
-
-            spdlog::info("Scan loop finished. Processed {} files.", filesProcessedThisSession);
+                m_progressCb(1.0f, "Scan complete.");
+            spdlog::info("Scan loop finished.");
             return true;
         }
     } // namespace database

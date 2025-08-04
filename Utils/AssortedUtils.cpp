@@ -2,6 +2,10 @@
 #include <Utils/AssortedUtils.h>
 #include <cassert>
 #include <ranges>
+#include <spdlog/spdlog.h>
+// ICU headers are C-style, so we wrap them for C++ compatibility.
+#include <unicode/unorm2.h> // For NFC normalization
+#include <unicode/ustring.h> // For case-folding and string conversions
 
 namespace jucyaudio
 {
@@ -116,5 +120,130 @@ namespace jucyaudio
             }
         }
         return result;
+    }
+
+    [[nodiscard]] std::optional<std::string> normalizeForCache(std::string_view input)
+    {
+        if (input.empty())
+        {
+            return std::string("");
+        }
+
+        UErrorCode status = U_ZERO_ERROR;
+
+        // --- Step 1: Normalize to NFC (Unchanged, this part is correct) ---
+        const UNormalizer2 *nfcNormalizer = unorm2_getNFCInstance(&status);
+        if (U_FAILURE(status))
+        { /* ... error handling ... */
+            return std::nullopt;
+        }
+
+        int32_t utf16_len = 0;
+        u_strFromUTF8(nullptr, 0, &utf16_len, input.data(), static_cast<int32_t>(input.size()), &status);
+        if (status != U_BUFFER_OVERFLOW_ERROR)
+        { /* ... error handling ... */
+            return std::nullopt;
+        }
+
+        status = U_ZERO_ERROR;
+        std::vector<UChar> utf16_buffer(utf16_len + 1);
+        u_strFromUTF8(utf16_buffer.data(), utf16_buffer.size(), nullptr, input.data(), static_cast<int32_t>(input.size()), &status);
+        if (U_FAILURE(status))
+        { /* ... error handling ... */
+            return std::nullopt;
+        }
+
+        std::vector<UChar> normalized_buffer(utf16_len + 1);
+        int32_t normalized_len = unorm2_normalize(nfcNormalizer, utf16_buffer.data(), utf16_len, normalized_buffer.data(), normalized_buffer.size(), &status);
+        if (U_FAILURE(status))
+        { /* ... error handling ... */
+            return std::nullopt;
+        }
+
+        // --- Step 2: Case-Fold (Corrected Logic) ---
+        int32_t folded_len_needed = 0;
+        status = U_ZERO_ERROR;
+        folded_len_needed = u_strFoldCase(nullptr, 0, normalized_buffer.data(), normalized_len, U_FOLD_CASE_DEFAULT, &status);
+
+        // ***** THIS IS THE FIX *****
+        // Check for the two valid outcomes: overflow (string grew) or success (string is same size or smaller).
+        if (status != U_BUFFER_OVERFLOW_ERROR && U_SUCCESS(status))
+        {
+            // This is the "no-op" case. The string didn't need to expand.
+            // The required length is just the original length.
+            folded_len_needed = normalized_len;
+        }
+        else if (status != U_BUFFER_OVERFLOW_ERROR)
+        {
+            // Any other failure is a real error.
+            spdlog::error("normalizeForCache: Case-folding pre-flight failed for input '{}'. ICU Error: {}", input, u_errorName(status));
+            return std::nullopt;
+        }
+        // If we get here, folded_len_needed has the correct required size.
+
+        status = U_ZERO_ERROR;
+        std::vector<UChar> folded_buffer(folded_len_needed + 1);
+        int32_t folded_len = u_strFoldCase(folded_buffer.data(), folded_buffer.size(), normalized_buffer.data(), normalized_len, U_FOLD_CASE_DEFAULT, &status);
+        if (U_FAILURE(status))
+        {
+            spdlog::error("normalizeForCache: Case-folding failed for input '{}'. ICU Error: {}", input, u_errorName(status));
+            return std::nullopt;
+        }
+
+        // --- Step 3: Convert back to UTF-8 (Unchanged, this logic is correct) ---
+        int32_t utf8_len_needed = 0;
+        status = U_ZERO_ERROR;
+        u_strToUTF8(nullptr, 0, &utf8_len_needed, folded_buffer.data(), folded_len, &status);
+        if (status != U_BUFFER_OVERFLOW_ERROR)
+        { /* ... error handling ... */
+            return std::nullopt;
+        }
+
+        status = U_ZERO_ERROR;
+        std::string result(utf8_len_needed, '\0');
+        u_strToUTF8(result.data(), result.size(), nullptr, folded_buffer.data(), folded_len, &status);
+        if (U_FAILURE(status))
+        { /* ... error handling ... */
+            return std::nullopt;
+        }
+
+        return result;
+    }
+
+    std::string getLowercaseExtension(const std::filesystem::path &path)
+    {
+        // path.extension() returns a path object, so we convert it to a string.
+        auto extensionString = pathToString(path.extension());
+
+        // If there's no extension, return an empty string immediately.
+        if (extensionString.empty())
+        {
+            return "";
+        }
+
+        // Use our robust normalization function. It handles case-folding and
+        // all other Unicode normalization forms for us.
+        auto normalizedResult = normalizeForCache(extensionString);
+
+        // If normalization succeeds, return the result.
+        // If it fails (which is highly unlikely for a simple extension),
+        // return a simple ASCII lowercase version as a fallback.
+        if (normalizedResult)
+        {
+            return *normalizedResult;
+        }
+        else
+        {
+            // Fallback for the very rare case that ICU fails.
+            spdlog::warn("ICU normalization failed for extension '{}'. Falling back to ASCII lowercase.", extensionString);
+            std::transform(extensionString.begin(),
+                extensionString.end(),
+                extensionString.begin(),
+                [](unsigned char c)
+                {
+                    return static_cast<char>(std::tolower(c));
+                });
+            return extensionString;
+        }
     }
 } // namespace jucyaudio

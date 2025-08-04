@@ -172,7 +172,8 @@ namespace jucyaudio
 
                         try
                         {
-                            juce::File audioFile{ui::jucePathFromFs(trackInfo.filepath)};
+                            const auto trackPath{trackInfo.reconstructFullPath()};
+                            juce::File audioFile{ui::jucePathFromFs(trackPath)};
                             std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(audioFile));
 
                             if (reader) {

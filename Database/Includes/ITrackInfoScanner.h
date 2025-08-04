@@ -9,7 +9,7 @@ namespace jucyaudio
       struct ITrackInfoScanner
       {
           virtual ~ITrackInfoScanner() = default;
-          virtual bool processTrack(TrackInfo &trackInfo) = 0;
+          virtual bool processTrack(TrackInfo &trackInfo, const std::filesystem::path& path) = 0;
       };
 
     } // namespace database

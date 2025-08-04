@@ -436,13 +436,14 @@ FROM Mixes m
             for (const auto &trackInfo : trackInfos)
             {
                 assert(trackInfo.trackId != 0 && "Track ID should not be zero when creating a new mix");
+                const auto trackPath{trackInfo.reconstructFullPath()};
 
                 // check track is longer than minimumExpectedSongLength - otherwise it's not suitable for mixing
                 if (trackInfo.duration < minimumExpectedSongLength)
                 {
                     spdlog::debug("Track {} ({}) is only {} long: too short for mixing, skipping",
                         trackInfo.trackId,
-                        pathToString(trackInfo.filepath),
+                        pathToString(trackPath),
                         durationToString(trackInfo.duration));
                     continue;
                 }

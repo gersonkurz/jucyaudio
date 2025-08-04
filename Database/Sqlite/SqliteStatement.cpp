@@ -25,6 +25,34 @@ namespace jucyaudio
         {
         }
 
+        bool SqliteStatement::bindColumnFrom(const SqliteStatement &sourceStmt, int columnIndex)
+        {
+            if (!sourceStmt.isValid())
+            {
+                return false;
+            }
+
+            const int columnType = sourceStmt.getColumnType(columnIndex);
+
+            switch (columnType)
+            {
+            case SQLITE_INTEGER:
+                return addParam(sourceStmt.getInt64(columnIndex));
+            case SQLITE_FLOAT:
+                return addParam(sourceStmt.getFloat(columnIndex));
+            case SQLITE_TEXT:
+                return addParam(sourceStmt.getText(columnIndex));
+            case SQLITE_BLOB:
+                return addParam(sourceStmt.getBlob(columnIndex));
+            case SQLITE_NULL:
+                return addNullParam();
+            default:
+                // This should not happen with standard types.
+                spdlog::error("Unsupported column type {} in bindColumnFrom", columnType);
+                return false;
+            }
+        }
+
         void SqliteStatement::reset()
         {
             if (m_statement)

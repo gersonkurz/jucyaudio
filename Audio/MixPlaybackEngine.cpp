@@ -80,7 +80,8 @@ namespace jucyaudio
 
         bool PlaybackTrackSource::prepare(juce::AudioFormatManager &formatManager, double targetSampleRate, int blockSize)
         {
-            juce::File sourceFile{ui::jucePathFromFs(trackInfo->filepath)};
+            const auto trackPath{trackInfo->reconstructFullPath()};
+            juce::File sourceFile{ui::jucePathFromFs(trackPath)};
             spdlog::info("[PlaybackTrackSource] Preparing track {} from file: {}", trackId, sourceFile.getFullPathName().toStdString());
             
             if (!sourceFile.exists())
@@ -93,7 +94,7 @@ namespace jucyaudio
 
             if (!reader)
             {
-                spdlog::error("[PlaybackTrackSource] Failed to create reader for track {} ({})", trackId, pathToString(trackInfo->filepath));
+                spdlog::error("[PlaybackTrackSource] Failed to create reader for track {} ({})", trackId, pathToString(trackPath));
                 return false;
             }
 
@@ -417,6 +418,7 @@ namespace jucyaudio
 
         bool MixPlaybackEngine::prepareTrackSources()
         {
+            
             spdlog::info("[PlaybackEngine] prepareTrackSources called");
             m_trackSources.clear();
 
@@ -432,9 +434,9 @@ namespace jucyaudio
                     spdlog::error("[PlaybackEngine] Track info not found for track {} (index {})", mixTrack.trackId, i);
                     continue;
                 }
-
+                const auto trackPath{trackInfo->reconstructFullPath()};
                 spdlog::info("[PlaybackEngine] Preparing track {} - id: {}, file: {}", 
-                            i, mixTrack.trackId, pathToString(trackInfo->filepath));
+                            i, mixTrack.trackId, pathToString(trackPath));
 
                 auto source = std::make_unique<PlaybackTrackSource>(mixTrack.trackId, trackInfo, &mixTrack);
 
@@ -445,7 +447,7 @@ namespace jucyaudio
                 }
                 else
                 {
-                    spdlog::error("[PlaybackEngine] Failed to prepare track {} ({})", mixTrack.trackId, pathToString(trackInfo->filepath));
+                    spdlog::error("[PlaybackEngine] Failed to prepare track {} ({})", mixTrack.trackId, pathToString(trackPath));
                 }
             }
 

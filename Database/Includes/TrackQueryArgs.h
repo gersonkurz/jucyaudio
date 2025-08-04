@@ -18,11 +18,13 @@ namespace jucyaudio
             std::vector<std::string> searchTerms;
             std::vector<SortOrderInfo> sortBy;
             RowIndex_t offset{0};
-            std::optional<std::filesystem::path> pathFilter;
+            
             WorkingSetId workingSetId{0};
             MixId mixId{0};
             bool usePaging{true};
             std::optional<int64_t> virtualFolderId;  // Filter by virtual folder ID
+            std::vector<FolderId> folderIds;        ///< Filter tracks by a list of parent folder IDs.
+            bool recursive{false};                   ///< If true, also include tracks in all subfolders of folderIds.
         };
 
     } // namespace database

@@ -1,10 +1,9 @@
 #pragma once
 
 #include <Database/Includes/Constants.h>
+#include <Database/Includes/TrackQueryArgs.h>
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
-#include <Database/Sqlite/SqliteTransaction.h>
-#include <Database/Sqlite/SqliteMixManager.h>
 #include <Utils/StringWriter.h>
 
 namespace jucyaudio
@@ -14,11 +13,7 @@ namespace jucyaudio
         class SqliteStatementConstruction final
         {
         public:
-            SqliteStatementConstruction(SqliteStatement &stmt)
-                : m_stmt{stmt},
-                  m_searchTermIndex{1} // Start at 1 for the first search term placeholder
-            {
-            }
+            SqliteStatementConstruction(SqliteStatement &stmt);
 
             bool createCountStatement(const TrackQueryArgs &trackQueryArgs);
             bool createSelectStatement(const TrackQueryArgs &trackQueryArgs);
@@ -26,7 +21,7 @@ namespace jucyaudio
 
         private:
             SqliteStatement &m_stmt;
-            int m_searchTermIndex = 1;
+            int m_paramIndex; // Renamed for clarity from m_searchTermIndex
 
             void addWhereClause(StringWriter &writer, const TrackQueryArgs &trackQueryArgs);
             void addOrderByClause(StringWriter &writer, const TrackQueryArgs &trackQueryArgs);

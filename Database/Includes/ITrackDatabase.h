@@ -109,11 +109,25 @@ namespace jucyaudio
             // If trackInfo.trackId is valid, it's an UPDATE.
             virtual DbResult saveTrackInfo(TrackInfo &trackInfo) = 0;
 
+            // --- Path Reconstruction (NEW) ---
+            /**
+             * @brief Reconstructs the full, absolute path for a given track.
+             * @param trackInfo The track object containing a folderId and filename.
+             * @return The full path, or an empty path if reconstruction fails.
+             */
+            virtual std::filesystem::path reconstructFullPath(const TrackInfo &trackInfo) const = 0;
+
+            /**
+             * @brief Reconstructs the full, absolute path for a given folder ID.
+             * @param folderId The ID of the folder.
+             * @return The full path, or an empty path if reconstruction fails.
+             */
+            virtual std::filesystem::path reconstructFullPath(FolderId folderId) const = 0;
+
             virtual bool runMaintenanceTasks(std::atomic<bool> &shouldCancel) = 0; // For maintenance tasks like vacuuming, reindexing, etc.
 
             virtual std::optional<TrackInfo> getTrackById(TrackId trackId) const = 0;
-            virtual std::optional<TrackInfo> getTrackByFilepath(const std::filesystem::path &filepath) const = 0;
-
+            
             virtual std::vector<TrackInfo> getTracks(const TrackQueryArgs &args) const = 0;
             virtual std::vector<TrackId> getTrackIds(const TrackQueryArgs &args) const = 0;
             virtual int getTotalTrackCount(const TrackQueryArgs &baseFilters) const = 0;
@@ -211,6 +225,7 @@ namespace jucyaudio
             /// @param folderId The folder ID to check
             /// @return True if the folder has subfolders
             virtual bool virtualFolderHasChildren(int64_t folderId) const = 0;
+
         };
 
     } // namespace database

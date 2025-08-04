@@ -173,9 +173,9 @@ namespace jucyaudio
             case Column::TrackId:
                 return std::to_string(track->trackId);
             case Column::Filepath:
-                return track->filepath.string();
+                return pathToString(track->reconstructFullPath());
             case Column::Filename:
-                return track->filepath.filename().string();
+                return track->filename;
             case Column::LastModified:
                 return jucyaudio::timestampToString(track->last_modified_fs);
 

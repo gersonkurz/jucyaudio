@@ -305,7 +305,7 @@ target_sources(jucyaudio PRIVATE
     UI/PlaybackController.cpp
     UI/PlaybackToolbarComponent.cpp
     UI/EnhancedPlayerComponent.cpp
-    UI/ScanDialogComponent.cpp
+    "UI/LibraryRootsComponent.cpp"
     UI/ColumnConfiguratorDialog.h
     UI/DynamicColumnManager.h
     UI/Settings.h
@@ -321,7 +321,7 @@ target_sources(jucyaudio PRIVATE
     UI/PlaybackController.h
     UI/PlaybackToolbarComponent.h
     UI/EnhancedPlayerComponent.h
-    UI/ScanDialogComponent.h
+    "UI/LibraryRootsComponent.h"
     UI/ThemeManager.cpp
     UI/ThemeManager.h
     UI/MenuManager.cpp

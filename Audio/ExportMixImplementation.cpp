@@ -24,7 +24,8 @@ namespace jucyaudio
               trackInfoPtr{ti},
               mixTrackDefPtr{mtd}
         {
-            juce::File sourceFile{pathToString(trackInfoPtr->filepath)};
+            const auto trackPath{trackInfoPtr->reconstructFullPath()};
+            juce::File sourceFile{pathToString(trackPath)};
             reader.reset(formatManager.createReaderFor(sourceFile));
             if (reader)
             {
@@ -42,7 +43,7 @@ namespace jucyaudio
             }
             else
             {
-                spdlog::error("MTE: Failed to create reader for track ID {} ({})", id, pathToString(trackInfoPtr->filepath));
+                spdlog::error("MTE: Failed to create reader for track ID {} ({})", id, pathToString(trackPath));
             }
         }
 
@@ -375,7 +376,8 @@ namespace jucyaudio
             const auto readSuccess = reader->read(&sourceTrackBlock, 0, (int)numSamplesToReadForThisTrackInBlock, readOffsetInSourceFileSamples, true, true);
             if (!readSuccess)
             {
-                spdlog::error("MTE: Failed to read samples for track ID {} from source file: {}", mixTrackDef.trackId, pathToString(trackInfo.filepath));
+                const auto trackPath{trackInfo.reconstructFullPath()};
+                spdlog::error("MTE: Failed to read samples for track ID {} from source file: {}", mixTrackDef.trackId, pathToString(trackPath));
                 return false;
             }
 

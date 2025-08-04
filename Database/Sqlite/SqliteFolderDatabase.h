@@ -1,40 +1,44 @@
 #pragma once
 
 #include <Database/Includes/IFolderDatabase.h>
-#include <Database/Includes/FolderInfo.h>
-#include <Database/Sqlite/sqlite3.h>
 #include <Database/Sqlite/SqliteDatabase.h>
-#include <Database/Sqlite/SqliteStatement.h>
-#include <filesystem>
-#include <optional>
-#include <string>
-#include <vector>
+#include <mutex>
+#include <unordered_map>
 
 namespace jucyaudio
 {
     namespace database
     {
+
         class SqliteFolderDatabase : public IFolderDatabase
         {
         public:
-            SqliteFolderDatabase(database::SqliteDatabase &db)
-                : m_db{db}
-            {
-            }
-            ~SqliteFolderDatabase() override = default; // Important to override virtual destructor
+            explicit SqliteFolderDatabase(database::SqliteDatabase &db);
+            ~SqliteFolderDatabase() override = default;
 
-        private:
-            bool getFolders(std::vector<FolderInfo> &folders) const override;
+            // --- IFolderDatabase Interface ---
+            std::optional<FolderInfo> getFolderById(FolderId folderId) const override;
+            std::vector<FolderInfo> getChildFolders(FolderId parentId) const override;
             bool addFolder(FolderInfo &folder) override;
-            bool removeFolder(FolderId folderIdToRemove) override;
-            bool removeAllFolders() override;
+            bool removeFolder(FolderId folderId) override;
             bool updateFolder(const FolderInfo &folder) override;
+            void invalidateCache() override;
+            FolderId findOrCreateFolderByPath(const std::filesystem::path &path) override;
 
         private:
+            /// @brief Loads all folders from the database into the cache if it's empty.
             void buildCacheIfNeeded() const;
-            FolderInfo getFolderInfoFromStatement(database::SqliteStatement &stmt) const;
+
+            /// @brief Creates a FolderInfo struct from a database query result.
+            static FolderInfo getFolderInfoFromStatement(class SqliteStatement &stmt);
 
             database::SqliteDatabase &m_db;
+
+            // --- Caching Mechanism ---
+            // The cache is mutable so it can be populated by const methods.
+            mutable std::unordered_map<FolderId, FolderInfo> m_folderCache;
+            mutable bool m_isCacheValid{false};
+            mutable std::mutex m_cacheMutex;
         };
     } // namespace database
 } // namespace jucyaudio

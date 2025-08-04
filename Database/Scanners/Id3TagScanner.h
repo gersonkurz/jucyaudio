@@ -21,7 +21,7 @@ namespace jucyaudio
                 {
                 }
             private:
-                bool processTrack(TrackInfo &trackInfo) override;
+                bool processTrack(TrackInfo &trackInfo, const std::filesystem::path &trackPath) override;
 
                 ITagManager& m_tagManager; // Reference to the tag manager for tag operations   
             };

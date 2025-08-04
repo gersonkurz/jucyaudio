@@ -1,53 +1,70 @@
 #pragma once
 
 #include <Database/Includes/FolderInfo.h>
+#include <optional>
+#include <vector>
 
 namespace jucyaudio
 {
     namespace database
     {
-
-        // Data structure to hold info about a folder for the TableListBox
-        // ...existing code...
-
-        struct IFolderDatabase
+        /**
+         * @brief Defines the interface for managing the hierarchical folder structure.
+         */
+        class IFolderDatabase
         {
+        public:
             virtual ~IFolderDatabase() = default;
 
             /**
-             * Retrieves all folders from the database.
-             * @param folders Output vector to be filled with FolderInfo entries.
-             * @return true if the operation was successful, false otherwise.
+             * @brief Retrieves a single folder's information by its unique ID.
+             * @param folderId The ID of the folder to retrieve.
+             * @return A FolderInfo struct if found, otherwise std::nullopt.
              */
-            virtual bool getFolders(std::vector<FolderInfo> &folders) const = 0;
+            virtual std::optional<FolderInfo> getFolderById(FolderId folderId) const = 0;
 
             /**
-             * Adds a new folder to the database.
-             * @param folder The FolderInfo describing the folder to add. This is not a const reference, because it will get the new folderId
-             * @return true if the folder was added successfully, false otherwise.
+             * @brief Retrieves the immediate children of a given parent folder.
+             * @param parentId The ID of the parent folder. Use -1 to get root-level folders.
+             * @return A vector of FolderInfo structs for all direct children.
+             */
+            virtual std::vector<FolderInfo> getChildFolders(FolderId parentId) const = 0;
+
+            /**
+             * @brief Adds a new folder to the database.
+             * @param folder A FolderInfo struct to add. The folderId should be -1.
+             *               On success, the struct's folderId will be updated with the new ID.
+             * @return True on success, false on failure.
              */
             virtual bool addFolder(FolderInfo &folder) = 0;
 
             /**
-             * Removes a folder from the database by its ID.
-             * @param folderIdToRemove The ID of the folder to remove.
-             * @return true if the folder was removed successfully, false otherwise.
+             * @brief Removes a folder and all its descendant folders and tracks from the database.
+             * @param folderId The ID of the folder to remove.
+             * @return True on success, false on failure.
              */
-            virtual bool removeFolder(FolderId folderIdToRemove) = 0;
+            virtual bool removeFolder(FolderId folderId) = 0;
 
             /**
-             * Removes all folders from the database.
-             * @return true if all folders were removed successfully, false otherwise.
-             */
-            virtual bool removeAllFolders() = 0;
-
-            /**
-             * Updates the information of an existing folder in the database.
-             * @param folder The updated FolderInfo.
-             * @return true if the folder was updated successfully, false otherwise.
+             * @brief Updates the data for an existing folder.
+             * @param folder The FolderInfo struct with updated data. The folderId must be valid.
+             * @return True on success, false on failure.
              */
             virtual bool updateFolder(const FolderInfo &folder) = 0;
-        };
 
+            /**
+             * @brief Invalidates the internal cache, forcing a reload from the database on next access.
+             */
+            virtual void invalidateCache() = 0;
+
+            
+             /**
+             * @brief Finds a folder by its full path, creating it and its parents if they don't exist.
+             * This is the primary method for mapping a filesystem path to a folder ID during scans.
+             * @param path The full, absolute path to the folder.
+             * @return The ID of the folder, or -1 on failure.
+             */
+            virtual FolderId findOrCreateFolderByPath(const std::filesystem::path &path) = 0;
+        };
     } // namespace database
 } // namespace jucyaudio

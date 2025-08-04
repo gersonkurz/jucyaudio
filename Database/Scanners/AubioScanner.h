@@ -15,7 +15,7 @@ namespace jucyaudio
             class AubioScanner : public ITrackInfoScanner
             {
             private:
-                bool processTrack(TrackInfo &trackInfo) override;
+                bool processTrack(TrackInfo &trackInfo, const std::filesystem::path &trackPath) override;
 
                 // Default parameters for Aubio, can be configurable later
                 const uint_t m_defaultHopSize = 512;

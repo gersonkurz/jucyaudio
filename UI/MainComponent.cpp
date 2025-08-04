@@ -16,7 +16,7 @@
 #include <UI/ILongRunningTask.h>
 #include <UI/MainComponent.h>
 #include <UI/MarkerEditDialog.h>
-#include <UI/ScanDialogComponent.h>
+#include <UI/LibraryRootsComponent.h>
 #include <UI/TaskDialog.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
@@ -878,7 +878,8 @@ namespace jucyaudio
 
             for (const auto &track : badFiles)
             {
-                message += juce::String(track.filepath.filename().string()) + juce::String("\n");
+                const auto trackPath{track.reconstructFullPath()};
+                message += juce::String(trackPath.filename().string()) + juce::String("\n");
             }
 
             message += "\nWould you like to remove these files from all working sets?\n";
@@ -943,8 +944,8 @@ namespace jucyaudio
                 m_statusPanel.setStatusMessage("No track info available for row: " + std::to_string(rowIndex), true);
                 return;
             }
-
-            juce::File audioFile{jucePathFromFs(track->filepath)};
+            const auto trackPath{track->reconstructFullPath()};
+            juce::File audioFile{jucePathFromFs(trackPath)};
             if (audioFile.existsAsFile())
             {
                 // uncomment this line, and you get the exceptio
@@ -1499,7 +1500,7 @@ namespace jucyaudio
 
         bool MainComponent::onShowScanDialog()
         {
-            auto *scanDialog = new ScanDialogComponent{};
+            auto *scanDialog = new LibraryRootsComponent{};
 
             juce::DialogWindow::LaunchOptions launchOptions;
             launchOptions.content.setOwned(scanDialog);

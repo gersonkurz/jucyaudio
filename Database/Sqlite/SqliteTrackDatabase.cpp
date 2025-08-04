@@ -20,169 +20,104 @@ namespace
     // Array of initial SQL statements for schema creation
     const char *maintenanceSqlStatements[] = {"PRAGMA optimize;", "VACUUM;"};
 
-    // Array of initial SQL statements for schema creation
-    const char *initialSqlStatements[] = {
-        "PRAGMA foreign_keys = ON;",
+    // --- THIS IS THE FINAL, CORRECTED SCHEMA FOR A NEW DATABASE ---
+    const char *initialSqlStatements[] = {"PRAGMA foreign_keys = ON;",
         R"SQL(
-    CREATE TABLE IF NOT EXISTS Folders (
-        folder_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        fs_path TEXT NOT NULL UNIQUE,
-        num_files INTEGER DEFAULT -1,
-        total_bytes INTEGER DEFAULT 0,
-        last_scanned INTEGER DEFAULT 0
-    );)SQL",
+        CREATE TABLE IF NOT EXISTS Folders (
+            folder_id   INTEGER PRIMARY KEY,
+            parent_id   INTEGER,
+            name        TEXT NOT NULL,
+            root_path   TEXT,
+            FOREIGN KEY (parent_id) REFERENCES Folders(folder_id) ON DELETE CASCADE
+        );)SQL",
+        "CREATE INDEX IF NOT EXISTS idx_folders_parent_name ON Folders(parent_id, name);",
         R"SQL(
-CREATE TABLE IF NOT EXISTS Tracks (
-    track_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    folder_id INTEGER,
-    filepath TEXT NOT NULL UNIQUE,
-    last_modified_fs INTEGER,
-    filesize_bytes INTEGER,
-    date_added INTEGER,
-    last_scanned INTEGER,
-    title TEXT,
-    artist_name TEXT,
-    album_title TEXT,
-    album_artist_name TEXT,
-    track_number INTEGER,
-    disc_number INTEGER,
-    year INTEGER, 
-    duration INTEGER,
-    samplerate INTEGER,
-    channels INTEGER,
-    bitrate INTEGER,
-    codec_name TEXT,
-    bpm INTEGER,
-    intro_end INTEGER,
-    outro_start INTEGER,
-    key_string TEXT,
-    beat_locations_json TEXT,
-    rating INTEGER DEFAULT 0,
-    liked_status INTEGER DEFAULT 0,
-    play_count INTEGER DEFAULT 0,
-    last_played INTEGER,
-    internal_content_hash TEXT,
-    user_notes TEXT,
-    is_missing INTEGER DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'unknown',
-    FOREIGN KEY (folder_id) REFERENCES Folders(folder_id) ON DELETE CASCADE
-);)SQL",
-        "CREATE INDEX IF NOT EXISTS idx_tracks_filepath ON Tracks (filepath);",
-        "CREATE INDEX IF NOT EXISTS idx_tracks_folder_id ON Tracks (folder_id);",
-        "CREATE INDEX IF NOT EXISTS idx_tracks_artist ON Tracks (artist_name "
-        "COLLATE NOCASE);",
-        "CREATE INDEX IF NOT EXISTS idx_tracks_album ON Tracks (album_title "
-        "COLLATE NOCASE);",
-        "CREATE INDEX IF NOT EXISTS idx_tracks_title ON Tracks (title COLLATE "
-        "NOCASE);",
+        CREATE TABLE IF NOT EXISTS Tracks (
+            track_id            INTEGER PRIMARY KEY,
+            folder_id           INTEGER NOT NULL,
+            filename            TEXT NOT NULL,
+            last_modified_fs    INTEGER,
+            filesize_bytes      INTEGER,
+            date_added          INTEGER,
+            last_scanned        INTEGER,
+            title               TEXT,
+            artist_name         TEXT,
+            album_title         TEXT,
+            album_artist_name   TEXT,
+            track_number        INTEGER,
+            disc_number         INTEGER,
+            year                INTEGER,
+            duration            INTEGER,
+            samplerate          INTEGER,
+            channels            INTEGER,
+            bitrate             INTEGER,
+            codec_name          TEXT,
+            bpm                 INTEGER,
+            intro_end           INTEGER,
+            outro_start         INTEGER,
+            key_string          TEXT,
+            beat_locations_json TEXT,
+            rating              INTEGER DEFAULT 0,
+            liked_status        INTEGER DEFAULT 0,
+            play_count          INTEGER DEFAULT 0,
+            last_played         INTEGER,
+            internal_content_hash TEXT,
+            user_notes          TEXT,
+            is_missing          INTEGER DEFAULT 0,
+            status              TEXT NOT NULL DEFAULT 'unknown',
+            FOREIGN KEY (folder_id) REFERENCES Folders(folder_id) ON DELETE CASCADE
+        );)SQL",
+        "CREATE INDEX IF NOT EXISTS idx_tracks_parent_filename ON Tracks(folder_id, filename);",
+        "CREATE INDEX IF NOT EXISTS idx_tracks_artist ON Tracks (artist_name COLLATE NOCASE);",
+        "CREATE INDEX IF NOT EXISTS idx_tracks_album ON Tracks (album_title COLLATE NOCASE);",
+        "CREATE INDEX IF NOT EXISTS idx_tracks_title ON Tracks (title COLLATE NOCASE);",
         "CREATE INDEX IF NOT EXISTS idx_tracks_bpm ON Tracks (bpm);",
         "CREATE INDEX IF NOT EXISTS idx_tracks_rating ON Tracks (rating);",
-        "CREATE INDEX IF NOT EXISTS idx_tracks_liked_status ON Tracks "
-        "(liked_status);",
+        "CREATE INDEX IF NOT EXISTS idx_tracks_liked_status ON Tracks (liked_status);",
+        R"SQL(CREATE TABLE IF NOT EXISTS Tags (tag_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE);)SQL",
         R"SQL(
-CREATE TABLE IF NOT EXISTS Tags (
-    tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE COLLATE NOCASE);
-)SQL",
+        CREATE TABLE IF NOT EXISTS TrackTags (
+            track_id INTEGER NOT NULL, tag_id INTEGER NOT NULL, PRIMARY KEY (track_id, tag_id),
+            FOREIGN KEY (track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE,
+            FOREIGN KEY (tag_id) REFERENCES Tags(tag_id) ON DELETE CASCADE
+        );)SQL",
+        "CREATE INDEX IF NOT EXISTS idx_tracktags_tag_id ON TrackTags(tag_id);",
+        R"SQL(CREATE TABLE IF NOT EXISTS SchemaInfo (key TEXT PRIMARY KEY, value TEXT);)SQL",
         R"SQL(
-CREATE TABLE IF NOT EXISTS TrackTags (
-    track_id INTEGER NOT NULL,
-    tag_id INTEGER NOT NULL,
-    PRIMARY KEY (track_id, tag_id),
-    FOREIGN KEY (track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE,
-    FOREIGN KEY (tag_id) REFERENCES Tags(tag_id) ON DELETE CASCADE
-);)SQL",
-        "CREATE INDEX IF NOT EXISTS idx_tracktags_tag_id ON TrackTags "
-        "(tag_id);",
+        CREATE TABLE IF NOT EXISTS WorkingSets(
+            ws_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            timestamp INTEGER, sort_order TEXT
+        );)SQL",
         R"SQL(
-CREATE TABLE IF NOT EXISTS SchemaInfo (
-    key TEXT PRIMARY KEY,
-    value TEXT
-);)SQL",
-
+        CREATE TABLE IF NOT EXISTS WorkingSetTracks(
+            ws_id INTEGER NOT NULL, track_id INTEGER NOT NULL, PRIMARY KEY(ws_id, track_id),
+            FOREIGN KEY(ws_id) REFERENCES WorkingSets(ws_id) ON DELETE CASCADE,
+            FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
+        );)SQL",
         R"SQL(
-CREATE TABLE IF NOT EXISTS WorkingSets(
-    ws_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name  TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    timestamp INTEGER);
-)SQL",
+        CREATE TABLE IF NOT EXISTS Mixes(
+            mix_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, timestamp INTEGER,
+            track_count INTEGER, total_length INTEGER, source_ws_id INTEGER, status TEXT DEFAULT 'New',
+            undo_stack_position INTEGER DEFAULT 0,
+            FOREIGN KEY(source_ws_id) REFERENCES WorkingSets(ws_id)
+        );)SQL",
         R"SQL(
-CREATE TABLE IF NOT EXISTS WorkingSetTracks(
-    ws_id INTEGER NOT NULL,
-    track_id INTEGER NOT NULL,
-    PRIMARY KEY(ws_id, track_id),
-    FOREIGN KEY(ws_id) REFERENCES WorkingSets(ws_id) ON DELETE CASCADE,
-    FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE);
-)SQL",
-        R"SQL(
-CREATE TABLE IF NOT EXISTS Mixes(
-    mix_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name  TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    timestamp INTEGER,
-    track_count INTEGER,
-    total_length INTEGER,
-    source_ws_id INTEGER,
-    status TEXT DEFAULT 'New',
-    undo_stack_position INTEGER DEFAULT 0,
-    FOREIGN KEY(source_ws_id) REFERENCES WorkingSets(ws_id)
-);)SQL",
-
-        R"SQL(
-CREATE TABLE IF NOT EXISTS MixTracks(
-    mix_id INTEGER NOT NULL,
-    track_id INTEGER NOT NULL,
-    order_in_mix INTEGER NOT NULL,
-    mix_data TEXT NOT NULL, -- JSON with cue, attach, envelope data
-    PRIMARY KEY(mix_id, track_id),
-    FOREIGN KEY(mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE,
-    FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
-);)SQL",
-
-        // Virtual Folders for efficient folder navigation
-        R"SQL(
-CREATE TABLE IF NOT EXISTS VirtualFolders (
-    folder_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    parent_id INTEGER,
-    folder_name TEXT NOT NULL,
-    full_path TEXT NOT NULL UNIQUE,
-    depth INTEGER NOT NULL,
-    
-    -- Cached statistics
-    direct_track_count INTEGER DEFAULT 0,
-    total_track_count INTEGER DEFAULT 0,
-    direct_size_bytes INTEGER DEFAULT 0,
-    total_size_bytes INTEGER DEFAULT 0,
-    
-    -- Metadata
-    last_updated INTEGER,
-    
-    FOREIGN KEY (parent_id) REFERENCES VirtualFolders(folder_id) ON DELETE CASCADE
-);)SQL",
-        "CREATE INDEX IF NOT EXISTS idx_vf_parent ON VirtualFolders(parent_id);",
-        "CREATE INDEX IF NOT EXISTS idx_vf_path ON VirtualFolders(full_path);",
-        "CREATE INDEX IF NOT EXISTS idx_vf_depth ON VirtualFolders(depth);",
-
-        // Index to speed up filepath LIKE queries
-        "CREATE INDEX IF NOT EXISTS idx_tracks_filepath ON Tracks(filepath);",
-        
-        // Index for MixTracks ordering
+        CREATE TABLE IF NOT EXISTS MixTracks(
+            mix_id INTEGER NOT NULL, track_id INTEGER NOT NULL, order_in_mix INTEGER NOT NULL,
+            mix_data TEXT NOT NULL, PRIMARY KEY(mix_id, track_id),
+            FOREIGN KEY(mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE,
+            FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
+        );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_mixtracks_order ON MixTracks(mix_id, order_in_mix);",
-        
-        // MixUndoHistory table for undo/redo functionality
         R"SQL(
-CREATE TABLE IF NOT EXISTS MixUndoHistory (
-    undo_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    mix_id INTEGER NOT NULL,
-    operation_id INTEGER NOT NULL,      -- Groups related changes together
-    operation_type INTEGER NOT NULL,    -- 1=INSERT, 2=UPDATE, 3=DELETE
-    table_name INTEGER NOT NULL,        -- 1=MixTracks, 2=Mixes
-    record_id INTEGER,                  -- track_id or mix_id
-    old_state TEXT,                     -- JSON of previous state
-    new_state TEXT,                     -- JSON of new state
-    FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
-);)SQL",
+        CREATE TABLE IF NOT EXISTS MixUndoHistory (
+            undo_id INTEGER PRIMARY KEY, mix_id INTEGER NOT NULL, operation_id INTEGER NOT NULL,
+            operation_type INTEGER NOT NULL, table_name INTEGER NOT NULL, record_id INTEGER,
+            old_state TEXT, new_state TEXT,
+            FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
+        );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_mixundohistory_mix_id ON MixUndoHistory (mix_id);",
-        "CREATE INDEX IF NOT EXISTS idx_mixundohistory_operation_id ON MixUndoHistory (operation_id);",
+        "CREATE INDEX IF NOT EXISTS idx_mixundohistory_operation_id ON MixUndoHistory (operation_id);"
     };
 
     TrackInfo trackInfoFromStatement(const SqliteStatement &stmt)
@@ -192,7 +127,7 @@ CREATE TABLE IF NOT EXISTS MixUndoHistory (
         info.trackId = stmt.getInt64(col++);
         info.folderId = stmt.getInt64(col++);
         if (!stmt.isNull(col))
-            info.filepath = pathFromString(stmt.getText(col));
+            info.filename = stmt.getText(col);
         col++;
         info.last_modified_fs = timestampFromInt64(stmt.getInt64(col++));
         info.filesize_bytes = static_cast<std::uintmax_t>(stmt.getInt64(col++));
@@ -273,7 +208,7 @@ CREATE TABLE IF NOT EXISTS MixUndoHistory (
     {
         bool ok = true;
         ok &= stmt.addParam(info.folderId);
-        ok &= stmt.addParam(pathToString(info.filepath));
+        ok &= stmt.addParam(info.filename);
         ok &= stmt.addParam(timestampToInt64(info.last_modified_fs));
         ok &= stmt.addParam(static_cast<int64_t>(info.filesize_bytes));
         ok &= stmt.addParam(timestampToInt64(info.date_added));
@@ -325,7 +260,7 @@ CREATE TABLE IF NOT EXISTS MixUndoHistory (
         }
         if (!ok)
         {
-            spdlog::error("Failed to bind one or more parameters for TrackInfo: {}", pathToString(info.filepath));
+            spdlog::error("Failed to bind one or more parameters for TrackInfo: {}", pathToString(info.reconstructFullPath()));
         }
         return ok;
     }
@@ -531,6 +466,24 @@ namespace jucyaudio
                 return DbResult::failure(DbResultStatus::ErrorConnection, "DB not open for schema creation.");
             }
 
+            // Check if this is a brand new database by looking for the Folders table.
+            SqliteStatement checkStmt{m_db, "SELECT name FROM sqlite_master WHERE type='table' AND name='Folders';"};
+            if (!checkStmt.getNextResult())
+            {
+                // The database is new, create the full schema.
+                spdlog::info("Database appears to be new. Creating schema v9...");
+                for (const auto *sql : initialSqlStatements)
+                {
+                    if (!m_db.execute(sql))
+                    {
+                        m_lastErrorMessage = "Schema creation failed on SQL: [" + std::string(sql) + "] Error: " + m_db.getLastError();
+                        return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                    }
+                }
+                m_db.execute("CREATE TABLE SchemaInfo (key TEXT PRIMARY KEY, value TEXT);");
+                m_db.execute("INSERT INTO SchemaInfo (key, value) VALUES ('schema_version', '9');");
+            }
+
             spdlog::info("Verifying/Creating database schema...");
             for (const auto *sql : initialSqlStatements)
             {
@@ -548,7 +501,7 @@ namespace jucyaudio
                 return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
             stmt.addParam("schema_version");
-            stmt.addParam("8"); // Initial schema version
+            stmt.addParam("9");
             if (!stmt.execute())
             {
                 m_lastErrorMessage = "Failed to insert initial schema version: " + m_db.getLastError();
@@ -565,6 +518,51 @@ namespace jucyaudio
 
             spdlog::info("Database schema verified/created successfully.");
             return DbResult::success();
+        }
+
+        std::filesystem::path SqliteTrackDatabase::reconstructFullPath(FolderId folderId) const
+        {
+            std::vector<std::string> parts;
+            FolderId currentId = folderId;
+
+            while (currentId != -1)
+            {
+                // CORRECT: Delegate the lookup to the folder database manager.
+                // This will be extremely fast as it uses the in-memory cache.
+                auto folderOpt = m_folderDatabase.getFolderById(currentId);
+
+                if (!folderOpt)
+                {
+                    spdlog::error("reconstructFullPath: Could not find folder with ID {} in the hierarchy.", currentId);
+                    return {}; // Invalid folder ID in the chain, return empty path.
+                }
+
+                // The logic for assembling the path remains the same.
+                if (!folderOpt->rootPath.empty())
+                {
+                    // This is the root folder. Prepend its full path and we're done walking the tree.
+                    parts.insert(parts.begin(), folderOpt->rootPath);
+                    break;
+                }
+
+                parts.insert(parts.begin(), folderOpt->name);
+                currentId = folderOpt->parentId;
+            }
+
+            // Assemble the final path from the collected parts.
+            std::filesystem::path result;
+            for (const auto &part : parts)
+            {
+                result /= part;
+            }
+            return result;
+        }
+
+        std::filesystem::path SqliteTrackDatabase::reconstructFullPath(const TrackInfo &trackInfo) const
+        {
+            if (trackInfo.folderId == -1)
+                return {};
+            return reconstructFullPath(trackInfo.folderId) / trackInfo.filename;
         }
 
         int SqliteTrackDatabase::getDBSchemaVersion()
@@ -784,27 +782,27 @@ namespace jucyaudio
                 {
                     // Drop all mix data (as discussed, it's test data)
                     spdlog::info("Dropping existing mix data for clean transition...");
-                    
+
                     // Delete all mix tracks first (due to foreign key constraints)
                     if (!m_db.execute("DELETE FROM MixTracks;"))
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to delete existing MixTracks.");
                     }
-                    
+
                     // Delete all mixes
                     if (!m_db.execute("DELETE FROM Mixes;"))
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to delete existing Mixes.");
                     }
-                    
+
                     // Drop the old MixTracks table
                     if (!m_db.execute("DROP TABLE IF EXISTS MixTracks;"))
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to drop old MixTracks table.");
                     }
-                    
+
                     // Create new MixTracks table with JSON structure
-                    const char* createMixTracksV6 = R"(
+                    const char *createMixTracksV6 = R"(
 CREATE TABLE MixTracks(
     mix_id INTEGER NOT NULL,
     track_id INTEGER NOT NULL,
@@ -814,24 +812,24 @@ CREATE TABLE MixTracks(
     FOREIGN KEY(mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE,
     FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
 );)";
-                    
+
                     if (!m_db.execute(createMixTracksV6))
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create new MixTracks table.");
                     }
-                    
+
                     // Create index on order_in_mix for efficient sorting
                     if (!m_db.execute("CREATE INDEX idx_mixtracks_order ON MixTracks(mix_id, order_in_mix);"))
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create order index.");
                     }
-                    
+
                     // Update schema version
                     if (auto result = setDBSchemaVersion(6); !result.isOk())
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 6.");
                     }
-                    
+
                     if (!transaction.commit())
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
@@ -842,7 +840,7 @@ CREATE TABLE MixTracks(
                 {
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
-                
+
                 currentVersion = 6; // Update for next check
             }
 
@@ -852,7 +850,7 @@ CREATE TABLE MixTracks(
                 if (SqliteTransaction transaction{m_db})
                 {
                     // Create MixUndoHistory table for undo/redo functionality
-                    const char* createMixUndoHistory = R"SQL(
+                    const char *createMixUndoHistory = R"SQL(
 CREATE TABLE IF NOT EXISTS MixUndoHistory (
     undo_id INTEGER PRIMARY KEY AUTOINCREMENT,
     mix_id INTEGER NOT NULL,
@@ -863,24 +861,24 @@ CREATE TABLE IF NOT EXISTS MixUndoHistory (
     new_state TEXT,                     -- JSON of new state
     FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
 );)SQL";
-                    
+
                     if (!m_db.execute(createMixUndoHistory))
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create MixUndoHistory table.");
                     }
-                    
+
                     // Create index for efficient mix lookups
                     if (!m_db.execute("CREATE INDEX IF NOT EXISTS idx_mixundohistory_mix_id ON MixUndoHistory (mix_id);"))
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create MixUndoHistory index.");
                     }
-                    
+
                     // Update schema version
                     if (auto result = setDBSchemaVersion(7); !result.isOk())
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 7.");
                     }
-                    
+
                     if (!transaction.commit())
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
@@ -892,7 +890,7 @@ CREATE TABLE IF NOT EXISTS MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
             }
-            
+
             if (currentVersion < 8)
             {
                 spdlog::info("Migrating database from version 7 to 8 - Adding undo stack tracking...");
@@ -903,9 +901,9 @@ CREATE TABLE IF NOT EXISTS MixUndoHistory (
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to drop old MixUndoHistory table.");
                     }
-                    
+
                     // Recreate with operation_id
-                    const char* createMixUndoHistory = R"SQL(
+                    const char *createMixUndoHistory = R"SQL(
 CREATE TABLE MixUndoHistory (
     undo_id INTEGER PRIMARY KEY AUTOINCREMENT,
     mix_id INTEGER NOT NULL,
@@ -918,31 +916,31 @@ CREATE TABLE MixUndoHistory (
     timestamp INTEGER DEFAULT (strftime('%s', 'now')),
     FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
 );)SQL";
-                    
+
                     if (!m_db.execute(createMixUndoHistory))
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to recreate MixUndoHistory table.");
                     }
-                    
+
                     // Create indexes
                     if (!m_db.execute("CREATE INDEX idx_mixundohistory_mix_id ON MixUndoHistory (mix_id);") ||
                         !m_db.execute("CREATE INDEX idx_mixundohistory_operation_id ON MixUndoHistory (operation_id);"))
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create MixUndoHistory indexes.");
                     }
-                    
+
                     // Add undo_stack_position to Mixes table
                     if (!m_db.execute("ALTER TABLE Mixes ADD COLUMN undo_stack_position INTEGER DEFAULT 0;"))
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to add undo_stack_position to Mixes table.");
                     }
-                    
+
                     // Update schema version
                     if (auto result = setDBSchemaVersion(8); !result.isOk())
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 8.");
                     }
-                    
+
                     if (!transaction.commit())
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
@@ -966,9 +964,9 @@ CREATE TABLE MixUndoHistory (
             }
             m_lastErrorMessage.clear();
 
-            if (trackInfo.filepath.empty())
+            if (trackInfo.filename.empty())
             {
-                return DbResult::failure(DbResultStatus::ErrorGeneric, "Filepath cannot be empty for saveTrackInfo.");
+                return DbResult::failure(DbResultStatus::ErrorGeneric, "Filename cannot be empty.");
             }
 
             // For simplicity, we'll use a single transaction for INSERT or
@@ -996,7 +994,7 @@ CREATE TABLE MixUndoHistory (
                 if (stmt.isValid() && bindTrackInfoToStatement(stmt, trackInfo, false) && stmt.execute())
                 {
                     trackInfo.trackId = m_db.getLastInsertRowId();
-                    spdlog::debug("Inserted track ID: {}, Path: {}", trackInfo.trackId, pathToString(trackInfo.filepath));
+                    spdlog::debug("Inserted track ID: {}, Path: {}", trackInfo.trackId, pathToString(trackInfo.reconstructFullPath()));
                     success = true;
                 }
                 m_cachedTotalTrackCount = false;
@@ -1103,34 +1101,6 @@ CREATE TABLE MixUndoHistory (
             if (stmt2.getNextResult())
             {
                 return trackInfoFromStatement(stmt2); // Found a regular-priority track
-            }
-            return std::nullopt;
-        }
-
-        std::optional<TrackInfo> SqliteTrackDatabase::getTrackByFilepath(const std::filesystem::path &filepath) const
-        {
-            if (!isOpen())
-            {
-                return std::nullopt;
-            }
-            m_lastErrorMessage.clear();
-
-            SqliteStatement stmt{m_db, "SELECT * FROM Tracks WHERE filepath = ?;"};
-            if (!stmt.isValid())
-            {
-                m_lastErrorMessage = m_db.getLastError();
-                return std::nullopt;
-            }
-            stmt.addParam(pathToString(filepath)); // Use u8string for the path
-            if (stmt.getNextResult())
-            {
-                auto result{trackInfoFromStatement(stmt)};
-                result.tag_ids = getTrackTags(result.trackId);
-                return result;
-            }
-            if (!m_db.getLastError().empty() && m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
-            {
-                m_lastErrorMessage = m_db.getLastError();
             }
             return std::nullopt;
         }
@@ -1501,7 +1471,7 @@ CREATE TABLE MixUndoHistory (
             m_lastErrorMessage.clear();
 
             // Optimization: If we're querying for a virtual folder, use the cached count
-            if (args.virtualFolderId.has_value() && args.searchTerms.empty() && !args.pathFilter.has_value() && args.workingSetId == 0 && args.mixId == 0)
+            if (args.virtualFolderId.has_value() && args.searchTerms.empty() && args.folderIds.empty() && args.workingSetId == 0 && args.mixId == 0)
             {
                 // Use the cached count from VirtualFolders table
                 SqliteStatement stmt{m_db, "SELECT direct_track_count FROM VirtualFolders WHERE folder_id = ?;"};
@@ -1990,6 +1960,23 @@ CREATE TABLE MixUndoHistory (
             }
 
             return false;
+        }
+
+        std::filesystem::path TrackInfo::reconstructFullPath(const ITrackDatabase &db) const
+        {
+            if (folderId == -1 || filename.empty())
+            {
+                return {}; // Not enough info to reconstruct
+            }
+
+            // Delegate the heavy lifting to the database's path reconstruction method
+            std::filesystem::path parentPath = db.reconstructFullPath(folderId);
+            if (parentPath.empty())
+            {
+                return {}; // The parent folder couldn't be found
+            }
+
+            return parentPath / filename;
         }
     } // namespace database
 } // namespace jucyaudio

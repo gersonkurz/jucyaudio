@@ -157,20 +157,16 @@ namespace jucyaudio
     }
 
     /**
-     * @brief Extracts the file extension in lowercase
-     * @param path The filesystem path to extract extension from
-     * @return Lowercase file extension (including the dot), or empty string if no extension
+     * @brief Gets the lowercased, normalized file extension from a path.
+     *
+     * This function is Unicode-aware. It uses the ICU-powered normalizeForCache
+     * function to correctly handle extensions in any script or case.
+     *
+     * @param path The filesystem path to process.
+     * @return A UTF-8 encoded, lowercased, and normalized string of the extension.
+     *         Returns an empty string if there is no extension.
      */
-    inline std::string getLowercaseExtension(const std::filesystem::path &path)
-    {
-        auto targetExtension{pathToString(path.extension())};
-        std::transform(targetExtension.begin(), targetExtension.end(), targetExtension.begin(),
-                       [](unsigned char c)
-                       {
-                           return static_cast<char>(std::tolower(c));
-                       });
-        return targetExtension;
-    }
+    std::string getLowercaseExtension(const std::filesystem::path &path);
 
     /**
      * @brief Removes leading and trailing whitespace from a string view
@@ -222,4 +218,15 @@ namespace jucyaudio
      */
     std::vector<std::string> splitString(std::string_view svtext, std::string_view svseparators, bool handle_quotation_marks = false);
 
+     /**
+     * @brief Creates a canonical, normalized, case-folded key for a given string.
+     *
+     * This function is the core of the case-insensitive lookup strategy. It uses ICU
+     * to perform Unicode-aware NFC normalization followed by case-folding. The resulting
+     * string is suitable for use as a key in caches and for comparison.
+     *
+     * @param input A UTF-8 encoded string.
+     * @return A UTF-8 encoded, normalized, case-folded string.
+     */
+    [[nodiscard]] std::optional<std::string> normalizeForCache(std::string_view input);
 } // namespace jucyaudio

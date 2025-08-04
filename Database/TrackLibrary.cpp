@@ -15,6 +15,11 @@ namespace jucyaudio
     {
         TrackLibrary theTrackLibrary;
 
+        std::filesystem::path TrackInfo::reconstructFullPath() const
+        {
+            return theTrackLibrary.getTrackDatabase()->reconstructFullPath(*this);
+        }
+
         TrackLibrary::TrackLibrary()
               // Create a root node with no children
         {
@@ -80,8 +85,7 @@ namespace jucyaudio
             spdlog::info("TrackLibrary shut down.");
         }
 
-        bool TrackLibrary::scanLibrary(
-            std::vector<FolderInfo> &foldersToScan,
+        bool TrackLibrary::scanLibrary(std::vector<FolderId> &foldersToScan,
             bool forceRescanAllFiles, ProgressCallback progressCb,
             CompletionCallback completionCb, std::atomic<bool> *shouldCancel)
         {

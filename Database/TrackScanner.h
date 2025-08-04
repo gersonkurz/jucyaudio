@@ -27,13 +27,14 @@ namespace jucyaudio
             TrackScanner(const TrackScanner &) = delete;
             TrackScanner &operator=(const TrackScanner &) = delete;
 
-            bool scan(std::vector<FolderInfo> &foldersToScan,
-                      bool forceRescanAllFile, ProgressCallback progressCb,
-                      CompletionCallback completionCb,
-                      std::atomic<bool> *shouldCancel);
+            bool scan(const std::vector<FolderId> &folderIdsToScan,
+                bool forceRescanAllFiles,
+                ProgressCallback progressCb,
+                CompletionCallback completionCb,
+                std::atomic<bool> *shouldCancel);
 
         private:
-            bool scanLoop(std::vector<FolderInfo> &foldersToScan);
+            bool scanLoop(const std::vector<FolderId> &foldersToScan);
             
             ITrackDatabase &m_db;
 

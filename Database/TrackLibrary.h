@@ -50,7 +50,7 @@ namespace jucyaudio
             }
 
             // --- Scanning API exposed by TrackLibrary ---
-            bool scanLibrary(std::vector<FolderInfo> &foldersToScan, bool forceRescanAllFiles, ProgressCallback progressCb,
+            bool scanLibrary(std::vector<FolderId> &foldersToScan, bool forceRescanAllFiles, ProgressCallback progressCb,
                              CompletionCallback completionCb, std::atomic<bool> *shouldCancel);
 
             const auto &getLastError() const

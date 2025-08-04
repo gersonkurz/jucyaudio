@@ -34,7 +34,8 @@ namespace jucyaudio
                 const auto &trackInfo = *trackOpt;
                 
                 const auto start_time = std::chrono::high_resolution_clock::now();
-                AudioMetadata am = analyzeAudioFile(trackInfo.filepath);
+                const auto trackPath{trackInfo.reconstructFullPath()};
+                AudioMetadata am = analyzeAudioFile(trackPath);
                 const auto end_time = std::chrono::high_resolution_clock::now();
                 const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
@@ -42,7 +43,7 @@ namespace jucyaudio
                 if (am.bpm <= 0.0)
                 {
                     spdlog::error("Failed to analyze '{}' - marking as bad format", 
-                        trackInfo.filepath.filename().string());
+                        trackPath.filename().string());
                     
                     // Mark the track as bad format so it won't be retried
                     theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
@@ -50,7 +51,7 @@ namespace jucyaudio
                 else
                 {
                     spdlog::info("Analyzed '{}' in {} ms. BPM: {:.2f}, Has Intro: {}, Has Outro: {}", 
-                        trackInfo.filepath.filename().string(), 
+                        trackPath.filename().string(), 
                         duration.count(), 
                         am.bpm, 
                         am.hasIntro, 

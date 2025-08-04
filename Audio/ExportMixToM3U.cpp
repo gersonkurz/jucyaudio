@@ -95,7 +95,8 @@ namespace jucyaudio
 
                 // Calculate duration in seconds
                 const auto durationSeconds{std::chrono::duration_cast<std::chrono::seconds>(trackInfo->duration).count()};
-                
+                const auto trackPath{trackInfo->reconstructFullPath()};
+
                 // Build artist - title string
                 std::string artistTitle;
                 if (!trackInfo->artist_name.empty() && !trackInfo->title.empty())
@@ -109,14 +110,14 @@ namespace jucyaudio
                 else
                 {
                     // Fallback to filename without extension
-                    artistTitle = trackInfo->filepath.stem().string();
+                    artistTitle = trackPath.stem().string();
                 }
 
                 // Write EXTINF line
                 outFile << std::format("#EXTINF:{},{}\n", durationSeconds, artistTitle);
                 
                 // Write custom EXTREM line with original filename
-                outFile << std::format("#EXTREM:{}\n", trackInfo->filepath.filename().string());
+                outFile << std::format("#EXTREM:{}\n", trackPath.filename().string());
                 
                 // Write EXTSTART line with calculated start time in seconds
                 const auto startTimeIt = trackStartTimes.find(mixTrack.trackId);
@@ -132,7 +133,7 @@ namespace jucyaudio
                 }
                 
                 // Write file path (absolute path as stored in database)
-                outFile << pathToString(trackInfo->filepath) << "\n\n";
+                outFile << pathToString(trackPath) << "\n\n";
 
                 processedTracks++;
             }
