@@ -117,7 +117,8 @@ namespace
             FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
         );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_mixundohistory_mix_id ON MixUndoHistory (mix_id);",
-        "CREATE INDEX IF NOT EXISTS idx_mixundohistory_operation_id ON MixUndoHistory (operation_id);"
+        "CREATE INDEX IF NOT EXISTS idx_mixundohistory_operation_id ON MixUndoHistory (operation_id);",
+        "CREATE TABLE IF NOT EXISTS LibraryRoots (root_id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL);",
     };
 
     TrackInfo trackInfoFromStatement(const SqliteStatement &stmt)
@@ -279,6 +280,7 @@ namespace jucyaudio
               m_workingSetManager{m_db},
               m_folderDatabase{m_db},
               m_markerManager{m_db},
+              m_libraryRoootManager{m_db},
               m_undoManager{m_db},
               m_mixManagerWithUndo{m_mixManager, m_undoManager},
               m_databaseFilePath{},
@@ -337,6 +339,18 @@ namespace jucyaudio
         {
             assert(isOpen() && "Cannot get working-set manager when database is not open");
             return m_workingSetManager;
+        }
+
+        ILibraryRootManager &SqliteTrackDatabase::getLibraryRootManager()
+        {
+            assert(isOpen() && "Cannot get marker manager when database is not open");
+            return m_libraryRoootManager;
+        }
+
+        const ILibraryRootManager &SqliteTrackDatabase::getLibraryRootManager() const
+        {
+            assert(isOpen() && "Cannot get marker manager when database is not open");
+            return m_libraryRoootManager;
         }
 
         IMarkerManager &SqliteTrackDatabase::getMarkerManager()
@@ -436,6 +450,7 @@ namespace jucyaudio
                 m_db.close();
                 return schemaResult;
             }
+            m_undoManager.initialize();
             return DbResult::success();
         }
 
@@ -464,24 +479,6 @@ namespace jucyaudio
             if (!isOpen())
             {
                 return DbResult::failure(DbResultStatus::ErrorConnection, "DB not open for schema creation.");
-            }
-
-            // Check if this is a brand new database by looking for the Folders table.
-            SqliteStatement checkStmt{m_db, "SELECT name FROM sqlite_master WHERE type='table' AND name='Folders';"};
-            if (!checkStmt.getNextResult())
-            {
-                // The database is new, create the full schema.
-                spdlog::info("Database appears to be new. Creating schema v9...");
-                for (const auto *sql : initialSqlStatements)
-                {
-                    if (!m_db.execute(sql))
-                    {
-                        m_lastErrorMessage = "Schema creation failed on SQL: [" + std::string(sql) + "] Error: " + m_db.getLastError();
-                        return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
-                    }
-                }
-                m_db.execute("CREATE TABLE SchemaInfo (key TEXT PRIMARY KEY, value TEXT);");
-                m_db.execute("INSERT INTO SchemaInfo (key, value) VALUES ('schema_version', '9');");
             }
 
             spdlog::info("Verifying/Creating database schema...");
@@ -981,14 +978,14 @@ CREATE TABLE MixUndoHistory (
             if (trackInfo.trackId == -1)
             {  // INSERT
                 const std::string sql = R"SQL(
-            INSERT INTO Tracks (folder_id, filepath, last_modified_fs, filesize_bytes, date_added, last_scanned,
-                                title, artist_name, album_title, album_artist_name, track_number, disc_number, year, 
-                                duration, samplerate, channels, bitrate, codec_name,
-                                bpm, intro_end, outro_start, key_string, beat_locations_json,
-                                rating, liked_status, play_count, last_played,
-                                internal_content_hash, user_notes, is_missing, status) 
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
-        )SQL"; // 31 placeholders
+    INSERT INTO Tracks (folder_id, filename, last_modified_fs, filesize_bytes, date_added, last_scanned,
+                        title, artist_name, album_title, album_artist_name, track_number, disc_number, year, 
+                        duration, samplerate, channels, bitrate, codec_name,
+                        bpm, intro_end, outro_start, key_string, beat_locations_json,
+                        rating, liked_status, play_count, last_played,
+                        internal_content_hash, user_notes, is_missing, status) 
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
+)SQL";
 
                 SqliteStatement stmt{m_db, sql};
                 if (stmt.isValid() && bindTrackInfoToStatement(stmt, trackInfo, false) && stmt.execute())
@@ -1002,14 +999,14 @@ CREATE TABLE MixUndoHistory (
             else
             {  // UPDATE
                 const std::string sql = R"SQL(
-            UPDATE Tracks SET folder_id=?, filepath=?, last_modified_fs=?, filesize_bytes=?, date_added=?, last_scanned=?,
-                              title=?, artist_name=?, album_title=?, album_artist_name=?, track_number=?, disc_number=?, year=?, 
-                              duration=?, samplerate=?, channels=?, bitrate=?, codec_name=?,
-                              bpm=?, intro_end=?, outro_start=?, key_string=?, beat_locations_json=?,
-                              rating=?, liked_status=?, play_count=?, last_played=?,
-                              internal_content_hash=?, user_notes=?, is_missing=?, status=?
-            WHERE track_id = ?;
-        )SQL"; // 31 fields + 1 for track_id in WHERE
+    UPDATE Tracks SET folder_id=?, filename=?, last_modified_fs=?, filesize_bytes=?, date_added=?, last_scanned=?,
+                      title=?, artist_name=?, album_title=?, album_artist_name=?, track_number=?, disc_number=?, year=?, 
+                      duration=?, samplerate=?, channels=?, bitrate=?, codec_name=?,
+                      bpm=?, intro_end=?, outro_start=?, key_string=?, beat_locations_json=?,
+                      rating=?, liked_status=?, play_count=?, last_played=?,
+                      internal_content_hash=?, user_notes=?, is_missing=?, status=?
+    WHERE track_id = ?;
+)SQL";
 
                 SqliteStatement stmt{m_db, sql};
                 if (stmt.isValid() && bindTrackInfoToStatement(stmt, trackInfo, true) && stmt.execute())

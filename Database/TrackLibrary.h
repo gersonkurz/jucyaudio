@@ -105,6 +105,15 @@ namespace jucyaudio
                 return m_database->getUndoManager();
             }
 
+            ILibraryRootManager& getLibraryRootManager()
+            {
+                return m_database->getLibraryRootManager();
+            }
+
+            const ILibraryRootManager &getLibraryRootManager() const
+            {
+                return m_database->getLibraryRootManager();
+            }
 
             
             int getTotalTrackCount(const TrackQueryArgs &baseFilters = TrackQueryArgs{}) const

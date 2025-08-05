@@ -5,6 +5,28 @@
 #include <mutex>
 #include <unordered_map>
 
+struct FolderCacheKey
+{
+    jucyaudio::FolderId parentId;
+    std::string normalizedName;
+
+    bool operator==(const FolderCacheKey &other) const
+    {
+        return parentId == other.parentId && normalizedName == other.normalizedName;
+    }
+};
+
+namespace std
+{
+    template <> struct hash<FolderCacheKey>
+    {
+        size_t operator()(const FolderCacheKey &k) const
+        {
+            return hash<jucyaudio::FolderId>()(k.parentId) ^ (hash<string>()(k.normalizedName) << 1);
+        }
+    };
+} // namespace std
+
 namespace jucyaudio
 {
     namespace database
@@ -38,8 +60,8 @@ namespace jucyaudio
             // --- Caching Mechanism ---
             // The cache is mutable so it can be populated by const methods.
             mutable std::unordered_map<FolderId, FolderInfo> m_folderCache;
-            // NEW: A secondary cache for fast parent->child lookups.
             mutable std::unordered_map<FolderId, std::vector<FolderId>> m_childIndexCache;
+            mutable std::unordered_map<FolderCacheKey, FolderId> m_lookupCache; 
             mutable bool m_isCacheValid{false};
             mutable std::mutex m_cacheMutex;
         };

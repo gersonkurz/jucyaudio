@@ -23,6 +23,10 @@ namespace jucyaudio
             const BaseNode *pNode{this};
             for (uint32_t tokenIndex = 0; tokenIndex < tokens.size(); ++tokenIndex)
             {
+                if (pNode == nullptr)
+                {
+                    return nullptr; // If we reach a null node, return nullptr
+                }
                 const auto &token{tokens[tokenIndex]};
                 if (token.empty())
                 {

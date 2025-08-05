@@ -22,6 +22,7 @@ namespace jucyaudio
         public:
             explicit SqliteUndoManager(SqliteDatabase& db);
             ~SqliteUndoManager() override = default;
+            void initialize();
 
             int64_t beginOperation() override;
 

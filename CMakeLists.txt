@@ -338,7 +338,7 @@ target_sources(jucyaudio PRIVATE
     "UI/EditWorkingSetMetaDataDialog.h"
     UI/MarkerEditDialog.cpp
     UI/MarkerEditDialog.h
-  "UI/NavigationTree.cpp" "UI/NavigationTree.h"  "UI/EditMixMetaDataDialog.cpp" "UI/EditMixMetaDataDialog.h" "Database/Includes/WorkingSetInfo.h")
+  "UI/NavigationTree.cpp" "UI/NavigationTree.h"  "UI/EditMixMetaDataDialog.cpp" "UI/EditMixMetaDataDialog.h" "Database/Includes/WorkingSetInfo.h" "Database/Includes/LibraryRootInfo.h" "Database/Includes/ILibraryRootManager.h" "Database/Sqlite/SqliteLibraryRootManager.h" "Database/Sqlite/SqliteLibraryRootManager.cpp")
 
 # Add Windows-specific manifest
 if(WIN32)

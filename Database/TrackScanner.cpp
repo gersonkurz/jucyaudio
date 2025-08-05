@@ -4,32 +4,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <spdlog/spdlog.h>
 #include <unordered_map>
-
-// Namespace for cache helpers, local to this file
-namespace
-{
-    struct TrackCacheKey
-    {
-        jucyaudio::FolderId parentId;
-        std::string normalizedFilename;
-
-        bool operator==(const TrackCacheKey &other) const
-        {
-            return parentId == other.parentId && normalizedFilename == other.normalizedFilename;
-        }
-    };
-} // namespace
-
-namespace std
-{
-    template <> struct hash<TrackCacheKey>
-    {
-        size_t operator()(const TrackCacheKey &k) const
-        {
-            return hash<jucyaudio::FolderId>()(k.parentId) ^ (hash<string>()(k.normalizedFilename) << 1);
-        }
-    };
-} // namespace std
+#include <unordered_set> 
 
 namespace jucyaudio
 {
@@ -38,14 +13,8 @@ namespace jucyaudio
         TrackScanner::TrackScanner(ITrackDatabase &database)
             : m_db{database}
         {
-            // Revert to using raw pointers as per project style.
             m_scanners.push_back(new scanners::Id3TagScanner{m_db.getTagManager()});
         }
-
-        // NOTE: The TrackScanner now owns the raw pointers in m_scanners.
-        // A proper RAII implementation would require a custom destructor.
-        // For now, we will assume the lifetime of the TrackScanner is the lifetime of the app.
-        // ~TrackScanner() { for (auto* s : m_scanners) delete s; }
 
         bool TrackScanner::scan(const std::vector<FolderId> &folderIdsToScan,
             bool forceRescanAllFiles,
@@ -95,6 +64,9 @@ namespace jucyaudio
             }
             spdlog::debug("Cache built with {} tracks.", existingTrackCache.size());
 
+            // --- THE FIX: A set to track files processed in this session ---
+            std::unordered_set<std::string> processedPaths;
+
             int filesProcessedThisSession = 0;
             for (const auto &rootFolderId : folderIdsToScan)
             {
@@ -113,14 +85,23 @@ namespace jucyaudio
                     if (m_pShouldCancel && *m_pShouldCancel)
                         return false;
 
+                    const juce::File &file = entry.getFile();
+                    const auto fullPathStr = file.getFullPathName().toStdString();
+
+                    // --- THE FIX: Check if we have already processed this exact file path ---
+                    if (processedPaths.contains(fullPathStr))
+                    {
+                        continue; // Already handled, skip to the next file.
+                    }
+                    processedPaths.insert(fullPathStr); // Mark this path as processed for this session.
+
                     filesProcessedThisSession++;
                     if (m_progressCb && (filesProcessedThisSession % 100 == 0))
                     {
                         m_progressCb(-1.0f, std::format("Scanned {} files...", filesProcessedThisSession));
                     }
 
-                    const juce::File &file = entry.getFile();
-                    const std::filesystem::path fullPath(file.getFullPathName().toStdString());
+                    const std::filesystem::path fullPath(fullPathStr);
                     const std::string filename = file.getFileName().toStdString();
 
                     FolderId parentFolderId = m_db.getFolderDatabase().findOrCreateFolderByPath(fullPath.parent_path());
@@ -140,11 +121,7 @@ namespace jucyaudio
                     {
                         currentTrackInfo = cacheHit->second;
                         existingTrackCache.erase(cacheHit);
-
-                        // JUCE's juce::Time returns milliseconds since epoch.
-                        // Our timestampFromInt64 expects milliseconds. This is compatible.
                         auto fsLastModifiedMs = file.getLastModificationTime().toMilliseconds();
-
                         if (!m_forceRescanAll && timestampToInt64(currentTrackInfo.last_modified_fs) == fsLastModifiedMs &&
                             currentTrackInfo.filesize_bytes == static_cast<uint64_t>(file.getSize()))
                         {

@@ -1387,9 +1387,11 @@ namespace jucyaudio
         {
             if (result == 1)
             {
+                const std::string typeName{node->m_refTypeNameForSingleObject};
+                const std::string nodeName{node->getName()};
                 if (m_navigationTree.deleteObject(node))
                 {
-                    m_statusPanel.setStatusMessage(std::format("{} {} successfully removed.", node->m_refTypeNameForSingleObject, node->getName()));
+                    m_statusPanel.setStatusMessage(std::format("{} {} successfully removed.", typeName, nodeName));
                 }
                 else
                 {

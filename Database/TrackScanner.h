@@ -1,4 +1,5 @@
 #pragma once
+#include <Database/Includes/Constants.h>
 #include <Database/Includes/ILongRunningTask.h>
 #include <Database/Includes/ITrackDatabase.h>
 #include <Database/Includes/ITrackInfoScanner.h>
@@ -10,6 +11,30 @@
 #include <thread>
 #include <vector>
 
+namespace jucyaudio
+{
+    struct TrackCacheKey
+    {
+        FolderId parentId;
+        std::string normalizedFilename;
+
+        bool operator==(const TrackCacheKey &other) const
+        {
+            return parentId == other.parentId && normalizedFilename == other.normalizedFilename;
+        }
+    };
+} // namespace jucyaudio
+
+namespace std
+{
+    template <> struct hash<jucyaudio::TrackCacheKey>
+    {
+        size_t operator()(const jucyaudio::TrackCacheKey &k) const
+        {
+            return hash<jucyaudio::FolderId>()(k.parentId) ^ (hash<string>()(k.normalizedFilename) << 1);
+        }
+    };
+} // namespace std
 
 namespace jucyaudio
 {

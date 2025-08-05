@@ -12,23 +12,28 @@ namespace jucyaudio
         using json = nlohmann::json;
 
         SqliteUndoManager::SqliteUndoManager(SqliteDatabase& db)
-            : m_db{db}
+            : m_db{db},
+              m_nextOperationId{1}
         {
-            // Initialize operation ID from database max + 1
-            SqliteStatement stmt{m_db, "SELECT MAX(operation_id) FROM MixUndoHistory;"};
-            if (stmt.getNextResult() && !stmt.isNull(0))
-            {
-                m_nextOperationId = stmt.getInt64(0) + 1;
-            }
-            else
-            {
-                m_nextOperationId = 1;
-            }
         }
 
         int64_t SqliteUndoManager::beginOperation()
         {
             return m_nextOperationId.fetch_add(1);
+        }
+
+        void SqliteUndoManager::initialize()
+        {
+            SqliteStatement stmt{m_db, "SELECT MAX(operation_id) FROM MixUndoHistory;"};
+            if (stmt.isValid() && stmt.getNextResult() && !stmt.isNull(0))
+            {
+                m_nextOperationId = stmt.getInt64(0) + 1;
+            }
+            else
+            {
+                m_nextOperationId = 1; // Default if table is empty or query fails
+            }
+            spdlog::info("UndoManager initialized. Next operation ID will be {}.", m_nextOperationId.load());
         }
 
         void SqliteUndoManager::recordMixTrackChange(MixId mixId, TrackId trackId,

@@ -4,27 +4,7 @@
 #include <cassert>
 #include <spdlog/spdlog.h>
 
-struct FolderCacheKey
-{
-    jucyaudio::FolderId parentId;
-    std::string normalizedName;
 
-    bool operator==(const FolderCacheKey &other) const
-    {
-        return parentId == other.parentId && normalizedName == other.normalizedName;
-    }
-};
-
-namespace std
-{
-    template <> struct hash<FolderCacheKey>
-    {
-        size_t operator()(const FolderCacheKey &k) const
-        {
-            return hash<jucyaudio::FolderId>()(k.parentId) ^ (hash<string>()(k.normalizedName) << 1);
-        }
-    };
-} // namespace std
 
 namespace jucyaudio
 {
@@ -37,23 +17,8 @@ namespace jucyaudio
 
         FolderId SqliteFolderDatabase::findOrCreateFolderByPath(const std::filesystem::path &path)
         {
-            // This operation is complex and involves multiple reads and potential writes.
-            // It must be thread-safe. The lock on the DB's mutex ensures this.
             std::lock_guard dbLock(m_db.getMutex());
-
-            // Ensure the in-memory cache of the folder tree is built and ready.
             buildCacheIfNeeded();
-
-            // We need a secondary cache for this specific operation to map normalized path parts to IDs.
-            // This is separate from m_folderCache and is only used for the duration of this call.
-            std::unordered_map<FolderCacheKey, FolderId> lookupCache;
-            for (const auto &[id, folder] : m_folderCache)
-            {
-                if (auto normalized = normalizeForCache(folder.name))
-                {
-                    lookupCache[{folder.parentId, *normalized}] = folder.folderId;
-                }
-            }
 
             FolderId currentParentId = -1;
             std::vector<std::string> parts;
@@ -74,19 +39,19 @@ namespace jucyaudio
                 if (!normalizedResult)
                 {
                     spdlog::error("findOrCreateFolderByPath: Could not normalize path component '{}'", part);
-                    return -1; // Return -1 to indicate failure
+                    return -1;
                 }
 
                 FolderCacheKey key = {currentParentId, *normalizedResult};
 
-                auto it = lookupCache.find(key);
-                if (it != lookupCache.end())
+                // FIXED: Direct, fast lookup on the member cache. No local cache is built.
+                auto it = m_lookupCache.find(key);
+                if (it != m_lookupCache.end())
                 {
                     currentParentId = it->second;
                 }
                 else
                 {
-                    // Not found in the cache, so it doesn't exist in the DB. We must create it.
                     FolderInfo newFolder;
                     newFolder.parentId = currentParentId;
                     newFolder.name = part;
@@ -95,17 +60,14 @@ namespace jucyaudio
                         newFolder.rootPath = pathToString(path.root_path());
                     }
 
-                    // The addFolder method will handle the INSERT and update the folderId.
                     if (addFolder(newFolder))
                     {
                         currentParentId = newFolder.folderId;
-                        // Add the newly created folder to our temporary lookup cache to find its children.
-                        lookupCache[key] = currentParentId;
                     }
                     else
                     {
                         spdlog::error("findOrCreateFolderByPath: Failed to add new folder '{}' to the database.", part);
-                        return -1; // Return -1 on failure.
+                        return -1;
                     }
                 }
             }
@@ -117,7 +79,8 @@ namespace jucyaudio
             std::lock_guard lock(m_cacheMutex);
             m_isCacheValid = false;
             m_folderCache.clear();
-            m_childIndexCache.clear(); // Clear the new cache as well
+            m_childIndexCache.clear();
+            m_lookupCache.clear(); // FIXED: Clear the lookup cache as well.
             spdlog::debug("Folder cache invalidated.");
         }
 
@@ -129,9 +92,10 @@ namespace jucyaudio
                 return;
             }
 
-            spdlog::debug("Building folder cache...");
+            spdlog::debug("Building all folder caches...");
             m_folderCache.clear();
             m_childIndexCache.clear();
+            m_lookupCache.clear(); // FIXED: Clear the lookup cache.
 
             SqliteStatement stmt{m_db, "SELECT folder_id, parent_id, name, root_path FROM Folders;"};
             if (!stmt.isValid())
@@ -144,12 +108,16 @@ namespace jucyaudio
             {
                 FolderInfo info = getFolderInfoFromStatement(stmt);
                 m_folderCache[info.folderId] = info;
-
-                // Populate the parent-to-child index cache.
                 m_childIndexCache[info.parentId].push_back(info.folderId);
+
+                // FIXED: Populate the lookup cache at the same time.
+                if (auto normalized = normalizeForCache(info.name))
+                {
+                    m_lookupCache[{info.parentId, *normalized}] = info.folderId;
+                }
             }
             m_isCacheValid = true;
-            spdlog::debug("Folder cache built with {} entries.", m_folderCache.size());
+            spdlog::debug("All folder caches built with {} entries.", m_folderCache.size());
         }
 
         FolderInfo SqliteFolderDatabase::getFolderInfoFromStatement(SqliteStatement &stmt)
@@ -257,7 +225,22 @@ namespace jucyaudio
             }
 
             folder.folderId = m_db.getLastInsertRowId();
-            invalidateCache(); // The cache is now stale.
+            // --- FIXED: SURGICAL CACHE UPDATE INSTEAD OF INVALIDATION ---
+            std::lock_guard lock(m_cacheMutex);
+            if (m_isCacheValid)
+            {
+                // 1. Add to main folder cache
+                m_folderCache[folder.folderId] = folder;
+                // 2. Add to parent->child index
+                m_childIndexCache[folder.parentId].push_back(folder.folderId);
+                // 3. Add to lookup cache
+                if (auto normalized = normalizeForCache(folder.name))
+                {
+                    m_lookupCache[{folder.parentId, *normalized}] = folder.folderId;
+                }
+                spdlog::trace("Surgically added new folder {} to caches.", folder.folderId);
+            }
+            // No longer calling invalidateCache() here.
             return true;
         }
 

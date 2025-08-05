@@ -10,6 +10,7 @@
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
 #include <Database/Includes/TrackQueryArgs.h>
+#include <Database/Includes/ILibraryRootManager.h>
 #include <chrono>
 #include <filesystem>
 #include <functional> // For potential callbacks if needed, though not directly for CRUD
@@ -156,6 +157,9 @@ namespace jucyaudio
             virtual IWorkingSetManager &getWorkingSetManager() = 0;
             virtual const IWorkingSetManager &getWorkingSetManager() const = 0;
             
+            virtual ILibraryRootManager &getLibraryRootManager() = 0;
+            virtual const ILibraryRootManager &getLibraryRootManager() const = 0;
+
             virtual IMarkerManager &getMarkerManager() = 0;
             virtual const IMarkerManager &getMarkerManager() const = 0;
             
