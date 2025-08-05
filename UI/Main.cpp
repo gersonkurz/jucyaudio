@@ -169,12 +169,12 @@ namespace jucyaudio
                     splashScreen->getWidth(), splashScreen->getHeight());
                 
                 // Process any pending messages to ensure the splash screen is drawn
-                juce::MessageManager::getInstance()->runDispatchLoopUntil(100);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
 
                 // Start a one-shot timer. The callback will do the heavy work.
                 // Small delay to ensure splash is rendered before heavy work begins
                 m_initPhase = 1;
-                startTimer(50); 
+                startTimer(10); 
             }
 
             void timerCallback() override
@@ -219,7 +219,7 @@ namespace jucyaudio
                 
                 // Force the main window to paint itself while hidden
                 mainWindow->repaint();
-                juce::MessageManager::getInstance()->runDispatchLoopUntil(100);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
                 
                 // Now switch windows
                 spdlog::info("Switching from splash to main...");

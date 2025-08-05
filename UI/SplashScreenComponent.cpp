@@ -50,7 +50,20 @@ namespace jucyaudio
                 spdlog::info("Drew logo with padding");
             }
             
-            // Text removed - logo only!
+            // Draw version number in bottom right
+            g.setColour(juce::Colours::white);
+            g.setFont(juce::Font(16.0f));
+            
+            juce::String versionText = "v" + juce::String(PROJECT_VERSION);
+            const int textWidth = 100;
+            const int textHeight = 30;
+            const int margin = 10;
+            
+            juce::Rectangle<int> textArea(getWidth() - textWidth - margin, 
+                                         getHeight() - textHeight - margin,
+                                         textWidth, textHeight);
+            
+            g.drawText(versionText, textArea, juce::Justification::bottomRight);
         }
     } // namespace ui
 } // namespace jucyaudio
