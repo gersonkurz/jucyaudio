@@ -80,32 +80,6 @@ namespace jucyaudio
             // Register audio formats
             m_audioFormatManager.registerBasicFormats();
 
-            // --- TrackLibrary Initialization (remains as is) ---
-            juce::File appDataDir{juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("jucyaudioApp_Dev")};
-            if (!appDataDir.exists())
-            {
-                appDataDir.createDirectory();
-            }
-            juce::File dbJuceFile{appDataDir.getChildFile("jucyaudio_library_dev.sqlite")};
-            std::filesystem::path dbPath{dbJuceFile.getFullPathName().toStdString()};
-
-            if (theTrackLibrary.initialise(dbPath))
-            {
-                spdlog::info("TrackLibrary initialised successfully by "
-                             "MainComponent for DB: {}",
-                    dbPath.string());
-            }
-            else
-            {
-                spdlog::error("TrackLibrary FAILED to initialise from "
-                              "MainComponent. Error: {}",
-                    theTrackLibrary.getLastError());
-                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                    "Engine Error",
-                    "TrackLibrary failed to initialize.\nDB Path: " + dbJuceFile.getFullPathName() +
-                        "\nError: " + juce::String(theTrackLibrary.getLastError()));
-            }
-
             // --- Add and make visible all child components ---
             addAndMakeVisible(m_dynamicToolbar);
             addAndMakeVisible(m_navigationPanel);

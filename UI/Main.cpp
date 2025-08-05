@@ -7,47 +7,19 @@
 #include <spdlog/sinks/msvc_sink.h>
 #include <spdlog/spdlog.h>
 #include <Database/Sqlite/SqliteTrackDatabase.h>
-
-#include "Windows.h"
-
-/*
-- Database: Disgintuish Node-level actions from track-level actions
-- UI: support multi-track selection
-- UI have an action that says "create mix out of these tracks".
-- Preliminary: create "auto-mix" (e.g. hardcoded 5 seconds transition old/new)
-- Future TODO: create proper dialog to fine-tune this
-- UI/Database: have / show nodes for mixes (that might mean, playback in this node is different from regular playback)!
-- Improve generic status-bar
-- support actions on multiple selected tracks (e.g. delete, move, copy, etc.)
-
-*/
-
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteTransaction.h>
-#include <Utils/AssortedUtils.h> // For normalizeForCache
+#include <Utils/AssortedUtils.h>
+#include <UI/SplashScreenComponent.h>
 #include <filesystem>
-#include <spdlog/spdlog.h>
 #include <tuple>
 #include <unordered_map>
 #include <functional>
-#include <Database/Sqlite/SqliteDatabase.h>
-#include <Database/Sqlite/SqliteStatement.h>
-#include <Database/Sqlite/SqliteTransaction.h>
-#include <Utils/AssortedUtils.h> // Or wherever you will call this from
-#include <spdlog/spdlog.h>
-
-#include <filesystem>
-#include <format>
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <vector>
-
-// ICU headers for normalization
-#include <unicode/unorm2.h>
-#include <unicode/ustring.h>
 
 namespace jucyaudio
 {
@@ -57,7 +29,7 @@ namespace jucyaudio
 
         //
         // ==============================================================================
-        class jucyaudioApplication : public juce::JUCEApplication
+        class jucyaudioApplication : public juce::JUCEApplication, private juce::Timer
         {
             class MainComponent;
 
@@ -89,9 +61,7 @@ namespace jucyaudio
 
             void shutdown() override
             {
-                // Add your application's shutdown code here..
-
-                mainWindow = nullptr; // (deletes our window)
+                mainWindow = nullptr;
             }
 
             //==============================================================================
@@ -122,6 +92,11 @@ namespace jucyaudio
                 MainWindow(const juce::String &name, juce::ApplicationCommandManager &commandManager, juce::LookAndFeel_V4 &lookAndFeel)
                     : DocumentWindow(name, lookAndFeel.findColour(ResizableWindow::backgroundColourId), DocumentWindow::allButtons)
                 {
+                    // Start with window hidden and small
+                    setVisible(false);
+                    setSize(1, 1);
+                    setTopLeftPosition(-100, -100); // Position off-screen
+                    
                     setUsingNativeTitleBar(true);
                     theThemeManager.applyCurrentTheme(lookAndFeel, this);
                     m_pMainComponent = new jucyaudio::ui::MainComponent{commandManager}; // Create MainComponent
@@ -129,8 +104,10 @@ namespace jucyaudio
                     setMenuBar(m_pMainComponent);
                     theThemeManager.applyCurrentTheme(lookAndFeel, getMenuBarComponent());
                     setResizable(true, true);
-                    centreWithSize(getWidth(), getHeight());
-                    setVisible(true);
+                    
+                    // Don't center or show yet - wait for explicit show
+                    // centreWithSize(getWidth(), getHeight());
+                    // setVisible(true);
                 }
 
                 auto getMainComponent() const
@@ -174,28 +151,85 @@ namespace jucyaudio
             {
                 setupLogging();
                 setupPropertiesFile();
+                
+                spdlog::info("Creating splash screen...");
+               
+                // Create splash screen and take ownership with a ScopedPointer.
+                splashScreen = std::make_unique<JucyAudioSplashScreen>();
 
+                // Make the splash screen always on top
+                splashScreen->setAlwaysOnTop(true);
+                splashScreen->addToDesktop(juce::ComponentPeer::windowHasDropShadow);
+                splashScreen->setVisible(true);
+                splashScreen->toFront(true);
+                
+                spdlog::info("Splash screen created, visible: {}, bounds: {},{},{},{}", 
+                    splashScreen->isVisible(),
+                    splashScreen->getX(), splashScreen->getY(),
+                    splashScreen->getWidth(), splashScreen->getHeight());
+                
+                // Process any pending messages to ensure the splash screen is drawn
+                juce::MessageManager::getInstance()->runDispatchLoopUntil(100);
 
-
-                //run_full_migration("C:\\Projects\\jucyaudio\\input.sqlite", "C:\\Projects\\jucyaudio\\output.sqlite");
-                //TerminateProcess(GetCurrentProcess(), 0);
-
-                config::TomlBackend backend{g_strConfigFilename};
-                config::theSettings.load(backend);
-
-                theThemeManager.initialize(getThemesDirectoryPath(), config::theSettings.uiSettings.theme.get());
-
-                mainWindow = std::make_unique<MainWindow>(getApplicationName(), commandManager, m_lookAndFeel);
-
-                // Tell the command manager about your main content component (MainComponent)
-                // Assuming MainWindow creates and holds MainComponent
-                if (auto *mainComp = mainWindow->getMainComponent())
-                { // Hypothetical getter
-                    commandManager.registerAllCommandsForTarget(mainComp);
-                    // commandManager.setFirstCurrentTarget(mainComp); // Make it a primary target
-                }
+                // Start a one-shot timer. The callback will do the heavy work.
+                // Small delay to ensure splash is rendered before heavy work begins
+                m_initPhase = 1;
+                startTimer(50); 
             }
 
+            void timerCallback() override
+            {
+                spdlog::info("Begin timerCallback");
+                stopTimer();
+
+                // Do ALL initialization first
+                config::TomlBackend backend{g_strConfigFilename};
+                config::theSettings.load(backend);
+                theThemeManager.initialize(getThemesDirectoryPath(), config::theSettings.uiSettings.theme.get());
+                
+                // Initialize database
+                juce::File appDataDir{juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("jucyaudioApp_Dev")};
+                if (!appDataDir.exists())
+                {
+                    appDataDir.createDirectory();
+                }
+                juce::File dbJuceFile{appDataDir.getChildFile("jucyaudio_library_dev.sqlite")};
+                std::filesystem::path dbPath{dbJuceFile.getFullPathName().toStdString()};
+
+                if (theTrackLibrary.initialise(dbPath))
+                {
+                    spdlog::info("TrackLibrary initialised successfully");
+                }
+                else
+                {
+                    spdlog::error("TrackLibrary FAILED to initialise: {}", theTrackLibrary.getLastError());
+                }
+                
+                // Create main window but DON'T add to desktop yet
+                spdlog::info("Creating main window...");
+                mainWindow = std::make_unique<MainWindow>(getApplicationName(), commandManager, m_lookAndFeel);
+                
+                if (auto *mainComp = mainWindow->getMainComponent())
+                {
+                    commandManager.registerAllCommandsForTarget(mainComp);
+                }
+                
+                // Position window
+                mainWindow->centreWithSize(1200, 800);
+                
+                // Force the main window to paint itself while hidden
+                mainWindow->repaint();
+                juce::MessageManager::getInstance()->runDispatchLoopUntil(100);
+                
+                // Now switch windows
+                spdlog::info("Switching from splash to main...");
+                splashScreen->setVisible(false);
+                mainWindow->setVisible(true);
+                mainWindow->toFront(true);
+                splashScreen = nullptr;
+                
+                spdlog::info("Initialization complete");
+            }
         private:
             void setupPropertiesFile()
             {
@@ -282,8 +316,8 @@ namespace jucyaudio
                     spdlog::register_logger(conf_logger);
 
                     // 4. Set Log Level (can be configured from a file later)
-                    combined_logger->set_level(spdlog::level::info); // Set level on the specific logger
-                    combined_logger->flush_on(spdlog::level::info);  // Flush frequently during debugging
+                    combined_logger->set_level(spdlog::level::debug); // Set level on the specific logger
+                    combined_logger->flush_on(spdlog::level::debug);  // Flush frequently during debugging
 
                     // 5. Register it as the default logger (or use it explicitly)
                     spdlog::set_default_logger(combined_logger);
@@ -315,7 +349,9 @@ namespace jucyaudio
             }
 
             std::unique_ptr<MainWindow> mainWindow;
+            std::unique_ptr<JucyAudioSplashScreen> splashScreen;
             juce::ApplicationCommandManager commandManager;
+            int m_initPhase = 0;
         };
 
         juce::ApplicationCommandManager &getGlobalCommandManager()

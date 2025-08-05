@@ -338,7 +338,7 @@ target_sources(jucyaudio PRIVATE
     "UI/EditWorkingSetMetaDataDialog.h"
     UI/MarkerEditDialog.cpp
     UI/MarkerEditDialog.h
-  "UI/NavigationTree.cpp" "UI/NavigationTree.h"  "UI/EditMixMetaDataDialog.cpp" "UI/EditMixMetaDataDialog.h" "Database/Includes/WorkingSetInfo.h" "Database/Includes/LibraryRootInfo.h" "Database/Includes/ILibraryRootManager.h" "Database/Sqlite/SqliteLibraryRootManager.h" "Database/Sqlite/SqliteLibraryRootManager.cpp")
+  "UI/NavigationTree.cpp" "UI/NavigationTree.h"  "UI/EditMixMetaDataDialog.cpp" "UI/EditMixMetaDataDialog.h" "Database/Includes/WorkingSetInfo.h" "Database/Includes/LibraryRootInfo.h" "Database/Includes/ILibraryRootManager.h" "Database/Sqlite/SqliteLibraryRootManager.h" "Database/Sqlite/SqliteLibraryRootManager.cpp" "UI/SplashScreenComponent.h" "UI/SplashScreenComponent.cpp")
 
 # Add Windows-specific manifest
 if(WIN32)
@@ -361,6 +361,7 @@ juce_add_binary_data(jucyaudio_assets
         Assets/volume_up.svg
         Assets/icons/skip_previous.svg
         Assets/icons/skip_next.svg
+        Assets/orange-jucyaudio-logo.png
 )
 
 # Platform-specific library linking

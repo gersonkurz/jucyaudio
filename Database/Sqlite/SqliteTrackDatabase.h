@@ -126,6 +126,9 @@ namespace jucyaudio
             mutable int m_cachedTotalTrackCount{0}; // Cache for total track count
             mutable bool m_cachedTotalTrackCountValid{false}; // Flag to check if cache is valid
 
+            mutable FolderId m_lastKnownFolderId{-1};            // Cache for last known folder ID
+            mutable std::filesystem::path m_lastKnownFolderPath; // Cache for last known folder path
+
             // Schema versioning helpers
             int getDBSchemaVersion();
             DbResult setDBSchemaVersion(int version);

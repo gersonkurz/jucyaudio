@@ -21,7 +21,8 @@ namespace
     const char *maintenanceSqlStatements[] = {"PRAGMA optimize;", "VACUUM;"};
 
     // --- THIS IS THE FINAL, CORRECTED SCHEMA FOR A NEW DATABASE ---
-    const char *initialSqlStatements[] = {"PRAGMA foreign_keys = ON;",
+    const char *initialSqlStatements[] = {
+        "PRAGMA foreign_keys = ON;",
         R"SQL(
         CREATE TABLE IF NOT EXISTS Folders (
             folder_id   INTEGER PRIMARY KEY,
@@ -519,6 +520,11 @@ namespace jucyaudio
 
         std::filesystem::path SqliteTrackDatabase::reconstructFullPath(FolderId folderId) const
         {
+            if (folderId == m_lastKnownFolderId)
+            {
+                return m_lastKnownFolderPath;
+            }
+
             spdlog::debug("Reconstructing full path for folderId: {}", folderId);
             std::vector<std::string> parts;
             FolderId currentId = folderId;
@@ -550,8 +556,9 @@ namespace jucyaudio
             {
                 result /= part;
             }
-
-            spdlog::info("Reconstructed path for folderId {}: {}", folderId, pathToString(result));
+            m_lastKnownFolderId = folderId;
+            m_lastKnownFolderPath = result;
+            spdlog::debug("Reconstructed path for folderId {}: {}", folderId, pathToString(result));
             return result;
         }
 
@@ -976,7 +983,7 @@ CREATE TABLE MixUndoHistory (
 
             bool success = false;
             if (trackInfo.trackId == -1)
-            {  // INSERT
+            { // INSERT
                 const std::string sql = R"SQL(
     INSERT INTO Tracks (folder_id, filename, last_modified_fs, filesize_bytes, date_added, last_scanned,
                         title, artist_name, album_title, album_artist_name, track_number, disc_number, year, 
@@ -997,7 +1004,7 @@ CREATE TABLE MixUndoHistory (
                 m_cachedTotalTrackCount = false;
             }
             else
-            {  // UPDATE
+            { // UPDATE
                 const std::string sql = R"SQL(
     UPDATE Tracks SET folder_id=?, filename=?, last_modified_fs=?, filesize_bytes=?, date_added=?, last_scanned=?,
                       title=?, artist_name=?, album_title=?, album_artist_name=?, track_number=?, disc_number=?, year=?, 
