@@ -3,6 +3,7 @@
 #include <Utils/AssortedUtils.h> // For pathToString etc.
 #include <cassert>
 #include <spdlog/spdlog.h>
+#include <chrono>
 
 
 
@@ -92,11 +93,14 @@ namespace jucyaudio
                 return;
             }
 
+            auto startTime = std::chrono::high_resolution_clock::now();
             spdlog::debug("Building all folder caches...");
+            
             m_folderCache.clear();
             m_childIndexCache.clear();
             m_lookupCache.clear(); // FIXED: Clear the lookup cache.
 
+            auto queryStartTime = std::chrono::high_resolution_clock::now();
             SqliteStatement stmt{m_db, "SELECT folder_id, parent_id, name, root_path FROM Folders;"};
             if (!stmt.isValid())
             {
@@ -104,20 +108,135 @@ namespace jucyaudio
                 return;
             }
 
-            while (stmt.getNextResult())
+            size_t rowCount = 0;
+            size_t lookupCacheInserts = 0;
+            auto processingStartTime = std::chrono::high_resolution_clock::now();
+            
+            // Pre-reserve space to avoid rehashing
+            m_folderCache.reserve(350000);  // Slightly more than 338K
+            m_lookupCache.reserve(350000);
+            
+            // Pre-size the child cache for common cases
+            // Most folders won't have children, but those that do might have many
+            m_childIndexCache.reserve(120000);  // We saw 117K parent folders
+            
+            // Time tracking for each operation type
+            std::chrono::nanoseconds sqliteTime{0};
+            std::chrono::nanoseconds folderCacheTime{0};
+            std::chrono::nanoseconds childCacheTime{0};
+            std::chrono::nanoseconds lookupCacheTime{0};
+            
+            // OPTIMIZATION EXPERIMENT: Try to reduce allocations
+            bool useOptimizedPath = true;
+            
+            if (useOptimizedPath)
             {
-                FolderInfo info = getFolderInfoFromStatement(stmt);
-                m_folderCache[info.folderId] = info;
-                m_childIndexCache[info.parentId].push_back(info.folderId);
-
-                // FIXED: Populate the lookup cache at the same time.
-                if (auto normalized = normalizeForCache(info.name))
+                // Pre-allocate a reusable FolderInfo to avoid 338K allocations
+                FolderInfo tempInfo;
+                
+                while (stmt.getNextResult())
                 {
-                    m_lookupCache[{info.parentId, *normalized}] = info.folderId;
+                    auto loopStart = std::chrono::high_resolution_clock::now();
+                    
+                    // Get data directly without creating temporary
+                    tempInfo.folderId = stmt.getInt64(0);
+                    tempInfo.parentId = stmt.isNull(1) ? -1 : stmt.getInt64(1);
+                    tempInfo.name = stmt.getText(2);
+                    tempInfo.rootPath = stmt.isNull(3) ? "" : stmt.getText(3);
+                    
+                    auto afterSqlite = std::chrono::high_resolution_clock::now();
+                    sqliteTime += (afterSqlite - loopStart);
+                    
+                    // Insert into folderCache (this will copy the strings)
+                    m_folderCache.emplace(tempInfo.folderId, tempInfo);
+                    auto afterFolderCache = std::chrono::high_resolution_clock::now();
+                    folderCacheTime += (afterFolderCache - afterSqlite);
+                    
+                    // Reserve space in vector if needed to avoid reallocation
+                    auto& childVec = m_childIndexCache[tempInfo.parentId];
+                    if (childVec.capacity() == childVec.size())
+                    {
+                        childVec.reserve(childVec.size() * 2 + 1);
+                    }
+                    childVec.push_back(tempInfo.folderId);
+                    auto afterChildCache = std::chrono::high_resolution_clock::now();
+                    childCacheTime += (afterChildCache - afterFolderCache);
+
+                    // Use emplace for lookup cache to avoid temporary
+                    // TEMPORARILY RESTORED for release build test
+                    if (auto normalized = normalizeForCache(tempInfo.name))
+                    {
+                        m_lookupCache.emplace(FolderCacheKey{tempInfo.parentId, *normalized}, tempInfo.folderId);
+                        lookupCacheInserts++;
+                    }
+                    auto afterLookupCache = std::chrono::high_resolution_clock::now();
+                    lookupCacheTime += (afterLookupCache - afterChildCache);
+                    
+                    rowCount++;
+                    if (rowCount % 50000 == 0)
+                    {
+                        spdlog::debug("Processed {} folders so far...", rowCount);
+                    }
                 }
             }
+            else
+            {
+                // Original code path for comparison
+                while (stmt.getNextResult())
+                {
+                    auto loopStart = std::chrono::high_resolution_clock::now();
+                    
+                    FolderInfo info = getFolderInfoFromStatement(stmt);
+                    auto afterSqlite = std::chrono::high_resolution_clock::now();
+                    sqliteTime += (afterSqlite - loopStart);
+                    
+                    m_folderCache[info.folderId] = info;
+                    auto afterFolderCache = std::chrono::high_resolution_clock::now();
+                    folderCacheTime += (afterFolderCache - afterSqlite);
+                    
+                    m_childIndexCache[info.parentId].push_back(info.folderId);
+                    auto afterChildCache = std::chrono::high_resolution_clock::now();
+                    childCacheTime += (afterChildCache - afterFolderCache);
+
+                    // For testing: use non-normalized name directly
+                    m_lookupCache[{info.parentId, info.name}] = info.folderId;
+                    lookupCacheInserts++;
+                    auto afterLookupCache = std::chrono::high_resolution_clock::now();
+                    lookupCacheTime += (afterLookupCache - afterChildCache);
+                    
+                    rowCount++;
+                    if (rowCount % 50000 == 0)
+                    {
+                        spdlog::debug("Processed {} folders so far...", rowCount);
+                    }
+                }
+            }
+            
             m_isCacheValid = true;
-            spdlog::debug("All folder caches built with {} entries.", m_folderCache.size());
+            
+            auto endTime = std::chrono::high_resolution_clock::now();
+            auto queryTime = std::chrono::duration_cast<std::chrono::milliseconds>(processingStartTime - queryStartTime).count();
+            auto processingTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - processingStartTime).count();
+            auto totalTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+            
+            spdlog::info("Folder cache built: {} folders, {} lookup entries", rowCount, lookupCacheInserts);
+            spdlog::info("Cache timing: query prep {}ms, processing {}ms, total {}ms", 
+                         queryTime, processingTime, totalTime);
+            spdlog::info("Cache sizes: folderCache={}, childIndexCache={}, lookupCache={}", 
+                         m_folderCache.size(), m_childIndexCache.size(), m_lookupCache.size());
+            
+            // Log operation breakdown
+            auto sqliteMs = std::chrono::duration_cast<std::chrono::milliseconds>(sqliteTime).count();
+            auto folderCacheMs = std::chrono::duration_cast<std::chrono::milliseconds>(folderCacheTime).count();
+            auto childCacheMs = std::chrono::duration_cast<std::chrono::milliseconds>(childCacheTime).count();
+            auto lookupCacheMs = std::chrono::duration_cast<std::chrono::milliseconds>(lookupCacheTime).count();
+            
+            spdlog::info("Operation breakdown: SQLite {}ms, folderCache {}ms, childCache {}ms, lookupCache {}ms",
+                         sqliteMs, folderCacheMs, childCacheMs, lookupCacheMs);
+            
+            // Check if we're spending time elsewhere
+            auto accountedTime = sqliteMs + folderCacheMs + childCacheMs + lookupCacheMs;
+            spdlog::info("Total accounted: {}ms, unaccounted: {}ms", accountedTime, processingTime - accountedTime);
         }
 
         FolderInfo SqliteFolderDatabase::getFolderInfoFromStatement(SqliteStatement &stmt)
@@ -128,6 +247,14 @@ namespace jucyaudio
             info.name = stmt.getText(2);
             info.rootPath = stmt.isNull(3) ? "" : stmt.getText(3);
             return info;
+        }
+        
+        void SqliteFolderDatabase::getFolderInfoFromStatementInPlace(SqliteStatement &stmt, FolderInfo &info)
+        {
+            info.folderId = stmt.getInt64(0);
+            info.parentId = stmt.isNull(1) ? -1 : stmt.getInt64(1);
+            info.name = stmt.getText(2);
+            info.rootPath = stmt.isNull(3) ? "" : stmt.getText(3);
         }
 
         std::optional<FolderInfo> SqliteFolderDatabase::getFolderById(FolderId folderId) const

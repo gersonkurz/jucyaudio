@@ -54,6 +54,9 @@ namespace jucyaudio
 
             /// @brief Creates a FolderInfo struct from a database query result.
             static FolderInfo getFolderInfoFromStatement(class SqliteStatement &stmt);
+            
+            /// @brief Fills a FolderInfo struct from a database query result (avoids copy).
+            static void getFolderInfoFromStatementInPlace(class SqliteStatement &stmt, FolderInfo &info);
 
             database::SqliteDatabase &m_db;
 

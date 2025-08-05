@@ -96,15 +96,15 @@ if(WIN32)
     find_library(AVUTIL_LIBRARY avutil PATHS ${FFMPEG_LIB_PATH} REQUIRED)
     find_library(SWRESAMPLE_LIBRARY swresample PATHS ${FFMPEG_LIB_PATH} REQUIRED)
     find_library(LAME_LIBRARY libmp3lame PATHS ${LAME_LIB_PATH} REQUIRED)
-    # Find ICU libraries (uc = common, in = internationalization)
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        find_library(ICU_UC_LIBRARY icuucd PATHS ${ICU_LIB_PATH} REQUIRED)
-        find_library(ICU_I18N_LIBRARY icuind PATHS ${ICU_LIB_PATH} REQUIRED)
-    else()
-        find_library(ICU_UC_LIBRARY icuuc PATHS ${ICU_LIB_PATH} REQUIRED)
-        find_library(ICU_I18N_LIBRARY icuin PATHS ${ICU_LIB_PATH} REQUIRED)
-    endif()
 
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(ICU_UC_LIBRARY "${ICU_LIB_PATH_DEBUG}/icuucd.lib")
+        set(ICU_I18N_LIBRARY "${ICU_LIB_PATH_DEBUG}/icuind.lib")
+    else() # Release or other build types
+        set(ICU_UC_LIBRARY "${ICU_LIB_PATH_RELEASE}/icuuc.lib")
+        set(ICU_I18N_LIBRARY "${ICU_LIB_PATH_RELEASE}/icuin.lib")
+    endif()
+    message(STATUS "JucyAudio ICU Check: Found UC='${ICU_UC_LIBRARY}' and I18N='${ICU_I18N_LIBRARY}'")
     # Windows external includes
     set(EXTERNAL_INCLUDES
         ${AUBIO_INCLUDE_PATH}
