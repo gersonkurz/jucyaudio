@@ -160,6 +160,9 @@ namespace jucyaudio
             virtual ILibraryRootManager &getLibraryRootManager() = 0;
             virtual const ILibraryRootManager &getLibraryRootManager() const = 0;
 
+            virtual bool getTotalTrackCountForFolders(
+                const std::unordered_set<FolderId> &folderIds, int64_t &outCount) const = 0;
+
             virtual IMarkerManager &getMarkerManager() = 0;
             virtual const IMarkerManager &getMarkerManager() const = 0;
             

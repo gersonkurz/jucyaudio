@@ -4,6 +4,7 @@
 #include <Database/Sqlite/SqliteStatementConstruction.h>
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/Sqlite/SqliteWorkingSetManager.h>
+#include <Database/TrackLibrary.h>
 #include <Utils/AssortedUtils.h>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -160,6 +161,9 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
         bool SqliteWorkingSetManager::createWorkingSetFromVirtualFolder(
             int64_t folderId, std::string_view name, WorkingSetInfo &newWorkingSet, bool recursive) const
         {
+            const auto &folderDb = theTrackLibrary.getFolderDatabase();
+            const auto allChildren = folderDb.getAllChildFolders({folderId});
+
             if (SqliteTransaction transaction{m_db})
             {
                 // todo: name-uniqueness should be checked by SQL
@@ -167,8 +171,8 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
                 newWorkingSet.timestamp = std::chrono::system_clock::now();
                 newWorkingSet.id = 0;
 
-                if (transaction.execute("INSERT INTO WorkingSets (name, "
-                                        "timestamp) VALUES (?, ?);",
+                // create the workingset itself 
+                if (transaction.execute("INSERT INTO WorkingSets (name, timestamp) VALUES (?, ?);",
                         name,
                         timestampToInt64(newWorkingSet.timestamp)))
                 {
@@ -177,21 +181,24 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
                     // Build recursive CTE to get all tracks in folder and subfolders
                     if (recursive)
                     {
-                        const char *recursiveQuery = R"(
-                            WITH RECURSIVE folder_tree AS (
-                                SELECT folder_id FROM VirtualFolders WHERE folder_id = ?
-                                UNION ALL
-                                SELECT vf.folder_id 
-                                FROM VirtualFolders vf
-                                INNER JOIN folder_tree ft ON vf.parent_id = ft.folder_id
-                            )
-                            INSERT INTO WorkingSetTracks (ws_id, track_id)
-                            SELECT ?, track_id 
-                            FROM Tracks 
-                            WHERE virtual_folder_id IN (SELECT folder_id FROM folder_tree);
-                        )";
-
-                        if (transaction.execute(recursiveQuery, folderId, newWorkingSet.id))
+                        StringWriter stmt;
+                        stmt.append("INSERT INTO WorkingSetTracks (ws_id, track_id) ");
+                        stmt.append("SELECT ?, track_id FROM Tracks WHERE folder_id IN (");
+                        bool first = true;
+                        for (const auto& childFolderId : allChildren)
+                        {
+                            if (first)
+                            {
+                                first = false;
+                            }
+                            else
+                            {
+                                stmt.append(", ");
+                            }
+                            stmt.append(std::to_string(childFolderId));
+                        }
+                        stmt.append(");");                       
+                        if (transaction.execute(stmt.asString(), newWorkingSet.id))
                         {
                             return transaction.commit();
                         }

@@ -573,7 +573,7 @@ namespace jucyaudio
                 int64_t totalTracks = 0;
                 if (m_currentNode->getTotalTrackCount(totalTracks))
                 {
-                    m_statusPanel.setStatusMessage(std::format("{} tracks in '{}'", totalTracks, m_currentNode->getName()), false);
+                    m_statusPanel.setStatusMessage(std::format("{:L} tracks in '{}'", totalTracks, m_currentNode->getName()), false);
                 }
             }
             else

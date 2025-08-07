@@ -29,7 +29,7 @@ namespace jucyaudio
 
             // Count label
             addAndMakeVisible(m_countLabel);
-            juce::String countText = "Create working set from these " + juce::String(m_trackCount) + " tracks?";
+            const juce::String countText = std::format("Create working set from {:L} tracks?", m_trackCount);
             m_countLabel.setText(countText, juce::dontSendNotification);
             m_countLabel.setJustificationType(juce::Justification::centred);
 

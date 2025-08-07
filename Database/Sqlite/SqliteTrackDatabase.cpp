@@ -1608,6 +1608,39 @@ CREATE TABLE MixUndoHistory (
             return tags;
         }
 
+        bool SqliteTrackDatabase::getTotalTrackCountForFolders(const std::unordered_set<FolderId>& folderIds, int64_t& outCount) const
+        {
+            StringWriter sql;
+            sql.append("SELECT COUNT(*) FROM Tracks WHERE folder_id IN (");
+            bool first = true;
+            for (const auto& folderId : folderIds)
+            {
+                if (first)
+                {
+                    first = false;
+                }
+                else
+                {
+                    sql.append(',');
+                }
+                sql.append('?');
+            }
+            sql.append(");");
+            const auto sqlString = sql.asString();
+            SqliteStatement stmt{m_db, sql.asString()};
+            for (const auto &folderId : folderIds)
+            {
+                stmt.addParam(folderId);
+            }
+            if (!stmt.getNextResult())
+            {
+                spdlog::error("Failed to execute {}: {}", sqlString, m_db.getLastError());
+                return false;
+            }
+            outCount = stmt.getInt64(0);
+            return true;
+        }
+
         std::vector<TagId> SqliteTrackDatabase::getAllTags() const
         {
             if (!isOpen())
@@ -1642,7 +1675,7 @@ CREATE TABLE MixUndoHistory (
             }
 
             // Delegate the heavy lifting to the database's path reconstruction method
-            std::filesystem::path parentPath = db.reconstructFullPath(folderId);
+            const auto parentPath = db.reconstructFullPath(folderId);
             if (parentPath.empty())
             {
                 return {}; // The parent folder couldn't be found

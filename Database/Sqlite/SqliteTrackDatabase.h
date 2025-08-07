@@ -104,6 +104,9 @@ namespace jucyaudio
             DbResult updateTrackTags(TrackId trackId, const std::vector<TagId>& tagIds) override;
             std::vector<TagId> getTrackTags(TrackId trackId) const override;
             std::vector<TagId> getAllTags() const override;
+
+
+            bool getTotalTrackCountForFolders(const std::unordered_set<FolderId> &folderIds, int64_t &outCount) const override;
             
         private:
             template <typename T>
