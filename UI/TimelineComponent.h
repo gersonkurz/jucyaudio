@@ -92,6 +92,14 @@ namespace jucyaudio
             {
                 m_mixLoader = nullptr;
             }
+            
+            /**
+             * @brief Notifies the timeline that the viewport has resized.
+             * 
+             * This should be called by the parent component when the viewport size changes
+             * to ensure the timeline adjusts its height to use all available space.
+             */
+            void viewportResized();
 
             /**
              * @brief Recalculates the timeline's total width and repositions all child components.

@@ -215,6 +215,9 @@ namespace jucyaudio
         {
             // The viewport now fills the entire editor area.
             m_viewport.setBounds(getLocalBounds());
+            
+            // Notify the timeline that the viewport has resized
+            m_timeline.viewportResized();
         }
 
         void MixEditorComponent::updateCueAttachInData(TrackId trackId, const database::MixTrack& updatedTrack)

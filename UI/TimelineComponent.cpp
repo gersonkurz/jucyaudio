@@ -425,14 +425,32 @@ namespace jucyaudio
             }
         }
 
+        void TimelineComponent::viewportResized()
+        {
+            resized();
+        }
+        
         void TimelineComponent::resized()
         {
             auto visibleArea = getParentComponent()->getLocalBounds();
             const int rulerHeight = 30;
             const int trackHeight = MixTrackComponent::TOTAL_COMPONENT_HEIGHT;
             const int yGap = 5;
-            const int availableHeightForLanes = visibleArea.getHeight() - rulerHeight;
-
+            
+            // Always match the viewport height if we have one
+            if (auto* viewport = findParentComponentOfClass<juce::Viewport>())
+            {
+                const int viewportHeight = viewport->getHeight();
+                
+                // Always resize to match viewport height (don't check if already matching)
+                if (viewportHeight != getHeight())
+                {
+                    setSize(getWidth(), viewportHeight);
+                }
+            }
+            
+            // Calculate available height for lanes using the actual component height
+            const int availableHeightForLanes = getHeight() - rulerHeight;
             int numLanes = std::max(1, availableHeightForLanes / (trackHeight + yGap));
             int currentLane = 0;
             int laneDirection = +1;
@@ -543,6 +561,16 @@ namespace jucyaudio
             const int rulerHeight = 30;
             const int numLanesForHeightCalc = 8; // A default number of lanes to ensure a reasonable minimum height.
             m_calculatedHeight = rulerHeight + (numLanesForHeightCalc * (trackHeight + yGap));
+            
+            // If we have a parent viewport, ensure we're at least as tall as its visible area
+            if (auto* viewport = findParentComponentOfClass<juce::Viewport>())
+            {
+                const int viewportHeight = viewport->getHeight();
+                if (viewportHeight > m_calculatedHeight)
+                {
+                    m_calculatedHeight = viewportHeight;
+                }
+            }
             
             // Calculate positions for all tracks using the shared logic
             // This must be called AFTER setting m_calculatedHeight
