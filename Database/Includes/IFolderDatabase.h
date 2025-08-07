@@ -3,6 +3,7 @@
 #include <Database/Includes/FolderInfo.h>
 #include <optional>
 #include <vector>
+#include <unordered_set>
 
 namespace jucyaudio
 {
@@ -40,12 +41,8 @@ namespace jucyaudio
              */
             virtual bool addFolder(FolderInfo &folder) = 0;
 
-            /**
-             * @brief Removes a folder and all its descendant folders and tracks from the database.
-             * @param folderId The ID of the folder to remove.
-             * @return True on success, false on failure.
-             */
-            virtual bool removeFolder(FolderId folderId) = 0;
+            virtual std::unordered_set<FolderId> getAllChildFolders(const std::vector<FolderId> &folderIdsToScan) const = 0;
+            virtual bool removeEmptyFolders() const = 0;
 
             /**
              * @brief Updates the data for an existing folder.
@@ -57,7 +54,7 @@ namespace jucyaudio
             /**
              * @brief Invalidates the internal cache, forcing a reload from the database on next access.
              */
-            virtual void invalidateCache() = 0;
+            virtual void invalidateCache() const = 0;
 
             
              /**

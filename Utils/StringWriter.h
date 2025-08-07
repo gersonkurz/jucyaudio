@@ -126,6 +126,14 @@ namespace jucyaudio
             return (m_write_position == 0);
         }
 
+        bool endsWith(const std::string_view suffix) const
+        {
+            if (m_write_position < suffix.size())
+                return false;
+            const auto *buffer = m_dynamic_buffer ? m_dynamic_buffer : m_builtin_buffer;
+            return std::string_view{buffer + m_write_position - suffix.size(), suffix.size()} == suffix;
+        }
+
         /**
          * @brief Converts the current content to a std::string
          * @return String containing all written characters

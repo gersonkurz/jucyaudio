@@ -86,7 +86,9 @@ namespace jucyaudio
         }
 
         bool TrackLibrary::scanLibrary(std::vector<FolderId> &foldersToScan,
-            bool forceRescanAllFiles, ProgressCallback progressCb,
+            bool forceRescanAllFiles,
+            bool removeMissingFiles,
+            ProgressCallback progressCb,
             CompletionCallback completionCb, std::atomic<bool> *shouldCancel)
         {
             if (!m_isInitialised || !m_scanner)
@@ -96,7 +98,7 @@ namespace jucyaudio
                 m_lastErrorMessage = "Library or scanner not initialised.";
                 return false;
             }
-            return m_scanner->scan(foldersToScan, forceRescanAllFiles,
+            return m_scanner->scan(foldersToScan, forceRescanAllFiles, removeMissingFiles,
                                    progressCb, completionCb, shouldCancel);
         }
 

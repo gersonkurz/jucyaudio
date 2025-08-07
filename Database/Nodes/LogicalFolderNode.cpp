@@ -34,7 +34,7 @@ namespace jucyaudio
             for (const auto &folderInfo : childFolderData)
             {
                 // For each child folder record, create a new node.
-                outChildren.push_back(new LogicalFolderNode(this, folderInfo));
+                outChildren.push_back(new LogicalFolderNode{this, folderInfo});
             }
 
             // The sorting is now handled by the IFolderDatabase::getChildFolders method,

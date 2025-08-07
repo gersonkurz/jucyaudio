@@ -144,7 +144,7 @@ namespace jucyaudio
 
             // To mark a file as no longer found on disk
             virtual DbResult setTrackPathMissing(TrackId trackId, bool isMissing) = 0;
-            // (maybe a 'status' field in TrackInfo later)
+            virtual DbResult removeTracks(const std::vector<TrackId> &trackIds) = 0;
 
             virtual IFolderDatabase &getFolderDatabase() const = 0;
 

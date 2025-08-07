@@ -122,11 +122,11 @@ namespace jucyaudio
         return result;
     }
 
-    [[nodiscard]] std::optional<std::string> normalizeForCache(std::string_view input)
+    std::string normalizeForCache(std::string_view input)
     {
         if (input.empty())
         {
-            return std::string("");
+            return std::string{input};
         }
 
         UErrorCode status = U_ZERO_ERROR;
@@ -134,30 +134,34 @@ namespace jucyaudio
         // --- Step 1: Normalize to NFC (Unchanged, this part is correct) ---
         const UNormalizer2 *nfcNormalizer = unorm2_getNFCInstance(&status);
         if (U_FAILURE(status))
-        { /* ... error handling ... */
-            return std::nullopt;
+        { 
+            spdlog::error("normalizeForCache: Failed to get NFC normalizer. ICU Error: {}", u_errorName(status));
+            return std::string{input};
         }
 
         int32_t utf16_len = 0;
         u_strFromUTF8(nullptr, 0, &utf16_len, input.data(), static_cast<int32_t>(input.size()), &status);
         if (status != U_BUFFER_OVERFLOW_ERROR)
-        { /* ... error handling ... */
-            return std::nullopt;
+        {
+            spdlog::error("normalizeForCache: Pre-flight UTF-8 to UTF-16 conversion failed for input '{}'. ICU Error: {}", input, u_errorName(status));
+            return std::string{input};
         }
 
         status = U_ZERO_ERROR;
         std::vector<UChar> utf16_buffer(utf16_len + 1);
         u_strFromUTF8(utf16_buffer.data(), utf16_buffer.size(), nullptr, input.data(), static_cast<int32_t>(input.size()), &status);
         if (U_FAILURE(status))
-        { /* ... error handling ... */
-            return std::nullopt;
+        {
+            spdlog::error("normalizeForCache: UTF-8 to UTF-16 conversion failed for input '{}'. ICU Error: {}", input, u_errorName(status));
+            return std::string{input};
         }
 
         std::vector<UChar> normalized_buffer(utf16_len + 1);
         int32_t normalized_len = unorm2_normalize(nfcNormalizer, utf16_buffer.data(), utf16_len, normalized_buffer.data(), normalized_buffer.size(), &status);
         if (U_FAILURE(status))
-        { /* ... error handling ... */
-            return std::nullopt;
+        {
+            spdlog::error("normalizeForCache: NFC normalization failed for input '{}'. ICU Error: {}", input, u_errorName(status));
+            return std::string{input};
         }
 
         // --- Step 2: Case-Fold (Corrected Logic) ---
@@ -177,7 +181,7 @@ namespace jucyaudio
         {
             // Any other failure is a real error.
             spdlog::error("normalizeForCache: Case-folding pre-flight failed for input '{}'. ICU Error: {}", input, u_errorName(status));
-            return std::nullopt;
+            return std::string{input};
         }
         // If we get here, folded_len_needed has the correct required size.
 
@@ -187,7 +191,7 @@ namespace jucyaudio
         if (U_FAILURE(status))
         {
             spdlog::error("normalizeForCache: Case-folding failed for input '{}'. ICU Error: {}", input, u_errorName(status));
-            return std::nullopt;
+            return std::string{input};
         }
 
         // --- Step 3: Convert back to UTF-8 (Unchanged, this logic is correct) ---
@@ -195,16 +199,18 @@ namespace jucyaudio
         status = U_ZERO_ERROR;
         u_strToUTF8(nullptr, 0, &utf8_len_needed, folded_buffer.data(), folded_len, &status);
         if (status != U_BUFFER_OVERFLOW_ERROR)
-        { /* ... error handling ... */
-            return std::nullopt;
+        { 
+            spdlog::error("normalizeForCache: Pre-flight UTF-16 to UTF-8 conversion failed for input '{}'. ICU Error: {}", input, u_errorName(status));
+            return std::string{input};
         }
 
         status = U_ZERO_ERROR;
         std::string result(utf8_len_needed, '\0');
         u_strToUTF8(result.data(), result.size(), nullptr, folded_buffer.data(), folded_len, &status);
         if (U_FAILURE(status))
-        { /* ... error handling ... */
-            return std::nullopt;
+        {
+            spdlog::error("normalizeForCache: UTF-16 to UTF-8 conversion failed for input '{}'. ICU Error: {}", input, u_errorName(status));
+            return std::string{input};
         }
 
         return result;
@@ -223,27 +229,6 @@ namespace jucyaudio
 
         // Use our robust normalization function. It handles case-folding and
         // all other Unicode normalization forms for us.
-        auto normalizedResult = normalizeForCache(extensionString);
-
-        // If normalization succeeds, return the result.
-        // If it fails (which is highly unlikely for a simple extension),
-        // return a simple ASCII lowercase version as a fallback.
-        if (normalizedResult)
-        {
-            return *normalizedResult;
-        }
-        else
-        {
-            // Fallback for the very rare case that ICU fails.
-            spdlog::warn("ICU normalization failed for extension '{}'. Falling back to ASCII lowercase.", extensionString);
-            std::transform(extensionString.begin(),
-                extensionString.end(),
-                extensionString.begin(),
-                [](unsigned char c)
-                {
-                    return static_cast<char>(std::tolower(c));
-                });
-            return extensionString;
-        }
+        return normalizeForCache(extensionString);
     }
 } // namespace jucyaudio

@@ -46,6 +46,7 @@ namespace jucyaudio
             juce::TextButton m_relocateRootButton;
             juce::TextButton m_removeRootButton;
             juce::ToggleButton m_forceRescanCheckbox;
+            juce::ToggleButton m_removeMissingFilesToggle;
             juce::TableListBox m_rootFoldersTable;
             juce::TextButton m_scanButton;
             juce::Label m_titleLabel;

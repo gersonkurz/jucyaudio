@@ -4,7 +4,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <spdlog/spdlog.h>
 #include <unordered_map>
-#include <unordered_set> 
+#include <unordered_set>
 
 namespace jucyaudio
 {
@@ -18,6 +18,7 @@ namespace jucyaudio
 
         bool TrackScanner::scan(const std::vector<FolderId> &folderIdsToScan,
             bool forceRescanAllFiles,
+            bool removeMissingFiles,
             ProgressCallback progressCb,
             CompletionCallback completionCb,
             std::atomic<bool> *shouldCancel)
@@ -26,6 +27,7 @@ namespace jucyaudio
             m_completionCb = completionCb;
             m_pShouldCancel = shouldCancel;
             m_forceRescanAll = forceRescanAllFiles;
+            m_removeMissingFiles = removeMissingFiles;
 
             const auto success = scanLoop(folderIdsToScan);
 
@@ -46,26 +48,41 @@ namespace jucyaudio
             if (m_progressCb)
                 m_progressCb(-1.0f, "Initializing scan...");
 
-            std::unordered_map<TrackCacheKey, TrackInfo> existingTrackCache;
+            // this is a lookup of existing folders and their tracks by name.
+            std::unordered_map<FolderId, std::unordered_map<std::string, TrackId>> existingTrackCache;
+
             spdlog::debug("Building cache of existing tracks for scan scope...");
 
-            TrackQueryArgs args;
-            args.folderIds = folderIdsToScan;
+            const auto &folderDatabase{m_db.getFolderDatabase()};
+            TrackQueryArgs args{};
+            const auto folderSet{folderDatabase.getAllChildFolders(folderIdsToScan)};
+            args.folderIds = std::vector<FolderId>{folderSet.begin(), folderSet.end()};
             args.recursive = true;
             args.usePaging = false;
 
-            auto tracksInScope = m_db.getTracks(args);
+            spdlog::info("Determining tracks in scope for the scan...");
+            const auto tracksInScope{m_db.getTracks(args)};
+            spdlog::info("Found {} tracks in the database for the scan scope.", tracksInScope.size());
+            uint64_t index = 0;
             for (const auto &track : tracksInScope)
             {
-                if (auto normalizedName = normalizeForCache(track.filename))
-                {
-                    existingTrackCache[{track.folderId, *normalizedName}] = track;
-                }
-            }
-            spdlog::debug("Cache built with {} tracks.", existingTrackCache.size());
+                if (track.is_missing)
+                    continue; // Skip missing tracks
 
-            // --- THE FIX: A set to track files processed in this session ---
-            std::unordered_set<std::string> processedPaths;
+                // register this folder as existing
+                auto item = existingTrackCache.find(track.folderId);
+                if (item == existingTrackCache.end())
+                {
+                    existingTrackCache[track.folderId] = {};
+                    item = existingTrackCache.find(track.folderId);
+                }
+                assert(item != existingTrackCache.end() && "Track folder ID should exist in the cache now.");
+                const auto key{normalizeForCache(track.filename)};
+                item->second[key] = track.trackId;
+                ++index;
+            }
+
+            spdlog::debug("Cache built with {} folders and {} tracks.", existingTrackCache.size(), tracksInScope.size());
 
             int filesProcessedThisSession = 0;
             for (const auto &rootFolderId : folderIdsToScan)
@@ -78,7 +95,7 @@ namespace jucyaudio
                     continue;
 
                 spdlog::info("Scanning folder: {}", pathToString(rootFolderPath));
-                juce::RangedDirectoryIterator iter(juce::File(pathToString(rootFolderPath)), true, "*.mp3;*.wav;*.flac;*.ogg", juce::File::findFiles);
+                juce::RangedDirectoryIterator iter{juce::File(pathToString(rootFolderPath)), true, "*.mp3;*.wav;*.flac;*.ogg", juce::File::findFiles};
 
                 for (const auto &entry : iter)
                 {
@@ -88,53 +105,52 @@ namespace jucyaudio
                     const juce::File &file = entry.getFile();
                     const auto fullPathStr = file.getFullPathName().toStdString();
 
-                    // --- THE FIX: Check if we have already processed this exact file path ---
-                    if (processedPaths.contains(fullPathStr))
-                    {
-                        continue; // Already handled, skip to the next file.
-                    }
-                    processedPaths.insert(fullPathStr); // Mark this path as processed for this session.
-
                     filesProcessedThisSession++;
                     if (m_progressCb && (filesProcessedThisSession % 100 == 0))
                     {
                         m_progressCb(-1.0f, std::format("Scanned {} files...", filesProcessedThisSession));
                     }
 
-                    const std::filesystem::path fullPath(fullPathStr);
-                    const std::string filename = file.getFileName().toStdString();
+                    // we're getting filenames, not folders
+                    const std::filesystem::path fullPath{fullPathStr};
+                    const std::string filename{file.getFileName().toStdString()};
 
+                    // we identify the folder by its parent path
                     FolderId parentFolderId = m_db.getFolderDatabase().findOrCreateFolderByPath(fullPath.parent_path());
-                    if (parentFolderId == -1)
+                    if (parentFolderId <= 0)
                         continue;
 
                     const auto normalizedFilename = normalizeForCache(filename);
-                    if (!normalizedFilename)
-                        continue;
 
-                    TrackCacheKey key = {parentFolderId, *normalizedFilename};
-                    TrackInfo currentTrackInfo;
-                    bool needsFullAnalysis = true;
-
-                    auto cacheHit = existingTrackCache.find(key);
-                    if (cacheHit != existingTrackCache.end())
+                    // let's check if the folder existed before: 
+                    auto item = existingTrackCache.find(parentFolderId);
+                    if (item == existingTrackCache.end())
                     {
-                        currentTrackInfo = cacheHit->second;
-                        existingTrackCache.erase(cacheHit);
-                        auto fsLastModifiedMs = file.getLastModificationTime().toMilliseconds();
-                        if (!m_forceRescanAll && timestampToInt64(currentTrackInfo.last_modified_fs) == fsLastModifiedMs &&
-                            currentTrackInfo.filesize_bytes == static_cast<uint64_t>(file.getSize()))
-                        {
-                            needsFullAnalysis = false;
-                        }
+                        spdlog::info("Folder {} is new - did not exist before", pathToString(fullPath.parent_path()));
                     }
                     else
                     {
-                        currentTrackInfo.filename = filename;
-                        currentTrackInfo.folderId = parentFolderId;
-                        currentTrackInfo.date_added = std::chrono::system_clock::now();
+                        // check if this file already exists in the folder
+                        if (item->second.erase(normalizedFilename) > 0)
+                        {
+                            //spdlog::debug("Track {} already exists in folder {}.", filename, pathToString(fullPath.parent_path()));
+                            if (!m_forceRescanAll)
+                            {
+                                // If we're not forcing a rescan, skip this file
+                                continue;
+                            }
+                        }
+                        else
+                        {
+                            spdlog::debug("Track {} is new in folder {}, processing.", filename, pathToString(fullPath.parent_path()));
+                        }
                     }
 
+                    TrackInfo currentTrackInfo;
+                    bool needsFullAnalysis = true;
+                    currentTrackInfo.filename = filename;
+                    currentTrackInfo.folderId = parentFolderId;
+                    currentTrackInfo.date_added = std::chrono::system_clock::now();
                     currentTrackInfo.last_modified_fs = timestampFromInt64(file.getLastModificationTime().toMilliseconds());
                     currentTrackInfo.filesize_bytes = file.getSize();
                     currentTrackInfo.is_missing = false;
@@ -158,9 +174,50 @@ namespace jucyaudio
             if (!existingTrackCache.empty())
             {
                 spdlog::info("Found {} tracks in the database that are missing from the filesystem.", existingTrackCache.size());
-                for (const auto &[key, track] : existingTrackCache)
+
+                if (m_removeMissingFiles)
                 {
-                    m_db.setTrackPathMissing(track.trackId, true);
+                    spdlog::info("User opted to remove missing files. Collecting IDs for deletion...");
+
+                    std::vector<TrackId> idsToDelete;
+                    for (const auto item : existingTrackCache)
+                    {
+                        for (const auto &track : item.second)
+                        {
+                            idsToDelete.push_back(track.second);
+                        }
+                    }
+                    spdlog::info("Removing {} missing tracks from the database...", idsToDelete.size());
+
+                    const auto removeTrackSuccess = m_db.removeTracks(idsToDelete);
+                    if (removeTrackSuccess.isOk())
+                    {
+                        spdlog::info("Successfully removed {} missing tracks from the database.", idsToDelete.size());
+                    }
+                    else
+                    {
+                        spdlog::error("Failed to remove missing tracks from the database: {}", removeTrackSuccess.errorMessage);
+                    }
+                    
+                    // the database needs to check if the folders are empty. so:
+                    const auto removeFoldersSuccess = folderDatabase.removeEmptyFolders();
+                    if (removeFoldersSuccess)
+                    {
+                        spdlog::info("Successfully removed empty folders from the database.");
+                    }
+                    else
+                    {
+                        spdlog::error("Failed to remove empty folders from the database");
+                    }
+                }
+                else
+                {
+                    /* spdlog::info("Marking missing files in the database.");
+                    for (const auto &[key, track] : existingTrackCache)
+                    {
+                        m_db.setTrackPathMissing(track.trackId, true);
+                    }
+                    */
                 }
             }
 

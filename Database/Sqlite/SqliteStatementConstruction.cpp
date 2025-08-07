@@ -68,7 +68,8 @@ namespace jucyaudio
                     folderCondition.append(i == 0 ? std::format("?{}", m_paramIndex++) : std::format(", ?{}", m_paramIndex++));
                 }
                 folderCondition.append(")");
-                addCondition(folderCondition.asString());
+                const auto conditionAsString{folderCondition.asString()};
+                addCondition(conditionAsString);
             }
         }
 

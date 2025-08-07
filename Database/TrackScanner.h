@@ -54,6 +54,7 @@ namespace jucyaudio
 
             bool scan(const std::vector<FolderId> &folderIdsToScan,
                 bool forceRescanAllFiles,
+                bool removeMissingFiles,
                 ProgressCallback progressCb,
                 CompletionCallback completionCb,
                 std::atomic<bool> *shouldCancel);
@@ -69,6 +70,7 @@ namespace jucyaudio
             CompletionCallback m_completionCb{nullptr};
             std::atomic<bool> *m_pShouldCancel{nullptr};
             bool m_forceRescanAll{false};
+            bool m_removeMissingFiles{false};
         };
 
     } // namespace database

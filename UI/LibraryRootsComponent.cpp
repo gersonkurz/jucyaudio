@@ -24,10 +24,11 @@ namespace jucyaudio
         class ScanRootsTask final : public ILongRunningTask
         {
         public:
-            ScanRootsTask(std::vector<FolderId> ids, bool forceRescan, std::function<void()> onComplete)
+            ScanRootsTask(std::vector<FolderId> ids, bool forceRescan, bool removeMissingFiles, std::function<void()> onComplete)
                 : ILongRunningTask{"Scanning Library Roots", false},
                   m_idsToScan{std::move(ids)},
                   m_bForceRescan{forceRescan},
+                  m_bRemoveMissingFiles{removeMissingFiles},
                   m_onComplete{std::move(onComplete)}
             {
             }
@@ -38,7 +39,7 @@ namespace jucyaudio
                 try
                 {
                     // FIXED: This call now matches the expected signature
-                    theTrackLibrary.scanLibrary(m_idsToScan, m_bForceRescan, progressCb, completionCb, &shouldCancel);
+                    theTrackLibrary.scanLibrary(m_idsToScan, m_bForceRescan, m_bRemoveMissingFiles, progressCb, completionCb, &shouldCancel);
                 }
                 catch (const std::exception &e)
                 {
@@ -55,6 +56,7 @@ namespace jucyaudio
         private:
             std::vector<FolderId> m_idsToScan;
             bool m_bForceRescan;
+            bool m_bRemoveMissingFiles;
             std::function<void()> m_onComplete;
         };
 
@@ -83,6 +85,11 @@ namespace jucyaudio
 
             addAndMakeVisible(m_forceRescanCheckbox);
             m_forceRescanCheckbox.setButtonText("Force Rescan All Files");
+
+            m_removeMissingFilesToggle.setButtonText("Remove Missing Files from DB");
+            m_removeMissingFilesToggle.setTooltip(
+                "If checked, any audio files that are in the database but not found on disk during this scan will be permanently deleted from the library.");
+            addAndMakeVisible(m_removeMissingFilesToggle);
 
             addAndMakeVisible(m_rootFoldersTable);
             m_rootFoldersTable.setHeaderHeight(25);
@@ -137,7 +144,14 @@ namespace jucyaudio
             leftPanel.removeFromTop(vMargin);
             m_removeRootButton.setBounds(leftPanel.removeFromTop(buttonHeight));
 
-            m_forceRescanCheckbox.setBounds(bottomPanel.removeFromLeft(180).reduced(0, 5));
+            // Create a panel on the left side of the bottom bar for our toggles.
+            juce::Rectangle<int> togglesPanel = bottomPanel.removeFromLeft(180);
+
+            // Split that panel into two vertical halves for the toggles.
+            m_forceRescanCheckbox.setBounds(togglesPanel.removeFromTop(togglesPanel.getHeight() / 2));
+            m_removeMissingFilesToggle.setBounds(togglesPanel); // Takes the remaining half
+            // --- END MODIFIED SECTION ---
+
             m_scanButton.setBounds(bottomPanel.removeFromRight(150).reduced(0, 5));
         }
 
@@ -318,7 +332,8 @@ namespace jucyaudio
             };
 
             const bool force = m_forceRescanCheckbox.getToggleState();
-            auto *task = new ScanRootsTask(std::move(idsToScan), force, onScanCompleteCallback);
+            const bool shouldRemove = m_removeMissingFilesToggle.getToggleState();
+            auto *task = new ScanRootsTask(std::move(idsToScan), force, shouldRemove, onScanCompleteCallback);
 
             TaskDialog::launch("Scanning Library", task, 500, this);
         }

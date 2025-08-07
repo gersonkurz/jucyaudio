@@ -23,9 +23,8 @@ namespace jucyaudio
             /// @brief The name of this specific folder (e.g., "2025" or "Vaporwave").
             std::string name;
 
-            /// @brief The full, absolute path to this folder's root drive or mount point (e.g., "D:\\" or "/Users/Human/Music").
-            /// This is ONLY populated for root-level folders (where parentId is -1). It is empty for all other folders.
-            std::string rootPath;
+            /// @brief The full path of this folder on the filesystem.
+            std::string path;
 
             /// @brief A utility function to check if the struct contains valid data from the database.
             bool isValid() const

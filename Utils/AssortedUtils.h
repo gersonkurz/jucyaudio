@@ -228,5 +228,5 @@ namespace jucyaudio
      * @param input A UTF-8 encoded string.
      * @return A UTF-8 encoded, normalized, case-folded string.
      */
-    [[nodiscard]] std::optional<std::string> normalizeForCache(std::string_view input);
+    std::string normalizeForCache(std::string_view input);
 } // namespace jucyaudio

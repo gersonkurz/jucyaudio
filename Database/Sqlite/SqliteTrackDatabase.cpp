@@ -525,41 +525,13 @@ namespace jucyaudio
                 return m_lastKnownFolderPath;
             }
 
-            spdlog::debug("Reconstructing full path for folderId: {}", folderId);
-            std::vector<std::string> parts;
-            FolderId currentId = folderId;
-
-            while (currentId != -1)
+            auto folderOpt = m_folderDatabase.getFolderById(folderId);
+            if (!folderOpt)
             {
-                auto folderOpt = m_folderDatabase.getFolderById(currentId);
-                if (!folderOpt)
-                {
-                    spdlog::error("reconstructFullPath FAIL: Could not find folder with ID {}.", currentId);
-                    return {};
-                }
-
-                spdlog::debug(" -> Found part: '{}', parentId: {}", folderOpt->name, folderOpt->parentId);
-
-                if (!folderOpt->rootPath.empty())
-                {
-                    parts.insert(parts.begin(), folderOpt->rootPath);
-                    spdlog::debug(" -> Hit root path: '{}'", folderOpt->rootPath);
-                    break;
-                }
-
-                parts.insert(parts.begin(), folderOpt->name);
-                currentId = folderOpt->parentId;
+                spdlog::error("reconstructFullPath FAIL: Could not find folder with ID {}.", folderId);
+                return {};
             }
-
-            std::filesystem::path result;
-            for (const auto &part : parts)
-            {
-                result /= part;
-            }
-            m_lastKnownFolderId = folderId;
-            m_lastKnownFolderPath = result;
-            spdlog::debug("Reconstructed path for folderId {}: {}", folderId, pathToString(result));
-            return result;
+            return folderOpt->path;
         }
 
         std::filesystem::path SqliteTrackDatabase::reconstructFullPath(const TrackInfo &trackInfo) const
@@ -1343,6 +1315,40 @@ CREATE TABLE MixUndoHistory (
                 {
                     return s.addParam(val);
                 });
+        }
+
+        DbResult SqliteTrackDatabase::removeTracks(const std::vector<TrackId> &trackIds)
+        {
+            if (trackIds.empty())
+            {
+                return DbResult::success();
+            }
+
+            if (SqliteTransaction transaction{m_db})
+            {
+                SqliteStatement stmt{m_db, "DELETE FROM Tracks WHERE track_id = ?"};
+
+                for (const auto &trackId : trackIds)
+                {
+                    stmt.addParam(trackId);
+                    if (!stmt.execute())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, std::format("Failed to delete track with ID: {}", trackId));
+                    }
+                    stmt.reset();
+                }
+
+                if (!transaction.commit())
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit transaction.");
+                }
+                return DbResult::success();
+            }
+            else
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+            }
         }
 
         // GetTracks and GetTotalTrackCount need more complex SQL building based
