@@ -1401,23 +1401,29 @@ CREATE TABLE MixUndoHistory (
 
         void SqliteTrackDatabase::readAllTagTracks(std::vector<TrackInfo> &tracks) const
         {
-            const auto tempTableName{generateTempTableName()};
-            m_db.execute("BEGIN TRANSACTION;");
-            m_db.execute("DROP TABLE IF EXISTS " + tempTableName + ";");
-            m_db.execute("CREATE TEMP TABLE " + tempTableName + " (track_id INTEGER PRIMARY KEY);");
+            StringWriter sqlStatement;
+            sqlStatement.append("SELECT track_id, tag_id FROM TrackTags WHERE track_id IN (");
+            bool first = true;
             std::unordered_map<TrackId, TrackInfo *> trackMap;
             for (auto &track : tracks)
             {
-                if (track.trackId != -1) // Only insert valid track IDs
+                if (track.trackId != -1) // Only include valid track IDs
                 {
-                    m_db.execute("INSERT INTO " + tempTableName + " (track_id) VALUES (" + std::to_string(track.trackId) + ");");
-                    trackMap[track.trackId] = &track; // Store pointer to TrackInfo
+                    if (first)
+                    {
+                        first = false; // First track, no comma
+                    }
+                    else
+                    {
+                        sqlStatement.append(", ");
+                    }
+                    sqlStatement.append(std::to_string(track.trackId));
+                    trackMap[track.trackId] = &track; 
                 }
             }
-            SqliteStatement stmt{m_db,
-                "SELECT track_id, tag_id FROM TrackTags WHERE "
-                "track_id IN (SELECT track_id FROM " +
-                    tempTableName + ");"};
+            sqlStatement.append(");");
+
+            SqliteStatement stmt{m_db, sqlStatement.asString()};
             while (stmt.getNextResult())
             {
                 if (!stmt.isNull(0))
@@ -1431,8 +1437,6 @@ CREATE TABLE MixUndoHistory (
                     }
                 }
             }
-            m_db.execute("DROP TABLE " + tempTableName + ";");
-            m_db.execute("COMMIT;");
         }
 
         std::vector<TrackId> SqliteTrackDatabase::getTrackIds(const TrackQueryArgs &args) const

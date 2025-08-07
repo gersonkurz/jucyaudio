@@ -280,3 +280,41 @@ The refactoring successfully addresses the architectural issues identified in Se
 1. Make the requested changes to the code
 2. Do NOT run cmake or any build commands
 3. Wait for the human to build and report any issues
+
+## Session 9: Library Management & Scanner Overhaul
+
+**Objective:** To build a complete, user-facing library management system on top of the new hierarchical database, enabling users to define library roots, run targeted scans, and correctly prune missing files and folders.
+
+**Work Done:**
+
+1.  **Library Root System:**
+    *   Designed and implemented a `LibraryRoots` table to store user-defined library entry points.
+    *   Created `ILibraryRootManager` and `SqliteLibraryRootManager` to provide a clean interface for managing these roots.
+    *   Developed `LibraryRootsComponent`, a new UI dialog to replace the obsolete `ScanDialogComponent`, allowing users to perform full CRUD operations on their library roots.
+    *   Integrated this system into the main navigation tree by rewriting `VirtualFoldersOverview` to display the user-defined roots instead of the filesystem root.
+
+2.  **Scanner Architecture Rewrite & Debugging:**
+    *   Re-architected the `TrackScanner` to use a robust, folder-centric "mark-and-sweep" methodology.
+    *   The scanner now builds a comprehensive in-memory cache of all expected folders and tracks for the scan scope.
+    *   As it iterates the filesystem, it "un-marks" found items. At the end of the scan, any remaining marked items (both tracks and folders) are correctly pruned from the database.
+    *   Fixed a critical bug that caused duplicate track insertions when scanning overlapping roots by adding a session-scoped set of already-processed file paths.
+    *   Addressed a fundamental flaw where the scanner was blind to empty or deleted directory trees.
+
+3.  **Performance Optimization:**
+    *   Diagnosed and fixed a severe O(N*M) performance bug in `SqliteFolderDatabase`'s `findOrCreateFolderByPath` method, which was causing multi-second delays per file.
+    *   The folder cache was completely rewritten to be path-centric, using a `map<string, FolderId>`.
+    *   The cache was made "self-healing" by persisting reconstructed folder paths back to the database, ensuring fast subsequent application startups.
+    *   The `addFolder` method was optimized to perform a "surgical" insert into the live cache instead of a full, expensive invalidation.
+
+4.  **UI/UX Enhancements:**
+    *   Implemented a splash screen to improve the perceived startup time of the application.
+    *   The logo asset was embedded as binary data into the executable for robustness.
+    *   Refactored the startup sequence using a `juce::Timer` and `std::unique_ptr` to manage object lifetimes correctly, fixing a crash-on-shutdown bug caused by the initial splash screen implementation.
+
+**Technical Highlights:**
+*   **Path-Centric, Self-Healing Cache:** The final `SqliteFolderDatabase` design is a major architectural improvement, ensuring extremely fast folder lookups during scans.
+*   **Folder-First Pruning:** The final `TrackScanner` logic correctly prioritizes the folder structure, allowing it to accurately detect and remove entire deleted directory trees.
+*   **Deterministic Object Lifetime:** Solved a `DeletedAtShutdown` crash by using `std::unique_ptr` and a non-modal startup flow, ensuring the splash screen is destroyed before the main application object.
+
+**Current Status:**
+The library management and scanning systems are now feature-complete, performant, and robust. The application correctly handles adding/removing roots, targeted scanning, and pruning of missing files and folders. The startup experience has been improved with a splash screen. The project is now ready for full-system verification of its core audio functionalities.
