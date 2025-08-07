@@ -225,14 +225,58 @@ namespace jucyaudio
             m_currentPositionSamples = 0;
             m_totalDurationMs = Duration_t{0};
         }
-
-        void MixPlaybackEngine::setPosition(Duration_t positionMs)
+        
+        void MixPlaybackEngine::recalculateTrackPositions()
         {
-            spdlog::info("[PlaybackEngine] setPosition called with {} ms", positionMs.count());
+            spdlog::info("[PlaybackEngine] recalculateTrackPositions called");
             
             if (!m_mixLoader)
             {
-                spdlog::warn("[PlaybackEngine] setPosition called but no mix loaded");
+                spdlog::warn("[PlaybackEngine] recalculateTrackPositions called but no mix loaded");
+                return;
+            }
+            
+            std::lock_guard<std::mutex> lock(m_mutex);
+            
+            // Store the current playback position so we can maintain it
+            const auto currentPos = getPosition();
+            spdlog::info("[PlaybackEngine] Current position before recalc: {} ms", currentPos.count());
+            
+            // Recalculate track start times using the updated Mix Flow algorithm
+            calculateTrackStartTimes();
+            
+            // Recalculate total duration
+            const auto &mixTracks = m_mixLoader->getMixTracks();
+            Duration_t maxEndTime{0};
+            for (size_t i = 0; i < mixTracks.size(); ++i)
+            {
+                const auto &mixTrack = mixTracks[i];
+                if (const auto *trackInfo = m_mixLoader->getTrackInfoForId(mixTrack.trackId))
+                {
+                    Duration_t trackStartTime = m_trackStartTimes[i];
+                    Duration_t trackEndTime = trackStartTime + trackInfo->duration;
+                    spdlog::info("[PlaybackEngine] Track {} (id {}) - recalculated start: {} ms, end: {} ms",
+                                i, mixTrack.trackId, trackStartTime.count(), trackEndTime.count());
+                    maxEndTime = std::max(maxEndTime, trackEndTime);
+                }
+            }
+            
+            m_totalDurationMs = maxEndTime;
+            spdlog::info("[PlaybackEngine] Recalculated total mix duration: {} ms", m_totalDurationMs.count());
+            
+            // Maintain the playback position
+            setPositionInternal(currentPos);
+            spdlog::info("[PlaybackEngine] Track positions recalculated successfully");
+        }
+
+        void MixPlaybackEngine::setPositionInternal(Duration_t positionMs)
+        {
+            // Internal version - assumes mutex is already locked
+            spdlog::info("[PlaybackEngine] setPositionInternal called with {} ms", positionMs.count());
+            
+            if (!m_mixLoader)
+            {
+                spdlog::warn("[PlaybackEngine] setPositionInternal called but no mix loaded");
                 return;
             }
             
@@ -250,7 +294,6 @@ namespace jucyaudio
             spdlog::info("[PlaybackEngine] Position {} ms = {} samples (sample rate: {})", 
                         positionMs.count(), positionSamples, m_sampleRate);
 
-            std::lock_guard<std::mutex> lock(m_mutex);
             m_currentPositionSamples = positionSamples;
 
             // Update all track source positions
@@ -297,6 +340,14 @@ namespace jucyaudio
                     }
                 }
             }
+        }
+        
+        void MixPlaybackEngine::setPosition(Duration_t positionMs)
+        {
+            spdlog::info("[PlaybackEngine] setPosition called with {} ms", positionMs.count());
+            
+            std::lock_guard<std::mutex> lock(m_mutex);
+            setPositionInternal(positionMs);
         }
 
         Duration_t MixPlaybackEngine::getPosition() const

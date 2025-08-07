@@ -1,4 +1,4 @@
-# JucyAudio - Architecture & Status (2025-08-05)
+# JucyAudio - Architecture & Status (2025-08-07)
 
 ## 1. Executive Summary
 
@@ -39,25 +39,38 @@ The application now operates on the following principles:
     *   Implemented a PNG-based splash screen to provide immediate visual feedback during the application's multi-second startup and cache-building process.
     *   Fixed a critical object lifetime bug related to the splash screen that caused a crash on application shutdown.
 
-## 5. Current Functionality Status
+## 5. Session Accomplishments: Mix Editor Playback Fix (2025-08-07)
+
+*   **Problem Identified:** When editing attach points in the mix editor, the UI updated correctly but the playback engine continued using the old cached track positions, requiring an app restart to hear the changes.
+*   **Root Cause:** The `MixPlaybackEngine` calculated track start times only once during `loadMix()` and cached them. When attach points were edited, the `MixProjectLoader` data was updated but the playback engine's cached positions were never recalculated.
+*   **Solution Implemented:**
+    *   Added `recalculateTrackPositions()` method to `MixPlaybackEngine` that recalculates track start times without reloading audio files.
+    *   Modified `MixEditorComponent::updateCueAttachInData()` to call this method when attach points change or when the first track's cueStart changes (affects global offset).
+    *   The solution is efficient - no disk I/O, just mathematical recalculation of positions.
+*   **Result:** Mix playback now immediately reflects attach point changes without requiring an application restart.
+
+## 6. Current Functionality Status
 
 *   **(✓) Application Build & Startup:** The application builds cleanly and starts up, displaying a splash screen during initialization.
 *   **(✓) Library Root Management:** The `LibraryRootsComponent` successfully adds, removes, and displays user-defined library root folders.
 *   **(✓) Library Navigation:** The folder hierarchy in the navigation panel displays correctly, driven by the user's defined roots.
 *   **(✓) Library Scanning & Pruning:** The `TrackScanner` correctly adds new files, updates existing ones, and removes missing tracks and folders from the database. The process is performant.
 *   **(✓) Data Display:** Selecting a folder node correctly displays the list of tracks within it.
-*   **(Untested) Core Functionality:** All other major systems, while compiling, have not been tested since the refactoring. This includes **Playback, Mix Loading/Editing, BPM Analysis, and Mix Exporting.** These systems remain the highest priority for verification.
+*   **(✓) Mix Playback:** Audio playback from mixes works correctly and updates immediately when attach points are edited.
+*   **(✓) Mix Editing:** The mix editor allows editing of cue points, attach points, and envelope points with immediate visual and audio feedback.
+*   **(Untested) Remaining Systems:** BPM Analysis and Mix Exporting have not been tested since the refactoring.
 
-## 6. Next Session TODO:
+## 7. Next Session TODO:
 
-1.  **Full System Verification (Highest Priority):** We have now completed two massive foundational refactoring sessions. The absolute next step is to methodically test all core functionality to identify any fallout.
-    *   Test playing a track from the library.
-    *   Test opening an existing mix.
-    *   Test all mix editor interactions (drag/drop, cue points, etc.).
+1.  **Continue System Verification:**
+    *   ~~Test playing a track from the library.~~ (Verified working)
+    *   ~~Test opening an existing mix.~~ (Verified working)
+    *   ~~Test all mix editor interactions (drag/drop, cue points, etc.).~~ (Verified working, fixed playback sync issue)
     *   Test running a BPM analysis.
-2.  **Fix Core Functionality:** Address any bugs discovered during verification. The most likely point of failure will be in code that previously expected a `TrackInfo` object to contain a direct `filepath`. This code must be updated to use the new `track.reconstructFullPath(db)` method.
+    *   Test mix exporting functionality.
+2.  **Fix Any Remaining Issues:** Address any bugs discovered during verification of BPM analysis and mix exporting.
 3.  **Code Cleanup:** Physically delete the now-obsolete `LogicalFolderNode` files and any other dead code from the pre-refactor era.
 
-## 7. Message to Next Instance
+## 8. Message to Next Instance
 
-The foundational work on the library is now complete and considered stable. The architecture for storing, navigating, and scanning is robust and performant. Your primary, non-negotiable task is to pivot to **stabilization and verification** of the application's core purpose: audio playback and mixing. Do not add new features. Work with the user to test the systems listed in the TODO section and fix any regressions.
+The foundational library work is complete and stable. Mix playback and editing have been verified and a critical synchronization bug has been fixed - the playback engine now properly updates when attach points are edited. Your next tasks are to verify BPM analysis and mix exporting functionality. The application is approaching full stability after the major refactoring sessions. Continue with systematic testing and fix any remaining issues.

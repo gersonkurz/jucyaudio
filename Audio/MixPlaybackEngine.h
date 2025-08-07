@@ -88,6 +88,10 @@ namespace jucyaudio
             {
                 return m_mixLoader;
             }
+            
+            // Recalculate track positions after attach points change
+            // This should be called when cue/attach points are modified
+            void recalculateTrackPositions();
 
             // AudioSource interface
             void prepareToPlay(int samplesPerBlockExpected, double sampleRate) override;
@@ -132,6 +136,7 @@ namespace jucyaudio
             float getEnvelopeGainForTrack(const MixTrack &mixTrack, Duration_t timeInTrack);
             void unloadMixInternal(); // Internal version that doesn't lock
             void calculateTrackStartTimes(); // Calculate track positions using Mix Flow algorithm
+            void setPositionInternal(Duration_t positionMs); // Internal version that assumes mutex is already locked
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixPlaybackEngine)
         };

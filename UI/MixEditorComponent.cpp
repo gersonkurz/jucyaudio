@@ -235,6 +235,11 @@ namespace jucyaudio
             {
                 if (track.trackId == trackId)
                 {
+                    // Check if cue or attach points actually changed
+                    const auto cueStartChanged = track.cueStart != updatedTrack.cueStart;
+                    const auto attachChanged = track.attachFrom != updatedTrack.attachFrom || 
+                                              track.attachTo != updatedTrack.attachTo;
+                    
                     track.cueStart = updatedTrack.cueStart;
                     track.cueEnd = updatedTrack.cueEnd;
                     track.attachFrom = updatedTrack.attachFrom;
@@ -246,6 +251,19 @@ namespace jucyaudio
                     
                     // Tell timeline to reposition this specific track
                     m_timeline.repositionTrack(trackId);
+                    
+                    // Tell playback engine to recalculate track positions if needed
+                    // Note: cueStart of first track affects global offset, attach points affect all positions
+                    const auto isFirstTrack = (track.orderInMix == 0);
+                    const auto needsRecalc = attachChanged || (isFirstTrack && cueStartChanged);
+                    
+                    if (needsRecalc && m_mixPlaybackEngine && m_mixPlaybackEngine->isMixLoaded() && 
+                        m_mixPlaybackEngine->getMixLoader() == &m_node->getMixProjectLoader())
+                    {
+                        spdlog::info("Recalculating playback engine track positions after {} change",
+                                    attachChanged ? "attach point" : "first track cueStart");
+                        m_mixPlaybackEngine->recalculateTrackPositions();
+                    }
                     break;
                 }
             }
