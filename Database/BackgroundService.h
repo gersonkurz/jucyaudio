@@ -6,6 +6,9 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+#include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_audio_devices/juce_audio_devices.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 
 namespace jucyaudio
 {
@@ -17,9 +20,7 @@ namespace jucyaudio
             BackgroundTaskService() = default;
             ~BackgroundTaskService();
 
-            // Deleted copy/move constructors to enforce singleton-like behavior
-            BackgroundTaskService(const BackgroundTaskService &) = delete;
-            BackgroundTaskService &operator=(const BackgroundTaskService &) = delete;
+            JUCE_DECLARE_NON_COPYABLE(BackgroundTaskService);
 
             void start();
             void stop();

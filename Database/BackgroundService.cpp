@@ -6,7 +6,7 @@ namespace jucyaudio
     namespace database
     {
         BackgroundTaskService theBackgroundTaskService;
-        
+
         BackgroundTaskService::~BackgroundTaskService()
         {
             // Ensure stop() is called if the user forgets.
@@ -16,9 +16,11 @@ namespace jucyaudio
             }
 
             // Release our references to the tasks
-            const std::lock_guard<std::mutex> lock(m_tasksMutex);
+            const std::lock_guard<std::mutex> lock{m_tasksMutex};
             for (auto *task : m_tasks)
+            {
                 task->release(REFCOUNT_DEBUG_ARGS);
+            }
             m_tasks.clear();
         }
 
@@ -26,7 +28,7 @@ namespace jucyaudio
         {
             if (!m_thread.joinable())
             {
-                m_thread = std::thread(&BackgroundTaskService::run, this);
+                m_thread = std::thread{&BackgroundTaskService::run, this};
             }
         }
 
@@ -42,10 +44,9 @@ namespace jucyaudio
 
         void BackgroundTaskService::registerTask(IBackgroundTask *task)
         {
-            return;
             if (task)
             {
-                const std::lock_guard<std::mutex> lock(m_tasksMutex);
+                const std::lock_guard<std::mutex> lock{m_tasksMutex};
                 task->retain(REFCOUNT_DEBUG_ARGS);
                 m_tasks.push_back(task);
                 notify(); // Wake up to check the new task
@@ -60,9 +61,9 @@ namespace jucyaudio
         void BackgroundTaskService::pause()
         {
             m_isPaused = true;
-            for(int i = 0; i < 10 && m_isProcessing; ++i)
+            for (int i = 0; i < 10 && m_isProcessing; ++i)
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Wait for current task to finish
+                std::this_thread::sleep_for(std::chrono::milliseconds{100}); // Wait for current task to finish
             }
         }
 
@@ -76,19 +77,20 @@ namespace jucyaudio
         {
             while (!m_shouldExit)
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(500)); // Simulate work
-                
+                std::this_thread::sleep_for(std::chrono::milliseconds{500}); // Simulate work
+
                 // --- Wait for work or notification ---
                 {
-                    std::unique_lock<std::mutex> lock(m_conditionMutex);
+                    std::unique_lock<std::mutex> lock{m_conditionMutex};
                     // The condition variable waits until notify() is called OR the timeout elapses.
                     // We add a predicate to handle spurious wakeups.
-                    m_condition.wait_for(lock, std::chrono::seconds(5),
-                                         [this]
-                                         {
-                                             // Wake up if we are exiting or have been notified.
-                                             return m_shouldExit.load() || !m_tasks.empty();
-                                         });
+                    m_condition.wait_for(lock,
+                        std::chrono::seconds{5},
+                        [this]
+                        {
+                            // Wake up if we are exiting or have been notified.
+                            return m_shouldExit.load() || !m_tasks.empty();
+                        });
                 }
 
                 if (m_shouldExit)
@@ -113,16 +115,15 @@ namespace jucyaudio
                     try
                     {
                         task->processWork();
-                        std::this_thread::sleep_for(std::chrono::milliseconds(500)); // Simulate work
+                        std::this_thread::sleep_for(std::chrono::milliseconds{500}); // Simulate work
                     }
                     catch (const std::exception &e)
                     {
                         spdlog::error("Task '{}' threw an exception: {}", task->m_taskName, e.what());
                     }
                 }
-                m_isProcessing = true;
+                m_isProcessing = false;
             }
-            spdlog::info("BackgroundTaskService thread finished.");
         }
     } // namespace database
 } // namespace jucyaudio
