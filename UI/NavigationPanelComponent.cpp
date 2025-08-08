@@ -376,8 +376,19 @@ namespace jucyaudio
             if (currentItem)
             {
                 currentItem->setSelected(true, true);
-                m_treeView.scrollToKeepItemVisible(currentItem);
-                spdlog::info("selectNode: Successfully selected and scrolled to item.");
+                
+                // Defer scrolling to ensure the tree has finished laying out
+                // This is especially important when items have just been expanded
+                juce::MessageManager::callAsync([this, currentItem]()
+                {
+                    if (currentItem != nullptr && currentItem->isSelected())
+                    {
+                        m_treeView.scrollToKeepItemVisible(currentItem);
+                        spdlog::info("selectNode: Scrolled to keep item visible.");
+                    }
+                });
+                
+                spdlog::info("selectNode: Successfully selected item.");
             }
         }
 
