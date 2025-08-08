@@ -4,6 +4,8 @@
 #include <UI/ThemeManager.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
+#include <ctime>
+#include <iomanip>
 
 using namespace jucyaudio::database;
 
@@ -15,7 +17,9 @@ namespace jucyaudio
         {
             enum
             {
-                Path = 1
+                Path = 1,
+                FileCount = 2,
+                LastScanned = 3
             };
         } // namespace RootFolderTableColumns
 
@@ -24,9 +28,10 @@ namespace jucyaudio
         class ScanRootsTask final : public ILongRunningTask
         {
         public:
-            ScanRootsTask(std::vector<FolderId> ids, bool forceRescan, bool removeMissingFiles, std::function<void()> onComplete)
+            ScanRootsTask(std::vector<FolderId> ids, std::vector<LibraryRootId> rootIds, bool forceRescan, bool removeMissingFiles, std::function<void()> onComplete)
                 : ILongRunningTask{"Scanning Library Roots", false},
                   m_idsToScan{std::move(ids)},
+                  m_rootIdsToScan{std::move(rootIds)},
                   m_bForceRescan{forceRescan},
                   m_bRemoveMissingFiles{removeMissingFiles},
                   m_onComplete{std::move(onComplete)}
@@ -40,6 +45,33 @@ namespace jucyaudio
                 {
                     // FIXED: This call now matches the expected signature
                     theTrackLibrary.scanLibrary(m_idsToScan, m_bForceRescan, m_bRemoveMissingFiles, progressCb, completionCb, &shouldCancel);
+                    
+                    // After scan completes, update the file counts for each root
+                    auto &db = *theTrackLibrary.getTrackDatabase();
+                    auto &rootManager = db.getLibraryRootManager();
+                    auto &folderDb = db.getFolderDatabase();
+                    
+                    for (size_t i = 0; i < m_rootIdsToScan.size(); ++i)
+                    {
+                        if (i < m_idsToScan.size())
+                        {
+                            const auto rootId = m_rootIdsToScan[i];
+                            const auto folderId = m_idsToScan[i];
+                            
+                            // Count tracks under this folder
+                            TrackQueryArgs args{};
+                            args.folderIds = {folderId};
+                            args.recursive = true;
+                            args.usePaging = false;
+                            
+                            const auto tracks = db.getTracks(args);
+                            const int64_t fileCount = static_cast<int64_t>(tracks.size());
+                            
+                            // Update the root's statistics
+                            rootManager.updateScanStats(rootId, fileCount);
+                            spdlog::info("Updated root {} with {} files", rootId, fileCount);
+                        }
+                    }
                 }
                 catch (const std::exception &e)
                 {
@@ -55,6 +87,7 @@ namespace jucyaudio
 
         private:
             std::vector<FolderId> m_idsToScan;
+            std::vector<LibraryRootId> m_rootIdsToScan;
             bool m_bForceRescan;
             bool m_bRemoveMissingFiles;
             std::function<void()> m_onComplete;
@@ -67,7 +100,7 @@ namespace jucyaudio
               m_titleLabel{"titleLabel", "Library Roots"}
         {
             theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
-            setSize(700, 500);
+            setSize(800, 500);
 
             addAndMakeVisible(m_addRootButton);
             m_addRootButton.setButtonText("Add Root...");
@@ -94,7 +127,9 @@ namespace jucyaudio
             addAndMakeVisible(m_rootFoldersTable);
             m_rootFoldersTable.setHeaderHeight(25);
             m_rootFoldersTable.getHeader().setSortColumnId(RootFolderTableColumns::Path, true);
-            m_rootFoldersTable.getHeader().addColumn("Library Root Path", RootFolderTableColumns::Path, 600, 50, 4000);
+            m_rootFoldersTable.getHeader().addColumn("Library Root Path", RootFolderTableColumns::Path, 400, 50, 2000);
+            m_rootFoldersTable.getHeader().addColumn("Files", RootFolderTableColumns::FileCount, 80, 50, 120);
+            m_rootFoldersTable.getHeader().addColumn("Last Scanned", RootFolderTableColumns::LastScanned, 150, 100, 200);
             m_rootFoldersTable.setMultipleSelectionEnabled(true);
 
             addAndMakeVisible(m_scanButton);
@@ -252,11 +287,29 @@ namespace jucyaudio
             if (rowNumber < 0 || static_cast<size_t>(rowNumber) >= m_displayedRoots.size())
                 return;
 
+            const auto &rootInfo = m_displayedRoots[rowNumber];
+            g.setColour(getLookAndFeel().findColour(juce::ListBox::textColourId));
+            
             if (columnId == RootFolderTableColumns::Path)
             {
-                const auto &rootInfo = m_displayedRoots[rowNumber];
-                g.setColour(getLookAndFeel().findColour(juce::ListBox::textColourId));
                 g.drawText(jucePathFromFs(rootInfo.path), 2, 0, width - 4, height, juce::Justification::centredLeft, true);
+            }
+            else if (columnId == RootFolderTableColumns::FileCount)
+            {
+                const auto fileCountStr = rootInfo.fileCount > 0 ? std::to_string(rootInfo.fileCount) : "-";
+                g.drawText(fileCountStr, 2, 0, width - 4, height, juce::Justification::centred, true);
+            }
+            else if (columnId == RootFolderTableColumns::LastScanned)
+            {
+                juce::String lastScannedStr = "Never";
+                if (rootInfo.lastScanned.has_value())
+                {
+                    const auto time = std::chrono::system_clock::to_time_t(rootInfo.lastScanned.value());
+                    char buffer[100];
+                    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M", std::localtime(&time));
+                    lastScannedStr = buffer;
+                }
+                g.drawText(lastScannedStr, 2, 0, width - 4, height, juce::Justification::centredLeft, true);
             }
         }
 
@@ -272,8 +325,33 @@ namespace jucyaudio
                             return a.path < b.path;
                         return b.path < a.path;
                     });
-                m_rootFoldersTable.updateContent();
             }
+            else if (newSortColumnId == RootFolderTableColumns::FileCount)
+            {
+                std::sort(m_displayedRoots.begin(),
+                    m_displayedRoots.end(),
+                    [isForwards](const auto &a, const auto &b)
+                    {
+                        if (isForwards)
+                            return a.fileCount < b.fileCount;
+                        return b.fileCount < a.fileCount;
+                    });
+            }
+            else if (newSortColumnId == RootFolderTableColumns::LastScanned)
+            {
+                std::sort(m_displayedRoots.begin(),
+                    m_displayedRoots.end(),
+                    [isForwards](const auto &a, const auto &b)
+                    {
+                        // Treat nullopt (never scanned) as the earliest possible time
+                        const auto aTime = a.lastScanned.value_or(std::chrono::system_clock::time_point::min());
+                        const auto bTime = b.lastScanned.value_or(std::chrono::system_clock::time_point::min());
+                        if (isForwards)
+                            return aTime < bTime;
+                        return bTime < aTime;
+                    });
+            }
+            m_rootFoldersTable.updateContent();
         }
 
         void LibraryRootsComponent::selectedRowsChanged(int)
@@ -300,6 +378,7 @@ namespace jucyaudio
             }
 
             std::vector<FolderId> idsToScan;
+            std::vector<LibraryRootId> rootIdsToScan;
             auto &folderDb = m_db.getFolderDatabase();
 
             // FIXED: Correctly iterate over juce::SparseSet
@@ -310,11 +389,12 @@ namespace jucyaudio
                 {
                     // Find the FolderId associated with this root path.
                     // The path is guaranteed to exist in the roots table, so findOrCreate will find it.
-                    const auto &path = m_displayedRoots[row].path;
-                    FolderId id = folderDb.findOrCreateFolderByPath(path);
+                    const auto &rootInfo = m_displayedRoots[row];
+                    FolderId id = folderDb.findOrCreateFolderByPath(rootInfo.path);
                     if (id != -1)
                     {
                         idsToScan.push_back(id);
+                        rootIdsToScan.push_back(rootInfo.id);
                     }
                 }
             }
@@ -333,7 +413,7 @@ namespace jucyaudio
 
             const bool force = m_forceRescanCheckbox.getToggleState();
             const bool shouldRemove = m_removeMissingFilesToggle.getToggleState();
-            auto *task = new ScanRootsTask(std::move(idsToScan), force, shouldRemove, onScanCompleteCallback);
+            auto *task = new ScanRootsTask(std::move(idsToScan), std::move(rootIdsToScan), force, shouldRemove, onScanCompleteCallback);
 
             TaskDialog::launch("Scanning Library", task, 500, this);
         }

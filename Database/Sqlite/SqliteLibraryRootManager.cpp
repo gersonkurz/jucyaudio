@@ -11,6 +11,12 @@ namespace
         jucyaudio::database::LibraryRootInfo info{};
         info.id = stmt.getInt64(0);
         info.path = stmt.getText(1);
+        info.fileCount = stmt.getInt64(2);
+        if (!stmt.isNull(3))
+        {
+            const auto timestamp = stmt.getInt64(3);
+            info.lastScanned = std::chrono::system_clock::from_time_t(timestamp);
+        }
         return info;
     }
 } // namespace
@@ -35,7 +41,7 @@ namespace jucyaudio
                     roots.emplace_back(libraryRootInfoFromStatement(stmt));
                     return true;
                 },
-                "SELECT root_id, path FROM LibraryRoots ORDER BY path;");
+                "SELECT root_id, path, file_count, last_scanned FROM LibraryRoots ORDER BY path;");
             return roots;
         }
 
@@ -51,11 +57,13 @@ namespace jucyaudio
             }
 
             SqliteTransaction transaction{m_db};
-            if (transaction.execute("INSERT INTO LibraryRoots (path) VALUES (?);", path))
+            if (transaction.execute("INSERT INTO LibraryRoots (path, file_count) VALUES (?, 0);", path))
             {
                 LibraryRootInfo newRoot;
                 newRoot.id = m_db.getLastInsertRowId();
                 newRoot.path = path;
+                newRoot.fileCount = 0;
+                // lastScanned remains std::nullopt for new roots
                 if (transaction.commit())
                 {
                     spdlog::info("Added library root '{}' with id {}.", path, newRoot.id);
@@ -84,6 +92,27 @@ namespace jucyaudio
             if (transaction.execute("DELETE FROM LibraryRoots WHERE root_id = ?;", rootId))
             {
                 return transaction.commit();
+            }
+            return false;
+        }
+
+        bool SqliteLibraryRootManager::updateScanStats(LibraryRootId rootId, int64_t fileCount, 
+            std::optional<std::chrono::system_clock::time_point> scanTime)
+        {
+            SqliteTransaction transaction{m_db};
+            
+            const auto timestamp = scanTime.has_value() 
+                ? std::chrono::system_clock::to_time_t(scanTime.value())
+                : std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            
+            if (transaction.execute("UPDATE LibraryRoots SET file_count = ?, last_scanned = ? WHERE root_id = ?;", 
+                                    fileCount, timestamp, rootId))
+            {
+                if (transaction.commit())
+                {
+                    spdlog::info("Updated library root {} with file_count={}", rootId, fileCount);
+                    return true;
+                }
             }
             return false;
         }

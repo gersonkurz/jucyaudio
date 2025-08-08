@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Database/Includes/LibraryRootInfo.h>
+#include <chrono>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -44,6 +45,16 @@ namespace jucyaudio
              * @return true if successful, false otherwise.
              */
             virtual bool removeRoot(LibraryRootId rootId) = 0;
+
+            /**
+             * @brief Updates the scan statistics for a library root.
+             * @param rootId The ID of the library root to update.
+             * @param fileCount The number of files found in this root.
+             * @param scanTime The timestamp of the scan (defaults to current time).
+             * @return true if successful, false otherwise.
+             */
+            virtual bool updateScanStats(LibraryRootId rootId, int64_t fileCount, 
+                std::optional<std::chrono::system_clock::time_point> scanTime = std::chrono::system_clock::now()) = 0;
         };
 
     } // namespace database

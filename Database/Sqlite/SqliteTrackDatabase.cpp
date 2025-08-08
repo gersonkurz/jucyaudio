@@ -122,7 +122,7 @@ namespace
         );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_mixundohistory_mix_id ON MixUndoHistory (mix_id);",
         "CREATE INDEX IF NOT EXISTS idx_mixundohistory_operation_id ON MixUndoHistory (operation_id);",
-        "CREATE TABLE IF NOT EXISTS LibraryRoots (root_id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL);",
+        "CREATE TABLE IF NOT EXISTS LibraryRoots (root_id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, file_count INTEGER DEFAULT 0, last_scanned INTEGER);",
     };
 
     TrackInfo trackInfoFromStatement(const SqliteStatement &stmt)
@@ -930,6 +930,67 @@ CREATE TABLE MixUndoHistory (
                 {
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
+            }
+
+            // Handle version 8 or 9 - both need the LibraryRoots columns upgrade
+            if (currentVersion < 10)
+            {
+                spdlog::info("Migrating database from version {} to 10 - Adding file_count and last_scanned to LibraryRoots...", currentVersion);
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Check if columns already exist to avoid errors
+                    bool needsFileCount = true;
+                    bool needsLastScanned = true;
+                    
+                    // Check existing columns using PRAGMA table_info
+                    SqliteStatement checkStmt{m_db, "PRAGMA table_info(LibraryRoots);"};
+                    while (checkStmt.getNextResult())
+                    {
+                        const auto columnName = checkStmt.getText(1); // Column name is at index 1
+                        if (columnName == "file_count")
+                            needsFileCount = false;
+                        if (columnName == "last_scanned")
+                            needsLastScanned = false;
+                    }
+                    
+                    // Add file_count column if it doesn't exist
+                    if (needsFileCount)
+                    {
+                        if (!m_db.execute("ALTER TABLE LibraryRoots ADD COLUMN file_count INTEGER DEFAULT 0;"))
+                        {
+                            return DbResult::failure(DbResultStatus::ErrorDB, "Failed to add file_count column to LibraryRoots.");
+                        }
+                        spdlog::info("Added file_count column to LibraryRoots table.");
+                    }
+                    
+                    // Add last_scanned column if it doesn't exist
+                    if (needsLastScanned)
+                    {
+                        if (!m_db.execute("ALTER TABLE LibraryRoots ADD COLUMN last_scanned INTEGER;"))
+                        {
+                            return DbResult::failure(DbResultStatus::ErrorDB, "Failed to add last_scanned column to LibraryRoots.");
+                        }
+                        spdlog::info("Added last_scanned column to LibraryRoots table.");
+                    }
+
+                    // Update schema version to 10
+                    if (auto result = setDBSchemaVersion(10); !result.isOk())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 10.");
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated database to version 10 - LibraryRoots enhanced with file_count and last_scanned.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                
+                currentVersion = 10; // Update for any future migrations
             }
 
             return DbResult::success();
