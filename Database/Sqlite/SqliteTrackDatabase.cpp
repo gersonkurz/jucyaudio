@@ -104,12 +104,15 @@ namespace
         );)SQL",
         R"SQL(
         CREATE TABLE IF NOT EXISTS MixTracks(
-            mix_id INTEGER NOT NULL, track_id INTEGER NOT NULL, order_in_mix INTEGER NOT NULL,
-            mix_data TEXT NOT NULL, PRIMARY KEY(mix_id, track_id),
+            mix_id INTEGER NOT NULL, 
+            track_id INTEGER NOT NULL, 
+            order_in_mix INTEGER NOT NULL,
+            mix_data TEXT NOT NULL,
             FOREIGN KEY(mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE,
             FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
         );)SQL",
-        "CREATE INDEX IF NOT EXISTS idx_mixtracks_order ON MixTracks(mix_id, order_in_mix);",
+        "CREATE INDEX IF NOT EXISTS idx_mixtracks_mix_order ON MixTracks(mix_id, order_in_mix);",
+        "CREATE INDEX IF NOT EXISTS idx_mixtracks_track ON MixTracks(track_id);",
         R"SQL(
         CREATE TABLE IF NOT EXISTS MixUndoHistory (
             undo_id INTEGER PRIMARY KEY, mix_id INTEGER NOT NULL, operation_id INTEGER NOT NULL,

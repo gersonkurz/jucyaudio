@@ -115,6 +115,326 @@ namespace jucyaudio
             // We are calling our own function with the loader we've just updated.
             return populateFrom();
         }
+        
+        void TimelineComponent::copySelectedTrackToClipboard()
+        {
+            if (!m_selectedTrack || !m_mixLoader)
+            {
+                spdlog::warn("copySelectedTrackToClipboard: No track selected or no mix loaded");
+                return;
+            }
+            
+            const auto trackId = m_selectedTrack->getTrackId();
+            
+            // Find the track data in our views
+            for (const auto& view : m_trackViews)
+            {
+                if (view.mixTrackData && view.trackInfoData && 
+                    view.mixTrackData->trackId == trackId)
+                {
+                    // Copy the data to clipboard
+                    m_clipboard.mixTrack = *view.mixTrackData;
+                    m_clipboard.trackInfo = *view.trackInfoData;
+                    m_clipboard.isValid = true;
+                    
+                    spdlog::info("Copied track {} to clipboard", trackId);
+                    return;
+                }
+            }
+            
+            spdlog::error("Failed to find track data for clipboard copy");
+        }
+        
+        void TimelineComponent::cutSelectedTrackToClipboard()
+        {
+            if (!m_selectedTrack || !m_mixLoader)
+            {
+                spdlog::warn("cutSelectedTrackToClipboard: No track selected or no mix loaded");
+                return;
+            }
+            
+            // First copy to clipboard
+            copySelectedTrackToClipboard();
+            
+            // Then delete the track
+            if (m_clipboard.isValid)
+            {
+                deleteSelectedTrack();
+                spdlog::info("Cut track to clipboard");
+            }
+        }
+        
+        void TimelineComponent::pasteFromClipboard(bool insertBefore)
+        {
+            if (!m_clipboard.isValid || !m_mixLoader)
+            {
+                spdlog::warn("pasteFromClipboard: No valid clipboard data or no mix loaded");
+                return;
+            }
+            
+            // Get the selected track index (or use end if nothing selected)
+            int insertIndex = -1;
+            if (m_selectedTrack)
+            {
+                // Find which track view corresponds to the selected component
+                // We need to match by component pointer, not trackId, since we can have duplicates
+                for (int i = 0; i < static_cast<int>(m_trackViews.size()); ++i)
+                {
+                    if (m_trackViews[i].component.get() == m_selectedTrack)
+                    {
+                        insertIndex = insertBefore ? i : i + 1;
+                        spdlog::info("Found selected track at index {}, will insert at {}", 
+                                    i, insertIndex);
+                        break;
+                    }
+                }
+                
+                if (insertIndex < 0)
+                {
+                    // Fallback: couldn't find the component in our views
+                    spdlog::warn("Selected track component not found in track views");
+                    insertIndex = static_cast<int>(m_mixLoader->getMixTracks().size());
+                }
+            }
+            else
+            {
+                // No selection - paste at end
+                insertIndex = static_cast<int>(m_mixLoader->getMixTracks().size());
+            }
+            
+            if (insertIndex < 0)
+            {
+                spdlog::error("pasteFromClipboard: Failed to determine insert position");
+                return;
+            }
+            
+            // Create a new mix track list with the pasted track inserted
+            auto mixTracks = m_mixLoader->getMixTracks();
+            auto mixTrackToInsert = m_clipboard.mixTrack;
+            
+            // When pasting, we need to set up reasonable defaults for the new track position
+            // The track keeps its envelope and relative cue/attach points, but we may need to
+            // adjust timing based on where it's being inserted
+            
+            // Default crossfade duration
+            const Duration_t defaultCrossfade{5000}; // 5 seconds
+            
+            if (insertIndex == 0 && !mixTracks.empty())
+            {
+                // Inserting at the beginning before all tracks
+                // Set up to crossfade into the first track
+                const auto& nextTrack = mixTracks[0];
+                const auto trackDuration = m_clipboard.trackInfo.duration;
+                
+                // Set attachTo to crossfade into next track's attachFrom
+                mixTrackToInsert.attachTo = trackDuration - defaultCrossfade;
+                
+                // Keep cue points from clipboard or use defaults
+                if (mixTrackToInsert.cueStart == Duration_t{0} && mixTrackToInsert.cueEnd == Duration_t{0})
+                {
+                    mixTrackToInsert.cueStart = Duration_t{0};
+                    mixTrackToInsert.cueEnd = Duration_t{0};
+                }
+            }
+            else if (insertIndex >= static_cast<int>(mixTracks.size()))
+            {
+                // Appending at the end
+                if (!mixTracks.empty())
+                {
+                    // Set up to crossfade from the last track
+                    mixTrackToInsert.attachFrom = defaultCrossfade;
+                    mixTrackToInsert.attachTo = m_clipboard.trackInfo.duration;
+                }
+            }
+            else
+            {
+                // Inserting in the middle
+                // Set up crossfades with neighbors
+                if (insertIndex > 0)
+                {
+                    // Has a previous track - set attachFrom for crossfade
+                    mixTrackToInsert.attachFrom = defaultCrossfade;
+                }
+                
+                if (insertIndex < static_cast<int>(mixTracks.size()))
+                {
+                    // Has a next track - set attachTo for crossfade
+                    mixTrackToInsert.attachTo = m_clipboard.trackInfo.duration - defaultCrossfade;
+                }
+            }
+            
+            // Insert at the specified position
+            if (insertIndex >= static_cast<int>(mixTracks.size()))
+            {
+                // Add at end
+                mixTracks.push_back(mixTrackToInsert);
+            }
+            else
+            {
+                // Insert at specific position
+                mixTracks.insert(mixTracks.begin() + insertIndex, mixTrackToInsert);
+            }
+            
+            // Renumber the orderInMix for all tracks
+            for (int i = 0; i < static_cast<int>(mixTracks.size()); ++i)
+            {
+                mixTracks[i].orderInMix = i;
+            }
+            
+            // Save the updated mix using createOrUpdateMix
+            auto mixInfo = m_mixLoader->getMixInfo();
+            const auto currentMixId = m_mixLoader->getMixId();
+            
+            if (theTrackLibrary.getMixManager().createOrUpdateMix(mixInfo, mixTracks))
+            {
+                spdlog::info("Pasted track {} from clipboard at position {}", 
+                            mixTrackToInsert.trackId, insertIndex);
+                
+                // Reload from database to get the updated mix
+                if (m_mixLoader->reloadFromDatabase())
+                {
+                    // Refresh the UI
+                    populateFrom();
+                    
+                    if (onMixChanged)
+                    {
+                        onMixChanged();
+                    }
+                }
+                else
+                {
+                    spdlog::error("Failed to reload mix after paste");
+                }
+            }
+            else
+            {
+                spdlog::error("Failed to paste track from clipboard");
+            }
+        }
+        
+        void TimelineComponent::removeAllTracksAfterSelected()
+        {
+            if (!m_selectedTrack || !m_mixLoader)
+            {
+                spdlog::warn("removeAllTracksAfterSelected: No track selected or no mix loaded");
+                return;
+            }
+            
+            const auto selectedTrackId = m_selectedTrack->getTrackId();
+            const auto& mixTracks = m_mixLoader->getMixTracks();
+            
+            // Find the selected track index
+            int selectedIndex = -1;
+            for (int i = 0; i < static_cast<int>(mixTracks.size()); ++i)
+            {
+                if (mixTracks[i].trackId == selectedTrackId)
+                {
+                    selectedIndex = i;
+                    break;
+                }
+            }
+            
+            if (selectedIndex < 0)
+            {
+                spdlog::error("removeAllTracksAfterSelected: Selected track not found in mix");
+                return;
+            }
+            
+            // Collect IDs of tracks to remove (all after the selected one)
+            std::vector<TrackId> tracksToRemove;
+            for (int i = selectedIndex + 1; i < static_cast<int>(mixTracks.size()); ++i)
+            {
+                tracksToRemove.push_back(mixTracks[i].trackId);
+            }
+            
+            if (tracksToRemove.empty())
+            {
+                spdlog::info("removeAllTracksAfterSelected: No tracks to remove after selected track");
+                return;
+            }
+            
+            spdlog::info("Removing {} tracks after the selected track", tracksToRemove.size());
+            
+            // Remove each track
+            const auto currentMixId = m_mixLoader->getMixId();
+            bool anyRemoved = false;
+            
+            for (const auto& trackId : tracksToRemove)
+            {
+                if (theTrackLibrary.getMixManager().removeTrackFromMix(currentMixId, trackId))
+                {
+                    spdlog::info("Removed track {}", trackId);
+                    anyRemoved = true;
+                }
+                else
+                {
+                    spdlog::error("Failed to remove track {}", trackId);
+                }
+            }
+            
+            if (anyRemoved)
+            {
+                // Reload from database to get the updated mix
+                if (m_mixLoader->reloadFromDatabase())
+                {
+                    // Refresh the UI
+                    populateFrom();
+                    
+                    if (onMixChanged)
+                    {
+                        onMixChanged();
+                    }
+                }
+                else
+                {
+                    spdlog::error("Failed to reload mix after removing tracks");
+                }
+            }
+        }
+        
+        void TimelineComponent::deleteTrackAtIndex(size_t trackIndex)
+        {
+            if (!m_mixLoader || trackIndex >= m_mixLoader->getMixTracks().size())
+            {
+                spdlog::error("deleteTrackAtIndex: Invalid index or no mix loaded");
+                return;
+            }
+            
+            const auto& mixTracks = m_mixLoader->getMixTracks();
+            const auto trackId = mixTracks[trackIndex].trackId;
+            const auto currentMixId = m_mixLoader->getMixId();
+            
+            if (theTrackLibrary.getMixManager().removeTrackFromMix(currentMixId, trackId))
+            {
+                spdlog::info("Deleted track at index {}", trackIndex);
+                
+                // Clear selection if we deleted the selected track
+                if (m_selectedTrack && m_selectedTrack->getTrackId() == trackId)
+                {
+                    m_selectedTrack = nullptr;
+                }
+                
+                // Reload from database to get the updated mix
+                if (m_mixLoader->reloadFromDatabase())
+                {
+                    // Refresh the UI
+                    populateFrom();
+                    
+                    if (onMixChanged)
+                    {
+                        onMixChanged();
+                    }
+                }
+                else
+                {
+                    spdlog::error("Failed to reload mix after deleting track");
+                }
+            }
+            else
+            {
+                spdlog::error("Failed to delete track at index {}", trackIndex);
+            }
+        }
 
         void TimelineComponent::paint(juce::Graphics &g)
         {

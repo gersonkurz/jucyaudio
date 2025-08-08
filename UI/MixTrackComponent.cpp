@@ -367,6 +367,20 @@ namespace jucyaudio
             spdlog::info("[MixTrackComponent] mouseDown - clicks: {}, position: ({}, {})", 
                         event.getNumberOfClicks(), event.position.x, event.position.y);
             
+            // Check for right-click (context menu)
+            if (event.mods.isPopupMenu())
+            {
+                // First select this track
+                if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                {
+                    timeline->setSelectedTrack(this);
+                }
+                
+                // Show context menu
+                showContextMenu(event);
+                return;
+            }
+            
             if (event.mods.isLeftButtonDown())
             {
                 // Check for double-click first - pass it to the timeline for playback
@@ -688,6 +702,83 @@ namespace jucyaudio
             }
             
             return false; // Key not handled
+        }
+
+        void MixTrackComponent::showContextMenu(const juce::MouseEvent &event)
+        {
+            juce::PopupMenu menu;
+            
+            // Get timeline to check clipboard state
+            auto* timeline = findParentComponentOfClass<TimelineComponent>();
+            const bool hasClipboard = timeline ? timeline->hasClipboardData() : false;
+            
+            // Add menu items with IDs - enable/disable based on state
+            menu.addItem(1, "Cut", true);  // Always enabled when track is selected
+            menu.addItem(2, "Copy", true); // Always enabled when track is selected
+            menu.addSeparator();
+            menu.addItem(3, "Paste Before", hasClipboard);
+            menu.addItem(4, "Paste After", hasClipboard);
+            menu.addSeparator();
+            menu.addItem(5, "Delete", true); // Always enabled when track is selected
+            menu.addSeparator();
+            menu.addItem(6, "Remove All Following Tracks", true);
+            
+            // Show the menu and handle the result
+            menu.showMenuAsync(juce::PopupMenu::Options(),
+                [this](int result)
+                {
+                    if (result != 0)
+                    {
+                        handleContextMenuResult(result);
+                    }
+                });
+        }
+        
+        void MixTrackComponent::handleContextMenuResult(int menuItemID)
+        {
+            auto* timeline = findParentComponentOfClass<TimelineComponent>();
+            if (!timeline)
+            {
+                spdlog::error("[MixTrackComponent] No parent timeline found");
+                return;
+            }
+            
+            switch (menuItemID)
+            {
+                case 1: // Cut
+                    spdlog::info("[MixTrackComponent] Context menu: Cut selected");
+                    timeline->cutSelectedTrackToClipboard();
+                    break;
+                    
+                case 2: // Copy
+                    spdlog::info("[MixTrackComponent] Context menu: Copy selected");
+                    timeline->copySelectedTrackToClipboard();
+                    break;
+                    
+                case 3: // Paste Before
+                    spdlog::info("[MixTrackComponent] Context menu: Paste Before selected");
+                    timeline->pasteFromClipboard(true);
+                    break;
+                    
+                case 4: // Paste After
+                    spdlog::info("[MixTrackComponent] Context menu: Paste After selected");
+                    timeline->pasteFromClipboard(false);
+                    break;
+                    
+                case 5: // Delete
+                    spdlog::info("[MixTrackComponent] Context menu: Delete selected");
+                    // Use existing deleteSelectedTrack method
+                    timeline->deleteSelectedTrack();
+                    break;
+                    
+                case 6: // Remove All Following Tracks
+                    spdlog::info("[MixTrackComponent] Context menu: Remove All Following Tracks selected");
+                    timeline->removeAllTracksAfterSelected();
+                    break;
+                    
+                default:
+                    break;
+            }
         }
 
     } // namespace ui

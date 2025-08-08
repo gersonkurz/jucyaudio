@@ -322,6 +322,20 @@ namespace jucyaudio
              * @return The calculated time as a Duration_t.
              */
             Duration_t xToTime(int x, bool clampToComponentBounds) const;
+            
+            /**
+             * @brief Shows a context menu with track operations.
+             *
+             * @param event The mouse event that triggered the menu.
+             */
+            void showContextMenu(const juce::MouseEvent &event);
+            
+            /**
+             * @brief Handles context menu item selection.
+             *
+             * @param menuItemID The ID of the selected menu item.
+             */
+            void handleContextMenuResult(int menuItemID);
 
             /** @brief Reference to the mix track data (cue points, attach points, envelopes) */
             MixTrack &m_mixTrack;

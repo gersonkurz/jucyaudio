@@ -10,6 +10,16 @@ namespace jucyaudio
         class TimelineComponent : public juce::Component
         {
         public:
+            /**
+             * @brief Clipboard support for cut/copy/paste operations
+             */
+            struct ClipboardData
+            {
+                database::MixTrack mixTrack;
+                database::TrackInfo trackInfo;
+                bool isValid = false;
+            };
+            
             TimelineComponent(juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache);
 
             /**
@@ -125,6 +135,27 @@ namespace jucyaudio
             void repositionTrack(TrackId trackId);
 
             /**
+             * @brief Deletes the currently selected track and triggers a full UI refresh.
+             *
+             * This function orchestrates the entire delete-and-refresh process in a self-contained manner:
+             * 1.  It identifies the selected track's ID.
+             * 2.  It calls the MixManager to remove the track from the database.
+             * 3.  It instructs its internal MixProjectLoader to reload its data from the database,
+             *     ensuring the in-memory model is synchronized with the change.
+             * 4.  It triggers a full repopulation of the timeline UI from the refreshed loader data.
+             *
+             * @return true if the track was successfully deleted and the UI was refreshed, false otherwise.
+             */
+            bool deleteSelectedTrack();
+            
+            // Clipboard operations
+            void copySelectedTrackToClipboard();
+            void cutSelectedTrackToClipboard();
+            void pasteFromClipboard(bool insertBefore);
+            bool hasClipboardData() const { return m_clipboard.isValid; }
+            void removeAllTracksAfterSelected();
+            
+            /**
              * @brief Handles mouse down events on the timeline's background area.
              *
              * This function is the primary entry point for direct interaction with the timeline.
@@ -153,20 +184,6 @@ namespace jucyaudio
              * @return true if the key press was consumed, false otherwise.
              */
             bool keyPressed(const juce::KeyPress &key) override;
-            
-            /**
-             * @brief Deletes the currently selected track and triggers a full UI refresh.
-             *
-             * This function orchestrates the entire delete-and-refresh process in a self-contained manner:
-             * 1.  It identifies the selected track's ID.
-             * 2.  It calls the MixManager to remove the track from the database.
-             * 3.  It instructs its internal MixProjectLoader to reload its data from the database,
-             *     ensuring the in-memory model is synchronized with the change.
-             * 4.  It triggers a full repopulation of the timeline UI from the refreshed loader data.
-             *
-             * @return true if the track was successfully deleted and the UI was refreshed, false otherwise.
-             */
-            bool deleteSelectedTrack();
             
             /**
              * @brief Draws the background and the time grid of the timeline.
@@ -248,6 +265,8 @@ namespace jucyaudio
              * the first track's cueStart changes, which affects the global offset.
              */
             void recalculateTrackPositions();
+            
+            void deleteTrackAtIndex(size_t trackIndex);
 
             /**
              * @brief A helper struct that tightly couples a UI component with its underlying data.
@@ -344,6 +363,9 @@ namespace jucyaudio
 
             /** @brief The preview time for cue drag operations, showing where the edge will be if released. */
             std::optional<Duration_t> m_cueDragPreviewTime;
+            
+            /** @brief Clipboard for cut/copy/paste operations */
+            ClipboardData m_clipboard;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimelineComponent)
         };
