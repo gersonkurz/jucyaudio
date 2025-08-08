@@ -349,7 +349,9 @@ target_sources(jucyaudio PRIVATE
     Database/Sqlite/SqliteLibraryRootManager.cpp
     UI/SplashScreenComponent.h
     UI/SplashScreenComponent.cpp
-)
+    UI/ExportMixDialog.h
+    UI/ExportMixDialog.cpp
+    Audio/Includes/ActiveExportSettings.h)
 
 # Add Windows-specific manifest
 if(WIN32)

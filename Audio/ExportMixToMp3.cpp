@@ -35,7 +35,7 @@ namespace jucyaudio
             m_formatManager.registerBasicFormats(); // For reading input formats
 
             // Create output file stream
-            juce::File outputFile{pathToString(m_targetFilepath)};
+            juce::File outputFile{pathToString(m_settings.outputPath)};
             if (outputFile.existsAsFile())
             {
                 outputFile.deleteFile();
@@ -44,7 +44,7 @@ namespace jucyaudio
             m_outputStream = std::unique_ptr<juce::FileOutputStream>(outputFile.createOutputStream());
             if (!m_outputStream)
             {
-                return fail("MTE: Could not create output file stream for " + pathToString(m_targetFilepath));
+                return fail("MTE: Could not create output file stream for " + pathToString(m_settings.outputPath));
             }
 
             // Initialize LAME
@@ -65,24 +65,15 @@ namespace jucyaudio
             // (optional but recommended)
             lame_set_mode(m_lameFlags, JOINT_STEREO); // joint stereo saves a few bits
             
-            // Add ID3 tags from settings
+            // Add ID3 tags
             id3tag_init(m_lameFlags);
             
-            // Load default tags from configuration
-            const auto artist = config::theSettings.exportSettings.defaultArtist.get();
-            const auto album = config::theSettings.exportSettings.defaultAlbum.get();
-            const auto year = config::theSettings.exportSettings.defaultYear.get();
-            const auto genre = config::theSettings.exportSettings.defaultGenre.get();
-            const auto comment = config::theSettings.exportSettings.defaultComment.get();
-            
-            id3tag_set_artist(m_lameFlags, artist.c_str());
-            id3tag_set_album(m_lameFlags, album.c_str());
-            id3tag_set_year(m_lameFlags, year.c_str());
-            id3tag_set_genre(m_lameFlags, genre.c_str());
-            id3tag_set_comment(m_lameFlags, comment.c_str());
-            
-            // Also set the mix name as the title
-            id3tag_set_title(m_lameFlags, m_mixInfo.name.c_str());
+            id3tag_set_artist(m_lameFlags, m_settings.artist.c_str());
+            id3tag_set_album(m_lameFlags, m_settings.album.c_str());
+            id3tag_set_title(m_lameFlags, m_settings.title.c_str());
+            id3tag_set_year(m_lameFlags, m_settings.year.c_str());
+            id3tag_set_genre(m_lameFlags, m_settings.genre.c_str());
+            id3tag_set_comment(m_lameFlags, m_settings.comment.c_str());
 
             // Initialize LAME parameters
             int lame_ret = lame_init_params(m_lameFlags);

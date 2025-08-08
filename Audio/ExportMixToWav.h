@@ -27,9 +27,9 @@ namespace jucyaudio
         class ExportWavMixImplementation final : public ExportMixImplementation
         {
         public:
-            ExportWavMixImplementation(MixId mixId, const std::filesystem::path &targetFilepath,
+            ExportWavMixImplementation(MixId mixId, const ActiveExportSettings &settings,
                                        MixExporterProgressCallback progressCallback)
-                : ExportMixImplementation(mixId, targetFilepath, progressCallback)
+                : ExportMixImplementation{mixId, settings, progressCallback}
             {
             }
             JUCE_DECLARE_NON_COPYABLE(ExportWavMixImplementation)

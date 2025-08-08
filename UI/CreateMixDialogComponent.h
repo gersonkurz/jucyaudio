@@ -1,50 +1,34 @@
 #pragma once
 
-#include <Audio/AudioLibrary.h>          // For jucyaudio::AudioLibrary
-#include <Database/Includes/Constants.h> // For jucyaudio::database::MixId
-#include <Database/Includes/MixInfo.h>   // For jucyaudio::database::MixId
-#include <Database/Includes/TrackInfo.h> // For jucyaudio::database::TrackInfo
-#include <Database/TrackLibrary.h>       // For jucyaudio::TrackLibrary
+#include <Audio/AudioLibrary.h>
+#include <Audio/Includes/ActiveExportSettings.h>
+#include <Database/Includes/Constants.h>
+#include <Database/Includes/MixInfo.h>
+#include <Database/Includes/TrackInfo.h>
+#include <Database/TrackLibrary.h>
 #include <filesystem>
 #include <functional>
 #include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
 
-#undef EXPORT_FILE_FROM_CREATE_MIX_DIALOG
-
 namespace jucyaudio
 {
     namespace ui
     {
-        class CreateMixTask final : public database::ILongRunningTask
-        {
-        public:
-            CreateMixTask(const database::MixInfo& mixInfo, const audio::IMixExporter &mixExporter, 
-                          const std::filesystem::path &targetExportPath);
-            void run(database::ProgressCallback progressCb, database::CompletionCallback completionCb,
-                     [[maybe_unused]] std::atomic<bool> &shouldCancel) override;
 
-            bool m_bExported{false};
-
-        private:
-            MixId m_mixId;
-            std::filesystem::path m_targetExportPath;
-            const audio::IMixExporter &m_mixExporter;
-        };
-
-        class CreateMixDialogComponent : public juce::Component, 
-                                        public juce::Button::Listener, 
-                                        public juce::TextEditor::Listener,
-                                        public juce::ComboBox::Listener
+        class CreateMixDialogComponent : public juce::Component,
+                                         public juce::Button::Listener,
+                                         public juce::TextEditor::Listener,
+                                         public juce::ComboBox::Listener
         {
         public:
             using OnMixCreatedAndExportedCallback = std::function<void(bool /*success*/, const database::MixInfo & /*newMixInfo */)>;
 
-            CreateMixDialogComponent(audio::AudioLibrary &audioLibrary, 
-                                     const std::vector<database::TrackInfo> &tracksForMix,
-                                     WorkingSetId source_ws_id,
-                                     OnMixCreatedAndExportedCallback onOkCallback);
+            CreateMixDialogComponent(audio::AudioLibrary &audioLibrary,
+                const std::vector<database::TrackInfo> &tracksForMix,
+                WorkingSetId source_ws_id,
+                OnMixCreatedAndExportedCallback onOkCallback);
             ~CreateMixDialogComponent() override;
 
             void paint(juce::Graphics &g) override;
@@ -56,9 +40,9 @@ namespace jucyaudio
             // TextEditor::Listener
             void textEditorReturnKeyPressed(juce::TextEditor &editor) override;
             void textEditorFocusLost([[maybe_unused]] juce::TextEditor &editor) override {}; // Required by TextEditor::Listener
-            
+
             // ComboBox::Listener
-            void comboBoxChanged(juce::ComboBox* comboBox) override;
+            void comboBoxChanged(juce::ComboBox *comboBox) override;
 
             bool keyPressed(const juce::KeyPress &key) override;
 
@@ -67,10 +51,6 @@ namespace jucyaudio
             void handleCreateMix();
             void handleCancel();
             juce::String generateDefaultMixName();
-#ifdef EXPORT_FILE_FROM_CREATE_MIX_DIALOG
-            void launchExportFileChooserAndProcess(database::MixInfo mixInfo); // Renamed for clarity
-            void onFileChooserModalDismissed(const juce::FileChooser &chooser, database::MixInfo mixInfo);
-#endif
 
             audio::AudioLibrary &m_audioLibrary;
             std::vector<database::TrackInfo> m_tracksForMix; // Store as reference
@@ -87,10 +67,10 @@ namespace jucyaudio
             juce::ComboBox m_mixSelectCombo;
             juce::Label m_nameLabel;
             juce::TextEditor m_nameEditor;
-            juce::TextButton m_okButton; // "Create & Export"
+            juce::TextButton m_okButton;
             juce::TextButton m_cancelButton;
-            juce::LookAndFeel_V4 m_lookAndFeel; // Custom LookAndFeel instance
-            
+            juce::LookAndFeel_V4 m_lookAndFeel;
+
             // Store available mixes
             std::vector<database::MixInfo> m_availableMixes;
 

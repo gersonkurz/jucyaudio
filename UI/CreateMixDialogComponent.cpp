@@ -15,34 +15,6 @@ namespace jucyaudio
 {
     namespace ui
     {
-        CreateMixTask::CreateMixTask(const database::MixInfo& mixInfo, const audio::IMixExporter &mixExporter,
-                                     const std::filesystem::path &targetExportPath)
-            : database::ILongRunningTask{std::format("Creating Mix {} with {:L} tracks", mixInfo.name, mixInfo.numberOfTracks), false},
-              m_mixId{mixInfo.mixId},
-              m_targetExportPath{targetExportPath},
-              m_mixExporter{mixExporter}
-        {
-        }
-
-        void CreateMixTask::run(database::ProgressCallback progressCb, database::CompletionCallback completionCb,
-                                [[maybe_unused]] std::atomic<bool> &shouldCancel)
-        {
-            auto exportProgressCallback = [progressCb](float progress, const std::string &statusMsg)
-            {
-                static int lastProgress = -1;
-                int ni = static_cast<int>(progress * 100);
-                if (ni != lastProgress)
-                {
-                    spdlog::info("Export progress: {}% - {}", ni, statusMsg);
-                    progressCb(ni, statusMsg);
-                    lastProgress = ni;
-                }
-            };
-            m_bExported = m_mixExporter.exportMixToFile(m_mixId, m_targetExportPath, exportProgressCallback);
-            completionCb(m_bExported, "Create mix task completed");
-        }
-
-
         CreateMixDialogComponent::CreateMixDialogComponent(audio::AudioLibrary &audioLibrary,
                                                            const std::vector<database::TrackInfo> &tracksForMix,
                                                            WorkingSetId source_ws_id,
@@ -246,11 +218,7 @@ namespace jucyaudio
                 }
                 spdlog::info("Mix '{}' (ID: {}) defined successfully in database with {} tracks.", newMixInfo.name, newMixInfo.mixId, resultingMixTracks.size());
                 
-#ifdef EXPORT_FILE_FROM_CREATE_MIX_DIALOG
-                launchExportFileChooserAndProcess(newMixInfo);
-#else
                 closeThisDialog(true);
-#endif
             }
             else if (selectedId > 1)
             {
@@ -316,50 +284,6 @@ namespace jucyaudio
                 closeThisDialog(true);
             }
         }
-
-#ifdef EXPORT_FILE_FROM_CREATE_MIX_DIALOG
-        void CreateMixDialogComponent::launchExportFileChooserAndProcess(database::MixInfo mixInfo)
-        {
-            // Store the FileChooser in a member unique_ptr to keep it alive
-            const auto title{ std::format("Export Mix '{}' As...", mixInfo.name)};
-            m_activeFileChooser = std::make_unique<juce::FileChooser>(title, juce::File::getSpecialLocation(juce::File::userMusicDirectory),
-                                                                      "*.mp3;*.wav", true, false, this);
-
-            int chooserFlags =
-                juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting;
-
-            // Use std::bind (or a small capturing lambda) to call our member function
-            // We need to pass mixId and mixName to the callback.
-            m_activeFileChooser->launchAsync(chooserFlags,
-                                             [this, mixInfo](const juce::FileChooser &chooser)
-                                             {
-                                                 this->onFileChooserModalDismissed(chooser, mixInfo);
-                                             });
-        }
-
-        // *** New member function to handle the FileChooser callback ***
-        void CreateMixDialogComponent::onFileChooserModalDismissed(const juce::FileChooser &chooser, database::MixInfo mixInfo)
-        {
-            const juce::File chosenFile = chooser.getResult();
-
-            // Release the FileChooser now that its job is done
-            m_activeFileChooser.reset();
-
-            if (chosenFile == juce::File{}) // User cancelled
-            {
-                closeThisDialog(false);
-                return;
-            }
-
-            std::filesystem::path targetExportPath = chosenFile.getFullPathName().toStdString();
-            spdlog::info("Exporting mix ID: {} (Name: '{}') to: {}", mixInfo.mixId, mixInfo.name, pathToString(targetExportPath));
-
-            auto *task = new CreateMixTask(mixInfo.mixId, m_audioLibrary.getMixExporter(), targetExportPath);
-            TaskDialog::launch("Mix Creation In Progress", task, 500, this);
-            task->release(REFCOUNT_DEBUG_ARGS);
-            closeThisDialog(true);
-        }
-#endif
 
         void CreateMixDialogComponent::closeThisDialog(bool success)
         {

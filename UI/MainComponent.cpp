@@ -10,6 +10,7 @@
 #include <Database/Nodes/VirtualFolderNode.h>
 #include <UI/ColumnConfiguratorDialog.h>
 #include <UI/CreateMixDialogComponent.h>
+#include <UI/ExportMixDialog.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/EditMixMetaDataDialog.h>
 #include <UI/EditWorkingSetMetaDataDialog.h>
@@ -1199,29 +1200,39 @@ namespace jucyaudio
 
             const auto mixNode{static_cast<MixNode *>(selectedNode)};
             const auto mixInfo{mixNode->getMixInfo()};
-
-            const auto title{std::format("Export Mix '{}' As...", mixInfo.name)};
-            m_activeFileChooser = std::make_unique<juce::FileChooser>(
-                title, juce::File::getSpecialLocation(juce::File::userMusicDirectory), "*.mp3;*.wav;*.m3u", true, false, this);
-
-            int chooserFlags =
-                juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting;
-
-            m_activeFileChooser->launchAsync(chooserFlags,
-                [this, mixInfo](const juce::FileChooser &chooser)
+            
+            // Create and show the export dialog instead of just a file chooser
+            auto *dialog = new ExportMixDialog{mixInfo,
+                [this, mixInfo](bool success, const audio::ActiveExportSettings &settings)
                 {
-                    this->onExportMixFileChooserModalDismissed(chooser, mixInfo);
-                });
+                    if (success)
+                    {
+                        this->onExportMixSettingsReceived(mixInfo, settings);
+                    }
+                }};
+            
+            juce::DialogWindow::LaunchOptions launchOptions;
+            launchOptions.content.setOwned(dialog);
+            launchOptions.dialogTitle = "Export Mix";
+            launchOptions.componentToCentreAround = this;
+            launchOptions.escapeKeyTriggersCloseButton = true;
+            launchOptions.resizable = false;
+            launchOptions.launchAsync();
         }
 
         class FinalizeAndExportTask : public ILongRunningTask
         {
         public:
-            FinalizeAndExportTask(const MixInfo &mixInfo, const audio::IMixExporter &exporter, const std::filesystem::path &outputPath)
-                : ILongRunningTask("Finalizing and Exporting Mix", true),
-                  m_mixInfo(mixInfo),
-                  m_exporter(exporter),
-                  m_outputPath(outputPath)
+            FinalizeAndExportTask(const MixInfo &mixInfo, const audio::IMixExporter &exporter, 
+                                 const audio::ActiveExportSettings &settings)
+                : ILongRunningTask{"Finalizing and Exporting Mix", true},
+                  m_mixInfo{mixInfo},
+                  m_exporter{exporter},
+                  m_settings{settings}
+            {
+            }
+            
+            ~FinalizeAndExportTask() override
             {
             }
 
@@ -1257,7 +1268,7 @@ namespace jucyaudio
                 }
                 */
                 if (m_exporter.exportMixToFile(m_mixInfo.mixId,
-                        m_outputPath,
+                        m_settings,
                         [&](float progress, const std::string &message)
                         {
                             progressCb(static_cast<int>(progress * 100.0f), message);
@@ -1301,40 +1312,33 @@ namespace jucyaudio
                         }
                     }
                     
-                    const auto filename = m_outputPath.filename().string();
+                    const auto filename = pathToString(m_settings.outputPath.filename());
                     const auto successMsg = std::format("Mix '{}' successfully exported to:\n{}", 
                         m_mixInfo.name, filename);
                     completionCb(true, successMsg);
                 }
                 else
                 {
-                    completionCb(false, "Unable to export mix to file: " + m_outputPath.string());
+                    completionCb(false, "Unable to export mix to file: " + pathToString(m_settings.outputPath));
                 }
             }
 
         private:
             MixInfo m_mixInfo;
             const audio::IMixExporter &m_exporter;
-            const std::filesystem::path m_outputPath;
+            const audio::ActiveExportSettings m_settings;
         };
 
-        void MainComponent::onExportMixFileChooserModalDismissed(const juce::FileChooser &chooser, MixInfo mixInfo)
+        void MainComponent::onExportMixSettingsReceived(const MixInfo &mixInfo, const audio::ActiveExportSettings &settings)
         {
-            const juce::File chosenFile = chooser.getResult();
-            m_activeFileChooser.reset();
+            spdlog::info("Finalizing and exporting mix ID: {} (Name: '{}') to: {}", 
+                        mixInfo.mixId, mixInfo.name, pathToString(settings.outputPath));
 
-            if (chosenFile == juce::File{}) // User cancelled
-            {
-                return;
-            }
-
-            std::filesystem::path targetExportPath = chosenFile.getFullPathName().toStdString();
-            spdlog::info("Finalizing and exporting mix ID: {} (Name: '{}') to: {}", mixInfo.mixId, mixInfo.name, pathToString(targetExportPath));
-
-            //(const MixInfo &mixInfo, audio::MixExporter &exporter, const std::filesystem::path &outputPath)
-            auto *task = new FinalizeAndExportTask{mixInfo, m_audioLibrary.getMixExporter(), targetExportPath};
+            
+            auto *task = new FinalizeAndExportTask{mixInfo, m_audioLibrary.getMixExporter(), settings};
             TaskDialog::launch("Finalize & Export", task, std::nullopt, this);
             task->release(REFCOUNT_DEBUG_ARGS);
+            // Note: tags will be deleted by FinalizeAndExportTask destructor
         }
 
         void MainComponent::onEditWorkingSetMetadata(INavigationNode *node)

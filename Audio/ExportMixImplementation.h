@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Audio/MixProjectLoader.h>
+#include <Audio/Includes/ActiveExportSettings.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
 #include <Database/Includes/Constants.h>
@@ -50,7 +51,7 @@ namespace jucyaudio
         class ExportMixImplementation : public MixProjectLoader
         {
         public:
-            ExportMixImplementation(MixId mixId, const std::filesystem::path &targetFilepath,
+            ExportMixImplementation(MixId mixId, const ActiveExportSettings &settings,
                                     MixExporterProgressCallback progressCallback);
             virtual ~ExportMixImplementation() = default;
             bool run();
@@ -97,7 +98,7 @@ namespace jucyaudio
                                             juce::AudioBuffer<float> &masterOutputBlock);
 
             const MixExporterProgressCallback m_progressCallback;
-            const std::filesystem::path m_targetFilepath;
+            const ActiveExportSettings &m_settings;
 
             // dynamic members
             Duration_t m_totalMixDurationMs;

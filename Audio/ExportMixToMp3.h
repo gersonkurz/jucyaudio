@@ -1,23 +1,23 @@
 #pragma once
 
+#include <Audio/ExportMixImplementation.h>
 #include <Audio/Includes/IMixExporter.h>
 #include <Audio/MixExporter.h>
-#include <Audio/ExportMixImplementation.h>
 #include <Database/Includes/Constants.h>
 #include <Database/Includes/IMixManager.h>
 #include <Database/Includes/ITrackDatabase.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
 #include <Database/TrackLibrary.h>
+#include <Utils/AssortedUtils.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_formats/juce_audio_formats.h>
-#include <Utils/AssortedUtils.h>
 
 #include <filesystem>
+#include <lame/lame.h>
 #include <spdlog/fmt/chrono.h>
 #include <spdlog/spdlog.h>
-#include <lame/lame.h>
 
 namespace jucyaudio
 {
@@ -27,9 +27,8 @@ namespace jucyaudio
         class ExportMp3MixImplementation final : public ExportMixImplementation
         {
         public:
-            ExportMp3MixImplementation(MixId mixId, const std::filesystem::path &targetFilepath,
-                                       MixExporterProgressCallback progressCallback)
-                : ExportMixImplementation(mixId, targetFilepath, progressCallback)
+            ExportMp3MixImplementation(MixId mixId, const ActiveExportSettings &settings, MixExporterProgressCallback progressCallback)
+                : ExportMixImplementation{mixId, settings, progressCallback}
             {
             }
             JUCE_DECLARE_NON_COPYABLE(ExportMp3MixImplementation)

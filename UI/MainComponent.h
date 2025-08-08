@@ -17,7 +17,9 @@
 #include <UI/EnhancedPlayerComponent.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/ThemeManager.h>
+#include <UI/Settings.h>
 #include <Utils/UiUtils.h>
+#include <Audio/Includes/ActiveExportSettings.h>
 #include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -79,12 +81,9 @@ namespace jucyaudio
             void playDataRow(RowIndex_t rowIndex);
             void createMix();
 
-
-
-
             // --- export mix functionality ---
             void onExportMix(INavigationNode *selectedNode);
-            void onExportMixFileChooserModalDismissed(const juce::FileChooser &chooser, MixInfo mixInfo);
+            void onExportMixSettingsReceived(const MixInfo &mixInfo, const audio::ActiveExportSettings &settings);
             std::unique_ptr<juce::FileChooser> m_activeFileChooser;
 
             void requestPlayOrPlaySelection();

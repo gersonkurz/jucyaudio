@@ -141,7 +141,7 @@ namespace jucyaudio
 
             fb.items.add(
                 juce::FlexItem(m_titleLabel).withHeight(30.0f).withMargin(juce::FlexItem::Margin(mainMargin, mainMargin, interElementMargin, mainMargin)));
-            fb.items.add(juce::FlexItem(m_statusLabel).withHeight(25.0f).withMargin(juce::FlexItem::Margin(0, mainMargin, interElementMargin, mainMargin)));
+            fb.items.add(juce::FlexItem(m_statusLabel).withHeight(50.0f).withMargin(juce::FlexItem::Margin(0, mainMargin, interElementMargin, mainMargin)));
             fb.items.add(juce::FlexItem(m_progressBar)
                     .withHeight(20.0f)
                     .withMargin(juce::FlexItem::Margin(0, mainMargin, mainMargin, mainMargin))); // More margin below progress bar
@@ -418,7 +418,7 @@ namespace jucyaudio
                 return;
             }
 
-            auto *dialogComp = new TaskDialog(taskToRun, std::move(onCompletion), autoCloseOnSuccessDelayMs);
+            auto *dialogComp = new TaskDialog{taskToRun, std::move(onCompletion), autoCloseOnSuccessDelayMs};
 
             juce::DialogWindow::LaunchOptions optionsToUse; // Create our local options
 

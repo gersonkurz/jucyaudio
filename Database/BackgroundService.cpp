@@ -102,7 +102,7 @@ namespace jucyaudio
                 m_isProcessing = true;
                 std::vector<IBackgroundTask *> tasksCopy;
                 {
-                    const std::lock_guard<std::mutex> lock(m_tasksMutex);
+                    const std::lock_guard<std::mutex> lock{m_tasksMutex};
                     tasksCopy = m_tasks;
                 }
                 for (auto *task : tasksCopy)

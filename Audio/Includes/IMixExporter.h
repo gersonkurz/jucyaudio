@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Audio/Includes/ActiveExportSettings.h>
 #include <Database/Includes/Constants.h>
 #include <Database/Includes/IMixManager.h>
 #include <Database/Includes/ITrackDatabase.h>
@@ -21,16 +22,8 @@ namespace jucyaudio
         public:
             virtual ~IMixExporter() = default;
 
-            // @brief Exports a defined mix to an audio file.
-            // @param mixId The ID of the mix to export (fetches definition from IMixManager).
-            // @param targetFilepath The full path where the exported audio file should be saved.
-            // @param progressCallback Optional callback for progress updates.
-            // @return True if export was successful, false otherwise.
-            virtual bool exportMixToFile(MixId mixId, const std::filesystem::path &targetFilepath,
-                                         MixExporterProgressCallback progressCallback = nullptr
-                                         // Potentially add format parameters later
-                                         ) const = 0;
+            virtual bool exportMixToFile(MixId mixId, const ActiveExportSettings &settings, MixExporterProgressCallback progressCallback = nullptr) const = 0;
         };
 
-    } // namespace database
+    } // namespace audio
 } // namespace jucyaudio

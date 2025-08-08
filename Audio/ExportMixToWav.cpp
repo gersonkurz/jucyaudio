@@ -21,8 +21,9 @@ namespace jucyaudio
             m_formatManager.registerBasicFormats(); // For reading various input formats
                                                     // For MP3 writing, LAME will be handled separately or via a Juce LAME format.
 
-            // targetFilepath.parent_path().create_directories();                 // Ensure output directory exists
-            juce::File outputFile{pathToString(m_targetFilepath)};
+            const auto exportPath{pathToString(m_settings.outputPath)};
+            
+            juce::File outputFile{exportPath};
             if (outputFile.existsAsFile())
             {
                 outputFile.deleteFile();
@@ -30,14 +31,14 @@ namespace jucyaudio
             std::unique_ptr<juce::FileOutputStream> fileOutputStream(outputFile.createOutputStream());
             if (!fileOutputStream)
             {
-                return fail("MTE: Could not create output file stream for " + pathToString(m_targetFilepath));
+                return fail("MTE: Could not create output file stream for " + exportPath);
             }
 
             juce::WavAudioFormat wavFormat;
             m_writer.reset(wavFormat.createWriterFor(fileOutputStream.get(), outputSampleRate(), outputNumChannels(), outputBitDepth(), {}, 0));
             if (!m_writer)
             {
-                spdlog::info("MTE: unable to create WavAudioFormat writer for file: {}", pathToString(m_targetFilepath));
+                spdlog::info("MTE: unable to create WavAudioFormat writer for file: {}", exportPath);
                 return false;
             }
             fileOutputStream.release(); // Writer now owns the stream
