@@ -243,9 +243,20 @@ namespace jucyaudio
             const auto state = m_playbackController.getCurrentState();
             const bool hasFile = !m_playbackController.getCurrentFilepath().isEmpty();
             
-            m_playButton.setEnabled(hasFile && state != PlaybackController::State::Playing);
-            m_pauseButton.setEnabled(state == PlaybackController::State::Playing);
-            m_stopButton.setEnabled(hasFile && state != PlaybackController::State::Stopped);
+            // Check if mix is playing (using the callback if available)
+            bool mixIsPlaying = m_playbackController.isMixPlaying ? m_playbackController.isMixPlaying() : false;
+            bool isAnythingPlaying = (state == PlaybackController::State::Playing) || mixIsPlaying;
+            
+            // Enable play button if we have a file and nothing is playing, OR if something can be played
+            m_playButton.setEnabled((hasFile || mixIsPlaying) && !isAnythingPlaying);
+            
+            // Enable pause button if ANYTHING is playing (single track or mix)
+            m_pauseButton.setEnabled(isAnythingPlaying);
+            
+            // Enable stop button if we have a file or mix is playing
+            m_stopButton.setEnabled((hasFile && state != PlaybackController::State::Stopped) || mixIsPlaying);
+            
+            // Previous/Next remain file-based for now
             m_previousButton.setEnabled(hasFile);
             m_nextButton.setEnabled(hasFile);
         }

@@ -97,6 +97,16 @@ namespace jucyaudio
         {
             m_timeline.onMixPlaybackRequested = callback;
         }
+        
+        void MixEditorComponent::setOnMixPlaybackStarting(std::function<void()> callback)
+        {
+            m_onMixPlaybackStarting = callback;
+        }
+        
+        void MixEditorComponent::setOnMixPlaybackStopped(std::function<void()> callback)
+        {
+            m_onMixPlaybackStopped = callback;
+        }
 
         void MixEditorComponent::paint(juce::Graphics &g)
         {
@@ -437,6 +447,18 @@ namespace jucyaudio
                 m_isPlaying = true;
                 spdlog::info("[MixEditor] Set m_isPlaying to true");
                 
+                // Stop any single track playback and update UI state
+                if (m_onMixPlaybackStarting)
+                {
+                    spdlog::info("[MixEditor] Calling m_onMixPlaybackStarting callback");
+                    m_onMixPlaybackStarting();
+                    spdlog::info("[MixEditor] Finished m_onMixPlaybackStarting callback");
+                }
+                else
+                {
+                    spdlog::warn("[MixEditor] m_onMixPlaybackStarting callback is not set!");
+                }
+                
                 // Unpause the playback engine
                 if (m_mixPlaybackEngine)
                 {
@@ -481,6 +503,12 @@ namespace jucyaudio
                 
                 // Reset playback position display
                 m_timeline.setMixPlaybackPosition(-1.0); // Hide the red playhead
+                
+                // Notify that mix has stopped
+                if (m_onMixPlaybackStopped)
+                {
+                    m_onMixPlaybackStopped();
+                }
             }
         }
         

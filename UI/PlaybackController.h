@@ -62,6 +62,7 @@ namespace jucyaudio
             void play(); // Plays if a file is loaded and paused/stopped, or resumes.
             void pause();
             void stop(); // Stops playback and potentially unloads the source.
+            void stopSingleTrackOnly(); // Stops only single track playback without affecting mix
             void togglePlayPause();
 
             void seek(double positionSeconds);
@@ -82,6 +83,12 @@ namespace jucyaudio
 
             void onTimerEvent(); // Timer callback to handle state changes and updates
             void syncUIToPlaybackControllerState(bool hasRowSelected);
+            
+            // Callback to stop mix playback when stop/pause is pressed
+            std::function<void()> onStopMixPlayback;
+            
+            // Callback to check if mix is currently playing
+            std::function<bool()> isMixPlaying;
 
             // --- Access to TransportSource for MainComponent to be a ChangeListener ---
             // This allows MainComponent to listen for when the transport source itself stops (e.g., end of file)

@@ -9,6 +9,8 @@
 */
 
 #include <Audio/ExportMixToMp3.h>
+#include <UI/Settings.h>
+#include <format>
 
 namespace jucyaudio
 {
@@ -62,11 +64,25 @@ namespace jucyaudio
 
             // (optional but recommended)
             lame_set_mode(m_lameFlags, JOINT_STEREO); // joint stereo saves a few bits
-                                                      // Add basic ID3 tags
+            
+            // Add ID3 tags from settings
             id3tag_init(m_lameFlags);
-            id3tag_set_artist(m_lameFlags, "jucyaudio");
-            id3tag_set_album(m_lameFlags, "jucyaudio Mixes");
-            id3tag_set_year(m_lameFlags, "2025");
+            
+            // Load default tags from configuration
+            const auto artist = config::theSettings.exportSettings.defaultArtist.get();
+            const auto album = config::theSettings.exportSettings.defaultAlbum.get();
+            const auto year = config::theSettings.exportSettings.defaultYear.get();
+            const auto genre = config::theSettings.exportSettings.defaultGenre.get();
+            const auto comment = config::theSettings.exportSettings.defaultComment.get();
+            
+            id3tag_set_artist(m_lameFlags, artist.c_str());
+            id3tag_set_album(m_lameFlags, album.c_str());
+            id3tag_set_year(m_lameFlags, year.c_str());
+            id3tag_set_genre(m_lameFlags, genre.c_str());
+            id3tag_set_comment(m_lameFlags, comment.c_str());
+            
+            // Also set the mix name as the title
+            id3tag_set_title(m_lameFlags, m_mixInfo.name.c_str());
 
             // Initialize LAME parameters
             int lame_ret = lame_init_params(m_lameFlags);
@@ -100,6 +116,29 @@ namespace jucyaudio
 
             SampleContext context;
 
+            // Calculate total tracks for progress reporting
+            const int totalTracks = static_cast<int>(m_mixTracks.size());
+            int currentTrackNumber = 0;
+            
+            // Track which tracks are currently being processed
+            auto getCurrentTrackNumber = [&]() -> int {
+                if (m_trackPositions.empty()) return 0;
+                
+                // Find the primary track at current position
+                const auto currentTimeMs = (context.samplesWrittenTotal * 1000) / static_cast<juce::int64>(outputSampleRate());
+                for (size_t i = 0; i < m_mixTracks.size(); ++i) {
+                    const auto& track = m_mixTracks[i];
+                    auto it = m_trackPositions.find(track.trackId);
+                    if (it != m_trackPositions.end()) {
+                        if (currentTimeMs >= it->second.startTime.count() && 
+                            currentTimeMs <= it->second.endTime.count()) {
+                            return static_cast<int>(i + 1);
+                        }
+                    }
+                }
+                return totalTracks;
+            };
+            
             // Iterate through the output mix timeline, block by block
             while (context.samplesWrittenTotal < m_totalOutputSamples)
             {
@@ -174,7 +213,10 @@ namespace jucyaudio
                 if (m_progressCallback)
                 {
                     float progress = (float)context.samplesWrittenTotal / (float)m_totalOutputSamples;
-                    m_progressCallback(progress, "Exporting...");
+                    currentTrackNumber = getCurrentTrackNumber();
+                    const auto progressMessage = std::format("Exporting MP3... Track {}/{} ({:.0f}%)", 
+                        currentTrackNumber, totalTracks, progress * 100.0f);
+                    m_progressCallback(progress, progressMessage);
                 }
             }
 
@@ -205,7 +247,7 @@ namespace jucyaudio
 
             spdlog::info("MP3 export finished for mix ID: {}", m_mixId);
             if (m_progressCallback)
-                m_progressCallback(1.0f, "Export complete.");
+                m_progressCallback(1.0f, "MP3 export complete!");
 
             return true;
         }

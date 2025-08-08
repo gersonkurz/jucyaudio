@@ -1,4 +1,4 @@
-# JucyAudio - Architecture & Status (2025-08-07)
+# JucyAudio - Architecture & Status (2025-08-07 Late Evening)
 
 ## 1. Executive Summary
 
@@ -39,7 +39,7 @@ The application now operates on the following principles:
     *   Implemented a PNG-based splash screen to provide immediate visual feedback during the application's multi-second startup and cache-building process.
     *   Fixed a critical object lifetime bug related to the splash screen that caused a crash on application shutdown.
 
-## 5. Session Accomplishments: Mix Editor Playback Fix (2025-08-07)
+## 5. Session Accomplishments: Mix Editor Playback Fix (2025-08-07 Morning)
 
 *   **Problem Identified:** When editing attach points in the mix editor, the UI updated correctly but the playback engine continued using the old cached track positions, requiring an app restart to hear the changes.
 *   **Root Cause:** The `MixPlaybackEngine` calculated track start times only once during `loadMix()` and cached them. When attach points were edited, the `MixProjectLoader` data was updated but the playback engine's cached positions were never recalculated.
@@ -49,18 +49,60 @@ The application now operates on the following principles:
     *   The solution is efficient - no disk I/O, just mathematical recalculation of positions.
 *   **Result:** Mix playback now immediately reflects attach point changes without requiring an application restart.
 
-## 6. Current Functionality Status
+## 6. Session Accomplishments: Mix Editor UI Improvements (2025-08-07 Evening)
+
+*   **Mutex Deadlock Fix:**
+    *   Fixed a critical deadlock in `MixPlaybackEngine::recalculateTrackPositions()` that occurred when editing attach points.
+    *   The method was holding a mutex while calling `setPosition()` which tried to lock the same mutex.
+    *   Solution: Created `setPositionInternal()` method that assumes the mutex is already locked.
+    
+*   **4K Display Support:**
+    *   **Problem:** On 4K displays, the mix editor's vertical grid lines and lane calculations only used 2/3 of the available screen space.
+    *   **Root Cause:** The TimelineComponent wasn't resizing to match the viewport when the window was maximized.
+    *   **Solution:** 
+        *   Added `viewportResized()` public method to TimelineComponent.
+        *   Made MixEditorComponent notify the timeline when viewport resizes.
+        *   Timeline now adjusts its height to match viewport, calculating lanes based on actual available space.
+    *   **Result:** Full screen utilization with 9-10 lanes on 4K displays instead of just 4-8 lanes.
+
+## 7. Session Accomplishments: MP3 Export Settings Dialog (2025-08-07 Late Evening)
+
+*   **Problem:** MP3 exports had hardcoded ID3 tags with no way for users to customize them.
+*   **Solution Implemented:**
+    *   Created a multi-tab Settings Dialog accessible from the toolbar.
+    *   Added ExportSettings section to the configuration system (RootSettings structure).
+    *   Implemented ExportSettingsTab with fields for Artist, Album, Year, Genre, and Comment.
+    *   Integrated with the existing TOML-based configuration system (TomlBackend).
+    *   Modified ExportMixToMp3 to read tags from the new configuration settings.
+*   **Technical Challenges Overcome:**
+    *   Initially created the dialog using a non-existent ConfigFile::getInstance() pattern (hallucination).
+    *   Corrected to use the actual config system: config::theSettings with TypedValue's get() and set() methods.
+    *   Properly integrated with TomlBackend for persistence.
+*   **Result:** Users can now configure default MP3 export tags through the Settings dialog, which persist across application sessions.
+
+## 8. Current Functionality Status
 
 *   **(✓) Application Build & Startup:** The application builds cleanly and starts up, displaying a splash screen during initialization.
 *   **(✓) Library Root Management:** The `LibraryRootsComponent` successfully adds, removes, and displays user-defined library root folders.
 *   **(✓) Library Navigation:** The folder hierarchy in the navigation panel displays correctly, driven by the user's defined roots.
 *   **(✓) Library Scanning & Pruning:** The `TrackScanner` correctly adds new files, updates existing ones, and removes missing tracks and folders from the database. The process is performant.
 *   **(✓) Data Display:** Selecting a folder node correctly displays the list of tracks within it.
-*   **(✓) Mix Playback:** Audio playback from mixes works correctly and updates immediately when attach points are edited.
+*   **(✓) Mix Playback:** Audio playback from mixes works correctly and updates immediately when attach points are edited. No more deadlocks.
 *   **(✓) Mix Editing:** The mix editor allows editing of cue points, attach points, and envelope points with immediate visual and audio feedback.
+*   **(✓) 4K Display Support:** Mix editor properly utilizes full screen height on high-resolution displays.
 *   **(Untested) Remaining Systems:** BPM Analysis and Mix Exporting have not been tested since the refactoring.
 
-## 7. Next Session TODO:
+## 8. Future Enhancement Ideas:
+
+*   **Persistent Waveform Caching:**
+    *   Current situation: Mix editor takes a few seconds to generate waveforms for 70-80 tracks on each app start.
+    *   Database schema already prepared (WaveformCache table in schema v9) but reverted.
+    *   Challenge: JUCE's AudioThumbnailCache is only 5-10 items by default. Mixes need 70-80 tracks cached.
+    *   Memory impact: ~4MB for 80 tracks is negligible, but persistence across restarts would improve UX.
+    *   Implementation approach: Use AudioThumbnail's `saveToStream()` and `loadFrom()` to serialize to database BLOBs.
+    *   Consider hybrid approach: Large in-memory cache (200+ tracks) plus persistent cache for most-recently-used mixes.
+
+## 9. Next Session TODO:
 
 1.  **Continue System Verification:**
     *   ~~Test playing a track from the library.~~ (Verified working)
@@ -71,6 +113,20 @@ The application now operates on the following principles:
 2.  **Fix Any Remaining Issues:** Address any bugs discovered during verification of BPM analysis and mix exporting.
 3.  **Code Cleanup:** Physically delete the now-obsolete `LogicalFolderNode` files and any other dead code from the pre-refactor era.
 
-## 8. Message to Next Instance
+## 10. Message to Next Instance
 
-The foundational library work is complete and stable. Mix playback and editing have been verified and a critical synchronization bug has been fixed - the playback engine now properly updates when attach points are edited. Your next tasks are to verify BPM analysis and mix exporting functionality. The application is approaching full stability after the major refactoring sessions. Continue with systematic testing and fix any remaining issues.
+The foundational library work is complete and stable. Today's session focused on UI improvements and configuration features:
+1. Fixed a critical mutex deadlock that occurred when editing attach points
+2. Implemented proper 4K display support so the mix editor uses the full screen height
+3. Investigated waveform caching but decided to defer it as a future enhancement
+4. Created a Settings dialog with configurable MP3 export tags (Artist, Album, Year, Genre, Comment)
+
+The Settings dialog implementation was challenging due to an initial misunderstanding of the configuration system. The actual system uses:
+- `config::theSettings` global instance with nested Section structures
+- `TypedValue<T>` fields with `get()` and `set()` methods (not getValue/setValue)
+- `TomlBackend` for persistence to TOML files
+- Path-based hierarchical configuration (e.g., "Export/DefaultArtist")
+
+The mix editor is now fully functional with proper display scaling, no deadlocks, and configurable export settings. Your next tasks are to verify BPM analysis and the complete mix exporting workflow. The application is approaching full stability after the major refactoring sessions. Continue with systematic testing and fix any remaining issues.
+
+Note: If you revisit waveform caching, the database schema (v9) groundwork has been laid but reverted. The main challenge is that mixes typically have 70-80 tracks, far exceeding JUCE's default cache size. A hybrid approach with both large in-memory cache and persistent storage would be ideal.

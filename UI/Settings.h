@@ -62,6 +62,21 @@ namespace jucyaudio
                 TypedValueVector<DataViewColumnSection> foldersViewColumns{this, "FoldersViewColumns"};
 
             } uiSettings{this};
+
+            struct ExportSettings : public Section
+            {
+                ExportSettings(Section *parent)
+                    : Section{parent, "Export"}
+                {
+                }
+                
+                TypedValue<std::string> defaultArtist{this, "DefaultArtist", "Unknown Artist"};
+                TypedValue<std::string> defaultAlbum{this, "DefaultAlbum", "Unknown Album"};
+                TypedValue<std::string> defaultYear{this, "DefaultYear", "2025"};
+                TypedValue<std::string> defaultGenre{this, "DefaultGenre", "Electronic"};
+                TypedValue<std::string> defaultComment{this, "DefaultComment", ""};
+                
+            } exportSettings{this};
         };
 
         extern RootSettings theSettings;

@@ -21,6 +21,7 @@
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
 #include <algorithm>
+#include <format>
 #include <spdlog/spdlog.h>
 #ifndef JUCE_WINDOWS
 #include <unistd.h>
@@ -79,6 +80,41 @@ namespace jucyaudio
 
             // Register audio formats
             m_audioFormatManager.registerBasicFormats();
+            
+            // Set up callback to stop mix playback when stop/pause is pressed
+            m_playbackController.onStopMixPlayback = [this]()
+            {
+                m_mixEditorComponent.stopPlayback();
+            };
+            
+            // Set up callback to check if mix is playing
+            m_playbackController.isMixPlaying = [this]() -> bool
+            {
+                bool mixPlaying = m_mixEditorComponent.isMixPlaying();
+                spdlog::debug("[MainComponent] isMixPlaying callback called, returning: {}", mixPlaying);
+                return mixPlaying;
+            };
+            
+            // Set up mix editor callbacks once during initialization
+            m_mixEditorComponent.setOnMixPlaybackStarting(
+                [this]()
+                {
+                    spdlog::info("[MainComponent] onMixPlaybackStarting callback called");
+                    // Stop only single track playback (not mix)
+                    m_playbackController.stopSingleTrackOnly();
+                    spdlog::info("[MainComponent] Stopped single track, now updating UI state");
+                    // Update UI state to reflect mix is now playing
+                    syncPlaybackUIToControllerState();
+                    spdlog::info("[MainComponent] onMixPlaybackStarting callback finished");
+                });
+            
+            m_mixEditorComponent.setOnMixPlaybackStopped(
+                [this]()
+                {
+                    spdlog::info("[MainComponent] onMixPlaybackStopped callback called");
+                    // Update UI state to reflect mix has stopped
+                    syncPlaybackUIToControllerState();
+                });
 
             // --- Add and make visible all child components ---
             addAndMakeVisible(m_dynamicToolbar);
@@ -491,6 +527,7 @@ namespace jucyaudio
             bool canPlaySelection = (m_currentNode != nullptr); // Simplistic: if a node is selected.
                                                                 // More accurately: if data view has a selected row
                                                                 // and that row represents a playable track.
+            spdlog::info("[MainComponent] syncPlaybackUIToControllerState called, canPlaySelection: {}", canPlaySelection);
             m_playbackController.syncUIToPlaybackControllerState(canPlaySelection);
         }
 
@@ -655,6 +692,9 @@ namespace jucyaudio
         {
             if (audioFile.existsAsFile())
             {
+                // Stop any mix playback before starting single track
+                m_mixEditorComponent.stopPlayback();
+                
                 m_statusPanel.setStatusMessage(
                     getSafeDisplayText("Playing: " + audioFile.getFileName() + " from " + juce::String(startPosition, 1) + "s"), false);
 
@@ -916,6 +956,9 @@ namespace jucyaudio
             juce::File audioFile{jucePathFromFs(trackPath)};
             if (audioFile.existsAsFile())
             {
+                // Stop any mix playback before starting single track
+                m_mixEditorComponent.stopPlayback();
+                
                 // uncomment this line, and you get the exceptio
                 m_statusPanel.setStatusMessage(getSafeDisplayText("Playing: " + audioFile.getFileName()), false);
                 if (!m_playbackController.loadAndPlayFile(audioFile))
@@ -1237,7 +1280,10 @@ namespace jucyaudio
                             return !shouldCancel.load();
                         }))
                 {
-                    completionCb(true, "Mix successfully finalized and exported.");
+                    const auto filename = m_outputPath.filename().string();
+                    const auto successMsg = std::format("Mix '{}' successfully exported to:\n{}", 
+                        m_mixInfo.name, filename);
+                    completionCb(true, successMsg);
                 }
                 else
                 {
@@ -1266,7 +1312,7 @@ namespace jucyaudio
 
             //(const MixInfo &mixInfo, audio::MixExporter &exporter, const std::filesystem::path &outputPath)
             auto *task = new FinalizeAndExportTask{mixInfo, m_audioLibrary.getMixExporter(), targetExportPath};
-            TaskDialog::launch("Finalize & Export", task, 500, this);
+            TaskDialog::launch("Finalize & Export", task, std::nullopt, this);
             task->release(REFCOUNT_DEBUG_ARGS);
         }
 
@@ -1791,6 +1837,11 @@ namespace jucyaudio
             handleNodeSelection(nullptr, true);
         }
 
+        void MainComponent::stopMixPlayback()
+        {
+            m_mixEditorComponent.stopPlayback();
+        }
+        
         bool MainComponent::isTrackEditorInMixView() const
         {
             // We're in track editor view for a mix if:

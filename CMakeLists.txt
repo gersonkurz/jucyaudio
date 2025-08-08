@@ -297,6 +297,7 @@ target_sources(jucyaudio PRIVATE
     UI/DataViewComponent.cpp
     UI/DividerComponent.cpp
     UI/DynamicToolbarComponent.cpp
+    UI/SettingsDialog.cpp
     UI/TaskDialog.cpp
     UI/Main.cpp
     UI/MainComponent.cpp
@@ -314,6 +315,7 @@ target_sources(jucyaudio PRIVATE
     UI/DataViewComponent.h
     UI/DividerComponent.h
     UI/DynamicToolbarComponent.h
+    UI/SettingsDialog.h
     UI/TaskDialog.h
     UI/MainComponent.h
     UI/MainPlaybackAndStatusComponent.h

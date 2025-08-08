@@ -1,5 +1,6 @@
 #include <UI/DynamicToolbarComponent.h>
 #include <UI/MainComponent.h>
+#include <UI/SettingsDialog.h>
 #include <Utils/UiUtils.h>
 
 namespace jucyaudio
@@ -21,6 +22,14 @@ namespace jucyaudio
             m_filterTextEditor.addListener(this); // Listen for text changes, return key, focus loss
             m_filterTextEditor.setTextToShowWhenEmpty("Type to filter...", juce::Colours::grey);
             addAndMakeVisible(m_filterTextEditor);
+            
+            // Configure Settings Button
+            m_settingsButton.onClick = [this]()
+            {
+                // Show settings dialog
+                SettingsDialog::showSettingsDialog(&m_ownerMainComponent);
+            };
+            addAndMakeVisible(m_settingsButton);
 
             // Initial state: no node, so no actions
             updateActionButtons();
@@ -57,6 +66,12 @@ namespace jucyaudio
 
             bounds.removeFromLeft(buttonSpacing); // Space between filter and buttons
 
+            // Reserve space for Settings button on the right
+            const int settingsButtonWidth = 80;
+            auto settingsBounds = bounds.removeFromRight(settingsButtonWidth);
+            m_settingsButton.setBounds(settingsBounds);
+            bounds.removeFromRight(buttonSpacing); // Space between action buttons and settings button
+            
             // Layout action buttons
             int x = bounds.getX();
             for (auto *button : m_actionButtons)

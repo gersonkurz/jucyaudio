@@ -33,11 +33,16 @@ namespace jucyaudio
             void setPlaybackCallback(std::function<void(const juce::File &, double)> callback);
             void setSeekCallback(std::function<void(double)> callback);
             void setMixPlaybackCallback(std::function<void(double)> callback);
+            void setOnMixPlaybackStarting(std::function<void()> callback);
+            void setOnMixPlaybackStopped(std::function<void()> callback);
 
             auto &getTimeline()
             {
                 return m_timeline;
             }
+            
+            bool isMixPlaying() const { return m_isPlaying; }
+            void stopPlayback() { if (m_isPlaying) stopMixPlayback(); }
 
         private:
             void updateCueAttachInData(TrackId trackId, const database::MixTrack& updatedTrack);
@@ -59,6 +64,8 @@ namespace jucyaudio
             std::unique_ptr<audio::MixPlaybackEngine> m_mixPlaybackEngine;
             std::unique_ptr<juce::AudioDeviceManager> m_audioDeviceManager;
             bool m_isPlaying{false};
+            std::function<void()> m_onMixPlaybackStarting;
+            std::function<void()> m_onMixPlaybackStopped;
             
             // Timer for updating playback position
             class PlaybackTimer : public juce::Timer

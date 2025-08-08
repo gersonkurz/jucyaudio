@@ -2,7 +2,6 @@
 
 #include <Database/Includes/Constants.h>
 #include <Audio/Includes/IMixExporter.h>
-#include <Audio/AudioLibrary.h>
 #include <Audio/MixExporter.h>
 #include <filesystem> // For std::filesystem::path
 #include <memory>     // For std::unique_ptr
@@ -36,5 +35,5 @@ namespace jucyaudio
             MixExporter m_mixExporter;
         };
 
-    } // namespace database
+    } // namespace audio
 } // namespace jucyaudio

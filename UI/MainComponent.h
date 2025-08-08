@@ -65,6 +65,9 @@ namespace jucyaudio
             // @brief Helper method to check if we're in track editor view for a mix
             // @return true if the current main view is MixEditor, false otherwise
             bool isTrackEditorInMixView() const;
+            
+            // @brief Stop mix playback if currently playing
+            void stopMixPlayback();
 
         private:
             friend class MainPlaybackAndStatusComponent;

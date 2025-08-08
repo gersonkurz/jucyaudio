@@ -12,12 +12,19 @@ namespace jucyaudio
         {
             m_audioFormatManager.registerBasicFormats();
 
+            m_playbackToolbar.onPlayClicked = [this]
+            {
+                spdlog::info("[PlaybackController] Play button clicked - callback triggered");
+                play();  // Start single track playback
+            };
             m_playbackToolbar.onPauseClicked = [this]
             {
+                spdlog::info("[PlaybackController] Pause button clicked - callback triggered");
                 pause();
             };
             m_playbackToolbar.onStopClicked = [this]
             {
+                spdlog::info("[PlaybackController] Stop button clicked - callback triggered");
                 stop();
             };
             m_playbackToolbar.onPositionSeek = [this](double newPos)
@@ -39,11 +46,19 @@ namespace jucyaudio
         {
             PlaybackController::State controllerState = getCurrentState();
             bool isEffectivelyPlaying = (controllerState == PlaybackController::State::Playing || controllerState == PlaybackController::State::Starting);
+            
+            // Check if mix is playing
+            bool mixIsPlaying = isMixPlaying ? isMixPlaying() : false;
+            
+            spdlog::info("[PlaybackController] syncUIToPlaybackControllerState: state={}, isEffectivelyPlaying={}, mixIsPlaying={}, hasRowSelected={}, currentFile='{}'",
+                        static_cast<int>(controllerState), isEffectivelyPlaying, mixIsPlaying, hasRowSelected, getCurrentFilepath().toStdString());
 
-            m_playbackToolbar.setIsPlaying(isEffectivelyPlaying);
+            m_playbackToolbar.setIsPlaying(isEffectivelyPlaying || mixIsPlaying);
 
             bool canCurrentlyPlay = !getCurrentFilepath().isEmpty() || hasRowSelected;
-            bool canCurrentlyStopOrPause = !getCurrentFilepath().isEmpty() && controllerState != PlaybackController::State::Stopped;
+            bool canCurrentlyStopOrPause = (!getCurrentFilepath().isEmpty() && controllerState != PlaybackController::State::Stopped) || mixIsPlaying;
+            
+            spdlog::info("[PlaybackController] Button states: canPlay={}, canStopOrPause={}", canCurrentlyPlay, canCurrentlyStopOrPause);
 
             m_playbackToolbar.setPlayButtonEnabled(canCurrentlyPlay);
             m_playbackToolbar.setStopButtonEnabled(canCurrentlyStopOrPause);
@@ -385,6 +400,12 @@ namespace jucyaudio
 
         void PlaybackController::pause()
         {
+            // Stop mix playback if it's playing
+            if (onStopMixPlayback)
+            {
+                onStopMixPlayback();
+            }
+            
             if (m_audioTransportSource.isPlaying())
             {
                 changeState(State::Pausing);
@@ -395,6 +416,12 @@ namespace jucyaudio
 
         void PlaybackController::stop()
         {
+            // Stop mix playback if it's playing
+            if (onStopMixPlayback)
+            {
+                onStopMixPlayback();
+            }
+            
             if (m_currentState != State::Stopped)
             {
                 changeState(State::Stopping);
@@ -404,6 +431,24 @@ namespace jucyaudio
                 // unloadAudioSource();
                 // For now, stop means "ready to play from beginning if play() is called next"
                 changeState(State::Stopped);
+            }
+        }
+        
+        void PlaybackController::stopSingleTrackOnly()
+        {
+            spdlog::info("[PlaybackController] stopSingleTrackOnly called, current state: {}", static_cast<int>(m_currentState));
+            // Stop only single track playback without triggering mix stop callback
+            if (m_currentState != State::Stopped)
+            {
+                changeState(State::Stopping);
+                m_audioTransportSource.stop();
+                m_audioTransportSource.setPosition(0.0); // Rewind on stop
+                changeState(State::Stopped);
+                spdlog::info("[PlaybackController] Single track stopped");
+            }
+            else
+            {
+                spdlog::info("[PlaybackController] Already stopped, nothing to do");
             }
         }
 

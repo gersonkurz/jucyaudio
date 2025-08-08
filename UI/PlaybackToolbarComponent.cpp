@@ -67,13 +67,13 @@ namespace jucyaudio
             addAndMakeVisible(m_pauseButton);
             m_pauseButton.setImages(m_pauseDrawable.get());
             m_pauseButton.addListener(this);
-            m_playButton.setTooltip("Pause");
+            m_pauseButton.setTooltip("Pause");
             // m_pauseButton.setVisible(false); // Initially hide pause button, controlled by setIsPlaying
 
             addAndMakeVisible(m_stopButton);
             m_stopButton.setImages(m_stopDrawable.get());
             m_stopButton.addListener(this);
-            m_playButton.setTooltip("Stop");
+            m_stopButton.setTooltip("Stop");
 
             // Initial state: show Play, hide Pause
             setIsPlaying(false); // This will set button visibility
@@ -146,18 +146,24 @@ namespace jucyaudio
 
         void PlaybackToolbarComponent::buttonClicked(juce::Button *button)
         {
+            spdlog::info("[PlaybackToolbar] buttonClicked - button: {}, enabled: {}, visible: {}",
+                        button->getName().toStdString(), button->isEnabled(), button->isVisible());
+            
             if (button == &m_playButton)
             { // Play button was clicked
+                spdlog::info("[PlaybackToolbar] Play button clicked");
                 if (onPlayClicked)
                     onPlayClicked();
             }
             else if (button == &m_pauseButton)
             { // Pause button was clicked
+                spdlog::info("[PlaybackToolbar] Pause button clicked");
                 if (onPauseClicked)
                     onPauseClicked();
             }
             else if (button == &m_stopButton)
             {
+                spdlog::info("[PlaybackToolbar] Stop button clicked");
                 if (onStopClicked)
                     onStopClicked();
             }
@@ -165,24 +171,88 @@ namespace jucyaudio
 
         void PlaybackToolbarComponent::setPlayButtonEnabled(bool enabled)
         {
+            spdlog::info("[PlaybackToolbar] setPlayButtonEnabled({}) - thread: {}", 
+                        enabled, juce::MessageManager::getInstance()->isThisTheMessageThread() ? "UI" : "Other");
+            
+            // Add a debug breakpoint to catch who's disabling the button
+            if (!enabled && (m_playButton.isVisible() || m_pauseButton.isVisible()))
+            {
+                spdlog::warn("[PlaybackToolbar] WARNING: Disabling play/pause buttons while visible! This will make them gray.");
+            }
+            
+            // Ensure we're on the message thread
+            if (!juce::MessageManager::getInstance()->isThisTheMessageThread())
+            {
+                juce::MessageManager::callAsync([this, enabled]()
+                {
+                    setPlayButtonEnabled(enabled);
+                });
+                return;
+            }
+            
             m_playButton.setEnabled(enabled);
             m_pauseButton.setEnabled(enabled);
+            // Force UI update
+            m_playButton.repaint();
+            m_pauseButton.repaint();
         }
 
         void PlaybackToolbarComponent::setStopButtonEnabled(bool enabled)
         {
+            spdlog::info("[PlaybackToolbar] setStopButtonEnabled({}) - thread: {}", 
+                        enabled, juce::MessageManager::getInstance()->isThisTheMessageThread() ? "UI" : "Other");
+            
+            // Ensure we're on the message thread
+            if (!juce::MessageManager::getInstance()->isThisTheMessageThread())
+            {
+                juce::MessageManager::callAsync([this, enabled]()
+                {
+                    setStopButtonEnabled(enabled);
+                });
+                return;
+            }
+            
             m_stopButton.setEnabled(enabled);
+            // Force UI update
+            m_stopButton.repaint();
         }
 
         void PlaybackToolbarComponent::setIsPlaying(bool isPlaying)
         {
+            spdlog::info("[PlaybackToolbar] setIsPlaying({}) - current play visible: {}, pause visible: {}", 
+                        isPlaying, m_playButton.isVisible(), m_pauseButton.isVisible());
             // m_isPlaying = isPlaying; // No need for member m_isPlaying if visibility dictates state
 
             m_playButton.setVisible(!isPlaying);
             m_pauseButton.setVisible(isPlaying);
+            
+            // Debug: Check if both buttons somehow ended up visible
+            if (m_playButton.isVisible() && m_pauseButton.isVisible())
+            {
+                spdlog::error("[PlaybackToolbar] WARNING: Both play and pause buttons are visible!");
+            }
+            
+            // Force UI update for visibility changes
+            m_playButton.repaint();
+            m_pauseButton.repaint();
+            
+            // Bring the visible button to front
+            if (isPlaying)
+            {
+                m_pauseButton.toFront(false);
+            }
+            else
+            {
+                m_playButton.toFront(false);
+            }
+            
+            spdlog::info("[PlaybackToolbar] After setIsPlaying - play visible: {}, pause visible: {}, play enabled: {}, pause enabled: {}, stop enabled: {}",
+                        m_playButton.isVisible(), m_pauseButton.isVisible(), 
+                        m_playButton.isEnabled(), m_pauseButton.isEnabled(), m_stopButton.isEnabled());
 
-            setStopButtonEnabled(isPlaying); // Enable stop only when playing/paused (or just always if desired)
-            setPlayButtonEnabled(true);      // Re-enable play/pause buttons generally unless MainComponent disables them
+            // Don't override button enabled states here - let the caller control them
+            // setStopButtonEnabled(isPlaying); // REMOVED - this was overriding our button state logic
+            // setPlayButtonEnabled(true);      // REMOVED - this was overriding our button state logic
         }
         // Slider Listener Methods:
         void PlaybackToolbarComponent::sliderValueChanged(juce::Slider *slider)

@@ -9,6 +9,7 @@
 */
 
 #include <Audio/ExportMixToWav.h>
+#include <format>
 
 namespace jucyaudio
 {
@@ -51,6 +52,29 @@ namespace jucyaudio
 
             SampleContext context;
 
+            // Calculate total tracks for progress reporting
+            const int totalTracks = static_cast<int>(m_mixTracks.size());
+            int currentTrackNumber = 0;
+            
+            // Track which tracks are currently being processed
+            auto getCurrentTrackNumber = [&]() -> int {
+                if (m_trackPositions.empty()) return 0;
+                
+                // Find the primary track at current position
+                const auto currentTimeMs = (context.samplesWrittenTotal * 1000) / static_cast<juce::int64>(outputSampleRate());
+                for (size_t i = 0; i < m_mixTracks.size(); ++i) {
+                    const auto& track = m_mixTracks[i];
+                    auto it = m_trackPositions.find(track.trackId);
+                    if (it != m_trackPositions.end()) {
+                        if (currentTimeMs >= it->second.startTime.count() && 
+                            currentTimeMs <= it->second.endTime.count()) {
+                            return static_cast<int>(i + 1);
+                        }
+                    }
+                }
+                return totalTracks;
+            };
+
             //const auto overallStart = clock::now();
             // Iterate through the output mix timeline, block by block
             while (context.samplesWrittenTotal < m_totalOutputSamples)
@@ -81,7 +105,10 @@ namespace jucyaudio
                 if (m_progressCallback)
                 {
                     float progress = (float)context.samplesWrittenTotal / (float)m_totalOutputSamples;
-                    m_progressCallback(progress, "Exporting...");
+                    currentTrackNumber = getCurrentTrackNumber();
+                    const auto progressMessage = std::format("Exporting WAV... Track {}/{} ({:.0f}%)", 
+                        currentTrackNumber, totalTracks, progress * 100.0f);
+                    m_progressCallback(progress, progressMessage);
                 }
                 // const auto overallEnd = clock::now();
                 // const auto overallDuration = std::chrono::duration_cast<std::chrono::milliseconds>(overallEnd - overallStart).count();
@@ -91,9 +118,9 @@ namespace jucyaudio
 
             m_writer->flush();
             // Writer (and its owned stream) and readers are cleaned up by unique_ptr.
-            spdlog::info("Mix export finished for mix ID: {}", m_mixId);
+            spdlog::info("WAV export finished for mix ID: {}", m_mixId);
             if (m_progressCallback)
-                m_progressCallback(1.0f, "Export complete.");
+                m_progressCallback(1.0f, "WAV export complete!");
             return true;
         }
     } // namespace audio

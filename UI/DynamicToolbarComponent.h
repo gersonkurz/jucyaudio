@@ -63,6 +63,9 @@ namespace jucyaudio
 
             // Store action buttons. juce::OwnedArray manages their lifetime.
             juce::OwnedArray<juce::TextButton> m_actionButtons;
+            
+            // Settings button (always visible)
+            juce::TextButton m_settingsButton{"Settings"};
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DynamicToolbarComponent)
         };
