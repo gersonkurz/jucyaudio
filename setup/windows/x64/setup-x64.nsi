@@ -1,0 +1,81 @@
+SetCompressor /SOLID LZMA 
+
+!define CURRENT_VERSION "0.4.0"
+
+!include "MUI2.nsh"
+
+XPStyle on 
+
+
+Name "jucyaudio ${CURRENT_VERSION}" 
+OutFile "jucyaudio-${CURRENT_VERSION}-setup-x64.exe"
+InstallDir "$PROGRAMFILES64\NGBT\jucyaudio"
+InstallDirRegKey HKLM SOFTWARE\NGBT\jucyaudio "Install_Dir"
+
+!define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
+!define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
+
+!define MUI_WELCOMEPAGE_TITLE "jucyaudio ${CURRENT_VERSION}"
+!define MUI_ABORTWARNING
+
+!define MUI_FINISHPAGE_RUN "$INSTDIR\ptraced.exe"
+
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_LICENSE "license.txt"
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_COMPONENTS
+!insertmacro MUI_PAGE_INSTFILES
+
+!insertmacro MUI_PAGE_FINISH
+
+!insertmacro MUI_UNPAGE_WELCOME
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+!insertmacro MUI_UNPAGE_FINISH  
+
+!insertmacro MUI_LANGUAGE "English"
+
+BrandingText "Gerson Kurz"
+
+ShowInstDetails show
+
+RequestExecutionLevel admin
+
+  VIProductVersion "${CURRENT_VERSION}.0"
+  VIAddVersionKey /LANG=${LANG_ENGLISH} "ProductName" "jucyaudio"
+  VIAddVersionKey /LANG=${LANG_ENGLISH} "Comments" "GPL Licensed"
+  VIAddVersionKey /LANG=${LANG_ENGLISH} "CompanyName" "Gerson Kurz"
+  VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalTrademarks" ""
+  VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalCopyright" "GPL Licensed"
+  VIAddVersionKey /LANG=${LANG_ENGLISH} "FileDescription" "jucyaudio"
+  VIAddVersionKey /LANG=${LANG_ENGLISH} "FileVersion" ${CURRENT_VERSION}
+
+Section  "-Jucyaudio (required)"
+    SetRegView 64
+    SetOutPath $INSTDIR
+    File /R ..\..\..\out\build\x64-release\jucyaudio_artefacts\Release*
+    
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\jucyaudio" "DisplayName" "jucyaudio (Remove only)"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\jucyaudio" "UninstallString" '"$INSTDIR\uninstall.exe"'
+    WriteUninstaller "$INSTDIR\uninstall.exe"
+    DetailPrint "Done."
+SectionEnd
+
+Section "Create Desktop Shortcut"
+    CreateShortCut "$DESKTOP\jucyaudio.lnk" "$INSTDIR\jucyaudio.exe" ""
+SectionEnd
+
+Section "Create Start Menu Shortcuts"
+    CreateDirectory "$SMPROGRAMS\jucyaudio"
+    CreateShortCut "$SMPROGRAMS\jucyaudio\Uninstall.lnk" "$INSTDIR\Uninstall.exe" "" "$INSTDIR\Uninstall.exe" 0
+    CreateShortCut "$SMPROGRAMS\jucyaudio\jucyaudio.lnk" "$INSTDIR\jucyaudio.exe" "" "$INSTDIR\jucyaudio.exe" 0
+SectionEnd
+
+Section "Uninstall"
+    SetRegView 64
+	Delete $INSTDIR\uninstall.exe
+    Delete "$DESKTOP\jucyaudio.lnk"
+    RMDir /r "$SMPROGRAMS\jucyaudio"
+	ReadRegStr $INSTDIR HKLM SOFTWARE\NGBT\jucyaudio "Install_Dir"
+    RMDir /r "$INSTDIR\"
+SectionEnd
