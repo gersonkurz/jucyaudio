@@ -33,7 +33,10 @@ namespace jucyaudio
             const audio::IMixExporter &m_mixExporter;
         };
 
-        class CreateMixDialogComponent : public juce::Component, public juce::Button::Listener, public juce::TextEditor::Listener
+        class CreateMixDialogComponent : public juce::Component, 
+                                        public juce::Button::Listener, 
+                                        public juce::TextEditor::Listener,
+                                        public juce::ComboBox::Listener
         {
         public:
             using OnMixCreatedAndExportedCallback = std::function<void(bool /*success*/, const database::MixInfo & /*newMixInfo */)>;
@@ -53,6 +56,9 @@ namespace jucyaudio
             // TextEditor::Listener
             void textEditorReturnKeyPressed(juce::TextEditor &editor) override;
             void textEditorFocusLost([[maybe_unused]] juce::TextEditor &editor) override {}; // Required by TextEditor::Listener
+            
+            // ComboBox::Listener
+            void comboBoxChanged(juce::ComboBox* comboBox) override;
 
             bool keyPressed(const juce::KeyPress &key) override;
 
@@ -77,11 +83,16 @@ namespace jucyaudio
             // UI Elements
             juce::Label m_titleLabel;
             juce::Label m_countLabel;
+            juce::Label m_mixSelectLabel;
+            juce::ComboBox m_mixSelectCombo;
             juce::Label m_nameLabel;
             juce::TextEditor m_nameEditor;
             juce::TextButton m_okButton; // "Create & Export"
             juce::TextButton m_cancelButton;
             juce::LookAndFeel_V4 m_lookAndFeel; // Custom LookAndFeel instance
+            
+            // Store available mixes
+            std::vector<database::MixInfo> m_availableMixes;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CreateMixDialogComponent)
         };
