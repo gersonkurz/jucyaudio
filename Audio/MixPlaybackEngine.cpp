@@ -604,7 +604,8 @@ namespace jucyaudio
                     audioSource->getNextAudioBlock(trackInfo);
                 }
 
-                // Apply envelope and mix into output buffer
+                // Apply envelope and mix into output buffer with master gain
+                const float masterGain = m_masterGain.load();
                 for (int sample = 0; sample < samplesToRead; ++sample)
                 {
                     // Calculate time within the track
@@ -612,7 +613,7 @@ namespace jucyaudio
                     Duration_t timeInTrack{static_cast<int64_t>((sampleInTrack * 1000.0) / m_sampleRate)};
 
                     // Get envelope gain
-                    float gain = getEnvelopeGainForTrack(mixTrack, timeInTrack);
+                    float gain = getEnvelopeGainForTrack(mixTrack, timeInTrack) * masterGain;
 
                     // Mix into output buffer
                     int outputSample = outputOffset + sample;

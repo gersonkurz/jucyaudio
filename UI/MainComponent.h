@@ -14,7 +14,6 @@
 #include <UI/NavigationPanelComponent.h>
 #include <UI/MixEditorComponent.h>
 #include <UI/PlaybackController.h>
-#include <UI/PlaybackToolbarComponent.h>
 #include <UI/EnhancedPlayerComponent.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/ThemeManager.h>
@@ -138,7 +137,6 @@ namespace jucyaudio
             juce::AudioFormatManager m_audioFormatManager;
             juce::AudioThumbnailCache m_audioThumbnailCache{10}; // Cache for 10 thumbnails
 
-            PlaybackToolbarComponent m_hiddenPlaybackToolbar; // Hidden, just for PlaybackController
             PlaybackController m_playbackController;
             EnhancedPlayerComponent m_enhancedPlayer; // Direct member object
             MainPlaybackAndStatusComponent m_statusPanel;

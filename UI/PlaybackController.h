@@ -18,8 +18,6 @@ namespace jucyaudio
     
     namespace ui
     {
-        class PlaybackToolbarComponent;
-
         class PlaybackController final : public juce::ChangeBroadcaster // So MainComponent can listen to general state changes if needed
         {
         public:
@@ -39,7 +37,7 @@ namespace jucyaudio
                 MixPreview
             };
 
-            PlaybackController(PlaybackToolbarComponent &toolbar);
+            PlaybackController();
             ~PlaybackController();
 
             // --- AudioDeviceIOCallback methods to be called by MainComponent ---
@@ -81,8 +79,11 @@ namespace jucyaudio
                 return m_currentFile.getFullPathName();
             }
 
-            void onTimerEvent(); // Timer callback to handle state changes and updates
-            void syncUIToPlaybackControllerState(bool hasRowSelected);
+            // UI State getters for any UI component to query
+            bool canPlay() const;
+            bool canStop() const;
+            bool canPause() const;
+            bool isEffectivelyPlaying() const;
             
             // Callback to stop mix playback when stop/pause is pressed
             std::function<void()> onStopMixPlayback;
@@ -115,7 +116,6 @@ namespace jucyaudio
             bool m_isDevicePrepared{false};
             juce::File m_currentFile; // Keep track of the currently loaded file
             State m_currentState{State::Stopped};
-            PlaybackToolbarComponent &m_playbackToolbar;
 
             // To prevent re-entrancy or rapid state changes from UI/callbacks
             std::atomic<bool> m_isCurrentlyChangingState{false};

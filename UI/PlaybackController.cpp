@@ -1,40 +1,14 @@
 #include <Audio/MixPlaybackEngine.h>
 #include <UI/PlaybackController.h>
-#include <UI/PlaybackToolbarComponent.h>
 
 namespace jucyaudio
 {
     namespace ui
     {
-        PlaybackController::PlaybackController(PlaybackToolbarComponent &toolbar)
-            : m_playbackToolbar{toolbar},
-              m_mixPlaybackEngine{std::make_unique<audio::MixPlaybackEngine>()}
+        PlaybackController::PlaybackController()
+            : m_mixPlaybackEngine{std::make_unique<audio::MixPlaybackEngine>()}
         {
             m_audioFormatManager.registerBasicFormats();
-
-            m_playbackToolbar.onPlayClicked = [this]
-            {
-                spdlog::info("[PlaybackController] Play button clicked - callback triggered");
-                play();  // Start single track playback
-            };
-            m_playbackToolbar.onPauseClicked = [this]
-            {
-                spdlog::info("[PlaybackController] Pause button clicked - callback triggered");
-                pause();
-            };
-            m_playbackToolbar.onStopClicked = [this]
-            {
-                spdlog::info("[PlaybackController] Stop button clicked - callback triggered");
-                stop();
-            };
-            m_playbackToolbar.onPositionSeek = [this](double newPos)
-            {
-                seek(newPos);
-            };
-            m_playbackToolbar.onVolumeChanged = [this](float newGain)
-            {
-                setGain(newGain);
-            };
         }
 
         PlaybackController::~PlaybackController()
@@ -42,102 +16,31 @@ namespace jucyaudio
             releaseResources(); // Ensure everything is cleaned up
         }
 
-        void PlaybackController::syncUIToPlaybackControllerState(bool hasRowSelected)
+        bool PlaybackController::isEffectivelyPlaying() const
         {
-            PlaybackController::State controllerState = getCurrentState();
-            bool isEffectivelyPlaying = (controllerState == PlaybackController::State::Playing || controllerState == PlaybackController::State::Starting);
-            
+            return (m_currentState == State::Playing || m_currentState == State::Starting);
+        }
+
+        bool PlaybackController::canPlay() const
+        {
+            // Can play if we have a file and not currently playing, or if nothing is loaded but a track can be selected
+            return !getCurrentFilepath().isEmpty() && m_currentState != State::Playing;
+        }
+
+        bool PlaybackController::canStop() const
+        {
             // Check if mix is playing
             bool mixIsPlaying = isMixPlaying ? isMixPlaying() : false;
             
-            spdlog::info("[PlaybackController] syncUIToPlaybackControllerState: state={}, isEffectivelyPlaying={}, mixIsPlaying={}, hasRowSelected={}, currentFile='{}'",
-                        static_cast<int>(controllerState), isEffectivelyPlaying, mixIsPlaying, hasRowSelected, getCurrentFilepath().toStdString());
-
-            m_playbackToolbar.setIsPlaying(isEffectivelyPlaying || mixIsPlaying);
-
-            bool canCurrentlyPlay = !getCurrentFilepath().isEmpty() || hasRowSelected;
-            bool canCurrentlyStopOrPause = (!getCurrentFilepath().isEmpty() && controllerState != PlaybackController::State::Stopped) || mixIsPlaying;
-            
-            spdlog::info("[PlaybackController] Button states: canPlay={}, canStopOrPause={}", canCurrentlyPlay, canCurrentlyStopOrPause);
-
-            m_playbackToolbar.setPlayButtonEnabled(canCurrentlyPlay);
-            m_playbackToolbar.setStopButtonEnabled(canCurrentlyStopOrPause);
-
-            if (getCurrentFilepath().isEmpty())
-            {
-                m_playbackToolbar.setPositionSliderRange(1.0);
-                m_playbackToolbar.updateTimeDisplay(0.0, 0.0);
-                m_playbackToolbar.setPositionSliderValue(0.0);
-            }
-            else
-            {
-                double totalLen = getLengthInSeconds();
-                m_playbackToolbar.setPositionSliderRange(totalLen > 0.0 ? totalLen : 1.0); // Avoid zero range
-                m_playbackToolbar.updateTimeDisplay(getCurrentPositionSeconds(), totalLen);
-                m_playbackToolbar.setPositionSliderValue(getCurrentPositionSeconds());
-            }
-            m_playbackToolbar.setVolumeSliderValue(getTransportSource().getGain());
-            if (getTransportSource().hasStreamFinished() && getCurrentState() == PlaybackController::State::Playing)
-            {
-                spdlog::info("Track finished playing (MainComponent ChangeListener).");
-                stop(); // This will trigger another state change -> sync
-            }
+            // Can stop if we have a file playing or mix is playing
+            return (!getCurrentFilepath().isEmpty() && m_currentState != State::Stopped) || mixIsPlaying;
         }
 
-        void PlaybackController::onTimerEvent()
+        bool PlaybackController::canPause() const
         {
-            const auto controllerState = getCurrentState();
-
-            if (controllerState == State::Playing || controllerState == State::Paused)
-            {
-                // Check if a file is actually loaded in the controller,
-                // not just relying on its state, as state might be Paused but file was just unloaded.
-                // getCurrentFilepath().isEmpty() is a good check.
-                if (!getCurrentFilepath().isEmpty())
-                {
-                    if (!m_playbackToolbar.isPositionSliderDragging()) // <<<< CHECK THE FLAG
-                    {
-                        double currentPos = getCurrentPositionSeconds();
-                        double totalLength = getLengthInSeconds();
-                        m_playbackToolbar.updateTimeDisplay(currentPos, totalLength);
-                        m_playbackToolbar.setPositionSliderValue(currentPos);
-                    }
-                    else
-                    {
-                        double currentPos = getCurrentPositionSeconds();
-                        double totalLen = getLengthInSeconds();
-
-                        m_playbackToolbar.updateTimeDisplay(currentPos, totalLen);
-                        // setPositionSliderValue in PlaybackToolbarComponent already checks if user is dragging
-                        m_playbackToolbar.setPositionSliderValue(currentPos);
-                    }
-                }
-                else
-                {
-                    // State might be Paused/Playing conceptually, but no file, so reset UI.
-                    // This case should ideally be covered by syncUIToPlaybackControllerState when a file is unloaded.
-                    m_playbackToolbar.updateTimeDisplay(0.0, 0.0);
-                    m_playbackToolbar.setPositionSliderValue(0.0);
-                }
-            }
-            else if (controllerState == State::Stopped)
-            {
-                // If stopped, ensure UI reflects this (especially if a file *was* loaded)
-                if (!m_playbackToolbar.isMouseButtonDownAnywhere() && /* safety: don't fight user input */
-                    !getCurrentFilepath().isEmpty())
-                {
-                    // If a file was loaded but now we are stopped, show 0 / total
-                    m_playbackToolbar.updateTimeDisplay(0.0, getLengthInSeconds());
-                    m_playbackToolbar.setPositionSliderValue(0.0);
-                }
-                else if (getCurrentFilepath().isEmpty())
-                {
-                    // No file loaded, UI should show 0 / 0
-                    m_playbackToolbar.updateTimeDisplay(0.0, 0.0);
-                    m_playbackToolbar.setPositionSliderValue(0.0);
-                }
-                // If user manually set position slider while stopped, this won't override it, which is good.
-            }
+            // Can pause if currently playing (either single track or mix)
+            bool mixIsPlaying = isMixPlaying ? isMixPlaying() : false;
+            return isEffectivelyPlaying() || mixIsPlaying;
         }
 
         void PlaybackController::changeState(State newState)
@@ -353,6 +256,9 @@ namespace jucyaudio
             {
                 m_mixPlaybackEngine->prepareToPlay(m_deviceBlockSize, m_deviceSampleRate);
             }
+            
+            // Copy current volume setting to mix engine
+            m_mixPlaybackEngine->setGain(m_audioTransportSource.getGain());
 
             // Set initial position
             if (startPositionSeconds > 0.0)
@@ -479,6 +385,11 @@ namespace jucyaudio
         void PlaybackController::setGain(float newGain)
         {
             m_audioTransportSource.setGain(newGain);
+            // Also set gain for mix playback
+            if (m_mixPlaybackEngine)
+            {
+                m_mixPlaybackEngine->setGain(newGain);
+            }
         }
 
         bool PlaybackController::isPlaying() const

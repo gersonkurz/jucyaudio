@@ -71,7 +71,7 @@ namespace jucyaudio
               m_currentMainView{MainViewType::DataView},
               m_currentMainViewComponent{&m_dataViewComponent},
               m_verticalDivider{*this, true},
-              m_playbackController{m_hiddenPlaybackToolbar},
+              m_playbackController{},
               m_enhancedPlayer{m_playbackController, m_audioFormatManager, m_audioThumbnailCache},
               m_statusPanel{*this},
               m_navigationTree{m_navigationPanel, m_dataViewComponent}
@@ -104,7 +104,7 @@ namespace jucyaudio
                     m_playbackController.stopSingleTrackOnly();
                     spdlog::info("[MainComponent] Stopped single track, now updating UI state");
                     // Update UI state to reflect mix is now playing
-                    syncPlaybackUIToControllerState();
+                    // UI will update via timer in EnhancedPlayerComponent
                     spdlog::info("[MainComponent] onMixPlaybackStarting callback finished");
                 });
             
@@ -113,7 +113,7 @@ namespace jucyaudio
                 {
                     spdlog::info("[MainComponent] onMixPlaybackStopped callback called");
                     // Update UI state to reflect mix has stopped
-                    syncPlaybackUIToControllerState();
+                    // UI will update via timer in EnhancedPlayerComponent
                 });
 
             // --- Add and make visible all child components ---
@@ -191,7 +191,7 @@ namespace jucyaudio
             // old main component for transport
 
             // Initialize playback UI
-            syncPlaybackUIToControllerState();
+            // UI will update via timer in EnhancedPlayerComponent
             // Initialize volume slider in toolbar from controller's current
             // gain (Assuming PlaybackController has a getGain() or
             // PlaybackToolbarComponent fetches it on init) For now, let
@@ -493,7 +493,7 @@ namespace jucyaudio
         // --- juce::Timer Override ---
         void MainComponent::timerCallback()
         {
-            m_playbackController.onTimerEvent(); // This updates toolbar's time, slider pos etc.
+            // EnhancedPlayerComponent has its own timer for UI updates
             // Any other periodic UI updates can go here
         }
 
@@ -505,7 +505,7 @@ namespace jucyaudio
                 // This typically means the track ended, or playback state
                 // changed significantly from the transport source itself (e.g.
                 // stopped due to error).
-                syncPlaybackUIToControllerState();
+                // UI will update via timer in EnhancedPlayerComponent
             }
             // else if (source == &m_playbackController) { /* Handle other
             // general PlaybackController changes */ }
@@ -514,21 +514,7 @@ namespace jucyaudio
         // --- UI State Synchronization ---
         void MainComponent::syncPlaybackUIToControllerState()
         {
-            // The PlaybackController itself updates its toolbar.
-            // This method in MainComponent is mostly a trigger or if
-            // MainComponent needs to update other things based on playback
-            // state. The old MainComponent called:
-            // m_playbackController.syncUIToPlaybackControllerState(m_trackTableView.getSelectedRow()
-            // != -1); We need an equivalent for "is a playable item selected in
-            // data view?" For now, let's pass true/false based on
-            // m_currentNode or if DataView has selection. This
-            // boolean was used by PlaybackController to enable/disable play
-            // button if nothing is cued.
-            bool canPlaySelection = (m_currentNode != nullptr); // Simplistic: if a node is selected.
-                                                                // More accurately: if data view has a selected row
-                                                                // and that row represents a playable track.
-            spdlog::info("[MainComponent] syncPlaybackUIToControllerState called, canPlaySelection: {}", canPlaySelection);
-            m_playbackController.syncUIToPlaybackControllerState(canPlaySelection);
+            // No longer needed - EnhancedPlayerComponent handles UI updates via its timer
         }
 
         // --- Handler Method Stubs / Basic Logic ---
@@ -627,7 +613,7 @@ namespace jucyaudio
                 }
                 m_statusPanel.setStatusMessage("", false);
             }
-            syncPlaybackUIToControllerState(); // Update play button enable
+            // UI will update via timer in EnhancedPlayerComponent // Update play button enable
                                                // state
             const auto end{std::chrono::high_resolution_clock::now()};
             const auto duration{std::chrono::duration_cast<std::chrono::milliseconds>(end - start)};
@@ -708,7 +694,7 @@ namespace jucyaudio
                     m_enhancedPlayer.loadFile(audioFile);
                 }
             }
-            syncPlaybackUIToControllerState();
+            // UI will update via timer in EnhancedPlayerComponent
         }
 
         void MainComponent::handleFilterChange(const juce::String &newFilterText)
@@ -995,7 +981,7 @@ namespace jucyaudio
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::WarningIcon, "Playback Error", "Cannot find audio file for: " + std::to_string(track->trackId));
             }
-            syncPlaybackUIToControllerState();
+            // UI will update via timer in EnhancedPlayerComponent
         }
 
         void MainComponent::onRemoveRowsFromCurrentNode(DeleteContext *const dc, int result)

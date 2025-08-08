@@ -83,6 +83,10 @@ namespace jucyaudio
             // Pause/resume playback
             void setPaused(bool shouldPause);  // Moved to implementation for logging
             
+            // Volume control
+            void setGain(float gain) { m_masterGain = gain; }
+            float getGain() const { return m_masterGain; }
+            
             // Get the current mix loader
             MixProjectLoader* getMixLoader() const
             {
@@ -126,6 +130,7 @@ namespace jucyaudio
             // Playback parameters
             double m_sampleRate{44100.0};
             int m_blockSize{512};
+            std::atomic<float> m_masterGain{1.0f};
 
             // Thread safety
             mutable std::mutex m_mutex;

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(jucyaudio VERSION 0.3.0)
+project(jucyaudio VERSION 0.4.0)
 
 # C++20 requirement
 set(CMAKE_CXX_STANDARD 20)
@@ -143,7 +143,7 @@ endif()
 juce_add_gui_app(jucyaudio
     PRODUCT_NAME "jucyaudio"
     BUNDLE_ID "com.p-nand-q.jucyaudio"
-    VERSION 0.3.0
+    VERSION 0.4.0
 )
 
 # Platform-specific deployment target
@@ -304,9 +304,8 @@ target_sources(jucyaudio PRIVATE
     UI/MainPlaybackAndStatusComponent.cpp
     UI/NavigationPanelComponent.cpp
     UI/PlaybackController.cpp
-    UI/PlaybackToolbarComponent.cpp
     UI/EnhancedPlayerComponent.cpp
-    "UI/LibraryRootsComponent.cpp"
+    UI/LibraryRootsComponent.cpp
     UI/ColumnConfiguratorDialog.h
     UI/DynamicColumnManager.h
     UI/Settings.h
@@ -321,9 +320,8 @@ target_sources(jucyaudio PRIVATE
     UI/MainPlaybackAndStatusComponent.h
     UI/NavigationPanelComponent.h
     UI/PlaybackController.h
-    UI/PlaybackToolbarComponent.h
     UI/EnhancedPlayerComponent.h
-    "UI/LibraryRootsComponent.h"
+    UI/LibraryRootsComponent.h
     UI/ThemeManager.cpp
     UI/ThemeManager.h
     UI/MenuManager.cpp
@@ -336,11 +334,22 @@ target_sources(jucyaudio PRIVATE
     UI/MixTrackComponent.h
     UI/TimelineComponent.cpp
     UI/TimelineComponent.h
-    "UI/EditWorkingSetMetaDataDialog.cpp"
-    "UI/EditWorkingSetMetaDataDialog.h"
+    UI/EditWorkingSetMetaDataDialog.cpp
+    UI/EditWorkingSetMetaDataDialog.h
     UI/MarkerEditDialog.cpp
     UI/MarkerEditDialog.h
-  "UI/NavigationTree.cpp" "UI/NavigationTree.h"  "UI/EditMixMetaDataDialog.cpp" "UI/EditMixMetaDataDialog.h" "Database/Includes/WorkingSetInfo.h" "Database/Includes/LibraryRootInfo.h" "Database/Includes/ILibraryRootManager.h" "Database/Sqlite/SqliteLibraryRootManager.h" "Database/Sqlite/SqliteLibraryRootManager.cpp" "UI/SplashScreenComponent.h" "UI/SplashScreenComponent.cpp")
+    UI/NavigationTree.cpp
+    UI/NavigationTree.h
+    UI/EditMixMetaDataDialog.cpp
+    UI/EditMixMetaDataDialog.h
+    Database/Includes/WorkingSetInfo.h
+    Database/Includes/LibraryRootInfo.h
+    Database/Includes/ILibraryRootManager.h
+    Database/Sqlite/SqliteLibraryRootManager.h
+    Database/Sqlite/SqliteLibraryRootManager.cpp
+    UI/SplashScreenComponent.h
+    UI/SplashScreenComponent.cpp
+)
 
 # Add Windows-specific manifest
 if(WIN32)
