@@ -1264,6 +1264,43 @@ namespace jucyaudio
                             return !shouldCancel.load();
                         }))
                 {
+                    // Step 3: Post-export cleanup if configured
+                    if (config::theSettings.mixEditingSettings.clearWorkingSetAfterExport.get())
+                    {
+                        progressCb(-1, "Cleaning up working set...");
+                        
+                        // Get the mix info again to check source_ws_id
+                        if (m_mixInfo.source_ws_id > 0)
+                        {
+                            // Get all tracks in this mix
+                            const auto mixTracks = theTrackLibrary.getMixManager().getMixTracks(m_mixInfo.mixId);
+                            
+                            // Remove each track from the working set
+                            for (const auto& mixTrack : mixTracks)
+                            {
+                                if (!theTrackLibrary.getWorkingSetManager().removeTrackFromWorkingSet(
+                                    m_mixInfo.source_ws_id, mixTrack.trackId))
+                                {
+                                    spdlog::warn("Failed to remove track {} from working set {} after export", 
+                                                mixTrack.trackId, m_mixInfo.source_ws_id);
+                                }
+                            }
+                            
+                            spdlog::info("Removed {} tracks from working set {} after export", 
+                                        mixTracks.size(), m_mixInfo.source_ws_id);
+                            
+                            // Set the mix's working_set_id to NULL
+                            if (!theTrackLibrary.getMixManager().clearMixWorkingSetId(m_mixInfo.mixId))
+                            {
+                                spdlog::warn("Failed to clear working_set_id for mix {} after export", m_mixInfo.mixId);
+                            }
+                            else
+                            {
+                                spdlog::info("Cleared working_set_id for mix {} after export", m_mixInfo.mixId);
+                            }
+                        }
+                    }
+                    
                     const auto filename = m_outputPath.filename().string();
                     const auto successMsg = std::format("Mix '{}' successfully exported to:\n{}", 
                         m_mixInfo.name, filename);

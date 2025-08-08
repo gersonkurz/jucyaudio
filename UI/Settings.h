@@ -87,6 +87,7 @@ namespace jucyaudio
                 
                 TypedValue<bool> removeFromWorkingSetOnDelete{this, "RemoveFromWorkingSetOnDelete", true};
                 TypedValue<bool> askBeforeRemovingFromWorkingSet{this, "AskBeforeRemovingFromWorkingSet", true};
+                TypedValue<bool> clearWorkingSetAfterExport{this, "ClearWorkingSetAfterExport", true};
                 
             } mixEditingSettings{this};
         };

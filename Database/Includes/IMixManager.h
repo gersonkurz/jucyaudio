@@ -92,6 +92,11 @@ namespace jucyaudio
             // @param mixId The ID of the mix to finalize.
             // @return True if the operation was successful, false otherwise.
             virtual bool finalizeMix(MixId mixId) const = 0;
+            
+            // @brief Clear the working_set_id for a mix (set it to NULL).
+            // @param mixId The ID of the mix to update.
+            // @return True if the operation was successful, false otherwise.
+            virtual bool clearMixWorkingSetId(MixId mixId) const = 0;
         };
 
     } // namespace database

@@ -235,6 +235,21 @@ namespace jucyaudio
             }
             return result;
         }
+        
+        bool SqliteMixManagerWithUndo::clearMixWorkingSetId(MixId mixId) const
+        {
+            const auto operationId = m_undoManager.beginOperation();
+            
+            // Record the change to working_set_id
+            auto oldMixInfo = m_wrappedManager.getMix(mixId);
+            bool result = m_wrappedManager.clearMixWorkingSetId(mixId);
+            if (result)
+            {
+                auto newMixInfo = m_wrappedManager.getMix(mixId);
+                m_undoManager.recordMixInfoChange(mixId, &oldMixInfo, &newMixInfo, operationId);
+            }
+            return result;
+        }
 
     } // namespace database
 } // namespace jucyaudio

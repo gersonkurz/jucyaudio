@@ -426,6 +426,21 @@ FROM Mixes m
             }
             return false;
         }
+        
+        bool SqliteMixManager::clearMixWorkingSetId(MixId mixId) const
+        {
+            SqliteStatement stmt{m_db, "UPDATE Mixes SET source_ws_id = NULL WHERE mix_id = ?;"};
+            stmt.addParam(mixId);
+            
+            if (!stmt.execute())
+            {
+                spdlog::error("Failed to clear working_set_id for mix {}", mixId);
+                return false;
+            }
+            
+            spdlog::info("Successfully cleared working_set_id for mix {}", mixId);
+            return true;
+        }
 
         bool SqliteMixManager::createAndSaveAutoMix(const std::vector<TrackInfo> &trackInfos,
             /*in/out*/ MixInfo &mixInfo,
