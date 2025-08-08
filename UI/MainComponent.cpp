@@ -11,6 +11,7 @@
 #include <UI/ColumnConfiguratorDialog.h>
 #include <UI/CreateMixDialogComponent.h>
 #include <UI/ExportMixDialog.h>
+#include <UI/AboutDialog.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/EditMixMetaDataDialog.h>
 #include <UI/EditWorkingSetMetaDataDialog.h>
@@ -1582,11 +1583,15 @@ namespace jucyaudio
 
         bool MainComponent::onShowAboutDialog()
         {
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
-                "About jucyaudio",
-                "jucyaudio - MP3 Player and Mixer\nVersion 0.1.0 "
-                "(Dev)\n\n(c) 2025 Your Name",
-                "OK");
+            auto* dialog = new AboutDialog();
+            
+            juce::DialogWindow::LaunchOptions launchOptions;
+            launchOptions.content.setOwned(dialog);
+            launchOptions.dialogTitle = "About JucyAudio";
+            launchOptions.componentToCentreAround = this;
+            launchOptions.escapeKeyTriggersCloseButton = true;
+            launchOptions.resizable = false;
+            launchOptions.launchAsync();
 
             return true;
         }

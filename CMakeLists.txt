@@ -326,6 +326,8 @@ target_sources(jucyaudio PRIVATE
     UI/ThemeManager.h
     UI/MenuManager.cpp
     UI/MenuManager.h
+    UI/AboutDialog.cpp
+    UI/AboutDialog.h
     UI/MenuPresenter.cpp
     UI/MenuPresenter.h
     UI/MixEditorComponent.cpp
@@ -358,7 +360,7 @@ if(WIN32)
     target_sources(jucyaudio PRIVATE app.manifest)
 endif()
 
-# Add binary resources (SVG files)
+# Add binary resources (SVG files and images)
 juce_add_binary_data(jucyaudio_assets
     SOURCES
         Assets/pause.svg
@@ -375,6 +377,7 @@ juce_add_binary_data(jucyaudio_assets
         Assets/icons/skip_previous.svg
         Assets/icons/skip_next.svg
         Assets/orange-jucyaudio-logo.png
+        Assets/orange-jucyaudio-small.png
 )
 
 # Platform-specific library linking
