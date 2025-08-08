@@ -134,7 +134,7 @@ namespace jucyaudio
             
             // Audio components for waveform display
             juce::AudioFormatManager m_audioFormatManager;
-            juce::AudioThumbnailCache m_audioThumbnailCache{10}; // Cache for 10 thumbnails
+            juce::AudioThumbnailCache m_audioThumbnailCache{200}; // Cache for 200 thumbnails - enough for large mixes
 
             PlaybackController m_playbackController;
             EnhancedPlayerComponent m_enhancedPlayer; // Direct member object

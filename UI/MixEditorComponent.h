@@ -54,7 +54,7 @@ namespace jucyaudio
             void updatePlaybackPosition();
 
             juce::AudioFormatManager m_formatManager;
-            juce::AudioThumbnailCache m_thumbnailCache{5}; // 5 items in the cache
+            juce::AudioThumbnailCache m_thumbnailCache{200}; // 200 items in the cache - enough for large mixes
 
             TimelineComponent m_timeline;
             juce::Viewport m_viewport;

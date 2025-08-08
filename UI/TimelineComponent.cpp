@@ -93,16 +93,10 @@ namespace jucyaudio
             const auto currentMixId{m_mixLoader->getMixId()};
             spdlog::info("Attempting to delete Track ID: {} from Mix ID: {}", trackIdToRemove, currentMixId);
 
-            // 3. Perform the database deletion
-            if (!theTrackLibrary.getMixManager().removeTrackFromMix(currentMixId, trackIdToRemove))
-            {
-                spdlog::error("Failed to remove track from database.");
-                return false;
-            }
-
-            spdlog::info("Successfully removed track from database.");
+            // 3. Check if we need to show a confirmation dialog
+            bool shouldRemoveFromWorkingSet = false;
+            bool userCancelled = false;
             
-            // 4. Check if we should also remove from working set
             if (config::theSettings.mixEditingSettings.removeFromWorkingSetOnDelete.get())
             {
                 // IMPORTANT: Only remove from working set if this track appears only once in the mix
@@ -129,28 +123,31 @@ namespace jucyaudio
                         const WorkingSetId wsId = mixInfo.source_ws_id;
                         
                         // Check if we should ask for confirmation
-                        bool shouldRemove = true;
                         if (config::theSettings.mixEditingSettings.askBeforeRemovingFromWorkingSet.get())
                         {
-                            const auto result = juce::AlertWindow::showOkCancelBox(
+                            const auto result = juce::AlertWindow::showYesNoCancelBox(
                                 juce::AlertWindow::QuestionIcon,
-                                "Remove from Working Set",
-                                "Also remove this track from the source working set?",
-                                "Remove",
-                                "Keep in Working Set");
-                            shouldRemove = result;
+                                "Remove Track",
+                                "Remove this track from the mix?\n\nAlso remove from the source working set?",
+                                "Remove from Both",
+                                "Remove from Mix Only",
+                                "Cancel");
+                            
+                            if (result == 0) // Cancel
+                            {
+                                userCancelled = true;
+                                spdlog::info("User cancelled track removal");
+                            }
+                            else if (result == 1) // Yes - Remove from both
+                            {
+                                shouldRemoveFromWorkingSet = true;
+                            }
+                            // result == 2 means No - Remove from mix only (shouldRemoveFromWorkingSet stays false)
                         }
-                        
-                        if (shouldRemove)
+                        else
                         {
-                            if (theTrackLibrary.getWorkingSetManager().removeTrackFromWorkingSet(wsId, trackIdToRemove))
-                            {
-                                spdlog::info("Also removed track {} from working set {}", trackIdToRemove, wsId);
-                            }
-                            else
-                            {
-                                spdlog::warn("Failed to remove track {} from working set {}", trackIdToRemove, wsId);
-                            }
+                            // No confirmation dialog, use the setting
+                            shouldRemoveFromWorkingSet = true;
                         }
                     }
                     else
@@ -163,8 +160,39 @@ namespace jucyaudio
                     spdlog::info("Track {} appears multiple times in mix, not removing from working set", trackIdToRemove);
                 }
             }
+            
+            // 4. If user cancelled, return early
+            if (userCancelled)
+            {
+                return false;
+            }
+            
+            // 5. Perform the database deletion from the mix
+            if (!theTrackLibrary.getMixManager().removeTrackFromMix(currentMixId, trackIdToRemove))
+            {
+                spdlog::error("Failed to remove track from database.");
+                return false;
+            }
+            
+            spdlog::info("Successfully removed track from mix.");
+            
+            // 6. If we should also remove from working set, do it now
+            if (shouldRemoveFromWorkingSet)
+            {
+                const auto& mixInfo = m_mixLoader->getMixInfo();
+                const WorkingSetId wsId = mixInfo.source_ws_id;
+                
+                if (theTrackLibrary.getWorkingSetManager().removeTrackFromWorkingSet(wsId, trackIdToRemove))
+                {
+                    spdlog::info("Also removed track {} from working set {}", trackIdToRemove, wsId);
+                }
+                else
+                {
+                    spdlog::warn("Failed to remove track {} from working set {}", trackIdToRemove, wsId);
+                }
+            }
 
-            // 5. CRITICAL: Refresh the in-memory loader from the database.
+            // 7. CRITICAL: Refresh the in-memory loader from the database.
             // This synchronizes our data source with the change we just made.
             if (!m_mixLoader->reloadFromDatabase())
             {
@@ -174,7 +202,7 @@ namespace jucyaudio
 
             spdlog::info("MixProjectLoader successfully reloaded from DB. It now has {} tracks.", m_mixLoader->getMixTracks().size());
 
-            // 6. Repopulate the UI from the fresh, updated loader.
+            // 8. Repopulate the UI from the fresh, updated loader.
             // We are calling our own function with the loader we've just updated.
             return populateFrom();
         }

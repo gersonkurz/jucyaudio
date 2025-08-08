@@ -19,6 +19,7 @@
 #include <UI/MainComponent.h>
 #include <UI/MarkerEditDialog.h>
 #include <UI/LibraryRootsComponent.h>
+#include <UI/SettingsDialog.h>
 #include <UI/TaskDialog.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
@@ -233,10 +234,17 @@ namespace jucyaudio
 
             menuManager.registerMenu("View",
                 {{"Configure Columns...",
-                    "...",
+                    "Configure columns for the current view",
                     [&]()
                     {
                         onShowConfigureColumnsDialog();
+                    }},
+                 {"-"},  // Separator
+                 {"Settings...",
+                    "Open application settings",
+                    [&]()
+                    {
+                        SettingsDialog::showSettingsDialog(this);
                     }}});
 
             // 2. Define dynamic theme submenu
