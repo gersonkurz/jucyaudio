@@ -28,7 +28,7 @@ namespace jucyaudio
             const DataActions &getRowActions(RowIndex_t rowIndex) const;
             bool deleteThisObject() override; 
             bool removeObjects(const std::vector<ObjectId> &objectIds) const override;
-
+            WorkingSetId getWorkingSetId() const override;
             void rename(std::string_view newName) override;
 
             // Override to persist sort order to database

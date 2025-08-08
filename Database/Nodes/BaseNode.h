@@ -59,6 +59,7 @@ namespace jucyaudio
             bool getNumberOfRows(int64_t &outCount) const override;
             bool getTotalTrackCount(int64_t &outCount) const override;
             void nodeHasBeenDeleted(INavigationNode *node) override;
+            WorkingSetId getWorkingSetId() const override;
 
             bool prepareToShowData() override;
             void dataNoLongerShowing() override;

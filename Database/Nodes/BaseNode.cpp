@@ -30,6 +30,11 @@ namespace jucyaudio
             return false;
         }
 
+        WorkingSetId BaseNode::getWorkingSetId() const
+        {
+            return 0;
+        }
+
         void BaseNode::nodeHasBeenDeleted(INavigationNode *node)
         {
         }

@@ -90,9 +90,7 @@ namespace jucyaudio
             // Set up callback to check if mix is playing
             m_playbackController.isMixPlaying = [this]() -> bool
             {
-                bool mixPlaying = m_mixEditorComponent.isMixPlaying();
-                spdlog::debug("[MainComponent] isMixPlaying callback called, returning: {}", mixPlaying);
-                return mixPlaying;
+                return m_mixEditorComponent.isMixPlaying();
             };
             
             // Set up mix editor callbacks once during initialization
@@ -1425,8 +1423,8 @@ namespace jucyaudio
                 return;
             }
 
-            // Capture the source working set ID from the current node
-            const WorkingSetId source_ws_id = m_currentNode->getUniqueId();
+            // Capture the source working set ID from the current node (only if it's a WorkingSet)
+            const WorkingSetId source_ws_id = m_currentNode->getWorkingSetId();
 
             std::vector<TrackInfo> selectedTracks{m_dataViewComponent.getSelectedTracks()};
             if (selectedTracks.size() <= 1)

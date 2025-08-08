@@ -299,7 +299,7 @@ namespace jucyaudio
 #endif
 
             std::ostringstream oss;
-            oss << "Auto-Mix " << std::put_time(&tm, "%Y-%m-%d %H-%M"); // Added time for more uniqueness
+            oss << "Auto-Mix " << std::put_time(&tm, "%Y-%m-%d %H-%M-%S"); // Added seconds for uniqueness
             return juce::String(oss.str());
         }
 

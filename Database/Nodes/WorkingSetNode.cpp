@@ -30,6 +30,11 @@ namespace jucyaudio
             BaseNode::rename(newName);
         }
 
+        WorkingSetId WorkingSetNode::getWorkingSetId() const
+        {
+            return m_queryArgs.workingSetId;
+        }
+
         const DataActions &WorkingSetNode::getNodeActions() const
         {
             return WorkingSetNodeActions;

@@ -173,6 +173,9 @@ namespace jucyaudio
             /// such as running a batch analysis.
             /// @return A vector of TrackIds.
             virtual std::vector<TrackId> getAllTrackIds() const = 0;
+
+            /// @brief Get the working set ID associated with this node. Will be 0 for all non-working-sets
+            virtual WorkingSetId getWorkingSetId() const = 0;
         };
 
     } // namespace database

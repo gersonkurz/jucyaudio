@@ -277,7 +277,7 @@ FROM Mixes m
                         return transaction.rollback();
                     }
                 }
-                else
+                else if (mixInfo.source_ws_id)
                 {
                     if (!transaction.execute("INSERT INTO Mixes (name, timestamp, track_count, total_length, source_ws_id) VALUES (?, ?, ?, ?, ?)",
                             mixInfo.name,
@@ -285,6 +285,18 @@ FROM Mixes m
                             mixInfo.numberOfTracks,
                             durationToInt64(mixInfo.totalDuration),
                             mixInfo.source_ws_id))
+                    {
+                        return transaction.rollback();
+                    }
+                    mixInfo.mixId = m_db.getLastInsertRowId(); // Get the new mix ID
+                }
+                else 
+                {
+                    if (!transaction.execute("INSERT INTO Mixes (name, timestamp, track_count, total_length, source_ws_id) VALUES (?, ?, ?, ?, NULL)",
+                            mixInfo.name,
+                            timestampToInt64(mixInfo.timestamp),
+                            mixInfo.numberOfTracks,
+                            durationToInt64(mixInfo.totalDuration)))                            
                     {
                         return transaction.rollback();
                     }
