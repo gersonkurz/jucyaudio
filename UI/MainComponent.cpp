@@ -906,7 +906,7 @@ namespace jucyaudio
                             {
                                 // Try to remove all bad tracks from this working set
                                 // The method will ignore tracks that aren't in the set
-                                if (wsManager.removeFromWorkingSet(ws.id, badTrackIds))
+                                if (wsManager.removeTracksFromWorkingSet(ws.id, badTrackIds))
                                 {
                                     removedCount++;
                                 }

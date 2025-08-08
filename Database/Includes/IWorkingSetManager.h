@@ -25,8 +25,8 @@ namespace jucyaudio
             virtual bool renameWorkingSet(WorkingSetId workingSetId, std::string_view name) const = 0;
             virtual bool addToWorkingSet(WorkingSetId workingSetId, const std::vector<TrackId> &trackIds) = 0;
             virtual bool addToWorkingSet(WorkingSetId workingSetId, TrackId trackId) = 0;
-            virtual bool removeFromWorkingSet(WorkingSetId workingSetId, const std::vector<TrackId> &trackIds) = 0;
-            virtual bool removeFromWorkingSet(WorkingSetId workingSetId, TrackId trackId) = 0;
+            virtual bool removeTracksFromWorkingSet(WorkingSetId workingSetId, const std::vector<TrackId> &trackIds) = 0;
+            virtual bool removeTrackFromWorkingSet(WorkingSetId workingSetId, TrackId trackId) = 0;
             virtual bool removeWorkingSet(WorkingSetId workingSetId) = 0;
             virtual bool removeWorkingSets(const std::vector<WorkingSetId> &workingSetIds) = 0;
 

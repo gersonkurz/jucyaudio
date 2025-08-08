@@ -301,7 +301,7 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             return false;
         }
 
-        bool SqliteWorkingSetManager::removeFromWorkingSet(WorkingSetId workingSetId, const std::vector<TrackId> &trackIds)
+        bool SqliteWorkingSetManager::removeTracksFromWorkingSet(WorkingSetId workingSetId, const std::vector<TrackId> &trackIds)
         {
             assert(!trackIds.empty());
             if (SqliteTransaction transaction{m_db})
@@ -322,7 +322,7 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             return false;
         }
 
-        bool SqliteWorkingSetManager::removeFromWorkingSet(WorkingSetId workingSetId, TrackId trackId)
+        bool SqliteWorkingSetManager::removeTrackFromWorkingSet(WorkingSetId workingSetId, TrackId trackId)
         {
             if (SqliteTransaction transaction{m_db})
             {

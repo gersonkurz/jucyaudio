@@ -77,6 +77,18 @@ namespace jucyaudio
                 TypedValue<std::string> defaultComment{this, "DefaultComment", ""};
                 
             } exportSettings{this};
+            
+            struct MixEditingSettings : public Section
+            {
+                MixEditingSettings(Section *parent)
+                    : Section{parent, "MixEditing"}
+                {
+                }
+                
+                TypedValue<bool> removeFromWorkingSetOnDelete{this, "RemoveFromWorkingSetOnDelete", true};
+                TypedValue<bool> askBeforeRemovingFromWorkingSet{this, "AskBeforeRemovingFromWorkingSet", true};
+                
+            } mixEditingSettings{this};
         };
 
         extern RootSettings theSettings;

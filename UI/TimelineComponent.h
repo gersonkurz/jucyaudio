@@ -267,6 +267,7 @@ namespace jucyaudio
             void recalculateTrackPositions();
             
             void deleteTrackAtIndex(size_t trackIndex);
+            bool removeTrackFromMixOnly(TrackId trackId);
 
             /**
              * @brief A helper struct that tightly couples a UI component with its underlying data.

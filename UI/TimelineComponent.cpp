@@ -1,4 +1,5 @@
 #include <UI/TimelineComponent.h>
+#include <UI/Settings.h>
 #include <spdlog/spdlog.h>
 #include <toml++/toml.h> // Include the parser implementation here
 
@@ -100,8 +101,70 @@ namespace jucyaudio
             }
 
             spdlog::info("Successfully removed track from database.");
+            
+            // 4. Check if we should also remove from working set
+            if (config::theSettings.mixEditingSettings.removeFromWorkingSetOnDelete.get())
+            {
+                // IMPORTANT: Only remove from working set if this track appears only once in the mix
+                // Count how many times this track appears in the current mix
+                const auto& mixTracks = m_mixLoader->getMixTracks();
+                int trackOccurrences = 0;
+                for (const auto& mixTrack : mixTracks)
+                {
+                    if (mixTrack.trackId == trackIdToRemove)
+                    {
+                        trackOccurrences++;
+                    }
+                }
+                
+                spdlog::info("Track {} appears {} time(s) in the mix", trackIdToRemove, trackOccurrences);
+                
+                // Only consider removing from working set if this was the last occurrence
+                if (trackOccurrences == 1)
+                {
+                    // Get the source working set ID from the mix info
+                    const auto& mixInfo = m_mixLoader->getMixInfo();
+                    if (mixInfo.source_ws_id > 0)
+                    {
+                        const WorkingSetId wsId = mixInfo.source_ws_id;
+                        
+                        // Check if we should ask for confirmation
+                        bool shouldRemove = true;
+                        if (config::theSettings.mixEditingSettings.askBeforeRemovingFromWorkingSet.get())
+                        {
+                            const auto result = juce::AlertWindow::showOkCancelBox(
+                                juce::AlertWindow::QuestionIcon,
+                                "Remove from Working Set",
+                                "Also remove this track from the source working set?",
+                                "Remove",
+                                "Keep in Working Set");
+                            shouldRemove = result;
+                        }
+                        
+                        if (shouldRemove)
+                        {
+                            if (theTrackLibrary.getWorkingSetManager().removeTrackFromWorkingSet(wsId, trackIdToRemove))
+                            {
+                                spdlog::info("Also removed track {} from working set {}", trackIdToRemove, wsId);
+                            }
+                            else
+                            {
+                                spdlog::warn("Failed to remove track {} from working set {}", trackIdToRemove, wsId);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        spdlog::debug("Mix has no source working set, skipping working set removal");
+                    }
+                }
+                else
+                {
+                    spdlog::info("Track {} appears multiple times in mix, not removing from working set", trackIdToRemove);
+                }
+            }
 
-            // 4. CRITICAL: Refresh the in-memory loader from the database.
+            // 5. CRITICAL: Refresh the in-memory loader from the database.
             // This synchronizes our data source with the change we just made.
             if (!m_mixLoader->reloadFromDatabase())
             {
@@ -111,7 +174,7 @@ namespace jucyaudio
 
             spdlog::info("MixProjectLoader successfully reloaded from DB. It now has {} tracks.", m_mixLoader->getMixTracks().size());
 
-            // 5. Repopulate the UI from the fresh, updated loader.
+            // 6. Repopulate the UI from the fresh, updated loader.
             // We are calling our own function with the loader we've just updated.
             return populateFrom();
         }
@@ -156,11 +219,14 @@ namespace jucyaudio
             // First copy to clipboard
             copySelectedTrackToClipboard();
             
-            // Then delete the track
+            // Then remove the track from mix only (not from working set)
             if (m_clipboard.isValid)
             {
-                deleteSelectedTrack();
-                spdlog::info("Cut track to clipboard");
+                const auto trackId = m_selectedTrack->getTrackId();
+                if (removeTrackFromMixOnly(trackId))
+                {
+                    spdlog::info("Cut track {} to clipboard", trackId);
+                }
             }
         }
         
@@ -353,9 +419,9 @@ namespace jucyaudio
                 return;
             }
             
-            spdlog::info("Removing {} tracks after the selected track", tracksToRemove.size());
+            spdlog::info("Removing {} tracks after the selected track (from mix only, keeping in working set)", tracksToRemove.size());
             
-            // Remove each track
+            // Remove each track from mix only (NOT from working set - these are tracks to revisit later)
             const auto currentMixId = m_mixLoader->getMixId();
             bool anyRemoved = false;
             
@@ -390,6 +456,47 @@ namespace jucyaudio
                     spdlog::error("Failed to reload mix after removing tracks");
                 }
             }
+        }
+        
+        bool TimelineComponent::removeTrackFromMixOnly(TrackId trackIdToRemove)
+        {
+            if (!m_mixLoader)
+            {
+                spdlog::error("removeTrackFromMixOnly called but m_mixLoader is null.");
+                return false;
+            }
+            
+            const auto currentMixId = m_mixLoader->getMixId();
+            spdlog::info("Removing track {} from mix {} (mix only, not working set)", trackIdToRemove, currentMixId);
+            
+            // Remove from mix database
+            if (!theTrackLibrary.getMixManager().removeTrackFromMix(currentMixId, trackIdToRemove))
+            {
+                spdlog::error("Failed to remove track from mix.");
+                return false;
+            }
+            
+            // Clear selection if we removed the selected track
+            if (m_selectedTrack && m_selectedTrack->getTrackId() == trackIdToRemove)
+            {
+                m_selectedTrack = nullptr;
+            }
+            
+            // Reload and refresh UI
+            if (!m_mixLoader->reloadFromDatabase())
+            {
+                spdlog::error("Failed to reload MixProjectLoader from database after removal.");
+                return false;
+            }
+            
+            populateFrom();
+            
+            if (onMixChanged)
+            {
+                onMixChanged();
+            }
+            
+            return true;
         }
         
         void TimelineComponent::deleteTrackAtIndex(size_t trackIndex)
