@@ -47,8 +47,8 @@ namespace jucyaudio
             void handleDeleteSelectedTrack();
 
         private:
-            void updateCueAttachInData(TrackId trackId, const database::MixTrack& updatedTrack);
-            void updateEnvelopeInData(TrackId trackId, const std::vector<database::EnvelopePoint>& points);
+            void updateCueAttachInData(int orderInMix, const database::MixTrack& updatedTrack);
+            void updateEnvelopeInData(int orderInMix, const std::vector<database::EnvelopePoint>& points);
             void saveMixChanges();
             void handleMixPlayback(double startTime, bool alwaysPlay = false);
             void startMixPlayback();

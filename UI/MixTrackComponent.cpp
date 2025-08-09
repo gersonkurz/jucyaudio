@@ -493,7 +493,7 @@ namespace jucyaudio
                 // Fire the callback to show preview line
                 if (onCueDragInProgress)
                 {
-                    onCueDragInProgress(m_mixTrack.trackId, false /* not attach point */, previewTime);
+                    onCueDragInProgress(m_mixTrack.orderInMix, false /* not attach point */, previewTime);
                 }
             }
             else if (m_draggedMarker == MarkerType::AttachFrom || m_draggedMarker == MarkerType::AttachTo)
@@ -510,7 +510,7 @@ namespace jucyaudio
                 // Show preview line for attach points too
                 if (onCueDragInProgress)
                 {
-                    onCueDragInProgress(m_mixTrack.trackId, true /* is attach point */, previewTime);
+                    onCueDragInProgress(m_mixTrack.orderInMix, true /* is attach point */, previewTime);
                 }
             }
             // If an envelope point drag is in progress, update its position.
@@ -579,13 +579,13 @@ namespace jucyaudio
                 // 3. Fire the callback to update the data model and trigger a layout refresh.
                 if (onCueAttachChanged)
                 {
-                    onCueAttachChanged(m_trackInfo.trackId, updatedTrack);
+                    onCueAttachChanged(m_mixTrack.orderInMix, updatedTrack);
                 }
 
                 // 4. Clear the preview line
                 if (onCueDragInProgress)
                 {
-                    onCueDragInProgress(m_mixTrack.trackId, false, std::nullopt);
+                    onCueDragInProgress(m_mixTrack.orderInMix, false, std::nullopt);
                 }
 
                 // 5. Reset the drag state.
@@ -604,13 +604,13 @@ namespace jucyaudio
                 // 3. Fire the callback to update the data model and trigger a layout refresh.
                 if (onCueAttachChanged)
                 {
-                    onCueAttachChanged(m_trackInfo.trackId, updatedTrack);
+                    onCueAttachChanged(m_mixTrack.orderInMix, updatedTrack);
                 }
 
                 // 4. Clear the preview line
                 if (onCueDragInProgress)
                 {
-                    onCueDragInProgress(m_mixTrack.trackId, false, std::nullopt);
+                    onCueDragInProgress(m_mixTrack.orderInMix, false, std::nullopt);
                 }
 
                 // 5. Reset the drag state.
@@ -642,13 +642,13 @@ namespace jucyaudio
                 // Fire the callback
                 if (onCueAttachChanged)
                 {
-                    onCueAttachChanged(m_trackInfo.trackId, updatedTrack);
+                    onCueAttachChanged(m_mixTrack.orderInMix, updatedTrack);
                 }
 
                 // Clear preview line
                 if (onCueDragInProgress)
                 {
-                    onCueDragInProgress(m_mixTrack.trackId, true, std::nullopt);
+                    onCueDragInProgress(m_mixTrack.orderInMix, true, std::nullopt);
                 }
 
                 m_draggedMarker = MarkerType::None;
@@ -665,7 +665,7 @@ namespace jucyaudio
                 // Notify of envelope change
                 if (onEnvelopeChanged)
                 {
-                    onEnvelopeChanged(m_mixTrack.trackId, m_mixTrack.envelopePoints);
+                    onEnvelopeChanged(m_mixTrack.orderInMix, m_mixTrack.envelopePoints);
                 }
 
                 m_isDraggingEnvelopePoint = false;
@@ -731,7 +731,7 @@ namespace jucyaudio
                     if (m_draggedMarker != MarkerType::None && onCueDragInProgress)
                     {
                         bool isAttach = (m_draggedMarker == MarkerType::AttachFrom || m_draggedMarker == MarkerType::AttachTo);
-                        onCueDragInProgress(m_mixTrack.trackId, isAttach, std::nullopt);
+                        onCueDragInProgress(m_mixTrack.orderInMix, isAttach, std::nullopt);
                     }
 
                     // Reset drag state

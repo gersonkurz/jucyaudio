@@ -76,8 +76,8 @@ namespace jucyaudio
             std::function<void()> onMixChanged;
             std::function<void(double)> onMixPlaybackRequested;
             std::function<void(double)> onMixPlaybackAlwaysRequested; // For double-clicks
-            std::function<void(TrackId, const database::MixTrack&)> onCueAttachChanged;
-            std::function<void(TrackId, const std::vector<database::EnvelopePoint>&)> onEnvelopeChanged;
+            std::function<void(int orderInMix, const database::MixTrack&)> onCueAttachChanged;
+            std::function<void(int orderInMix, const std::vector<database::EnvelopePoint>&)> onEnvelopeChanged;
 
 
             /**

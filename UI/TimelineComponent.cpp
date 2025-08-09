@@ -1042,24 +1042,24 @@ namespace jucyaudio
 
                     view.component = std::make_unique<MixTrackComponent>(*view.mixTrackData, *view.trackInfoData, m_formatManager, m_thumbnailCache);
 
-                    view.component->onCueAttachChanged = [this](TrackId id, const database::MixTrack &updatedTrack)
+                    view.component->onCueAttachChanged = [this](int orderInMix, const database::MixTrack &updatedTrack)
                     {
                         if (onCueAttachChanged)
-                            onCueAttachChanged(id, updatedTrack);
+                            onCueAttachChanged(orderInMix, updatedTrack);
                     };
-                    view.component->onEnvelopeChanged = [this](TrackId id, const std::vector<database::EnvelopePoint> &points)
+                    view.component->onEnvelopeChanged = [this](int orderInMix, const std::vector<database::EnvelopePoint> &points)
                     {
                         if (onEnvelopeChanged)
-                            onEnvelopeChanged(id, points);
+                            onEnvelopeChanged(orderInMix, points);
                     };
-                    view.component->onCueDragInProgress = [this](TrackId trackId, bool isAttachPoint, std::optional<Duration_t> previewTime)
+                    view.component->onCueDragInProgress = [this](int orderInMix, bool isAttachPoint, std::optional<Duration_t> previewTime)
                     {
                         if (previewTime.has_value())
                         {
-                            // Find the track view for this trackId
+                            // Find the track view for this orderInMix
                             for (const auto &tv : m_trackViews)
                             {
-                                if (tv.mixTrackData && tv.mixTrackData->trackId == trackId)
+                                if (tv.mixTrackData && tv.mixTrackData->orderInMix == orderInMix)
                                 {
                                     // xToTime returns cueStart + offset_within_component
                                     // componentStartTime is where the component starts on the timeline

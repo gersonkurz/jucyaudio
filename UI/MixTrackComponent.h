@@ -61,15 +61,15 @@ namespace jucyaudio
             ~MixTrackComponent() override;
 
             // Callback when envelope points change
-            std::function<void(TrackId, const std::vector<EnvelopePoint> &)> onEnvelopeChanged;
+            std::function<void(int orderInMix, const std::vector<EnvelopePoint> &)> onEnvelopeChanged;
             
             // Callback when cue or attach points change
-            std::function<void(TrackId, const MixTrack &)> onCueAttachChanged;
+            std::function<void(int orderInMix, const MixTrack &)> onCueAttachChanged;
             
             // Callback during cue/attach point dragging for visual feedback
             // isAttachPoint: true for attach points, false for cue points
             // previewTime: the time position being previewed, or nullopt to clear
-            std::function<void(TrackId, bool isAttachPoint, std::optional<Duration_t>)> onCueDragInProgress;
+            std::function<void(int orderInMix, bool isAttachPoint, std::optional<Duration_t>)> onCueDragInProgress;
 
             /**
              * @brief Returns the track ID of this mix track.

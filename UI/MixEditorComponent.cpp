@@ -21,14 +21,14 @@ namespace jucyaudio
             m_viewport.setScrollBarsShown(true, true);
             addAndMakeVisible(m_viewport);
                         
-            m_timeline.onCueAttachChanged = [this](TrackId trackId, const database::MixTrack& updatedTrack)
+            m_timeline.onCueAttachChanged = [this](int orderInMix, const database::MixTrack& updatedTrack)
             {
-                updateCueAttachInData(trackId, updatedTrack);
+                updateCueAttachInData(orderInMix, updatedTrack);
             };
             
-            m_timeline.onEnvelopeChanged = [this](TrackId trackId, const std::vector<database::EnvelopePoint>& points)
+            m_timeline.onEnvelopeChanged = [this](int orderInMix, const std::vector<database::EnvelopePoint>& points)
             {
-                updateEnvelopeInData(trackId, points);
+                updateEnvelopeInData(orderInMix, points);
             };
 
             m_timeline.onMixChanged = [this]()
@@ -230,7 +230,7 @@ namespace jucyaudio
             m_timeline.viewportResized();
         }
 
-        void MixEditorComponent::updateCueAttachInData(TrackId trackId, const database::MixTrack& updatedTrack)
+        void MixEditorComponent::updateCueAttachInData(int orderInMix, const database::MixTrack& updatedTrack)
         {
             if (!m_node)
             {
@@ -238,15 +238,15 @@ namespace jucyaudio
                 return;
             }
             
-            spdlog::info("Updating cue/attach points for track {}", trackId);
+            spdlog::info("Updating cue/attach points for track at position {}", orderInMix);
             
             // Get access to the mix tracks
             auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
             
-            // Find and update the track
+            // Find and update the track by orderInMix
             for (auto& track : mixTracks)
             {
-                if (track.trackId == trackId)
+                if (track.orderInMix == orderInMix)
                 {
                     // Check if cue or attach points actually changed
                     const auto cueStartChanged = track.cueStart != updatedTrack.cueStart;
@@ -257,13 +257,13 @@ namespace jucyaudio
                     track.cueEnd = updatedTrack.cueEnd;
                     track.attachFrom = updatedTrack.attachFrom;
                     track.attachTo = updatedTrack.attachTo;
-                    spdlog::info("Updated cue/attach points for track {}", trackId);
+                    spdlog::info("Updated cue/attach points for track at position {}", orderInMix);
                     
                     // Save changes
                     saveMixChanges();
                     
                     // Tell timeline to reposition this specific track
-                    m_timeline.repositionTrack(trackId);
+                    m_timeline.repositionTrack(track.trackId);
                     
                     // Tell playback engine to recalculate track positions if needed
                     // Note: cueStart of first track affects global offset, attach points affect all positions
@@ -282,7 +282,7 @@ namespace jucyaudio
             }
         }
         
-        void MixEditorComponent::updateEnvelopeInData(TrackId trackId, const std::vector<database::EnvelopePoint>& points)
+        void MixEditorComponent::updateEnvelopeInData(int orderInMix, const std::vector<database::EnvelopePoint>& points)
         {
             if (!m_node)
             {
@@ -290,18 +290,18 @@ namespace jucyaudio
                 return;
             }
             
-            spdlog::info("Updating envelope for track {} with {} points", trackId, points.size());
+            spdlog::info("Updating envelope for track at position {} with {} points", orderInMix, points.size());
             
             // Get access to the mix tracks
             auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
             
-            // Find and update the track
+            // Find and update the track by orderInMix
             for (auto& track : mixTracks)
             {
-                if (track.trackId == trackId)
+                if (track.orderInMix == orderInMix)
                 {
                     track.envelopePoints = points;
-                    spdlog::info("Updated envelope points for track {}", trackId);
+                    spdlog::info("Updated envelope points for track at position {}", orderInMix);
                     
                     // Save changes
                     saveMixChanges();
