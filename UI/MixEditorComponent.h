@@ -44,6 +44,8 @@ namespace jucyaudio
             bool isMixPlaying() const { return m_isPlaying; }
             void stopPlayback() { if (m_isPlaying) stopMixPlayback(); }
 
+            void handleDeleteSelectedTrack();
+
         private:
             void updateCueAttachInData(TrackId trackId, const database::MixTrack& updatedTrack);
             void updateEnvelopeInData(TrackId trackId, const std::vector<database::EnvelopePoint>& points);

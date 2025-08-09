@@ -1,5 +1,6 @@
-#include <UI/TimelineComponent.h>
+#include <UI/MixEditorComponent.h>
 #include <UI/Settings.h>
+#include <UI/TimelineComponent.h>
 #include <spdlog/spdlog.h>
 #include <toml++/toml.h> // Include the parser implementation here
 
@@ -14,7 +15,7 @@ namespace jucyaudio
         {
             spdlog::info("[Timeline] Constructor called");
             setWantsKeyboardFocus(true);
-            setInterceptsMouseClicks(true, true);  // Make sure we receive mouse clicks
+            setInterceptsMouseClicks(true, true); // Make sure we receive mouse clicks
             spdlog::info("[Timeline] Mouse interception enabled");
         }
 
@@ -59,9 +60,12 @@ namespace jucyaudio
             {
                 if (m_selectedTrack)
                 {
-                    spdlog::info("Delete key pressed - removing selected track");
-                    deleteSelectedTrack();
-                    return true; // Consumed the key event
+                    if (auto *editor = findParentComponentOfClass<MixEditorComponent>())
+                    {
+                        spdlog::info("Delete key pressed - delegating to MixEditorComponent");
+                        editor->handleDeleteSelectedTrack();
+                        return true; // Consumed the key event
+                    }
                 }
             }
 
@@ -96,43 +100,42 @@ namespace jucyaudio
             // 3. Check if we need to show a confirmation dialog
             bool shouldRemoveFromWorkingSet = false;
             bool userCancelled = false;
-            
+
             if (config::theSettings.mixEditingSettings.removeFromWorkingSetOnDelete.get())
             {
                 // IMPORTANT: Only remove from working set if this track appears only once in the mix
                 // Count how many times this track appears in the current mix
-                const auto& mixTracks = m_mixLoader->getMixTracks();
+                const auto &mixTracks = m_mixLoader->getMixTracks();
                 int trackOccurrences = 0;
-                for (const auto& mixTrack : mixTracks)
+                for (const auto &mixTrack : mixTracks)
                 {
                     if (mixTrack.trackId == trackIdToRemove)
                     {
                         trackOccurrences++;
                     }
                 }
-                
+
                 spdlog::info("Track {} appears {} time(s) in the mix", trackIdToRemove, trackOccurrences);
-                
+
                 // Only consider removing from working set if this was the last occurrence
                 if (trackOccurrences == 1)
                 {
                     // Get the source working set ID from the mix info
-                    const auto& mixInfo = m_mixLoader->getMixInfo();
+                    const auto &mixInfo = m_mixLoader->getMixInfo();
                     if (mixInfo.source_ws_id > 0)
                     {
                         const WorkingSetId wsId = mixInfo.source_ws_id;
-                        
+
                         // Check if we should ask for confirmation
                         if (config::theSettings.mixEditingSettings.askBeforeRemovingFromWorkingSet.get())
                         {
-                            const auto result = juce::AlertWindow::showYesNoCancelBox(
-                                juce::AlertWindow::QuestionIcon,
+                            const auto result = juce::AlertWindow::showYesNoCancelBox(juce::AlertWindow::QuestionIcon,
                                 "Remove Track",
                                 "Remove this track from the mix?\n\nAlso remove from the source working set?",
                                 "Remove from Both",
                                 "Remove from Mix Only",
                                 "Cancel");
-                            
+
                             if (result == 0) // Cancel
                             {
                                 userCancelled = true;
@@ -160,28 +163,28 @@ namespace jucyaudio
                     spdlog::info("Track {} appears multiple times in mix, not removing from working set", trackIdToRemove);
                 }
             }
-            
+
             // 4. If user cancelled, return early
             if (userCancelled)
             {
                 return false;
             }
-            
+
             // 5. Perform the database deletion from the mix
             if (!theTrackLibrary.getMixManager().removeTrackFromMix(currentMixId, trackIdToRemove))
             {
                 spdlog::error("Failed to remove track from database.");
                 return false;
             }
-            
+
             spdlog::info("Successfully removed track from mix.");
-            
+
             // 6. If we should also remove from working set, do it now
             if (shouldRemoveFromWorkingSet)
             {
-                const auto& mixInfo = m_mixLoader->getMixInfo();
+                const auto &mixInfo = m_mixLoader->getMixInfo();
                 const WorkingSetId wsId = mixInfo.source_ws_id;
-                
+
                 if (theTrackLibrary.getWorkingSetManager().removeTrackFromWorkingSet(wsId, trackIdToRemove))
                 {
                     spdlog::info("Also removed track {} from working set {}", trackIdToRemove, wsId);
@@ -206,7 +209,7 @@ namespace jucyaudio
             // We are calling our own function with the loader we've just updated.
             return populateFrom();
         }
-        
+
         void TimelineComponent::copySelectedTrackToClipboard()
         {
             if (!m_selectedTrack || !m_mixLoader)
@@ -214,28 +217,27 @@ namespace jucyaudio
                 spdlog::warn("copySelectedTrackToClipboard: No track selected or no mix loaded");
                 return;
             }
-            
+
             const auto trackId = m_selectedTrack->getTrackId();
-            
+
             // Find the track data in our views
-            for (const auto& view : m_trackViews)
+            for (const auto &view : m_trackViews)
             {
-                if (view.mixTrackData && view.trackInfoData && 
-                    view.mixTrackData->trackId == trackId)
+                if (view.mixTrackData && view.trackInfoData && view.mixTrackData->trackId == trackId)
                 {
                     // Copy the data to clipboard
                     m_clipboard.mixTrack = *view.mixTrackData;
                     m_clipboard.trackInfo = *view.trackInfoData;
                     m_clipboard.isValid = true;
-                    
+
                     spdlog::info("Copied track {} to clipboard", trackId);
                     return;
                 }
             }
-            
+
             spdlog::error("Failed to find track data for clipboard copy");
         }
-        
+
         void TimelineComponent::cutSelectedTrackToClipboard()
         {
             if (!m_selectedTrack || !m_mixLoader)
@@ -243,10 +245,10 @@ namespace jucyaudio
                 spdlog::warn("cutSelectedTrackToClipboard: No track selected or no mix loaded");
                 return;
             }
-            
+
             // First copy to clipboard
             copySelectedTrackToClipboard();
-            
+
             // Then remove the track from mix only (not from working set)
             if (m_clipboard.isValid)
             {
@@ -257,7 +259,7 @@ namespace jucyaudio
                 }
             }
         }
-        
+
         void TimelineComponent::pasteFromClipboard(bool insertBefore)
         {
             if (!m_clipboard.isValid || !m_mixLoader)
@@ -265,7 +267,7 @@ namespace jucyaudio
                 spdlog::warn("pasteFromClipboard: No valid clipboard data or no mix loaded");
                 return;
             }
-            
+
             // Get the selected track index (or use end if nothing selected)
             int insertIndex = -1;
             if (m_selectedTrack)
@@ -277,12 +279,11 @@ namespace jucyaudio
                     if (m_trackViews[i].component.get() == m_selectedTrack)
                     {
                         insertIndex = insertBefore ? i : i + 1;
-                        spdlog::info("Found selected track at index {}, will insert at {}", 
-                                    i, insertIndex);
+                        spdlog::info("Found selected track at index {}, will insert at {}", i, insertIndex);
                         break;
                     }
                 }
-                
+
                 if (insertIndex < 0)
                 {
                     // Fallback: couldn't find the component in our views
@@ -295,34 +296,34 @@ namespace jucyaudio
                 // No selection - paste at end
                 insertIndex = static_cast<int>(m_mixLoader->getMixTracks().size());
             }
-            
+
             if (insertIndex < 0)
             {
                 spdlog::error("pasteFromClipboard: Failed to determine insert position");
                 return;
             }
-            
+
             // Create a new mix track list with the pasted track inserted
             auto mixTracks = m_mixLoader->getMixTracks();
             auto mixTrackToInsert = m_clipboard.mixTrack;
-            
+
             // When pasting, we need to set up reasonable defaults for the new track position
             // The track keeps its envelope and relative cue/attach points, but we may need to
             // adjust timing based on where it's being inserted
-            
+
             // Default crossfade duration
             const Duration_t defaultCrossfade{5000}; // 5 seconds
-            
+
             if (insertIndex == 0 && !mixTracks.empty())
             {
                 // Inserting at the beginning before all tracks
                 // Set up to crossfade into the first track
-                const auto& nextTrack = mixTracks[0];
+                const auto &nextTrack = mixTracks[0];
                 const auto trackDuration = m_clipboard.trackInfo.duration;
-                
+
                 // Set attachTo to crossfade into next track's attachFrom
                 mixTrackToInsert.attachTo = trackDuration - defaultCrossfade;
-                
+
                 // Keep cue points from clipboard or use defaults
                 if (mixTrackToInsert.cueStart == Duration_t{0} && mixTrackToInsert.cueEnd == Duration_t{0})
                 {
@@ -349,14 +350,14 @@ namespace jucyaudio
                     // Has a previous track - set attachFrom for crossfade
                     mixTrackToInsert.attachFrom = defaultCrossfade;
                 }
-                
+
                 if (insertIndex < static_cast<int>(mixTracks.size()))
                 {
                     // Has a next track - set attachTo for crossfade
                     mixTrackToInsert.attachTo = m_clipboard.trackInfo.duration - defaultCrossfade;
                 }
             }
-            
+
             // Insert at the specified position
             if (insertIndex >= static_cast<int>(mixTracks.size()))
             {
@@ -368,28 +369,27 @@ namespace jucyaudio
                 // Insert at specific position
                 mixTracks.insert(mixTracks.begin() + insertIndex, mixTrackToInsert);
             }
-            
+
             // Renumber the orderInMix for all tracks
             for (int i = 0; i < static_cast<int>(mixTracks.size()); ++i)
             {
                 mixTracks[i].orderInMix = i;
             }
-            
+
             // Save the updated mix using createOrUpdateMix
             auto mixInfo = m_mixLoader->getMixInfo();
             const auto currentMixId = m_mixLoader->getMixId();
-            
+
             if (theTrackLibrary.getMixManager().createOrUpdateMix(mixInfo, mixTracks))
             {
-                spdlog::info("Pasted track {} from clipboard at position {}", 
-                            mixTrackToInsert.trackId, insertIndex);
-                
+                spdlog::info("Pasted track {} from clipboard at position {}", mixTrackToInsert.trackId, insertIndex);
+
                 // Reload from database to get the updated mix
                 if (m_mixLoader->reloadFromDatabase())
                 {
                     // Refresh the UI
                     populateFrom();
-                    
+
                     if (onMixChanged)
                     {
                         onMixChanged();
@@ -405,7 +405,7 @@ namespace jucyaudio
                 spdlog::error("Failed to paste track from clipboard");
             }
         }
-        
+
         void TimelineComponent::removeAllTracksAfterSelected()
         {
             if (!m_selectedTrack || !m_mixLoader)
@@ -413,10 +413,10 @@ namespace jucyaudio
                 spdlog::warn("removeAllTracksAfterSelected: No track selected or no mix loaded");
                 return;
             }
-            
+
             const auto selectedTrackId = m_selectedTrack->getTrackId();
-            const auto& mixTracks = m_mixLoader->getMixTracks();
-            
+            const auto &mixTracks = m_mixLoader->getMixTracks();
+
             // Find the selected track index
             int selectedIndex = -1;
             for (int i = 0; i < static_cast<int>(mixTracks.size()); ++i)
@@ -427,33 +427,33 @@ namespace jucyaudio
                     break;
                 }
             }
-            
+
             if (selectedIndex < 0)
             {
                 spdlog::error("removeAllTracksAfterSelected: Selected track not found in mix");
                 return;
             }
-            
+
             // Collect IDs of tracks to remove (all after the selected one)
             std::vector<TrackId> tracksToRemove;
             for (int i = selectedIndex + 1; i < static_cast<int>(mixTracks.size()); ++i)
             {
                 tracksToRemove.push_back(mixTracks[i].trackId);
             }
-            
+
             if (tracksToRemove.empty())
             {
                 spdlog::info("removeAllTracksAfterSelected: No tracks to remove after selected track");
                 return;
             }
-            
+
             spdlog::info("Removing {} tracks after the selected track (from mix only, keeping in working set)", tracksToRemove.size());
-            
+
             // Remove each track from mix only (NOT from working set - these are tracks to revisit later)
             const auto currentMixId = m_mixLoader->getMixId();
             bool anyRemoved = false;
-            
-            for (const auto& trackId : tracksToRemove)
+
+            for (const auto &trackId : tracksToRemove)
             {
                 if (theTrackLibrary.getMixManager().removeTrackFromMix(currentMixId, trackId))
                 {
@@ -465,7 +465,7 @@ namespace jucyaudio
                     spdlog::error("Failed to remove track {}", trackId);
                 }
             }
-            
+
             if (anyRemoved)
             {
                 // Reload from database to get the updated mix
@@ -473,7 +473,7 @@ namespace jucyaudio
                 {
                     // Refresh the UI
                     populateFrom();
-                    
+
                     if (onMixChanged)
                     {
                         onMixChanged();
@@ -485,7 +485,7 @@ namespace jucyaudio
                 }
             }
         }
-        
+
         bool TimelineComponent::removeTrackFromMixOnly(TrackId trackIdToRemove)
         {
             if (!m_mixLoader)
@@ -493,40 +493,40 @@ namespace jucyaudio
                 spdlog::error("removeTrackFromMixOnly called but m_mixLoader is null.");
                 return false;
             }
-            
+
             const auto currentMixId = m_mixLoader->getMixId();
             spdlog::info("Removing track {} from mix {} (mix only, not working set)", trackIdToRemove, currentMixId);
-            
+
             // Remove from mix database
             if (!theTrackLibrary.getMixManager().removeTrackFromMix(currentMixId, trackIdToRemove))
             {
                 spdlog::error("Failed to remove track from mix.");
                 return false;
             }
-            
+
             // Clear selection if we removed the selected track
             if (m_selectedTrack && m_selectedTrack->getTrackId() == trackIdToRemove)
             {
                 m_selectedTrack = nullptr;
             }
-            
+
             // Reload and refresh UI
             if (!m_mixLoader->reloadFromDatabase())
             {
                 spdlog::error("Failed to reload MixProjectLoader from database after removal.");
                 return false;
             }
-            
+
             populateFrom();
-            
+
             if (onMixChanged)
             {
                 onMixChanged();
             }
-            
+
             return true;
         }
-        
+
         void TimelineComponent::deleteTrackAtIndex(size_t trackIndex)
         {
             if (!m_mixLoader || trackIndex >= m_mixLoader->getMixTracks().size())
@@ -534,27 +534,27 @@ namespace jucyaudio
                 spdlog::error("deleteTrackAtIndex: Invalid index or no mix loaded");
                 return;
             }
-            
-            const auto& mixTracks = m_mixLoader->getMixTracks();
+
+            const auto &mixTracks = m_mixLoader->getMixTracks();
             const auto trackId = mixTracks[trackIndex].trackId;
             const auto currentMixId = m_mixLoader->getMixId();
-            
+
             if (theTrackLibrary.getMixManager().removeTrackFromMix(currentMixId, trackId))
             {
                 spdlog::info("Deleted track at index {}", trackIndex);
-                
+
                 // Clear selection if we deleted the selected track
                 if (m_selectedTrack && m_selectedTrack->getTrackId() == trackId)
                 {
                     m_selectedTrack = nullptr;
                 }
-                
+
                 // Reload from database to get the updated mix
                 if (m_mixLoader->reloadFromDatabase())
                 {
                     // Refresh the UI
                     populateFrom();
-                    
+
                     if (onMixChanged)
                     {
                         onMixChanged();
@@ -569,6 +569,77 @@ namespace jucyaudio
             {
                 spdlog::error("Failed to delete track at index {}", trackIndex);
             }
+        }
+
+        void TimelineComponent::refreshAfterDeletion(TrackId deletedTrackId)
+        {
+            if (!m_mixLoader)
+            {
+                spdlog::error("TimelineComponent::refreshAfterDeletion - No mix loader. Falling back to full populate.");
+                populateFrom();
+                return;
+            }
+
+            // Step 1: Remove the UI component and its view from our list
+            auto it = std::find_if(m_trackViews.begin(),
+                m_trackViews.end(),
+                [deletedTrackId](const TrackView &view)
+                {
+                    return view.component && view.component->getTrackId() == deletedTrackId;
+                });
+
+            if (it != m_trackViews.end())
+            {
+                if (m_selectedTrack == it->component.get())
+                {
+                    m_selectedTrack = nullptr;
+                }
+                m_trackViews.erase(it);
+                spdlog::info("Removed TrackView for track ID {}", deletedTrackId);
+            }
+            else
+            {
+                spdlog::warn("Could not find TrackView for deleted track ID {}. Performing full repopulation.", deletedTrackId);
+                populateFrom();
+                return;
+            }
+
+            // Step 2: Update data pointers and re-sort the view vector
+            const auto &newMixTracks = m_mixLoader->getMixTracks();
+            std::unordered_map<TrackId, database::MixTrack *> newDataMap;
+            for (const auto &track : newMixTracks)
+            {
+                newDataMap[track.trackId] = const_cast<database::MixTrack *>(&track);
+            }
+
+            for (auto &view : m_trackViews)
+            {
+                auto findIt = newDataMap.find(view.component->getTrackId());
+                if (findIt != newDataMap.end())
+                {
+                    view.mixTrackData = findIt->second;
+                }
+                else
+                {
+                    spdlog::error("Inconsistent state in refreshAfterDeletion for track {}. Falling back to full populate.", view.component->getTrackId());
+                    populateFrom();
+                    return;
+                }
+            }
+
+            // Re-sort m_trackViews to match the new orderInMix from the reloaded data
+            std::sort(m_trackViews.begin(),
+                m_trackViews.end(),
+                [](const TrackView &a, const TrackView &b)
+                {
+                    return a.mixTrackData->orderInMix < b.mixTrackData->orderInMix;
+                });
+
+            spdlog::info("Successfully updated data pointers and re-sorted {} remaining tracks.", m_trackViews.size());
+
+            // Step 3: Recalculate all positions and refresh the layout
+            recalculateTrackPositions();
+            spdlog::info("Recalculated positions and refreshed layout after deletion.");
         }
 
         void TimelineComponent::paint(juce::Graphics &g)
@@ -622,11 +693,11 @@ namespace jucyaudio
             {
                 const auto previewTimeSeconds = std::chrono::duration<double>(*m_cueDragPreviewTime).count();
                 const float previewX = static_cast<float>(previewTimeSeconds * m_pixelsPerSecond);
-                
+
                 g.setColour(juce::Colours::orange.withAlpha(0.8f));
-                
+
                 // Draw a dashed line
-                float dashLengths[] = { 4.0f, 4.0f };
+                float dashLengths[] = {4.0f, 4.0f};
                 juce::Line<float> previewLine(previewX, 0.0f, previewX, static_cast<float>(getHeight()));
                 g.drawDashedLine(previewLine, dashLengths, 2);
             }
@@ -666,14 +737,14 @@ namespace jucyaudio
                     break;
                 }
             }
-            
+
             if (trackIndex == -1)
                 return;
-            
+
             // Check if this is the first track or if attach points changed
             // For now, let's check if we need full recalculation
             bool needsFullRecalculation = (trackIndex == 0);
-            
+
             // Also check if this track's attach points affect others
             // If attachTo changed, all subsequent tracks need updating
             // We can't easily detect what changed, so for safety, recalculate all if it's not the last track
@@ -681,7 +752,7 @@ namespace jucyaudio
             {
                 needsFullRecalculation = true;
             }
-            
+
             if (needsFullRecalculation)
             {
                 // Recalculate all positions without recreating components
@@ -690,9 +761,9 @@ namespace jucyaudio
             else
             {
                 // For the last track with only cueStart/cueEnd changes, just update that track
-                auto& view = m_trackViews[trackIndex];
+                auto &view = m_trackViews[trackIndex];
                 view.componentStartTime = view.audioStartTime + view.mixTrackData->cueStart;
-                
+
                 // Trigger a layout update to reposition the component
                 resized();
                 repaint();
@@ -706,7 +777,7 @@ namespace jucyaudio
                 spdlog::warn("TimelineComponent::recalculateTrackPositions - No loader or tracks");
                 return;
             }
-            
+
             spdlog::info("TimelineComponent::recalculateTrackPositions - Processing {} tracks", m_trackViews.size());
 
             // Calculate the global offset from the first track's cueStart
@@ -718,10 +789,10 @@ namespace jucyaudio
 
             // Recalculate positions for all tracks
             Duration_t previousAudioStartTime{0};
-            
+
             for (size_t i = 0; i < m_trackViews.size(); ++i)
             {
-                auto& view = m_trackViews[i];
+                auto &view = m_trackViews[i];
                 if (!view.mixTrackData)
                     continue;
 
@@ -732,13 +803,13 @@ namespace jucyaudio
                 }
                 else
                 {
-                    const auto& prevTrack = *m_trackViews[i - 1].mixTrackData;
+                    const auto &prevTrack = *m_trackViews[i - 1].mixTrackData;
                     view.audioStartTime = previousAudioStartTime + prevTrack.attachTo - view.mixTrackData->attachFrom;
                 }
 
                 // Update component start time
                 view.componentStartTime = view.audioStartTime + view.mixTrackData->cueStart;
-                
+
                 previousAudioStartTime = view.audioStartTime;
             }
 
@@ -770,9 +841,12 @@ namespace jucyaudio
 
         void TimelineComponent::mouseDown(const juce::MouseEvent &event)
         {
-            spdlog::info("[Timeline] mouseDown - position: ({}, {}), clicks: {}, leftButton: {}", 
-                        event.position.x, event.position.y, event.getNumberOfClicks(), event.mods.isLeftButtonDown());
-            
+            spdlog::info("[Timeline] mouseDown - position: ({}, {}), clicks: {}, leftButton: {}",
+                event.position.x,
+                event.position.y,
+                event.getNumberOfClicks(),
+                event.mods.isLeftButtonDown());
+
             // Always grab keyboard focus when the timeline is clicked.
             grabKeyboardFocus();
 
@@ -780,8 +854,7 @@ namespace jucyaudio
             {
                 // Convert the pixel x-coordinate to a time in seconds.
                 double clickTime = event.position.x / m_pixelsPerSecond;
-                spdlog::info("[Timeline] Click time: {} seconds (x={}, pixelsPerSecond={})", 
-                            clickTime, event.position.x, m_pixelsPerSecond);
+                spdlog::info("[Timeline] Click time: {} seconds (x={}, pixelsPerSecond={})", clickTime, event.position.x, m_pixelsPerSecond);
 
                 // Update the visual playhead position.
                 setCurrentTimePosition(clickTime);
@@ -811,10 +884,10 @@ namespace jucyaudio
                 }
                 else
                 {
-                    spdlog::info("[Timeline] Click detected but no callback set - clicks: {}, onMixPlaybackAlwaysRequested: {}, onSeekRequested: {}", 
-                                event.getNumberOfClicks(), 
-                                onMixPlaybackAlwaysRequested ? "set" : "null",
-                                onSeekRequested ? "set" : "null");
+                    spdlog::info("[Timeline] Click detected but no callback set - clicks: {}, onMixPlaybackAlwaysRequested: {}, onSeekRequested: {}",
+                        event.getNumberOfClicks(),
+                        onMixPlaybackAlwaysRequested ? "set" : "null",
+                        onSeekRequested ? "set" : "null");
                 }
 
                 repaint();
@@ -884,26 +957,26 @@ namespace jucyaudio
         {
             resized();
         }
-        
+
         void TimelineComponent::resized()
         {
             auto visibleArea = getParentComponent()->getLocalBounds();
             const int rulerHeight = 30;
             const int trackHeight = MixTrackComponent::TOTAL_COMPONENT_HEIGHT;
             const int yGap = 5;
-            
+
             // Always match the viewport height if we have one
-            if (auto* viewport = findParentComponentOfClass<juce::Viewport>())
+            if (auto *viewport = findParentComponentOfClass<juce::Viewport>())
             {
                 const int viewportHeight = viewport->getHeight();
-                
+
                 // Always resize to match viewport height (don't check if already matching)
                 if (viewportHeight != getHeight())
                 {
                     setSize(getWidth(), viewportHeight);
                 }
             }
-            
+
             // Calculate available height for lanes using the actual component height
             const int availableHeightForLanes = getHeight() - rulerHeight;
             int numLanes = std::max(1, availableHeightForLanes / (trackHeight + yGap));
@@ -951,7 +1024,7 @@ namespace jucyaudio
             m_currentTimePosition = -1.0;
             m_trackViews.clear();
             removeAllChildren();
-            
+
             spdlog::info("TimelineComponent::populateFrom - Starting with {} tracks", mixLoader->getMixTracks().size());
 
             // Create TrackView objects for each track
@@ -984,7 +1057,7 @@ namespace jucyaudio
                         if (previewTime.has_value())
                         {
                             // Find the track view for this trackId
-                            for (const auto& tv : m_trackViews)
+                            for (const auto &tv : m_trackViews)
                             {
                                 if (tv.mixTrackData && tv.mixTrackData->trackId == trackId)
                                 {
@@ -1007,7 +1080,7 @@ namespace jucyaudio
                     m_trackViews.push_back(std::move(view));
                 }
             }
-            
+
             // --- THIS IS THE FIX ---
             // We must calculate a reasonable height for the timeline component itself
             // before we can calculate its width and trigger a layout refresh.
@@ -1016,9 +1089,9 @@ namespace jucyaudio
             const int rulerHeight = 30;
             const int numLanesForHeightCalc = 8; // A default number of lanes to ensure a reasonable minimum height.
             m_calculatedHeight = rulerHeight + (numLanesForHeightCalc * (trackHeight + yGap));
-            
+
             // If we have a parent viewport, ensure we're at least as tall as its visible area
-            if (auto* viewport = findParentComponentOfClass<juce::Viewport>())
+            if (auto *viewport = findParentComponentOfClass<juce::Viewport>())
             {
                 const int viewportHeight = viewport->getHeight();
                 if (viewportHeight > m_calculatedHeight)
@@ -1026,11 +1099,11 @@ namespace jucyaudio
                     m_calculatedHeight = viewportHeight;
                 }
             }
-            
+
             // Calculate positions for all tracks using the shared logic
             // This must be called AFTER setting m_calculatedHeight
             recalculateTrackPositions();
-            
+
             return true;
         }
 

@@ -512,6 +512,150 @@ namespace jucyaudio
             }
         }
         
+        void MixEditorComponent::handleDeleteSelectedTrack()
+        {
+            // 1. Pre-condition checks
+            auto* selectedTrackComponent = m_timeline.getSelectedTrack();
+            if (!selectedTrackComponent)
+            {
+                spdlog::warn("handleDeleteSelectedTrack called but no track selected.");
+                return;
+            }
+            if (!m_node)
+            {
+                spdlog::error("handleDeleteSelectedTrack called but no mix node loaded.");
+                return;
+            }
+            
+            auto& mixLoader = m_node->getMixProjectLoader();
+            const auto trackIdToRemove = selectedTrackComponent->getTrackId();
+            const auto mixId = mixLoader.getMixId();
+            
+            // 2. Confirmation Dialog & Logic
+            // This logic is ported from the old TimelineComponent::deleteSelectedTrack
+            bool shouldRemoveFromWorkingSet = false;
+            
+            if (config::theSettings.mixEditingSettings.removeFromWorkingSetOnDelete.get())
+            {
+                const auto& mixTracks = mixLoader.getMixTracks();
+                int trackOccurrences = 0;
+                for (const auto& mixTrack : mixTracks)
+                {
+                    if (mixTrack.trackId == trackIdToRemove)
+                    {
+                        trackOccurrences++;
+                    }
+                }
+                
+                if (trackOccurrences == 1)
+                {
+                    const auto& mixInfo = mixLoader.getMixInfo();
+                    if (mixInfo.source_ws_id > 0)
+                    {
+                        if (config::theSettings.mixEditingSettings.askBeforeRemovingFromWorkingSet.get())
+                        {
+                            const auto result = juce::AlertWindow::showYesNoCancelBox(
+                                juce::AlertWindow::QuestionIcon,
+                                "Remove Track",
+                                "Remove this track from the mix?\n\nAlso remove from the source working set?",
+                                "Remove from Both",
+                                "Remove from Mix Only",
+                                "Cancel");
+                            
+                            if (result == 0) // Cancel
+                            {
+                                spdlog::info("User cancelled track removal.");
+                                return;
+                            }
+                            else if (result == 1) // Yes - Remove from both
+                            {
+                                shouldRemoveFromWorkingSet = true;
+                            }
+                        }
+                        else
+                        {
+                            shouldRemoveFromWorkingSet = true;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // If not removing from working set, just show a simple confirmation
+                const auto result = juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,
+                                                                     "Delete Track",
+                                                                     "Are you sure you want to remove this track from the mix?",
+                                                                     "Delete", "Cancel");
+                if (result == 0) // User cancelled
+                {
+                    spdlog::info("User cancelled track removal.");
+                    return;
+                }
+            }
+            
+            // 3. Stop playback robustly
+            const bool wasPlaying = m_isPlaying;
+            if (wasPlaying)
+            {
+                spdlog::info("Stopping playback to perform deletion.");
+                m_audioDeviceManager->removeAudioCallback(m_mixPlaybackEngine.get());
+                
+                m_isPlaying = false;
+                m_playbackTimer.stopTimer();
+                m_timeline.setMixPlaybackPosition(-1.0);
+                // By managing state directly, we avoid calling m_onMixPlaybackStopped, which might
+                // trigger other unwanted state changes in the parent component.
+            }
+            
+            // 4. Perform DB Deletions
+            if (!database::theTrackLibrary.getMixManager().removeTrackFromMix(mixId, trackIdToRemove))
+            {
+                spdlog::error("Failed to remove track {} from mix {}", trackIdToRemove, mixId);
+                if (wasPlaying)
+                {
+                    m_audioDeviceManager->addAudioCallback(m_mixPlaybackEngine.get());
+                }
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Error", "Failed to remove track from database.");
+                return;
+            }
+            spdlog::info("Track {} removed from mix in database.", trackIdToRemove);
+            
+            if (shouldRemoveFromWorkingSet)
+            {
+                const auto& mixInfo = mixLoader.getMixInfo();
+                const WorkingSetId wsId = mixInfo.source_ws_id;
+                if (database::theTrackLibrary.getWorkingSetManager().removeTrackFromWorkingSet(wsId, trackIdToRemove))
+                {
+                    spdlog::info("Also removed track {} from working set {}.", trackIdToRemove, wsId);
+                }
+                else
+                {
+                    spdlog::warn("Failed to remove track {} from working set {}.", trackIdToRemove, wsId);
+                }
+            }
+            
+            // 5. Reload data model from DB
+            if (!mixLoader.reloadFromDatabase())
+            {
+                spdlog::critical("CRITICAL: Failed to reload mix loader from DB after deletion! The application state is now inconsistent.");
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Critical Error", "Failed to reload mix data after deletion. Please restart the application.");
+                return;
+            }
+            spdlog::info("Mix loader reloaded from database.");
+            
+            // 6. Re-initialize playback engine with the new, reloaded data
+            m_mixPlaybackEngine->loadMix(&mixLoader);
+            spdlog::info("Playback engine re-loaded with new mix data.");
+            
+            // 7. Refresh the entire timeline UI
+            m_timeline.refreshAfterDeletion(trackIdToRemove);
+            spdlog::info("Timeline UI refreshed efficiently.");
+            
+            // 8. Re-attach the audio callback so playback is possible again.
+            m_audioDeviceManager->addAudioCallback(m_mixPlaybackEngine.get());
+            spdlog::info("Audio callback re-attached. Deletion process complete.");
+        }
+        
         void MixEditorComponent::updatePlaybackPosition()
         {
             if (m_isPlaying && m_mixPlaybackEngine)

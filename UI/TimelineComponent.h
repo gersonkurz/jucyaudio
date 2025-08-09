@@ -154,6 +154,7 @@ namespace jucyaudio
             void pasteFromClipboard(bool insertBefore);
             bool hasClipboardData() const { return m_clipboard.isValid; }
             void removeAllTracksAfterSelected();
+            void refreshAfterDeletion(TrackId deletedTrackId);
             
             /**
              * @brief Handles mouse down events on the timeline's background area.
