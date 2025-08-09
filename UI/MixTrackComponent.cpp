@@ -20,13 +20,20 @@ namespace jucyaudio
               m_originalEnvelopePoint{},
               m_thumbnail{512, formatManager, thumbnailCache}
         {
-            // Setup the info label with track duration
+            // Setup the info label with artist, album, title, and duration
             const auto durationSeconds = std::chrono::duration_cast<std::chrono::seconds>(trackInfo.duration).count();
             const int minutes = durationSeconds / 60;
             const int seconds = durationSeconds % 60;
             juce::String durationText = juce::String::formatted("%d:%02d", minutes, seconds);
 
-            juce::String infoText = juce::String(trackInfo.title) + " (" + durationText + ")";
+            // Build the info text with artist - album - title - duration
+            juce::String infoText;
+            if (!trackInfo.artist_name.empty())
+                infoText += juce::String(trackInfo.artist_name) + " - ";
+            if (!trackInfo.album_title.empty())
+                infoText += juce::String(trackInfo.album_title) + " - ";
+            infoText += juce::String(trackInfo.title) + " (" + durationText + ")";
+            
             m_infoLabel.setText(infoText, juce::dontSendNotification);
             m_infoLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(14.0f)}.boldened());
             m_infoLabel.setJustificationType(juce::Justification::centredLeft);

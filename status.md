@@ -1,4 +1,4 @@
-# JucyAudio - Architecture & Status (2025-08-07 Late Evening)
+# JucyAudio - Architecture & Status (2025-08-08 End of Day)
 
 ## 1. Executive Summary
 
@@ -113,20 +113,67 @@ The application now operates on the following principles:
 2.  **Fix Any Remaining Issues:** Address any bugs discovered during verification of BPM analysis and mix exporting.
 3.  **Code Cleanup:** Physically delete the now-obsolete `LogicalFolderNode` files and any other dead code from the pre-refactor era.
 
-## 10. Message to Next Instance
+## 9. Session Accomplishments: UI Polish & Bug Fixes (2025-08-08)
 
-The foundational library work is complete and stable. Today's session focused on UI improvements and configuration features:
-1. Fixed a critical mutex deadlock that occurred when editing attach points
-2. Implemented proper 4K display support so the mix editor uses the full screen height
-3. Investigated waveform caching but decided to defer it as a future enhancement
-4. Created a Settings dialog with configurable MP3 export tags (Artist, Album, Year, Genre, Comment)
+*   **LibraryRootsComponent Enhancement:**
+    *   Extended `LibraryRootInfo` with `fileCount` and `lastScanned` timestamp fields
+    *   Added database migration to schema version 10 (with defensive handling of version 8/9 mismatch)
+    *   Implemented automatic file count updates after library scans
+    *   Added "Files" and "Last Scanned" columns to the UI with proper sorting
+    *   Widened dialog from 700px to 800px to prevent horizontal scrolling
+    
+*   **Settings Menu Integration:**
+    *   Moved Settings from toolbar button to View menu (View → Settings...)
+    *   Added proper separator in menu for better organization
+    *   Removed standalone Settings button from DynamicToolbarComponent
+    
+*   **Waveform Cache Expansion:**
+    *   Increased AudioThumbnailCache from 10/5 items to 200 items
+    *   Now sufficient for large mixes with 70-80 tracks
+    *   Prevents constant waveform regeneration when scrolling
+    
+*   **Track Deletion Dialog Fix:**
+    *   Fixed confirmation dialog to properly support Cancel option
+    *   Changed from post-deletion dialog to pre-deletion confirmation
+    *   Now uses 3-button dialog: "Remove from Both", "Remove from Mix Only", "Cancel"
+    *   Dialog now appears BEFORE any deletion occurs, making Cancel truly functional
+    
+*   **Mix Playback Bug Fixes (Partial):**
+    *   Added code to stop mix playback before track deletion to prevent audio engine corruption
+    *   Attempted to fix persistent playback issue after track deletion by:
+        - Stopping playback before deletion
+        - Unloading and reloading mix in playback engine after changes
+    *   **ISSUE REMAINS:** Audio still won't resume after track deletion until playing something else
+    
+*   **Mix Track Display Enhancement:**
+    *   Updated MixTrackComponent to show: Artist - Album - Title (duration)
+    *   Gracefully handles missing artist/album information
 
-The Settings dialog implementation was challenging due to an initial misunderstanding of the configuration system. The actual system uses:
-- `config::theSettings` global instance with nested Section structures
-- `TypedValue<T>` fields with `get()` and `set()` methods (not getValue/setValue)
-- `TomlBackend` for persistence to TOML files
-- Path-based hierarchical configuration (e.g., "Export/DefaultArtist")
+## 10. Known Issues to Address:
 
-The mix editor is now fully functional with proper display scaling, no deadlocks, and configurable export settings. Your next tasks are to verify BPM analysis and the complete mix exporting workflow. The application is approaching full stability after the major refactoring sessions. Continue with systematic testing and fix any remaining issues.
+1.  **Critical: Mix Playback After Track Deletion**
+    *   Deleting a track during playback stops audio and prevents resumption
+    *   Requires playing a different track to "reset" the audio engine
+    *   Multiple fix attempts haven't fully resolved the issue
+    *   Likely needs deeper investigation of MixPlaybackEngine state management
 
-Note: If you revisit waveform caching, the database schema (v9) groundwork has been laid but reverted. The main challenge is that mixes typically have 70-80 tracks, far exceeding JUCE's default cache size. A hybrid approach with both large in-memory cache and persistent storage would be ideal.
+2.  **Performance: Waveform Loading**
+    *   Takes ~1 minute to load waveforms for 70-track mixes
+    *   Happens every time user navigates to a mix
+    *   HIGH PRIORITY: Need persistent file-based waveform caching
+    *   Database groundwork exists (schema v9) but needs implementation
+
+3.  **Efficiency: Track Deletion UI Rebuild**
+    *   Deleting a single track rebuilds entire timeline (all waveforms regenerate)
+    *   Not easily fixable due to complex recalculation of attach points and positions
+    *   Accepted for now but should be optimized in future
+
+## 11. Message to Next Instance
+
+Today's session focused on UI polish and bug fixes. Major improvements include enhanced library management UI with file counts and scan timestamps, better menu organization, expanded waveform cache, and a properly functioning cancel button in the track deletion dialog.
+
+**CRITICAL UNRESOLVED ISSUE:** The mix playback engine gets into a bad state after track deletion. Despite multiple attempts to fix it (stopping playback first, unloading/reloading the mix), the audio engine still won't resume playback after a track is deleted. The user must play something else entirely to "reset" the engine. This needs deeper investigation - possibly the MixPlaybackEngine is holding onto invalid pointers or the audio callback is getting stuck.
+
+**HIGH PRIORITY TODO:** Implement persistent waveform caching (see TODO list). The current situation where 70 tracks take a minute to load every time is unacceptable for user experience.
+
+The codebase is otherwise stable and functional. The UI improvements make the application more professional and user-friendly. Continue with systematic testing and focus on resolving the playback-after-deletion bug and implementing waveform caching.
