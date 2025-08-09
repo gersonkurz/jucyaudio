@@ -134,7 +134,7 @@ namespace jucyaudio
             mutable std::filesystem::path m_lastKnownFolderPath; // Cache for last known folder path
 
             // Schema versioning helpers
-            int getDBSchemaVersion();
+            int getDBSchemaVersion() const;
             DbResult setDBSchemaVersion(int version);
 
         // Waveform Cache

@@ -26,6 +26,9 @@ namespace jucyaudio
             /// @brief The full path of this folder on the filesystem.
             std::string path;
 
+            /// @brief The total number of tracks in this folder and all its subfolders.
+            int64_t trackCount{-1}; 
+
             /// @brief A utility function to check if the struct contains valid data from the database.
             bool isValid() const
             {

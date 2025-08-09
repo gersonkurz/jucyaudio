@@ -23,9 +23,19 @@ namespace jucyaudio
         bool VirtualFolderNode::getTotalTrackCount(int64_t &outCount) const
         {
             const auto &folderDb = theTrackLibrary.getFolderDatabase();
-            const auto &allChildFolders = folderDb.getAllChildFolders({m_folderId});
-            const auto &trackDb = theTrackLibrary.getTrackDatabase();
-            return trackDb->getTotalTrackCountForFolders(allChildFolders, outCount);
+            const auto folderInfo = folderDb.getFolderById(m_folderId);
+            if (folderInfo)
+            {
+                outCount = folderInfo->trackCount;
+                spdlog::debug("Total track count for folder ID {}: {}", m_folderId, outCount);
+                return true;
+            }
+            else
+            {
+                spdlog::error("Failed to get total track count for folder ID {}", m_folderId);
+                outCount = 0;
+                return false;
+            }
         }
 
         bool VirtualFolderNode::expand(std::vector<INavigationNode *> &outChildren)

@@ -69,7 +69,7 @@ namespace jucyaudio
             mutable std::unordered_map<FolderId, FolderInfo> m_folderInfoFromId;
             mutable std::unordered_map<std::string, FolderId> m_idFromFolderPath;
             mutable std::unordered_map<FolderId, std::vector<FolderId>> m_childrenFromParents; 
-
+            mutable std::unordered_map<FolderId, std::vector<FolderId>> m_parentsFromChildren; 
 
             mutable bool m_isCacheValid{false};
             mutable std::mutex m_cacheMutex;

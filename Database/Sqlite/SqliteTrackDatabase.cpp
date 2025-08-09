@@ -29,6 +29,7 @@ namespace
             parent_id   INTEGER,
             name        TEXT NOT NULL,
             root_path   TEXT,
+            track_count INTEGER,
             FOREIGN KEY (parent_id) REFERENCES Folders(folder_id) ON DELETE CASCADE
         );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_folders_parent_name ON Folders(parent_id, name);",
@@ -495,23 +496,7 @@ namespace jucyaudio
                 }
             }
 
-            SqliteStatement stmt{m_db, "INSERT OR IGNORE INTO SchemaInfo (key, value) VALUES (?, ?);"};
-            if (!stmt.isValid())
-            {
-                m_lastErrorMessage = "Failed to prepare schema version insert: " + m_db.getLastError();
-                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
-            }
-            stmt.addParam("schema_version");
-            stmt.addParam("9");
-            if (!stmt.execute())
-            {
-                m_lastErrorMessage = "Failed to insert initial schema version: " + m_db.getLastError();
-                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
-            }
-
-            // return runMigrations(); // Call migrations after basic schema is
-            // confirmed For now, assume runMigrations is simple
-            DbResult migrationResult = runMigrations();
+            const auto migrationResult{runMigrations()};
             if (!migrationResult.isOk())
             {
                 return migrationResult;
@@ -544,7 +529,7 @@ namespace jucyaudio
             return reconstructFullPath(trackInfo.folderId) / trackInfo.filename;
         }
 
-        int SqliteTrackDatabase::getDBSchemaVersion()
+        int SqliteTrackDatabase::getDBSchemaVersion() const
         {
             if (!isOpen())
                 return 0; // Or -1 to indicate error

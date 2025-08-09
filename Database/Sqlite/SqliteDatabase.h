@@ -52,6 +52,11 @@ namespace jucyaudio
                 return m_lastErrorMessage;
             }
 
+            int getMaxNumberOfParams() const
+            {
+                return sqlite3_limit(m_db, SQLITE_LIMIT_VARIABLE_NUMBER, -1);
+            }
+
             std::recursive_mutex &getMutex()
             {
                 // This mutex is used to ensure thread safety for database operations

@@ -11,7 +11,7 @@ namespace jucyaudio
 {
     namespace database
     {
-        SqliteFolderDatabase::SqliteFolderDatabase(database::SqliteDatabase &db)
+        SqliteFolderDatabase::SqliteFolderDatabase(SqliteDatabase &db)
             : m_db{db}
         {
         }
@@ -44,7 +44,7 @@ namespace jucyaudio
             std::unordered_map<FolderId, FolderInfo> flatFolderLookup;
 
             spdlog::info("buildCacheIfNeeded: Fetching all folders from the database...");
-
+            
             FolderInfo info{};
             while (stmt.getNextResult())
             {
@@ -52,15 +52,18 @@ namespace jucyaudio
                 info.parentId = stmt.isNull(1) ? -1 : stmt.getInt64(1);
                 info.name = stmt.getText(2);
                 info.path = stmt.isNull(3) ? "" : stmt.getText(3);
+                info.trackCount = 0;
 
                 flatFolderLookup[info.folderId] = info;
                 if (info.parentId > 0)
                 {
                     registerAsParent(info.parentId, info.folderId);
 
+                    std::vector<FolderId> parentIds;
                     std::list<std::string> pathSegments;
                     for (auto currentId = info.folderId;;)
                     {
+                        parentIds.push_back(currentId);
                         const auto pf{flatFolderLookup.find(currentId)};
                         if (pf == flatFolderLookup.end())
                         {
@@ -77,6 +80,11 @@ namespace jucyaudio
                         }
                         currentId = pf->second.parentId;
                     }
+                    if (!parentIds.empty())
+                    {
+                        m_parentsFromChildren[info.folderId] = std::move(parentIds);
+                    }
+
                     // If the path is empty, we need to build it from segments
                     if (info.path.empty())
                     {
@@ -115,6 +123,28 @@ namespace jucyaudio
             {
                 updateRootPathValuesInDatabase(pathUpdates);
             }
+            spdlog::info("BEGIN recursive track count calculation");
+            
+            SqliteStatement countStmt{m_db, "SELECT track_id, folder_id FROM Tracks;"};
+            while (countStmt.getNextResult())
+            {
+                const TrackId trackId = countStmt.getInt64(0);
+                const FolderId folderId = countStmt.getInt64(1);
+
+                auto item = m_parentsFromChildren.find(folderId);
+                if (item != m_parentsFromChildren.end())
+                {
+                    for (const auto folderId : item->second)
+                    {
+                        auto it = m_folderInfoFromId.find(folderId);
+                        if (it != m_folderInfoFromId.end())
+                        {
+                            ++(it->second.trackCount);
+                        }
+                    }
+                }                   
+            }
+            spdlog::info("FINISHED recursive track count calculation for {} folders", m_folderInfoFromId.size());
 
             m_isCacheValid = true;
             return true;
@@ -148,6 +178,7 @@ namespace jucyaudio
             }
             return allChildIds;
         }
+
         bool SqliteFolderDatabase::updateRootPathValuesInDatabase(const std::unordered_map<FolderId, std::string> &pathUpdates) const
         {
             if(SqliteTransaction transaction{m_db})
@@ -319,7 +350,6 @@ namespace jucyaudio
                     }
                 }
 
-
                 // Now, we need all folders that are not in use anywhere - that are not in the above list. We should be able to safely delete those.
                 SqliteStatement deleteStmt{m_db, "DELETE FROM Folders WHERE folder_id=?"};
                 for (const auto &item : m_folderInfoFromId)
@@ -405,6 +435,7 @@ namespace jucyaudio
             newFolder.parentId = parentId;
             newFolder.name = pathToString(path.filename());
             newFolder.path = key;
+            newFolder.trackCount = -1; // not yet known - will be calculated later
             if (addFolder(newFolder))
             {
                 return newFolder.folderId;
