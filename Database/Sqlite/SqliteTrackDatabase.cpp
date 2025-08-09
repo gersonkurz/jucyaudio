@@ -993,6 +993,44 @@ CREATE TABLE MixUndoHistory (
                 currentVersion = 10; // Update for any future migrations
             }
 
+            if (currentVersion < 11)
+            {
+                spdlog::info("Migrating database from version 10 to 11 - Adding WaveformCache table...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    const char* createWaveformCacheTable = R"SQL(
+                        CREATE TABLE WaveformCache (
+                            track_id INTEGER PRIMARY KEY NOT NULL,
+                            waveform_blob BLOB NOT NULL,
+                            FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
+                        );
+                    )SQL";
+
+                    if (!m_db.execute(createWaveformCacheTable))
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create WaveformCache table.");
+                    }
+
+                    if (auto result = setDBSchemaVersion(11); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 11.");
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated database to version 11.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 11;
+            }
+
             return DbResult::success();
         }
 
@@ -1751,5 +1789,59 @@ CREATE TABLE MixUndoHistory (
 
             return parentPath / filename;
         }
+
+        DbResult SqliteTrackDatabase::saveWaveform(TrackId trackId, const std::vector<unsigned char>& blob)
+        {
+            if (!isOpen())
+            {
+                return DbResult::failure(DbResultStatus::ErrorConnection, "DB not open for saveWaveform.");
+            }
+            m_lastErrorMessage.clear();
+
+            SqliteStatement stmt{m_db, "INSERT OR REPLACE INTO WaveformCache (track_id, waveform_blob) VALUES (?, ?);"};
+            if (!stmt.isValid())
+            {
+                m_lastErrorMessage = "Prepare failed for saveWaveform: " + m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+            }
+
+            stmt.addParam(trackId);
+            stmt.addParam(blob);
+
+            if (stmt.execute())
+            {
+                return DbResult::success();
+            }
+            
+            m_lastErrorMessage = "Execute failed for saveWaveform: " + m_db.getLastError();
+            return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+        }
+
+        DbResult SqliteTrackDatabase::loadWaveform(TrackId trackId, std::vector<unsigned char>& blob)
+        {
+            if (!isOpen())
+            {
+                return DbResult::failure(DbResultStatus::ErrorConnection, "DB not open for loadWaveform.");
+            }
+            m_lastErrorMessage.clear();
+
+            SqliteStatement stmt{m_db, "SELECT waveform_blob FROM WaveformCache WHERE track_id = ?;"};
+            if (!stmt.isValid())
+            {
+                m_lastErrorMessage = "Prepare failed for loadWaveform: " + m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+            }
+
+            stmt.addParam(trackId);
+
+            if (stmt.getNextResult())
+            {
+                blob = stmt.getBlob(0);
+                return DbResult::success();
+            }
+            
+            return DbResult::failure(DbResultStatus::ErrorGeneric, "No waveform found in cache.");
+        }
+
     } // namespace database
 } // namespace jucyaudio

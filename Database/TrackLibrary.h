@@ -149,6 +149,10 @@ namespace jucyaudio
                 return m_database->getTrackById(trackId);
             }
 
+            // Waveform Cache
+            DbResult saveWaveform(TrackId trackId, const std::vector<unsigned char>& blob);
+            DbResult loadWaveform(TrackId trackId, std::vector<unsigned char> &blob);
+
             std::vector<TrackInfo> getTracks(const TrackQueryArgs &args) const
             {
                 if (!m_isInitialised || !m_database)

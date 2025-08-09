@@ -2,6 +2,7 @@
 
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
+#include <Database/TrackLibrary.h>
 #include <juce_audio_utils/juce_audio_utils.h> // For AudioThumbnail
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -54,6 +55,8 @@ namespace jucyaudio
                 const TrackInfo &trackInfo,
                 juce::AudioFormatManager &formatManager,
                 juce::AudioThumbnailCache &thumbnailCache);
+
+            
 
             ~MixTrackComponent() override;
 
@@ -129,6 +132,8 @@ namespace jucyaudio
              * @param source A pointer to the ChangeBroadcaster that sent the notification.
              */
             void changeListenerCallback(juce::ChangeBroadcaster *source) override;
+
+        void generateThumbnailFromFile();
 
             /**
              * @brief Checks if this component is currently the selected track in the parent timeline.
@@ -369,6 +374,8 @@ namespace jucyaudio
             
             /** @brief Type of marker currently under the mouse cursor (for hover feedback) */
             MarkerType m_hoveredMarker = MarkerType::None;
+
+            bool m_isLoaded = false; // True if thumbnail is loaded from cache or generated
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixTrackComponent)
         };

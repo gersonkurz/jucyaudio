@@ -3,53 +3,61 @@
 #include <UI/MixTrackComponent.h>
 #include <UI/TimelineComponent.h>
 #include <Utils/AssortedUtils.h>
+#include <Utils/UiUtils.h>
 #include <spdlog/spdlog.h>
 
 namespace jucyaudio
 {
 
-
     namespace ui
     {
         using namespace database;
 
-        MixTrackComponent::MixTrackComponent(MixTrack &mixTrack, const TrackInfo &trackInfo, juce::AudioFormatManager &formatManager,
-                                             juce::AudioThumbnailCache &thumbnailCache)
+        MixTrackComponent::MixTrackComponent(
+            MixTrack &mixTrack, const TrackInfo &trackInfo, juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache)
             : m_mixTrack{mixTrack},
               m_trackInfo{trackInfo},
-              m_originalEnvelopePoint{},
-              m_thumbnail{512, formatManager, thumbnailCache}
+              m_thumbnail(512, formatManager, thumbnailCache)
         {
-            // Setup the info label with artist, album, title, and duration
-            const auto durationSeconds = std::chrono::duration_cast<std::chrono::seconds>(trackInfo.duration).count();
-            const int minutes = durationSeconds / 60;
-            const int seconds = durationSeconds % 60;
-            juce::String durationText = juce::String::formatted("%d:%02d", minutes, seconds);
+            m_thumbnail.addChangeListener(this);
 
-            // Build the info text with artist - album - title - duration
-            juce::String infoText;
-            if (!trackInfo.artist_name.empty())
-                infoText += juce::String(trackInfo.artist_name) + " - ";
-            if (!trackInfo.album_title.empty())
-                infoText += juce::String(trackInfo.album_title) + " - ";
-            infoText += juce::String(trackInfo.title) + " (" + durationText + ")";
-            
+            // --- Waveform Caching Logic ---
+            std::vector<unsigned char> cachedWaveformVec;
+            auto &db = theTrackLibrary;
+            if (db.loadWaveform(m_trackInfo.trackId, cachedWaveformVec).isOk() && !cachedWaveformVec.empty())
+            {
+                // Cache hit: Load from blob
+                juce::MemoryBlock mb(cachedWaveformVec.data(), cachedWaveformVec.size());
+                juce::MemoryInputStream stream(mb, false);
+                if (m_thumbnail.loadFrom(stream))
+                {
+                    spdlog::info("Loaded waveform for track {} from cache.", m_trackInfo.trackId);
+                    m_isLoaded = true;
+                }
+                else
+                {
+                    spdlog::error("Failed to load waveform from cached blob for track {}. Regenerating.", m_trackInfo.trackId);
+                    generateThumbnailFromFile();
+                }
+            }
+            else
+            {
+                // Cache miss: Generate from file and save to cache later
+                generateThumbnailFromFile();
+            }
+
+            const auto infoText{
+                std::format("{} - {} - {} ({})", m_trackInfo.artist_name, m_trackInfo.album_title, m_trackInfo.title, durationToString(m_trackInfo.duration))};
             m_infoLabel.setText(infoText, juce::dontSendNotification);
-            m_infoLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(14.0f)}.boldened());
             m_infoLabel.setJustificationType(juce::Justification::centredLeft);
             addAndMakeVisible(m_infoLabel);
-
-            // Load the thumbnail source
-            const auto trackPath{trackInfo.reconstructFullPath()};
-            m_thumbnail.setSource(new juce::FileInputSource(juce::File(trackPath.string())));
-            m_thumbnail.addChangeListener(this);
         }
 
         MixTrackComponent::~MixTrackComponent()
         {
             m_thumbnail.removeChangeListener(this);
         }
-        
+
         void MixTrackComponent::paint(juce::Graphics &g)
         {
             // --- 1. Basic Setup & Background ---
@@ -114,7 +122,6 @@ namespace jucyaudio
             // Draw markers relative to the full area, as they can exist in silence.
             drawAttachMarkers(g, waveformArea);
         }
-        
 
         void MixTrackComponent::drawVolumeEnvelope(juce::Graphics &g, const juce::Rectangle<int> &area)
         {
@@ -199,7 +206,6 @@ namespace jucyaudio
             drawMarker(MarkerType::AttachTo, attachColor);
         }
 
-        
         int MixTrackComponent::getMarkerXPosition(MarkerType marker) const
         {
             // 1. Resolve the marker type to an absolute time value using our robust helpers.
@@ -239,8 +245,7 @@ namespace jucyaudio
             // Apply that proportion to the component's full width to get the final X coordinate.
             return getLocalBounds().getX() + juce::roundToInt(proportion * getWidth());
         }
-        
-        
+
         void MixTrackComponent::resized()
         {
             auto bounds = getLocalBounds();
@@ -262,8 +267,34 @@ namespace jucyaudio
         {
             if (source == &m_thumbnail)
             {
+                if (m_thumbnail.isFullyLoaded() && !m_isLoaded)
+                {
+                    m_isLoaded = true;
+                    spdlog::info("Thumbnail fully generated for track {}, saving to cache.", m_trackInfo.trackId);
+
+                    juce::MemoryOutputStream stream;
+                    m_thumbnail.saveTo(stream);
+                    const auto &block = stream.getMemoryBlock();
+                    std::vector<unsigned char> blobData;
+                    blobData.resize(block.getSize());
+                    memcpy(blobData.data(), block.getData(), block.getSize());
+                    theTrackLibrary.saveWaveform(m_trackInfo.trackId, blobData);
+                }
                 repaint();
             }
+        }
+
+        void MixTrackComponent::generateThumbnailFromFile()
+        {
+            const auto trackPath = m_trackInfo.reconstructFullPath();
+            if (trackPath.empty())
+            {
+                spdlog::error("Could not reconstruct path for track {}. Cannot generate thumbnail.", m_trackInfo.trackId);
+                return;
+            }
+
+            spdlog::info("Generating waveform for track {} from file: {}", m_trackInfo.trackId, pathToString(trackPath));
+            m_thumbnail.setSource(new juce::FileInputSource(juce::File(ui::jucePathFromFs(trackPath))));
         }
 
         std::optional<size_t> MixTrackComponent::hitTestEnvelopePoint(juce::Point<int> mousePos) const
@@ -316,9 +347,9 @@ namespace jucyaudio
             const float relativeY = (float)(area.getBottom() - screenPos.y) / (float)area.getHeight();
             const float volumePercent = juce::jlimit(0.0f, 1.0f, relativeY);
 
-            database::EnvelopePoint result;
+            EnvelopePoint result;
             result.time = newTime;
-            result.volume = static_cast<Volume_t>(volumePercent * database::VOLUME_NORMALIZATION);
+            result.volume = static_cast<Volume_t>(volumePercent * VOLUME_NORMALIZATION);
             return result;
         }
 
@@ -326,29 +357,32 @@ namespace jucyaudio
         {
             auto bounds = getLocalBounds();
             auto waveformArea = bounds.removeFromBottom(WAVEFORM_SECTION_HEIGHT);
-            
+
             // Only test within waveform area
             if (!waveformArea.contains(mousePos))
                 return MarkerType::None;
-                
+
             const int hitThreshold = 5; // pixels
-            
+
             // Test each marker
             auto testMarker = [&](MarkerType type) -> bool
             {
                 const int markerX = getMarkerXPosition(type);
                 return std::abs(mousePos.x - markerX) <= hitThreshold;
             };
-            
-            if (testMarker(MarkerType::CueStart)) return MarkerType::CueStart;
-            if (testMarker(MarkerType::CueEnd)) return MarkerType::CueEnd;
-            if (testMarker(MarkerType::AttachFrom)) return MarkerType::AttachFrom;
-            if (testMarker(MarkerType::AttachTo)) return MarkerType::AttachTo;
-            
+
+            if (testMarker(MarkerType::CueStart))
+                return MarkerType::CueStart;
+            if (testMarker(MarkerType::CueEnd))
+                return MarkerType::CueEnd;
+            if (testMarker(MarkerType::AttachFrom))
+                return MarkerType::AttachFrom;
+            if (testMarker(MarkerType::AttachTo))
+                return MarkerType::AttachTo;
+
             return MarkerType::None;
         }
-        
-        
+
         Duration_t MixTrackComponent::xToTime(int x, bool clampToComponentBounds) const
         {
             const auto effectiveDuration = m_mixTrack.getEffectiveDuration(m_trackInfo.duration);
@@ -366,14 +400,12 @@ namespace jucyaudio
             return m_mixTrack.cueStart + std::chrono::duration_cast<Duration_t>(timeOffset);
         }
 
-
         // Mouse Event Handlers --------------------------------------------------------
-       
+
         void MixTrackComponent::mouseDown(const juce::MouseEvent &event)
         {
-            spdlog::info("[MixTrackComponent] mouseDown - clicks: {}, position: ({}, {})", 
-                        event.getNumberOfClicks(), event.position.x, event.position.y);
-            
+            spdlog::info("[MixTrackComponent] mouseDown - clicks: {}, position: ({}, {})", event.getNumberOfClicks(), event.position.x, event.position.y);
+
             // Check for right-click (context menu)
             if (event.mods.isPopupMenu())
             {
@@ -382,12 +414,12 @@ namespace jucyaudio
                 {
                     timeline->setSelectedTrack(this);
                 }
-                
+
                 // Show context menu
                 showContextMenu(event);
                 return;
             }
-            
+
             if (event.mods.isLeftButtonDown())
             {
                 // Check for double-click first - pass it to the timeline for playback
@@ -398,23 +430,35 @@ namespace jucyaudio
                     {
                         // Convert local coordinates to timeline coordinates
                         auto timelinePos = timeline->getLocalPoint(this, event.position);
-                        spdlog::info("[MixTrackComponent] Local pos: ({}, {}), Timeline pos: ({}, {})", 
-                                    event.position.x, event.position.y, timelinePos.x, timelinePos.y);
-                        
+                        spdlog::info("[MixTrackComponent] Local pos: ({}, {}), Timeline pos: ({}, {})",
+                            event.position.x,
+                            event.position.y,
+                            timelinePos.x,
+                            timelinePos.y);
+
                         // Create a new mouse event in timeline's coordinate space
-                        juce::MouseEvent timelineEvent(event.source, timelinePos, event.mods, 
-                                                      event.pressure, event.orientation, event.rotation,
-                                                      event.tiltX, event.tiltY, event.eventComponent,
-                                                      event.originalComponent, event.eventTime,
-                                                      event.mouseDownPosition, event.mouseDownTime,
-                                                      event.getNumberOfClicks(), event.mouseWasDraggedSinceMouseDown());
-                        
+                        juce::MouseEvent timelineEvent(event.source,
+                            timelinePos,
+                            event.mods,
+                            event.pressure,
+                            event.orientation,
+                            event.rotation,
+                            event.tiltX,
+                            event.tiltY,
+                            event.eventComponent,
+                            event.originalComponent,
+                            event.eventTime,
+                            event.mouseDownPosition,
+                            event.mouseDownTime,
+                            event.getNumberOfClicks(),
+                            event.mouseWasDraggedSinceMouseDown());
+
                         // Forward the event to timeline
                         timeline->mouseDown(timelineEvent);
-                        return;  // Don't process further
+                        return; // Don't process further
                     }
                 }
-                
+
                 // --- Priority 1: Check for an envelope point hit ---
                 if (const auto hitPointIndex = hitTestEnvelopePoint(event.position.toInt()))
                 {
@@ -438,7 +482,6 @@ namespace jucyaudio
             }
         }
 
-        
         void MixTrackComponent::mouseDrag(const juce::MouseEvent &event)
         {
             // If a cue marker drag is in progress, calculate preview position
@@ -446,7 +489,7 @@ namespace jucyaudio
             {
                 // Calculate the new absolute time based on current mouse position
                 const auto previewTime = xToTime(event.position.x, false /* clampToComponentBounds */);
-                
+
                 // Fire the callback to show preview line
                 if (onCueDragInProgress)
                 {
@@ -457,13 +500,13 @@ namespace jucyaudio
             {
                 // Calculate the new time for the attach point
                 auto previewTime = xToTime(event.position.x, false /* clampToComponentBounds */);
-                
+
                 // Constrain attach points to valid range
                 const auto effectiveStart = m_mixTrack.cueStart;
                 const auto effectiveEnd = m_mixTrack.getCueEndActual(m_trackInfo.duration);
                 previewTime = std::max(previewTime, effectiveStart);
                 previewTime = std::min(previewTime, effectiveEnd);
-                
+
                 // Show preview line for attach points too
                 if (onCueDragInProgress)
                 {
@@ -490,8 +533,7 @@ namespace jucyaudio
             }
         }
 
-        
-        void MixTrackComponent::constrainEnvelopePoint(size_t pointIndex, database::EnvelopePoint &point) const
+        void MixTrackComponent::constrainEnvelopePoint(size_t pointIndex, EnvelopePoint &point) const
         {
             if (pointIndex >= m_mixTrack.envelopePoints.size())
                 return;
@@ -520,9 +562,9 @@ namespace jucyaudio
             point.time = std::min(point.time, effectiveEndTime);
 
             // --- Volume constraint (remains correct) ---
-            point.volume = juce::jlimit(Volume_t(0), database::VOLUME_NORMALIZATION, point.volume);
+            point.volume = juce::jlimit(Volume_t(0), VOLUME_NORMALIZATION, point.volume);
         }
-        
+
         void MixTrackComponent::mouseUp(const juce::MouseEvent &event)
         {
             if (m_draggedMarker == MarkerType::CueStart)
@@ -579,13 +621,13 @@ namespace jucyaudio
             {
                 // Calculate the new time for the attach point
                 auto newTime = xToTime(event.position.x, false /* clampToComponentBounds */);
-                
+
                 // Constrain attach points to valid range
                 const auto effectiveStart = m_mixTrack.cueStart;
                 const auto effectiveEnd = m_mixTrack.getCueEndActual(m_trackInfo.duration);
                 newTime = std::max(newTime, effectiveStart);
                 newTime = std::min(newTime, effectiveEnd);
-                
+
                 // Update the appropriate attach point
                 MixTrack updatedTrack = m_mixTrack;
                 if (m_draggedMarker == MarkerType::AttachFrom)
@@ -596,19 +638,19 @@ namespace jucyaudio
                 {
                     updatedTrack.attachTo = newTime;
                 }
-                
+
                 // Fire the callback
                 if (onCueAttachChanged)
                 {
                     onCueAttachChanged(m_trackInfo.trackId, updatedTrack);
                 }
-                
+
                 // Clear preview line
                 if (onCueDragInProgress)
                 {
                     onCueDragInProgress(m_mixTrack.trackId, true, std::nullopt);
                 }
-                
+
                 m_draggedMarker = MarkerType::None;
                 repaint();
             }
@@ -691,34 +733,34 @@ namespace jucyaudio
                         bool isAttach = (m_draggedMarker == MarkerType::AttachFrom || m_draggedMarker == MarkerType::AttachTo);
                         onCueDragInProgress(m_mixTrack.trackId, isAttach, std::nullopt);
                     }
-                    
+
                     // Reset drag state
                     m_draggedMarker = MarkerType::None;
                     m_isDraggingEnvelopePoint = false;
                     m_selectedEnvelopePointIndex = std::nullopt;
-                    
+
                     // Restore original envelope point if we were dragging one
                     if (m_selectedEnvelopePointIndex.has_value() && m_selectedEnvelopePointIndex.value() < m_mixTrack.envelopePoints.size())
                     {
                         m_mixTrack.envelopePoints[*m_selectedEnvelopePointIndex] = m_originalEnvelopePoint;
                     }
-                    
+
                     repaint();
                     return true; // Key was handled
                 }
             }
-            
+
             return false; // Key not handled
         }
 
         void MixTrackComponent::showContextMenu(const juce::MouseEvent &event)
         {
             juce::PopupMenu menu;
-            
+
             // Get timeline to check clipboard state
-            auto* timeline = findParentComponentOfClass<TimelineComponent>();
+            auto *timeline = findParentComponentOfClass<TimelineComponent>();
             const bool hasClipboard = timeline ? timeline->hasClipboardData() : false;
-            
+
             // Add menu items with IDs - enable/disable based on state
             menu.addItem(1, "Cut", true);  // Always enabled when track is selected
             menu.addItem(2, "Copy", true); // Always enabled when track is selected
@@ -729,7 +771,7 @@ namespace jucyaudio
             menu.addItem(5, "Delete", true); // Always enabled when track is selected
             menu.addSeparator();
             menu.addItem(6, "Remove All Following Tracks", true);
-            
+
             // Show the menu and handle the result
             menu.showMenuAsync(juce::PopupMenu::Options(),
                 [this](int result)
@@ -740,51 +782,51 @@ namespace jucyaudio
                     }
                 });
         }
-        
+
         void MixTrackComponent::handleContextMenuResult(int menuItemID)
         {
-            auto* timeline = findParentComponentOfClass<TimelineComponent>();
+            auto *timeline = findParentComponentOfClass<TimelineComponent>();
             if (!timeline)
             {
                 spdlog::error("[MixTrackComponent] No parent timeline found");
                 return;
             }
-            
+
             switch (menuItemID)
             {
-                case 1: // Cut
-                    spdlog::info("[MixTrackComponent] Context menu: Cut selected");
-                    timeline->cutSelectedTrackToClipboard();
-                    break;
-                    
-                case 2: // Copy
-                    spdlog::info("[MixTrackComponent] Context menu: Copy selected");
-                    timeline->copySelectedTrackToClipboard();
-                    break;
-                    
-                case 3: // Paste Before
-                    spdlog::info("[MixTrackComponent] Context menu: Paste Before selected");
-                    timeline->pasteFromClipboard(true);
-                    break;
-                    
-                case 4: // Paste After
-                    spdlog::info("[MixTrackComponent] Context menu: Paste After selected");
-                    timeline->pasteFromClipboard(false);
-                    break;
-                    
-                case 5: // Delete
-                    spdlog::info("[MixTrackComponent] Context menu: Delete selected");
-                    // Use existing deleteSelectedTrack method
-                    timeline->deleteSelectedTrack();
-                    break;
-                    
-                case 6: // Remove All Following Tracks
-                    spdlog::info("[MixTrackComponent] Context menu: Remove All Following Tracks selected");
-                    timeline->removeAllTracksAfterSelected();
-                    break;
-                    
-                default:
-                    break;
+            case 1: // Cut
+                spdlog::info("[MixTrackComponent] Context menu: Cut selected");
+                timeline->cutSelectedTrackToClipboard();
+                break;
+
+            case 2: // Copy
+                spdlog::info("[MixTrackComponent] Context menu: Copy selected");
+                timeline->copySelectedTrackToClipboard();
+                break;
+
+            case 3: // Paste Before
+                spdlog::info("[MixTrackComponent] Context menu: Paste Before selected");
+                timeline->pasteFromClipboard(true);
+                break;
+
+            case 4: // Paste After
+                spdlog::info("[MixTrackComponent] Context menu: Paste After selected");
+                timeline->pasteFromClipboard(false);
+                break;
+
+            case 5: // Delete
+                spdlog::info("[MixTrackComponent] Context menu: Delete selected");
+                // Use existing deleteSelectedTrack method
+                timeline->deleteSelectedTrack();
+                break;
+
+            case 6: // Remove All Following Tracks
+                spdlog::info("[MixTrackComponent] Context menu: Remove All Following Tracks selected");
+                timeline->removeAllTracksAfterSelected();
+                break;
+
+            default:
+                break;
             }
         }
 

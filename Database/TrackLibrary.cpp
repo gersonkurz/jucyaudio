@@ -102,5 +102,25 @@ namespace jucyaudio
                                    progressCb, completionCb, shouldCancel);
         }
 
+        DbResult TrackLibrary::saveWaveform(TrackId trackId, const std::vector<unsigned char>& blob)
+        {
+            if (!m_isInitialised || !m_database)
+            {
+                setLastError("TrackLibrary not initialised.");
+                return DbResult::failure(DbResultStatus::ErrorConnection, "Database not initialised.");
+            }
+            return m_database->saveWaveform(trackId, blob);
+        }
+
+        DbResult TrackLibrary::loadWaveform(TrackId trackId, std::vector<unsigned char>& blob)
+        {
+            if (!m_isInitialised || !m_database)
+            {
+                setLastError("TrackLibrary not initialised.");
+                return DbResult::failure(DbResultStatus::ErrorConnection, "Database not initialised.");
+            }
+            return m_database->loadWaveform(trackId, blob);
+        }
+
     } // namespace database
 } // namespace jucyaudio
