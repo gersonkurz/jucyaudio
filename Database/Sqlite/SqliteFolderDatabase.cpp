@@ -40,9 +40,6 @@ namespace jucyaudio
             // lookup list for updates of the root_path value
             std::unordered_map<FolderId, std::string> pathUpdates;
 
-            // we should probably allocate all these in one huge cache
-            std::unordered_map<FolderId, FolderInfo> flatFolderLookup;
-
             spdlog::info("buildCacheIfNeeded: Fetching all folders from the database...");
             
             FolderInfo info{};
@@ -54,7 +51,7 @@ namespace jucyaudio
                 info.path = stmt.isNull(3) ? "" : stmt.getText(3);
                 info.trackCount = 0;
 
-                flatFolderLookup[info.folderId] = info;
+                m_folderInfoFromId[info.folderId] = info;
                 if (info.parentId > 0)
                 {
                     registerAsParent(info.parentId, info.folderId);
@@ -64,8 +61,8 @@ namespace jucyaudio
                     for (auto currentId = info.folderId;;)
                     {
                         parentIds.push_back(currentId);
-                        const auto pf{flatFolderLookup.find(currentId)};
-                        if (pf == flatFolderLookup.end())
+                        const auto pf{m_folderInfoFromId.find(currentId)};
+                        if (pf == m_folderInfoFromId.end())
                         {
                             spdlog::error("buildCacheIfNeeded: unable to build up cache, missing parent folder for ID {}", currentId);
                             return false;
@@ -101,10 +98,11 @@ namespace jucyaudio
                         info.path = normalizeForCache(pathWriter.asString());
                         pathUpdates[info.folderId] = info.path; // Store the update for later
                     }
+
                     const auto pf{m_idFromFolderPath.find(info.path)};
                     if (pf != m_idFromFolderPath.end())
                     {
-                        spdlog::error("Found duplicate: Folder {} already exists in flatFolderLookup", info.path);
+                        spdlog::error("Found duplicate: Folder {} already exists in m_folderInfoFromId", info.path);
                         spdlog::error("New ID is {}", info.folderId);
                         spdlog::error("Existing ID is {}", pf->second);
                         return false;
@@ -114,7 +112,6 @@ namespace jucyaudio
                 {
                     info.path = info.name; // Root folder path is just its name
                 }
-                m_folderInfoFromId[info.folderId] = info;
                 m_idFromFolderPath[info.path] = info.folderId;
             }
             spdlog::info("buildCacheIfNeeded: complete with {} folders loaded.", m_folderInfoFromId.size());
