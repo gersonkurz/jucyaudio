@@ -157,18 +157,6 @@ namespace jucyaudio
             };
 
             // Enhanced Player callbacks
-            m_enhancedPlayer.onPreviousTrack = [this]
-            {
-                // TODO: Implement previous track logic
-                spdlog::info("Previous track requested");
-            };
-
-            m_enhancedPlayer.onNextTrack = [this]
-            {
-                // TODO: Implement next track logic
-                spdlog::info("Next track requested");
-            };
-
             m_enhancedPlayer.onMarkerAction = [this](TrackId trackId, std::chrono::milliseconds position, bool isNewMarker)
             {
                 spdlog::info("Marker action requested: track={}, position={}ms, isNew={}", trackId, position.count(), isNewMarker);

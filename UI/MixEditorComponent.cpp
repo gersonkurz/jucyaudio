@@ -436,6 +436,21 @@ namespace jucyaudio
                         
                         spdlog::info("[MixEditor] Adding audio callback to device");
                         m_audioDeviceManager->addAudioCallback(m_mixPlaybackEngine.get());
+                        
+                        // Ensure the engine is prepared after adding the callback
+                        if (currentDevice)
+                        {
+                            m_mixPlaybackEngine->prepareToPlay(currentDevice->getCurrentBufferSizeSamples(), 
+                                                               currentDevice->getCurrentSampleRate());
+                            spdlog::info("[MixEditor] Prepared playback engine after adding callback");
+                        }
+                    }
+                    else if (currentDevice)
+                    {
+                        // Device exists but we should ensure the engine is prepared
+                        m_mixPlaybackEngine->prepareToPlay(currentDevice->getCurrentBufferSizeSamples(), 
+                                                           currentDevice->getCurrentSampleRate());
+                        spdlog::info("[MixEditor] Ensured playback engine is prepared");
                     }
                 }
                 else
@@ -593,21 +608,31 @@ namespace jucyaudio
                 }
             }
             
-            // 3. Stop playback robustly
+            // 3. Stop playback properly using the standard stop method
             const bool wasPlaying = m_isPlaying;
             if (wasPlaying)
             {
-                spdlog::info("Stopping playback to perform deletion.");
-                m_audioDeviceManager->removeAudioCallback(m_mixPlaybackEngine.get());
-                
-                m_isPlaying = false;
-                m_playbackTimer.stopTimer();
-                m_timeline.setMixPlaybackPosition(-1.0);
-                // By managing state directly, we avoid calling m_onMixPlaybackStopped, which might
-                // trigger other unwanted state changes in the parent component.
+                spdlog::info("Stopping playback properly before deletion.");
+                // Use the proper stop method which resets all state correctly
+                stopMixPlayback();
             }
             
-            // 4. Perform DB Deletions
+            // 4. Ensure audio is fully stopped and unload mix from engine
+            if (m_audioDeviceManager && m_mixPlaybackEngine)
+            {
+                // Make absolutely sure the callback is removed
+                m_audioDeviceManager->removeAudioCallback(m_mixPlaybackEngine.get());
+                
+                // Give the audio thread a moment to fully stop
+                juce::Thread::sleep(50);
+                
+                // Unload the mix from the engine BEFORE we modify the data
+                // This ensures no dangling pointers to track data
+                m_mixPlaybackEngine->unloadMix();
+                spdlog::info("Unloaded mix from playback engine before deletion.");
+            }
+            
+            // 5. Perform DB Deletions
             if (!database::theTrackLibrary.getMixManager().removeTrackFromMix(mixId, trackIdToRemove))
             {
                 spdlog::error("Failed to remove track {} from mix {}", trackIdToRemove, mixId);
@@ -634,7 +659,7 @@ namespace jucyaudio
                 }
             }
             
-            // 5. Reload data model from DB
+            // 6. Reload data model from DB
             if (!mixLoader.reloadFromDatabase())
             {
                 spdlog::critical("CRITICAL: Failed to reload mix loader from DB after deletion! The application state is now inconsistent.");
@@ -643,17 +668,17 @@ namespace jucyaudio
             }
             spdlog::info("Mix loader reloaded from database.");
             
-            // 6. Re-initialize playback engine with the new, reloaded data
+            // 7. Re-initialize playback engine with the new, reloaded data
             m_mixPlaybackEngine->loadMix(&mixLoader);
             spdlog::info("Playback engine re-loaded with new mix data.");
             
-            // 7. Refresh the entire timeline UI
+            // 8. Refresh the entire timeline UI
             m_timeline.refreshAfterDeletion(trackIdToRemove);
             spdlog::info("Timeline UI refreshed efficiently.");
             
-            // 8. Re-attach the audio callback so playback is possible again.
-            m_audioDeviceManager->addAudioCallback(m_mixPlaybackEngine.get());
-            spdlog::info("Audio callback re-attached. Deletion process complete.");
+            // 9. DON'T re-attach the audio callback here - let the user start playback manually
+            // This ensures clean state and proper initialization when they press play again
+            spdlog::info("Deletion process complete. Ready for manual playback restart.");
         }
         
         void MixEditorComponent::updatePlaybackPosition()

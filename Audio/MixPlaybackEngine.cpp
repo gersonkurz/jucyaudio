@@ -28,16 +28,8 @@ namespace jucyaudio
                 return;
             }
 
-            // Calculate the global offset from the first track's cueStart
-            Duration_t globalOffset{0};
-            if (mixTracks[0].cueStart < Duration_t{0})
-            {
-                globalOffset = -mixTracks[0].cueStart;
-                spdlog::info("[PlaybackEngine] Global offset: {} ms (from first track cueStart: {} ms)", 
-                            globalOffset.count(), mixTracks[0].cueStart.count());
-            }
-
-            // Calculate audio start time for each track according to Mix Flow algorithm
+            // Match the export implementation: NO global offset
+            // The export starts the first track at position 0, and this produces the correct output
             Duration_t previousAudioStartTime{0};
             
             for (size_t i = 0; i < mixTracks.size(); ++i)
@@ -47,13 +39,13 @@ namespace jucyaudio
 
                 if (i == 0)
                 {
-                    // First track starts at the global offset
-                    audioStartTime = globalOffset;
-                    spdlog::info("[PlaybackEngine] Track 0 starts at {} ms (global offset)", audioStartTime.count());
+                    // First track starts at position 0 (matching export behavior)
+                    audioStartTime = Duration_t{0};
+                    spdlog::info("[PlaybackEngine] Track 0 starts at {} ms (position 0)", audioStartTime.count());
                 }
                 else
                 {
-                    // Subsequent tracks use the placement rule
+                    // Subsequent tracks use the ATTACH formula (same as export)
                     const auto& prevTrack = mixTracks[i - 1];
                     audioStartTime = previousAudioStartTime + prevTrack.attachTo - mixTrack.attachFrom;
                     spdlog::info("[PlaybackEngine] Track {} starts at {} ms (prev {} + attachTo {} - attachFrom {})", 
@@ -210,10 +202,13 @@ namespace jucyaudio
 
         void MixPlaybackEngine::unloadMixInternal()
         {
+            // First pause to ensure we're not actively processing
+            m_isPaused = true;
+            
             // Release all track sources
             for (auto &source : m_trackSources)
             {
-                if (source->getAudioSource())
+                if (source && source->getAudioSource())
                 {
                     source->getAudioSource()->releaseResources();
                 }
@@ -439,6 +434,13 @@ namespace jucyaudio
             }
 
             std::lock_guard<std::mutex> lock(m_mutex);
+            
+            // Double-check after acquiring lock
+            if (!m_mixLoader || m_trackSources.empty())
+            {
+                bufferToFill.clearActiveBufferRegion();
+                return;
+            }
 
             // Clear the output buffer
             bufferToFill.clearActiveBufferRegion();
@@ -558,6 +560,14 @@ namespace jucyaudio
             for (size_t i = 0; i < m_trackSources.size(); ++i)
             {
                 auto &source = m_trackSources[i];
+                
+                // Safety check: ensure the track data is still valid
+                if (!source || !source->mixTrack || !source->trackInfo)
+                {
+                    spdlog::warn("[PlaybackEngine] Skipping invalid track source at index {}", i);
+                    continue;
+                }
+                
                 const MixTrack &mixTrack = *source->mixTrack;
 
                 // Get the track's start time from our calculated positions

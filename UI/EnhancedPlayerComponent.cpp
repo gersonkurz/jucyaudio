@@ -53,15 +53,11 @@ namespace jucyaudio
             };
             
             // Add all components
-            addAndMakeVisible(m_previousButton);
             addAndMakeVisible(m_stopButton);
             addAndMakeVisible(m_playButton);
             addAndMakeVisible(m_pauseButton);
-            addAndMakeVisible(m_nextButton);
             addAndMakeVisible(m_waveformDisplay);
             
-            addAndMakeVisible(m_repeatButton);
-            addAndMakeVisible(m_shuffleButton);
             addAndMakeVisible(m_speakerIcon);
             addAndMakeVisible(m_volumeSlider);
             addAndMakeVisible(m_currentTimeLabel);
@@ -104,26 +100,20 @@ namespace jucyaudio
             const int buttonPadding = 4;
             const int iconInset = buttonSize / 4; // Make icons 50% of button size
             
-            auto transportArea = topRow.removeFromLeft((buttonSize + buttonPadding) * 5);
+            auto transportArea = topRow.removeFromLeft((buttonSize + buttonPadding) * 3);
             transportArea = transportArea.reduced(4);
             
             // Set button bounds with proper sizing
-            m_previousButton.setBounds(transportArea.removeFromLeft(buttonSize));
-            transportArea.removeFromLeft(buttonPadding);
             m_stopButton.setBounds(transportArea.removeFromLeft(buttonSize));
             transportArea.removeFromLeft(buttonPadding);
             m_playButton.setBounds(transportArea.removeFromLeft(buttonSize));
             transportArea.removeFromLeft(buttonPadding);
             m_pauseButton.setBounds(transportArea.removeFromLeft(buttonSize));
-            transportArea.removeFromLeft(buttonPadding);
-            m_nextButton.setBounds(transportArea.removeFromLeft(buttonSize));
             
             // Set icon edge insets to make icons smaller within buttons
-            m_previousButton.setEdgeIndent(iconInset);
             m_stopButton.setEdgeIndent(iconInset);
             m_playButton.setEdgeIndent(iconInset);
             m_pauseButton.setEdgeIndent(iconInset);
-            m_nextButton.setEdgeIndent(iconInset);
             
             // Waveform takes remaining space
             m_waveformDisplay.setBounds(topRow.reduced(4));
@@ -133,13 +123,6 @@ namespace jucyaudio
             
             const int bottomButtonSize = bottomRow.getHeight() - 4;
             
-            // Repeat button
-            m_repeatButton.setBounds(bottomRow.removeFromLeft(bottomButtonSize + 10));
-            bottomRow.removeFromLeft(buttonPadding);
-            
-            // Shuffle button
-            m_shuffleButton.setBounds(bottomRow.removeFromLeft(bottomButtonSize + 10));
-            bottomRow.removeFromLeft(buttonPadding * 2);
             
             // Speaker icon
             m_speakerIcon.setBounds(bottomRow.removeFromLeft(bottomButtonSize));
@@ -188,8 +171,6 @@ namespace jucyaudio
             setButtonImage(m_playButton, BinaryData::play_arrow_svg, BinaryData::play_arrow_svgSize);
             setButtonImage(m_pauseButton, BinaryData::pause_svg, BinaryData::pause_svgSize);
             setButtonImage(m_stopButton, BinaryData::stop_svg, BinaryData::stop_svgSize);
-            setButtonImage(m_previousButton, BinaryData::skip_previous_svg, BinaryData::skip_previous_svgSize);
-            setButtonImage(m_nextButton, BinaryData::skip_next_svg, BinaryData::skip_next_svgSize);
         }
         
         void EnhancedPlayerComponent::setupButtons()
@@ -198,17 +179,7 @@ namespace jucyaudio
             m_playButton.onClick = [this] { playButtonClicked(); };
             m_pauseButton.onClick = [this] { pauseButtonClicked(); };
             m_stopButton.onClick = [this] { stopButtonClicked(); };
-            m_previousButton.onClick = [this] { previousButtonClicked(); };
-            m_nextButton.onClick = [this] { nextButtonClicked(); };
             
-            // Repeat button
-            m_repeatButton.onClick = [this] { repeatButtonClicked(); };
-            updateRepeatButton();
-            
-            // Shuffle button with icon
-            updateShuffleButton();
-            m_shuffleButton.onClick = [this] { shuffleButtonToggled(); };
-            m_shuffleButton.setToggleState(m_shuffleEnabled, juce::dontSendNotification);
         }
         
         void EnhancedPlayerComponent::setupVolumeControl()
@@ -256,9 +227,6 @@ namespace jucyaudio
             // Enable stop button if we have a file or mix is playing
             m_stopButton.setEnabled((hasFile && state != PlaybackController::State::Stopped) || mixIsPlaying);
             
-            // Previous/Next remain file-based for now
-            m_previousButton.setEnabled(hasFile);
-            m_nextButton.setEnabled(hasFile);
         }
         
         void EnhancedPlayerComponent::updateTimeDisplays()
@@ -293,24 +261,6 @@ namespace jucyaudio
             m_totalTimeLabel.setText(formatTime(length), juce::dontSendNotification);
         }
         
-        void EnhancedPlayerComponent::updateRepeatButton()
-        {
-            switch (m_repeatMode)
-            {
-                case RepeatMode::Off:
-                m_repeatButton.setButtonText("Repeat");
-                    m_repeatButton.setToggleState(false, juce::dontSendNotification);
-                    break;
-                case RepeatMode::RepeatOne:
-                    m_repeatButton.setButtonText("Repeat 1");
-                    m_repeatButton.setToggleState(true, juce::dontSendNotification);
-                    break;
-                case RepeatMode::RepeatAll:
-                    m_repeatButton.setButtonText("Repeat All");
-                    m_repeatButton.setToggleState(true, juce::dontSendNotification);
-                    break;
-            }
-        }
         
         void EnhancedPlayerComponent::playButtonClicked()
         {
@@ -328,61 +278,7 @@ namespace jucyaudio
             m_playbackController.stop();
         }
         
-        void EnhancedPlayerComponent::previousButtonClicked()
-        {
-            if (onPreviousTrack)
-            {
-                onPreviousTrack();
-            }
-        }
         
-        void EnhancedPlayerComponent::nextButtonClicked()
-        {
-            if (onNextTrack)
-            {
-                onNextTrack();
-            }
-        }
-        
-        void EnhancedPlayerComponent::repeatButtonClicked()
-        {
-            // Cycle through repeat modes
-            switch (m_repeatMode)
-            {
-                case RepeatMode::Off:
-                    m_repeatMode = RepeatMode::RepeatOne;
-                    break;
-                case RepeatMode::RepeatOne:
-                    m_repeatMode = RepeatMode::RepeatAll;
-                    break;
-                case RepeatMode::RepeatAll:
-                    m_repeatMode = RepeatMode::Off;
-                    break;
-            }
-            
-            updateRepeatButton();
-            spdlog::info("Repeat mode changed to: {}", static_cast<int>(m_repeatMode));
-        }
-        
-        void EnhancedPlayerComponent::shuffleButtonToggled()
-        {
-            m_shuffleEnabled = m_shuffleButton.getToggleState();
-            updateShuffleButton();
-            spdlog::info("Shuffle {}", m_shuffleEnabled ? "enabled" : "disabled");
-        }
-        
-        void EnhancedPlayerComponent::updateShuffleButton()
-        {
-            // Update shuffle button appearance based on state
-            if (m_shuffleEnabled)
-            {
-                m_shuffleButton.setButtonText("Shuffle On");
-            }
-            else
-            {
-                m_shuffleButton.setButtonText("Shuffle");
-            }
-        }
         
         void EnhancedPlayerComponent::updateVolumeIcon(float gain)
         {
