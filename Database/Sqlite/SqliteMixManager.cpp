@@ -7,6 +7,7 @@
 #include <Utils/StringWriter.h>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
+#include <algorithm>
 
 using json = nlohmann::json;
 
@@ -223,7 +224,23 @@ FROM Mixes m
         {
             if (SqliteTransaction transaction{m_db})
             {
-                // Use a prepared statement to remove each track from the mix
+                // First, collect the orderInMix values of tracks being deleted
+                std::vector<int> deletedOrders;
+                for (const auto &trackId : trackIds)
+                {
+                    SqliteStatement getOrderStmt{m_db, "SELECT order_in_mix FROM MixTracks WHERE mix_id = ? AND track_id = ?"};
+                    getOrderStmt.addParam(mixId);
+                    getOrderStmt.addParam(trackId);
+                    if (getOrderStmt.getNextResult())
+                    {
+                        deletedOrders.push_back(getOrderStmt.getInt32(0));
+                    }
+                }
+                
+                // Sort the orders so we can calculate the shift correctly
+                std::sort(deletedOrders.begin(), deletedOrders.end());
+                
+                // Delete all the tracks
                 SqliteStatement stmt{m_db, "DELETE FROM MixTracks WHERE mix_id = ? AND track_id = ?"};
                 for (const auto &trackId : trackIds)
                 {
@@ -235,6 +252,27 @@ FROM Mixes m
                     }
                     stmt.reset();
                 }
+                
+                // Re-enumerate remaining tracks
+                // For each deleted position, shift down all tracks above it
+                for (size_t i = 0; i < deletedOrders.size(); ++i)
+                {
+                    const int adjustedOrder = deletedOrders[i] - static_cast<int>(i); // Account for previous shifts
+                    SqliteStatement updateStmt{m_db, "UPDATE MixTracks SET order_in_mix = order_in_mix - 1 WHERE mix_id = ? AND order_in_mix > ?"};
+                    updateStmt.addParam(mixId);
+                    updateStmt.addParam(adjustedOrder);
+                    if (!updateStmt.execute())
+                    {
+                        spdlog::error("Failed to re-enumerate orderInMix after batch track deletion");
+                        return transaction.rollback();
+                    }
+                }
+                
+                if (!deletedOrders.empty())
+                {
+                    spdlog::info("Re-enumerated orderInMix after deleting {} tracks", trackIds.size());
+                }
+                
                 return transaction.commit();
             }
             return false;
@@ -244,13 +282,41 @@ FROM Mixes m
         {
             if (SqliteTransaction transaction{m_db})
             {
+                // First, get the orderInMix of the track being deleted
+                SqliteStatement getOrderStmt{m_db, "SELECT order_in_mix FROM MixTracks WHERE mix_id = ? AND track_id = ?"};
+                getOrderStmt.addParam(mixId);
+                getOrderStmt.addParam(trackId);
+                
+                int deletedTrackOrder = -1;
+                if (getOrderStmt.getNextResult())
+                {
+                    deletedTrackOrder = getOrderStmt.getInt32(0);
+                }
+                
+                // Delete the track
                 SqliteStatement stmt{m_db, "DELETE FROM MixTracks WHERE mix_id = ? AND track_id = ?"};
                 stmt.addParam(mixId);
                 stmt.addParam(trackId);
-                if (stmt.execute())
+                if (!stmt.execute())
                 {
-                    return transaction.commit();
+                    return transaction.rollback();
                 }
+                
+                // Re-enumerate orderInMix for all tracks after the deleted one
+                if (deletedTrackOrder >= 0)
+                {
+                    SqliteStatement updateStmt{m_db, "UPDATE MixTracks SET order_in_mix = order_in_mix - 1 WHERE mix_id = ? AND order_in_mix > ?"};
+                    updateStmt.addParam(mixId);
+                    updateStmt.addParam(deletedTrackOrder);
+                    if (!updateStmt.execute())
+                    {
+                        spdlog::error("Failed to re-enumerate orderInMix after track deletion");
+                        return transaction.rollback();
+                    }
+                    spdlog::info("Re-enumerated orderInMix for tracks after position {}", deletedTrackOrder);
+                }
+                
+                return transaction.commit();
             }
             return false;
         }

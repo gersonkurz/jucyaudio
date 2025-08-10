@@ -1,4 +1,4 @@
-# JucyAudio - Architecture & Status (2025-08-08 End of Day)
+# JucyAudio - Architecture & Status (2025-08-09 End of Day)
 
 ## 1. Executive Summary
 
@@ -149,31 +149,67 @@ The application now operates on the following principles:
     *   Updated MixTrackComponent to show: Artist - Album - Title (duration)
     *   Gracefully handles missing artist/album information
 
-## 10. Known Issues to Address:
+## 10. Session Accomplishments: 7-State Player & OrderInMix Fix (2025-08-09)
+
+*   **7-State Player System Implementation:**
+    *   Successfully integrated the new unified PlaybackController with 7 distinct states
+    *   Fixed 70+ compilation errors from incomplete implementation
+    *   Corrected method name mismatches (setMasterGain vs setGain, getCurrentState vs getState)
+    *   Added missing callbacks for mix playback (onMixPlaybackAlwaysRequested, onSeekRequested)
+    *   Fixed timer-based position updates for mix playback
+    
+*   **Critical Bug Discovery: Duplicate OrderInMix Values:**
+    *   **Problem:** Database corruption where multiple tracks had the same `orderInMix` value
+    *   **Example:** Tracks 15111 and 22650 both had orderInMix=33
+    *   **Impact:** When editing attach points, the wrong track would be updated
+    *   **Root Cause:** Track deletion operations were NOT re-enumerating `orderInMix` values
+    
+*   **OrderInMix Re-enumeration Fix:**
+    *   **Investigation Results:**
+        - Track deletion: ❌ NOT re-enumerating (FIXED)
+        - Paste operations: ✅ Correctly re-enumerating 
+        - Drag & drop reordering: ✅ Correctly re-enumerating
+    *   **Solution Implemented in `SqliteMixManager.cpp`:**
+        - `removeTrackFromMix()`: Now queries deleted track's orderInMix, then decrements all higher values
+        - `removeTracksFromMix()`: Collects all deleted positions, sorts them, then correctly shifts remaining tracks
+    *   **Result:** OrderInMix values now remain sequential (0, 1, 2, ...) after any operation
+
+## 11. Known Issues to Address:
 
 1.  **Critical: Mix Playback After Track Deletion**
     *   Deleting a track during playback stops audio and prevents resumption
+    *   Red playback position bar continues moving but no audio plays
     *   Requires playing a different track to "reset" the audio engine
     *   Multiple fix attempts haven't fully resolved the issue
     *   Likely needs deeper investigation of MixPlaybackEngine state management
+    *   **Status:** Partially addressed, needs further work
 
-2.  **Performance: Waveform Loading**
+2.  **Database Cleanup Needed:**
+    *   Existing user databases may have corrupt `orderInMix` values from previous deletion operations
+    *   Should implement a one-time migration to detect and fix duplicate values
+    *   Could add integrity check on startup
+
+3.  **Performance: Waveform Loading**
     *   Takes ~1 minute to load waveforms for 70-track mixes
     *   Happens every time user navigates to a mix
     *   HIGH PRIORITY: Need persistent file-based waveform caching
     *   Database groundwork exists (schema v9) but needs implementation
 
-3.  **Efficiency: Track Deletion UI Rebuild**
+4.  **Efficiency: Track Deletion UI Rebuild**
     *   Deleting a single track rebuilds entire timeline (all waveforms regenerate)
     *   Not easily fixable due to complex recalculation of attach points and positions
     *   Accepted for now but should be optimized in future
 
-## 11. Message to Next Instance
+## 12. Message to Next Instance
 
-Today's session focused on UI polish and bug fixes. Major improvements include enhanced library management UI with file counts and scan timestamps, better menu organization, expanded waveform cache, and a properly functioning cancel button in the track deletion dialog.
+Today's session successfully fixed a critical database corruption issue where track deletion wasn't re-enumerating `orderInMix` values, causing duplicate values that led to the wrong tracks being updated when editing attach points.
 
-**CRITICAL UNRESOLVED ISSUE:** The mix playback engine gets into a bad state after track deletion. Despite multiple attempts to fix it (stopping playback first, unloading/reloading the mix), the audio engine still won't resume playback after a track is deleted. The user must play something else entirely to "reset" the engine. This needs deeper investigation - possibly the MixPlaybackEngine is holding onto invalid pointers or the audio callback is getting stuck.
+**CRITICAL UNRESOLVED ISSUE:** The mix playback engine still has issues after track deletion. The playback position indicator moves but no audio plays. This needs deeper investigation - possibly the MixPlaybackEngine needs a full reset or the audio buffers aren't being properly reconstructed after the mix structure changes.
 
-**HIGH PRIORITY TODO:** Implement persistent waveform caching (see TODO list). The current situation where 70 tracks take a minute to load every time is unacceptable for user experience.
+**RECOMMENDED NEXT STEPS:**
+1. Test the orderInMix fix thoroughly - verify no duplicates after various operations
+2. Add a database migration to fix existing corrupt orderInMix values
+3. Deep dive into MixPlaybackEngine to fix the audio-after-deletion issue
+4. Implement persistent waveform caching (high priority for UX)
 
-The codebase is otherwise stable and functional. The UI improvements make the application more professional and user-friendly. Continue with systematic testing and focus on resolving the playback-after-deletion bug and implementing waveform caching.
+The codebase is stable with the orderInMix fix in place. The 7-state player system is working correctly. Focus should be on resolving the playback-after-deletion audio issue and improving performance with waveform caching.

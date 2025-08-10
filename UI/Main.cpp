@@ -316,8 +316,8 @@ namespace jucyaudio
                     spdlog::register_logger(conf_logger);
 
                     // 4. Set Log Level (can be configured from a file later)
-                    combined_logger->set_level(spdlog::level::info); // Set level on the specific logger
-                    combined_logger->flush_on(spdlog::level::info);  // Flush frequently during debugging
+                    combined_logger->set_level(spdlog::level::debug); // Set level on the specific logger
+                    combined_logger->flush_on(spdlog::level::debug);  // Flush frequently during debugging
 
                     // 5. Register it as the default logger (or use it explicitly)
                     spdlog::set_default_logger(combined_logger);

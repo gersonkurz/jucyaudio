@@ -211,21 +211,61 @@ namespace jucyaudio
         
         void EnhancedPlayerComponent::updateTransportButtons()
         {
-            const auto state = m_playbackController.getCurrentState();
-            const bool hasFile = !m_playbackController.getCurrentFilepath().isEmpty();
+            using PlayerState = PlaybackController::PlayerState;
+            const auto state = m_playbackController.getState();
             
-            // Check if mix is playing (using the callback if available)
-            bool mixIsPlaying = m_playbackController.isMixPlaying ? m_playbackController.isMixPlaying() : false;
-            bool isAnythingPlaying = (state == PlaybackController::State::Playing) || mixIsPlaying;
-            
-            // Enable play button if we have a file and nothing is playing, OR if something can be played
-            m_playButton.setEnabled((hasFile || mixIsPlaying) && !isAnythingPlaying);
-            
-            // Enable pause button if ANYTHING is playing (single track or mix)
-            m_pauseButton.setEnabled(isAnythingPlaying);
-            
-            // Enable stop button if we have a file or mix is playing
-            m_stopButton.setEnabled((hasFile && state != PlaybackController::State::Stopped) || mixIsPlaying);
+            // Update buttons based on the 7-state system
+            switch (state)
+            {
+                case PlayerState::Silence:
+                    // All buttons disabled
+                    m_playButton.setEnabled(false);
+                    m_pauseButton.setEnabled(false);
+                    m_stopButton.setEnabled(false);
+                    break;
+                    
+                case PlayerState::SilenceTrackLoaded:
+                    // Only PLAY enabled
+                    m_playButton.setEnabled(true);
+                    m_pauseButton.setEnabled(false);
+                    m_stopButton.setEnabled(false);
+                    break;
+                    
+                case PlayerState::TrackPlaying:
+                    // PAUSE and STOP enabled, PLAY disabled
+                    m_playButton.setEnabled(false);
+                    m_pauseButton.setEnabled(true);
+                    m_stopButton.setEnabled(true);
+                    break;
+                    
+                case PlayerState::TrackPaused:
+                    // PLAY and STOP enabled, PAUSE disabled
+                    m_playButton.setEnabled(true);
+                    m_pauseButton.setEnabled(false);
+                    m_stopButton.setEnabled(true);
+                    break;
+                    
+                case PlayerState::SilenceMixLoaded:
+                    // Only PLAY enabled
+                    m_playButton.setEnabled(true);
+                    m_pauseButton.setEnabled(false);
+                    m_stopButton.setEnabled(false);
+                    break;
+                    
+                case PlayerState::MixPlaying:
+                    // PAUSE and STOP enabled, PLAY disabled
+                    m_playButton.setEnabled(false);
+                    m_pauseButton.setEnabled(true);
+                    m_stopButton.setEnabled(true);
+                    break;
+                    
+                case PlayerState::MixPaused:
+                    // PLAY and STOP enabled, PAUSE disabled
+                    m_playButton.setEnabled(true);
+                    m_pauseButton.setEnabled(false);
+                    m_stopButton.setEnabled(true);
+                    break;
+            }
             
         }
         

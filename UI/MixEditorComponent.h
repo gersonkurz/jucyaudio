@@ -16,7 +16,10 @@ namespace jucyaudio
 {
     namespace ui
     {
-        class MixEditorComponent : public juce::Component
+        // Forward declarations
+        class PlaybackController;
+        
+        class MixEditorComponent : public juce::Component, private juce::Timer
         {
         public:
             MixEditorComponent();
@@ -30,19 +33,16 @@ namespace jucyaudio
             void unloadMix();
             void forceRefresh();
 
-            void setPlaybackCallback(std::function<void(const juce::File &, double)> callback);
-            void setSeekCallback(std::function<void(double)> callback);
-            void setMixPlaybackCallback(std::function<void(double)> callback);
-            void setOnMixPlaybackStarting(std::function<void()> callback);
-            void setOnMixPlaybackStopped(std::function<void()> callback);
+            // Set the playback controller for unified playback
+            void setPlaybackController(PlaybackController* controller);
+        PlaybackController* getPlaybackController() { return m_playbackController; }
 
             auto &getTimeline()
             {
                 return m_timeline;
             }
             
-            bool isMixPlaying() const { return m_isPlaying; }
-            void stopPlayback() { if (m_isPlaying) stopMixPlayback(); }
+            // Playback is now handled by PlaybackController
 
             void handleDeleteSelectedTrack();
 
@@ -51,9 +51,7 @@ namespace jucyaudio
             void updateEnvelopeInData(int orderInMix, const std::vector<database::EnvelopePoint>& points);
             void saveMixChanges();
             void handleMixPlayback(double startTime, bool alwaysPlay = false);
-            void startMixPlayback();
-            void stopMixPlayback();
-            void updatePlaybackPosition();
+            void timerCallback() override;
 
             juce::AudioFormatManager m_formatManager;
             juce::AudioThumbnailCache m_thumbnailCache{200}; // 200 items in the cache - enough for large mixes
@@ -62,23 +60,8 @@ namespace jucyaudio
             juce::Viewport m_viewport;
             database::MixNode *m_node{nullptr};
             
-            // Mix playback
-            std::unique_ptr<audio::MixPlaybackEngine> m_mixPlaybackEngine;
-            std::unique_ptr<juce::AudioDeviceManager> m_audioDeviceManager;
-            bool m_isPlaying{false};
-            std::function<void()> m_onMixPlaybackStarting;
-            std::function<void()> m_onMixPlaybackStopped;
-            
-            // Timer for updating playback position
-            class PlaybackTimer : public juce::Timer
-            {
-            public:
-                MixEditorComponent* owner;
-                void timerCallback() override 
-                { 
-                    if (owner) owner->updatePlaybackPosition(); 
-                }
-            } m_playbackTimer;
+            // Playback controller reference
+            PlaybackController* m_playbackController{nullptr};
             
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixEditorComponent)
         };

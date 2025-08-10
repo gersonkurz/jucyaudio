@@ -18,23 +18,19 @@ namespace jucyaudio
     
     namespace ui
     {
-        class PlaybackController final : public juce::ChangeBroadcaster // So MainComponent can listen to general state changes if needed
+        class PlaybackController final : public juce::ChangeBroadcaster
         {
         public:
-            enum class State
+            // The 7 states from player-ears.md
+            enum class PlayerState
             {
-                Stopped,
-                Starting, // Transient: loading/preparing
-                Playing,
-                Pausing, // Transient: about to pause
-                Paused,
-                Stopping // Transient: about to stop
-            };
-            
-            enum class PlaybackMode
-            {
-                SingleTrack,
-                MixPreview
+                Silence,              // Nothing loaded, nothing playing
+                SilenceTrackLoaded,   // Track loaded but not playing
+                TrackPlaying,         // Single track is playing
+                TrackPaused,          // Single track is paused (position preserved)
+                SilenceMixLoaded,     // Mix loaded but not playing
+                MixPlaying,           // Mix is playing
+                MixPaused             // Mix is paused (position preserved)
             };
 
             PlaybackController();
@@ -50,34 +46,27 @@ namespace jucyaudio
             // Returns true if loading was successful and playback started/is starting.
             bool loadAndPlayFile(const juce::File &audioFile);
             
-            // Load and play a mix preview
-            bool loadAndPlayMix(audio::MixProjectLoader* mixLoader, double startPositionSeconds = 0.0);
+            // Load and play a mix
+            bool loadMix(audio::MixProjectLoader* mixLoader);
+            void playMixFrom(double absoluteTimelineSeconds);
             
-            // Switch between single track and mix preview modes
-            void setPlaybackMode(PlaybackMode mode);
-            PlaybackMode getPlaybackMode() const { return m_playbackMode; }
+            // State query
+            PlayerState getState() const { return m_currentState; }
 
-            void play(); // Plays if a file is loaded and paused/stopped, or resumes.
-            void pause();
-            void stop(); // Stops playback and potentially unloads the source.
-            void stopSingleTrackOnly(); // Stops only single track playback without affecting mix
-            void togglePlayPause();
+            // Main control methods - behavior depends on current state
+            void play();    // Resume from pause or start from beginning
+            void pause();   // Pause and preserve position
+            void stop();    // Stop and reset position to 0
 
-            void seek(double positionSeconds);
-            void setGain(float newGain); // 0.0 to 1.0 (or higher)
+            void seek(double positionSeconds);  // Seek within current track/mix
+            void setGain(float newGain);
 
             // --- State Query Methods ---
             bool isPlaying() const;
-            double getCurrentPositionSeconds() const;
+            bool isMixMode() const;  // True if in any mix state
+            double getCurrentPositionSeconds() const;  // Absolute timeline position
             double getLengthInSeconds() const;
-            State getCurrentState() const
-            {
-                return m_currentState;
-            }
-            juce::String getCurrentFilepath() const
-            {
-                return m_currentFile.getFullPathName();
-            }
+            juce::String getCurrentFilepath() const { return m_currentFile.getFullPathName(); }
 
             // UI State getters for any UI component to query
             bool canPlay() const;
@@ -85,11 +74,8 @@ namespace jucyaudio
             bool canPause() const;
             bool isEffectivelyPlaying() const;
             
-            // Callback to stop mix playback when stop/pause is pressed
-            std::function<void()> onStopMixPlayback;
-            
-            // Callback to check if mix is currently playing
-            std::function<bool()> isMixPlaying;
+            // Callback for state changes
+            std::function<void(PlayerState)> onStateChanged;
 
             // --- Access to TransportSource for MainComponent to be a ChangeListener ---
             // This allows MainComponent to listen for when the transport source itself stops (e.g., end of file)
@@ -99,23 +85,31 @@ namespace jucyaudio
             }
 
         private:
-            void changeState(State newState);
+            void changeState(PlayerState newState);
             void loadFileInternal(const juce::File &audioFile);
             void unloadAudioSource();
+            void unloadMix();
 
+            // Audio components
             juce::AudioFormatManager m_audioFormatManager;
             std::unique_ptr<juce::AudioFormatReaderSource> m_currentAudioFileSource;
             juce::AudioTransportSource m_audioTransportSource;
             
             // Mix playback support
             std::unique_ptr<audio::MixPlaybackEngine> m_mixPlaybackEngine;
-            PlaybackMode m_playbackMode{PlaybackMode::SingleTrack};
+            audio::MixProjectLoader* m_currentMixLoader{nullptr};
             
+            // Device state
             double m_deviceSampleRate{0.0};
             int m_deviceBlockSize{0};
             bool m_isDevicePrepared{false};
-            juce::File m_currentFile; // Keep track of the currently loaded file
-            State m_currentState{State::Stopped};
+            
+            // Current state
+            PlayerState m_currentState{PlayerState::Silence};
+            juce::File m_currentFile;
+            
+            // Position tracking (absolute timeline position in seconds)
+            double m_pausedPosition{0.0};
 
             // To prevent re-entrancy or rapid state changes from UI/callbacks
             std::atomic<bool> m_isCurrentlyChangingState{false};

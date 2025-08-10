@@ -1,6 +1,7 @@
 #include <Database/Includes/INavigationNode.h>
 #include <UI/MainComponent.h>
 #include <UI/MixEditorComponent.h>
+#include <UI/PlaybackController.h>
 #include <Utils/StringWriter.h>
 #include <Utils/UiUtils.h>
 #include <Database/TrackLibrary.h>
@@ -39,39 +40,29 @@ namespace jucyaudio
             // Set up mix playback callbacks
             m_timeline.onMixPlaybackRequested = [this](double startTime)
             {
-                handleMixPlayback(startTime);
+                handleMixPlayback(startTime, false);
             };
             
-            // Double-click always plays (doesn't toggle)
+            // Set up double-click callback (always play)
             m_timeline.onMixPlaybackAlwaysRequested = [this](double startTime)
             {
                 handleMixPlayback(startTime, true);
             };
             
-            // Initialize audio
-            m_mixPlaybackEngine = std::make_unique<audio::MixPlaybackEngine>();
-            m_audioDeviceManager = std::make_unique<juce::AudioDeviceManager>();
-            
-            // Set up audio device - but don't add callback yet (will be added when playback starts)
-            
-            // Set up playback timer
-            m_playbackTimer.owner = this;
+            // Set up seek callback for clicking on timeline
+            m_timeline.onSeekRequested = [this](double timePosition)
+            {
+                if (m_playbackController && m_playbackController->isMixMode())
+                {
+                    m_playbackController->seek(timePosition);
+                    m_timeline.setMixPlaybackPosition(timePosition);
+                }
+            };
         }
         
         MixEditorComponent::~MixEditorComponent()
         {
-            // Stop playback if playing
-            if (m_isPlaying)
-            {
-                stopMixPlayback();
-            }
-            
-            // Clean up audio
-            if (m_audioDeviceManager && m_mixPlaybackEngine)
-            {
-                m_audioDeviceManager->removeAudioCallback(m_mixPlaybackEngine.get());
-            }
-            
+            stopTimer();
             // Unload mix before cleanup
             unloadMix();
         }
@@ -83,29 +74,9 @@ namespace jucyaudio
             resized(); // Recalculate viewport content
         }
 
-        void MixEditorComponent::setPlaybackCallback(std::function<void(const juce::File &, double)> callback)
+        void MixEditorComponent::setPlaybackController(PlaybackController* controller)
         {
-            m_timeline.onPlaybackRequested = callback;
-        }
-
-        void MixEditorComponent::setSeekCallback(std::function<void(double)> callback)
-        {
-            m_timeline.onSeekRequested = callback;
-        }
-        
-        void MixEditorComponent::setMixPlaybackCallback(std::function<void(double)> callback)
-        {
-            m_timeline.onMixPlaybackRequested = callback;
-        }
-        
-        void MixEditorComponent::setOnMixPlaybackStarting(std::function<void()> callback)
-        {
-            m_onMixPlaybackStarting = callback;
-        }
-        
-        void MixEditorComponent::setOnMixPlaybackStopped(std::function<void()> callback)
-        {
-            m_onMixPlaybackStopped = callback;
+            m_playbackController = controller;
         }
 
         void MixEditorComponent::paint(juce::Graphics &g)
@@ -204,18 +175,21 @@ namespace jucyaudio
             auto& loader = node->getMixProjectLoader();
             spdlog::info("[MixEditor] Loading mix with {} tracks into timeline", loader.getMixTracks().size());
             
-            // Load the mix into the playback engine
-            if (m_mixPlaybackEngine)
+            // Load the mix into the playback controller
+            if (m_playbackController)
             {
-                bool loadSuccess = m_mixPlaybackEngine->loadMix(&loader);
-                spdlog::info("[MixEditor] Mix loaded into playback engine: {}", loadSuccess ? "success" : "failed");
+                bool loadSuccess = m_playbackController->loadMix(&loader);
+                spdlog::info("[MixEditor] Mix loaded into playback controller: {}", loadSuccess ? "success" : "failed");
             }
             else
             {
-                spdlog::error("[MixEditor] m_mixPlaybackEngine is null!");
+                spdlog::error("[MixEditor] m_playbackController is null!");
             }
             
             m_timeline.populateFrom(&loader);
+            
+            // Start timer to monitor playback state
+            startTimer(50); // 20Hz update rate
             
             // Ensure timeline has keyboard focus for playback controls
             m_timeline.grabKeyboardFocus();
@@ -243,10 +217,11 @@ namespace jucyaudio
             // Get access to the mix tracks
             auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
             
-            // Find and update the track by orderInMix
+            // Find and update the track by orderInMix AND trackId (to handle duplicate orderInMix)
             for (auto& track : mixTracks)
             {
-                if (track.orderInMix == orderInMix)
+                // Match both orderInMix AND trackId to handle data corruption cases
+                if (track.orderInMix == orderInMix && track.trackId == updatedTrack.trackId)
                 {
                     // Check if cue or attach points actually changed
                     const auto cueStartChanged = track.cueStart != updatedTrack.cueStart;
@@ -257,7 +232,7 @@ namespace jucyaudio
                     track.cueEnd = updatedTrack.cueEnd;
                     track.attachFrom = updatedTrack.attachFrom;
                     track.attachTo = updatedTrack.attachTo;
-                    spdlog::info("Updated cue/attach points for track at position {}", orderInMix);
+                    spdlog::info("Updated cue/attach points for track {} at position {}", track.trackId, orderInMix);
                     
                     // Save changes
                     saveMixChanges();
@@ -265,17 +240,17 @@ namespace jucyaudio
                     // Tell timeline to reposition this specific track
                     m_timeline.repositionTrack(track.trackId);
                     
-                    // Tell playback engine to recalculate track positions if needed
+                    // Tell playback controller to reload if positions changed
                     // Note: cueStart of first track affects global offset, attach points affect all positions
                     const auto isFirstTrack = (track.orderInMix == 0);
                     const auto needsRecalc = attachChanged || (isFirstTrack && cueStartChanged);
                     
-                    if (needsRecalc && m_mixPlaybackEngine && m_mixPlaybackEngine->isMixLoaded() && 
-                        m_mixPlaybackEngine->getMixLoader() == &m_node->getMixProjectLoader())
+                    if (needsRecalc && m_playbackController && m_playbackController->isMixMode())
                     {
-                        spdlog::info("Recalculating playback engine track positions after {} change",
+                        spdlog::info("Reloading mix after {} change",
                                     attachChanged ? "attach point" : "first track cueStart");
-                        m_mixPlaybackEngine->recalculateTrackPositions();
+                        // Reload the mix to update positions
+                        m_playbackController->loadMix(&m_node->getMixProjectLoader());
                     }
                     break;
                 }
@@ -295,13 +270,13 @@ namespace jucyaudio
             // Get access to the mix tracks
             auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
             
-            // Find and update the track by orderInMix
+            // Find and update the track by orderInMix (and trackId if available)
             for (auto& track : mixTracks)
             {
                 if (track.orderInMix == orderInMix)
                 {
                     track.envelopePoints = points;
-                    spdlog::info("Updated envelope points for track at position {}", orderInMix);
+                    spdlog::info("Updated envelope points for track {} at position {}", track.trackId, orderInMix);
                     
                     // Save changes
                     saveMixChanges();
@@ -342,22 +317,18 @@ namespace jucyaudio
         
         void MixEditorComponent::handleMixPlayback(double startTime, bool alwaysPlay)
         {
-            spdlog::info("[MixEditor] handleMixPlayback called - startTime: {}, alwaysPlay: {}, m_isPlaying: {}", 
-                        startTime, alwaysPlay, m_isPlaying);
+            spdlog::info("[MixEditor] handleMixPlayback called - startTime: {}", startTime);
             
             // Special case: negative value means stop
             if (startTime < 0)
             {
-                if (m_isPlaying)
+                if (m_playbackController && m_playbackController->isPlaying())
                 {
                     spdlog::info("[MixEditor] Stopping playback (negative startTime)");
-                    stopMixPlayback();
+                    m_playbackController->stop();
                 }
                 return;
             }
-            
-            spdlog::info("[MixEditor] {} playback at {:.2f}s", 
-                        alwaysPlay ? "Starting" : "Toggling", startTime);
             
             if (!m_node)
             {
@@ -365,187 +336,51 @@ namespace jucyaudio
                 return;
             }
             
-            if (!m_mixPlaybackEngine)
+            if (!m_playbackController)
             {
-                spdlog::error("[MixEditor] m_mixPlaybackEngine is null!");
+                spdlog::error("[MixEditor] m_playbackController is null!");
                 return;
             }
             
-            if (m_isPlaying && !alwaysPlay)
+            // Ensure mix is loaded
+            if (!m_playbackController->isMixMode())
             {
-                // Toggle off (only for space key)
-                spdlog::info("[MixEditor] Toggling playback off");
-                stopMixPlayback();
-            }
-            else
-            {
-                // Load the mix into the playback engine if not already loaded
-                bool mixLoaded = m_mixPlaybackEngine->isMixLoaded();
-                bool correctLoader = m_mixPlaybackEngine->getMixLoader() == &m_node->getMixProjectLoader();
-                spdlog::info("[MixEditor] Mix loaded: {}, Correct loader: {}", mixLoaded, correctLoader);
-                
-                if (!mixLoaded || !correctLoader)
+                spdlog::info("[MixEditor] Loading mix into playback controller");
+                if (!m_playbackController->loadMix(&m_node->getMixProjectLoader()))
                 {
-                    spdlog::info("[MixEditor] Loading mix into playback engine");
-                    if (!m_mixPlaybackEngine->loadMix(&m_node->getMixProjectLoader()))
-                    {
-                        spdlog::error("[MixEditor] Failed to load mix into playback engine");
-                        return;
-                    }
-                    spdlog::info("[MixEditor] Mix successfully loaded into playback engine");
-                }
-                
-                // Set position and start playback
-                auto positionMs = std::chrono::milliseconds(static_cast<int64_t>(startTime * 1000));
-                spdlog::info("[MixEditor] Setting playback position to {} ms", positionMs.count());
-                m_mixPlaybackEngine->setPosition(positionMs);
-                startMixPlayback();
-            }
-        }
-        
-        void MixEditorComponent::startMixPlayback()
-        {
-            spdlog::info("[MixEditor] startMixPlayback called, m_isPlaying={}", m_isPlaying);
-            
-            if (!m_isPlaying)
-            {
-                // Ensure audio device is open
-                if (m_audioDeviceManager)
-                {
-                    auto* currentDevice = m_audioDeviceManager->getCurrentAudioDevice();
-                    spdlog::info("[MixEditor] Current audio device: {}", currentDevice ? currentDevice->getName().toStdString() : "none");
-                    
-                    if (!currentDevice)
-                    {
-                        spdlog::info("[MixEditor] Initializing audio device with default settings");
-                        auto result = m_audioDeviceManager->initialiseWithDefaultDevices(0, 2);
-                        if (result.isNotEmpty())
-                        {
-                            spdlog::error("[MixEditor] Failed to initialize audio device: {}", result.toStdString());
-                            return;
-                        }
-                        
-                        currentDevice = m_audioDeviceManager->getCurrentAudioDevice();
-                        if (currentDevice)
-                        {
-                            spdlog::info("[MixEditor] Audio device initialized: {}", currentDevice->getName().toStdString());
-                            spdlog::info("[MixEditor] Sample rate: {}, Buffer size: {}", 
-                                currentDevice->getCurrentSampleRate(), 
-                                currentDevice->getCurrentBufferSizeSamples());
-                        }
-                        
-                        spdlog::info("[MixEditor] Adding audio callback to device");
-                        m_audioDeviceManager->addAudioCallback(m_mixPlaybackEngine.get());
-                        
-                        // Ensure the engine is prepared after adding the callback
-                        if (currentDevice)
-                        {
-                            m_mixPlaybackEngine->prepareToPlay(currentDevice->getCurrentBufferSizeSamples(), 
-                                                               currentDevice->getCurrentSampleRate());
-                            spdlog::info("[MixEditor] Prepared playback engine after adding callback");
-                        }
-                    }
-                    else if (currentDevice)
-                    {
-                        // Device exists but we should ensure the engine is prepared
-                        m_mixPlaybackEngine->prepareToPlay(currentDevice->getCurrentBufferSizeSamples(), 
-                                                           currentDevice->getCurrentSampleRate());
-                        spdlog::info("[MixEditor] Ensured playback engine is prepared");
-                    }
-                }
-                else
-                {
-                    spdlog::error("[MixEditor] m_audioDeviceManager is null!");
+                    spdlog::error("[MixEditor] Failed to load mix");
                     return;
                 }
-                
-                m_isPlaying = true;
-                spdlog::info("[MixEditor] Set m_isPlaying to true");
-                
-                // Stop any single track playback and update UI state
-                if (m_onMixPlaybackStarting)
-                {
-                    spdlog::info("[MixEditor] Calling m_onMixPlaybackStarting callback");
-                    m_onMixPlaybackStarting();
-                    spdlog::info("[MixEditor] Finished m_onMixPlaybackStarting callback");
-                }
-                else
-                {
-                    spdlog::warn("[MixEditor] m_onMixPlaybackStarting callback is not set!");
-                }
-                
-                // Unpause the playback engine
-                if (m_mixPlaybackEngine)
-                {
-                    spdlog::info("[MixEditor] Unpausing playback engine");
-                    m_mixPlaybackEngine->setPaused(false);
-                    
-                    auto position = m_mixPlaybackEngine->getPosition();
-                    spdlog::info("[MixEditor] Current playback position: {} ms", position.count());
-                }
-                
-                // Start the timer to update playback position
-                spdlog::info("[MixEditor] Starting playback timer");
-                m_playbackTimer.startTimer(50); // Update at 20Hz
-                
-                // Update timeline to show we're playing
-                auto positionSeconds = m_mixPlaybackEngine->getPosition().count() / 1000.0;
-                spdlog::info("[MixEditor] Setting timeline playback position to {} seconds", positionSeconds);
-                m_timeline.setMixPlaybackPosition(positionSeconds);
             }
-            else
-            {
-                spdlog::info("[MixEditor] Already playing, ignoring start request");
-            }
-        }
-        
-        void MixEditorComponent::stopMixPlayback()
-        {
-            spdlog::info("MixEditorComponent::stopMixPlayback");
             
-            if (m_isPlaying)
-            {
-                m_isPlaying = false;
-                
-                // Stop the timer
-                m_playbackTimer.stopTimer();
-                
-                // Pause the playback engine instead of closing the device
-                if (m_mixPlaybackEngine)
-                {
-                    m_mixPlaybackEngine->setPaused(true);
-                }
-                
-                // Reset playback position display
-                m_timeline.setMixPlaybackPosition(-1.0); // Hide the red playhead
-                
-                // Notify that mix has stopped
-                if (m_onMixPlaybackStopped)
-                {
-                    m_onMixPlaybackStopped();
-                }
-            }
+            // Play from the specified position  
+            spdlog::info("[MixEditor] Starting playback at {:.2f}s", startTime);
+            m_playbackController->playMixFrom(startTime);
         }
         
         void MixEditorComponent::handleDeleteSelectedTrack()
         {
+            spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Entry");
             // 1. Pre-condition checks
             auto* selectedTrackComponent = m_timeline.getSelectedTrack();
             if (!selectedTrackComponent)
             {
                 spdlog::warn("handleDeleteSelectedTrack called but no track selected.");
+                spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> No track selected, exiting.");
                 return;
             }
             if (!m_node)
             {
                 spdlog::error("handleDeleteSelectedTrack called but no mix node loaded.");
+                spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> No mix node loaded, exiting.");
                 return;
             }
             
             auto& mixLoader = m_node->getMixProjectLoader();
             const auto trackIdToRemove = selectedTrackComponent->getTrackId();
             const auto mixId = mixLoader.getMixId();
-            
+            spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Attempting to delete track {} from mix {}", trackIdToRemove, mixId);
+
             // 2. Confirmation Dialog & Logic
             // This logic is ported from the old TimelineComponent::deleteSelectedTrack
             bool shouldRemoveFromWorkingSet = false;
@@ -580,6 +415,7 @@ namespace jucyaudio
                             if (result == 0) // Cancel
                             {
                                 spdlog::info("User cancelled track removal.");
+                                spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> User cancelled.");
                                 return;
                             }
                             else if (result == 1) // Yes - Remove from both
@@ -598,52 +434,40 @@ namespace jucyaudio
             {
                 // If not removing from working set, just show a simple confirmation
                 const auto result = juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,
-                                                                     "Delete Track",
-                                                                     "Are you sure you want to remove this track from the mix?",
-                                                                     "Delete", "Cancel");
+                                                                             "Delete Track",
+                                                                             "Are you sure you want to remove this track from the mix?",
+                                                                             "Delete", "Cancel");
                 if (result == 0) // User cancelled
                 {
                     spdlog::info("User cancelled track removal.");
+                    spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> User cancelled.");
                     return;
                 }
             }
             
-            // 3. Stop playback properly using the standard stop method
-            const bool wasPlaying = m_isPlaying;
+            // 3. Remember if we were playing and stop playback properly
+            const bool wasPlaying = m_playbackController && m_playbackController->isPlaying();
+            double playbackPosition = 0.0;
+            
             if (wasPlaying)
             {
-                spdlog::info("Stopping playback properly before deletion.");
-                // Use the proper stop method which resets all state correctly
-                stopMixPlayback();
-            }
-            
-            // 4. Ensure audio is fully stopped and unload mix from engine
-            if (m_audioDeviceManager && m_mixPlaybackEngine)
-            {
-                // Make absolutely sure the callback is removed
-                m_audioDeviceManager->removeAudioCallback(m_mixPlaybackEngine.get());
+                // Remember position before stopping
+                playbackPosition = m_playbackController->getCurrentPositionSeconds();
+                spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Was playing at position {}. Stopping playback.", playbackPosition);
+                m_playbackController->stop();
                 
                 // Give the audio thread a moment to fully stop
                 juce::Thread::sleep(50);
-                
-                // Unload the mix from the engine BEFORE we modify the data
-                // This ensures no dangling pointers to track data
-                m_mixPlaybackEngine->unloadMix();
-                spdlog::info("Unloaded mix from playback engine before deletion.");
             }
             
-            // 5. Perform DB Deletions
+            // 4. Perform DB Deletions
+            spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Removing track from DB.");
             if (!database::theTrackLibrary.getMixManager().removeTrackFromMix(mixId, trackIdToRemove))
             {
                 spdlog::error("Failed to remove track {} from mix {}", trackIdToRemove, mixId);
-                if (wasPlaying)
-                {
-                    m_audioDeviceManager->addAudioCallback(m_mixPlaybackEngine.get());
-                }
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Error", "Failed to remove track from database.");
                 return;
             }
-            spdlog::info("Track {} removed from mix in database.", trackIdToRemove);
             
             if (shouldRemoveFromWorkingSet)
             {
@@ -659,45 +483,85 @@ namespace jucyaudio
                 }
             }
             
-            // 6. Reload data model from DB
+            // 5. Reload data model from DB
+            spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Reloading mix loader from DB.");
             if (!mixLoader.reloadFromDatabase())
             {
                 spdlog::critical("CRITICAL: Failed to reload mix loader from DB after deletion! The application state is now inconsistent.");
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Critical Error", "Failed to reload mix data after deletion. Please restart the application.");
                 return;
             }
-            spdlog::info("Mix loader reloaded from database.");
             
-            // 7. Re-initialize playback engine with the new, reloaded data
-            m_mixPlaybackEngine->loadMix(&mixLoader);
-            spdlog::info("Playback engine re-loaded with new mix data.");
+            // 6. Re-load mix in playback controller with the new data
+            if (m_playbackController)
+            {
+                spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Reloading mix in playback controller.");
+                bool loadSuccess = m_playbackController->loadMix(&mixLoader);
+                spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Playback controller reload success: {}", loadSuccess);
+                
+                if (!loadSuccess)
+                {
+                    spdlog::error("Failed to reload mix after deletion!");
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                        "Error", "Failed to reload mix after track deletion.");
+                    return;
+                }
+                
+                // 7. Resume playback if we were playing before deletion
+                if (wasPlaying)
+                {
+                    // Small delay to ensure everything is set up
+                    juce::Thread::sleep(50);
+                    
+                    spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Resuming playback from position {}", playbackPosition);
+                    m_playbackController->playMixFrom(playbackPosition);
+                    
+                    // Force ensure it's really playing
+                    spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Final state check: isPlaying={}, isMixMode={}", 
+                        m_playbackController->isPlaying(),
+                        m_playbackController->isMixMode());
+                }
+            }
             
             // 8. Refresh the entire timeline UI
+            spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Refreshing timeline UI.");
             m_timeline.refreshAfterDeletion(trackIdToRemove);
-            spdlog::info("Timeline UI refreshed efficiently.");
             
-            // 9. DON'T re-attach the audio callback here - let the user start playback manually
-            // This ensures clean state and proper initialization when they press play again
-            spdlog::info("Deletion process complete. Ready for manual playback restart.");
+            // 9. Ready for playback
+            spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Exit");
         }
         
-        void MixEditorComponent::updatePlaybackPosition()
+        void MixEditorComponent::timerCallback()
         {
-            if (m_isPlaying && m_mixPlaybackEngine)
+            if (m_playbackController && m_playbackController->isMixMode())
             {
-                // Get current position from engine
-                const auto positionMs = m_mixPlaybackEngine->getPosition();
-                const double positionSeconds = positionMs.count() / 1000.0;
-                
-                // Update timeline display
-                m_timeline.setMixPlaybackPosition(positionSeconds);
-                
-                // Check if we've reached the end
-                if (positionMs >= m_mixPlaybackEngine->getTotalDuration())
+                if (m_playbackController->isPlaying())
                 {
-                    spdlog::info("Playback reached end of mix");
-                    stopMixPlayback();
+                    // Update timeline playback position
+                    const double positionSeconds = m_playbackController->getCurrentPositionSeconds();
+                    m_timeline.setMixPlaybackPosition(positionSeconds);
+                    
+                    // Check if we've reached the end
+                    const double totalSeconds = m_playbackController->getLengthInSeconds();
+                    if (totalSeconds > 0 && positionSeconds >= totalSeconds)
+                    {
+                        spdlog::info("Playback reached end of mix");
+                        m_playbackController->stop();
+                        stopTimer();
+                        m_timeline.setMixPlaybackPosition(-1.0); // Hide the red playhead
+                    }
                 }
+                else
+                {
+                    // Not playing but still in mix mode - hide playhead but keep timer for responsiveness
+                    m_timeline.setMixPlaybackPosition(-1.0);
+                }
+            }
+            else
+            {
+                // Not in mix mode - stop timer and hide playhead
+                stopTimer();
+                m_timeline.setMixPlaybackPosition(-1.0);
             }
         }
     } // namespace ui

@@ -84,38 +84,15 @@ namespace jucyaudio
             // Register audio formats
             m_audioFormatManager.registerBasicFormats();
             
-            // Set up callback to stop mix playback when stop/pause is pressed
-            m_playbackController.onStopMixPlayback = [this]()
+            // Set up state change callback
+            m_playbackController.onStateChanged = [this](PlaybackController::PlayerState state)
             {
-                m_mixEditorComponent.stopPlayback();
+                spdlog::info("[MainComponent] Player state changed to {}", static_cast<int>(state));
+                // UI components will poll the state via timer
             };
             
-            // Set up callback to check if mix is playing
-            m_playbackController.isMixPlaying = [this]() -> bool
-            {
-                return m_mixEditorComponent.isMixPlaying();
-            };
-            
-            // Set up mix editor callbacks once during initialization
-            m_mixEditorComponent.setOnMixPlaybackStarting(
-                [this]()
-                {
-                    spdlog::info("[MainComponent] onMixPlaybackStarting callback called");
-                    // Stop only single track playback (not mix)
-                    m_playbackController.stopSingleTrackOnly();
-                    spdlog::info("[MainComponent] Stopped single track, now updating UI state");
-                    // Update UI state to reflect mix is now playing
-                    // UI will update via timer in EnhancedPlayerComponent
-                    spdlog::info("[MainComponent] onMixPlaybackStarting callback finished");
-                });
-            
-            m_mixEditorComponent.setOnMixPlaybackStopped(
-                [this]()
-                {
-                    spdlog::info("[MainComponent] onMixPlaybackStopped callback called");
-                    // Update UI state to reflect mix has stopped
-                    // UI will update via timer in EnhancedPlayerComponent
-                });
+            // Set up mix editor to use the unified playback controller
+            m_mixEditorComponent.setPlaybackController(&m_playbackController);
 
             // --- Add and make visible all child components ---
             addAndMakeVisible(m_dynamicToolbar);
@@ -570,19 +547,7 @@ namespace jucyaudio
                 {
                     m_mixEditorComponent.loadMix(static_cast<MixNode *>(m_currentNode)); // Load the mix data
 
-                    // Set up playback callback
-                    m_mixEditorComponent.setPlaybackCallback(
-                        [this](const juce::File &audioFile, double startPosition)
-                        {
-                            this->playFileFromPosition(audioFile, startPosition);
-                        });
-
-                    // Set up seek callback for live position changes
-                    m_mixEditorComponent.setSeekCallback(
-                        [this](double timePosition)
-                        {
-                            this->seekToTimelinePosition(timePosition);
-                        });
+                    // MixEditorComponent now uses PlaybackController directly - no callbacks needed
                 }
                 else
                 {
@@ -641,10 +606,9 @@ namespace jucyaudio
         void MainComponent::seekToTimelinePosition(double timePosition)
         {
             spdlog::info("seekToTimelinePosition called with time: {:.2f}", timePosition);
-            spdlog::info("Current playback state: {}", static_cast<int>(m_playbackController.getCurrentState()));
+            spdlog::info("Current playback state: {}", static_cast<int>(m_playbackController.getState()));
 
-            if (m_playbackController.getCurrentState() == PlaybackController::State::Playing ||
-                m_playbackController.getCurrentState() == PlaybackController::State::Paused)
+            if (m_playbackController.isPlaying())
             {
                 spdlog::info("Something is playing - switching to clicked track position");
 
@@ -675,7 +639,10 @@ namespace jucyaudio
             if (audioFile.existsAsFile())
             {
                 // Stop any mix playback before starting single track
-                m_mixEditorComponent.stopPlayback();
+                if (m_playbackController.isPlaying())
+                {
+                    m_playbackController.stop();
+                }
                 
                 m_statusPanel.setStatusMessage(
                     getSafeDisplayText("Playing: " + audioFile.getFileName() + " from " + juce::String(startPosition, 1) + "s"), false);
@@ -939,7 +906,10 @@ namespace jucyaudio
             if (audioFile.existsAsFile())
             {
                 // Stop any mix playback before starting single track
-                m_mixEditorComponent.stopPlayback();
+                if (m_playbackController.isPlaying())
+                {
+                    m_playbackController.stop();
+                }
                 
                 // uncomment this line, and you get the exceptio
                 m_statusPanel.setStatusMessage(getSafeDisplayText("Playing: " + audioFile.getFileName()), false);
@@ -1526,7 +1496,8 @@ namespace jucyaudio
             }
 
             // Fallback: if nothing selected, resume current playback if paused
-            if (m_playbackController.getCurrentState() == PlaybackController::State::Paused)
+            if (m_playbackController.getState() == PlaybackController::PlayerState::TrackPaused || 
+                m_playbackController.getState() == PlaybackController::PlayerState::MixPaused)
             {
                 m_playbackController.play();
                 return;
@@ -1865,7 +1836,10 @@ namespace jucyaudio
 
         void MainComponent::stopMixPlayback()
         {
-            m_mixEditorComponent.stopPlayback();
+            if (m_playbackController.isPlaying())
+            {
+                m_playbackController.stop();
+            }
         }
         
         bool MainComponent::isTrackEditorInMixView() const

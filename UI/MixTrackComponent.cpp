@@ -219,9 +219,13 @@ namespace jucyaudio
                 markerTime = m_mixTrack.getCueEndActual(m_trackInfo.duration);
                 break;
             case MarkerType::AttachFrom:
+                // AttachFrom is relative to the START of the source audio, not an absolute position
+                // We need to convert it to the same coordinate system as cueStart/cueEnd
                 markerTime = m_mixTrack.attachFrom;
                 break;
             case MarkerType::AttachTo:
+                // AttachTo is relative to the START of the source audio, not an absolute position
+                // We need to convert it to the same coordinate system as cueStart/cueEnd
                 markerTime = m_mixTrack.attachTo;
                 break;
             default:
@@ -500,6 +504,18 @@ namespace jucyaudio
             {
                 // Calculate the new time for the attach point
                 auto previewTime = xToTime(event.position.x, false /* clampToComponentBounds */);
+                
+                // Debug logging for track 22650
+                if (m_trackInfo.trackId == 22650)
+                {
+                    spdlog::info("[Track 22650 Debug] AttachTo drag:");
+                    spdlog::info("  - Mouse X: {}", event.position.x);
+                    spdlog::info("  - Component width: {}", getWidth());
+                    spdlog::info("  - Preview time from xToTime: {} ms", previewTime.count());
+                    spdlog::info("  - Current cueStart: {} ms", m_mixTrack.cueStart.count());
+                    spdlog::info("  - Current attachTo: {} ms", m_mixTrack.attachTo.count());
+                    spdlog::info("  - Track duration: {} ms", m_trackInfo.duration.count());
+                }
 
                 // Constrain attach points to valid range
                 const auto effectiveStart = m_mixTrack.cueStart;
@@ -510,6 +526,11 @@ namespace jucyaudio
                 // Show preview line for attach points too
                 if (onCueDragInProgress)
                 {
+                    if (m_trackInfo.trackId == 22650)
+                    {
+                        spdlog::info("  - Calling onCueDragInProgress with orderInMix={}, isAttach=true, previewTime={} ms",
+                            m_mixTrack.orderInMix, previewTime.count());
+                    }
                     onCueDragInProgress(m_mixTrack.orderInMix, true /* is attach point */, previewTime);
                 }
             }
@@ -597,9 +618,31 @@ namespace jucyaudio
                 // 1. Calculate the new absolute time based on the mouse release position.
                 const auto newAbsoluteTime = xToTime(event.position.x, false /* clampToComponentBounds */);
 
+                // Debug logging for track 22650
+                if (m_trackInfo.trackId == 22650)
+                {
+                    spdlog::info("[Track 22650 Debug] CueEnd drag:");
+                    spdlog::info("  - Mouse X: {}", event.position.x);
+                    spdlog::info("  - Component width: {}", getWidth());
+                    spdlog::info("  - New absolute time: {} ms", newAbsoluteTime.count());
+                    spdlog::info("  - Current cueStart: {} ms", m_mixTrack.cueStart.count());
+                    spdlog::info("  - Track duration: {} ms", m_trackInfo.duration.count());
+                    spdlog::info("  - Current cueEnd: {} ms", m_mixTrack.cueEnd.count());
+                    spdlog::info("  - Effective duration: {} ms", m_mixTrack.getEffectiveDuration(m_trackInfo.duration).count());
+                }
+
                 // 2. Convert this absolute time to our storage format (offset from track end).
+                // cueEnd is the offset from the END of the track
+                // newAbsoluteTime is where we want the cue-end marker to be
+                // The natural end of the track (without cueEnd) would be at: cueStart + trackDuration
+                // So: cueEnd = newAbsoluteTime - (cueStart + trackDuration)
                 MixTrack updatedTrack = m_mixTrack;
-                updatedTrack.cueEnd = newAbsoluteTime - m_trackInfo.duration;
+                updatedTrack.cueEnd = newAbsoluteTime - (m_mixTrack.cueStart + m_trackInfo.duration);
+                
+                if (m_trackInfo.trackId == 22650)
+                {
+                    spdlog::info("  - Calculated new cueEnd: {} ms", updatedTrack.cueEnd.count());
+                }
 
                 // 3. Fire the callback to update the data model and trigger a layout refresh.
                 if (onCueAttachChanged)

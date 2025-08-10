@@ -1,6 +1,7 @@
 #include <UI/MixEditorComponent.h>
 #include <UI/Settings.h>
 #include <UI/TimelineComponent.h>
+#include <UI/PlaybackController.h>
 #include <spdlog/spdlog.h>
 #include <toml++/toml.h> // Include the parser implementation here
 
@@ -60,12 +61,9 @@ namespace jucyaudio
             {
                 if (m_selectedTrack)
                 {
-                    if (auto *editor = findParentComponentOfClass<MixEditorComponent>())
-                    {
-                        spdlog::info("Delete key pressed - delegating to MixEditorComponent");
-                        editor->handleDeleteSelectedTrack();
-                        return true; // Consumed the key event
-                    }
+                    // This now calls the corrected method below
+                    deleteSelectedTrack();
+                    return true; 
                 }
             }
 
@@ -86,25 +84,31 @@ namespace jucyaudio
                 return false;
             }
 
-            // 2. Get the ID of the track to delete
-            const auto trackIdToRemove{m_selectedTrack->getTrackId()};
-            if (trackIdToRemove == 0)
+            // --- FIX: Get the playback controller from the parent editor ---
+            auto* editor = findParentComponentOfClass<MixEditorComponent>();
+            if (!editor)
             {
-                spdlog::error("Could not find TrackId for the selected component.");
+                spdlog::error("Could not find parent MixEditorComponent. Cannot stop playback engine.");
+                return false;
+            }
+            auto* playbackController = editor->getPlaybackController();
+            if (!playbackController)
+            {
+                spdlog::error("Could not get PlaybackController from editor.");
                 return false;
             }
 
+            // 2. Get the ID of the track to delete
+            const auto trackIdToRemove{m_selectedTrack->getTrackId()};
             const auto currentMixId{m_mixLoader->getMixId()};
             spdlog::info("Attempting to delete Track ID: {} from Mix ID: {}", trackIdToRemove, currentMixId);
 
-            // 3. Check if we need to show a confirmation dialog
+            // 3. Check if we need to show a confirmation dialog (logic is unchanged)
             bool shouldRemoveFromWorkingSet = false;
             bool userCancelled = false;
 
             if (config::theSettings.mixEditingSettings.removeFromWorkingSetOnDelete.get())
             {
-                // IMPORTANT: Only remove from working set if this track appears only once in the mix
-                // Count how many times this track appears in the current mix
                 const auto &mixTracks = m_mixLoader->getMixTracks();
                 int trackOccurrences = 0;
                 for (const auto &mixTrack : mixTracks)
@@ -114,19 +118,11 @@ namespace jucyaudio
                         trackOccurrences++;
                     }
                 }
-
-                spdlog::info("Track {} appears {} time(s) in the mix", trackIdToRemove, trackOccurrences);
-
-                // Only consider removing from working set if this was the last occurrence
                 if (trackOccurrences == 1)
                 {
-                    // Get the source working set ID from the mix info
                     const auto &mixInfo = m_mixLoader->getMixInfo();
                     if (mixInfo.source_ws_id > 0)
                     {
-                        const WorkingSetId wsId = mixInfo.source_ws_id;
-
-                        // Check if we should ask for confirmation
                         if (config::theSettings.mixEditingSettings.askBeforeRemovingFromWorkingSet.get())
                         {
                             const auto result = juce::AlertWindow::showYesNoCancelBox(juce::AlertWindow::QuestionIcon,
@@ -136,77 +132,73 @@ namespace jucyaudio
                                 "Remove from Mix Only",
                                 "Cancel");
 
-                            if (result == 0) // Cancel
-                            {
-                                userCancelled = true;
-                                spdlog::info("User cancelled track removal");
-                            }
-                            else if (result == 1) // Yes - Remove from both
-                            {
-                                shouldRemoveFromWorkingSet = true;
-                            }
-                            // result == 2 means No - Remove from mix only (shouldRemoveFromWorkingSet stays false)
+                            if (result == 0) userCancelled = true;
+                            else if (result == 1) shouldRemoveFromWorkingSet = true;
                         }
                         else
                         {
-                            // No confirmation dialog, use the setting
                             shouldRemoveFromWorkingSet = true;
                         }
                     }
-                    else
-                    {
-                        spdlog::debug("Mix has no source working set, skipping working set removal");
-                    }
-                }
-                else
-                {
-                    spdlog::info("Track {} appears multiple times in mix, not removing from working set", trackIdToRemove);
                 }
             }
 
-            // 4. If user cancelled, return early
             if (userCancelled)
             {
+                spdlog::info("User cancelled track removal");
                 return false;
             }
 
-            // 5. Perform the database deletion from the mix
+            // --- FIX: Stop playback BEFORE any data model changes ---
+            const bool wasPlaying = playbackController->isPlaying();
+            double playbackPosition = 0.0;
+
+            if (wasPlaying)
+            {
+                playbackPosition = playbackController->getCurrentPositionSeconds();
+                spdlog::debug("TimelineComponent: Was playing at position {}. Stopping playback.", playbackPosition);
+                playbackController->stop();
+                juce::Thread::sleep(50); // Give audio thread a moment to stop
+            }
+
+            // 4. Perform the database deletion from the mix
             if (!theTrackLibrary.getMixManager().removeTrackFromMix(currentMixId, trackIdToRemove))
             {
                 spdlog::error("Failed to remove track from database.");
+                // Attempt to restart playback if it was active
+                if (wasPlaying) playbackController->play();
                 return false;
             }
 
-            spdlog::info("Successfully removed track from mix.");
-
-            // 6. If we should also remove from working set, do it now
+            // 5. If we should also remove from working set, do it now
             if (shouldRemoveFromWorkingSet)
             {
                 const auto &mixInfo = m_mixLoader->getMixInfo();
-                const WorkingSetId wsId = mixInfo.source_ws_id;
-
-                if (theTrackLibrary.getWorkingSetManager().removeTrackFromWorkingSet(wsId, trackIdToRemove))
+                if (theTrackLibrary.getWorkingSetManager().removeTrackFromWorkingSet(mixInfo.source_ws_id, trackIdToRemove))
                 {
-                    spdlog::info("Also removed track {} from working set {}", trackIdToRemove, wsId);
-                }
-                else
-                {
-                    spdlog::warn("Failed to remove track {} from working set {}", trackIdToRemove, wsId);
+                    spdlog::info("Also removed track {} from working set {}", trackIdToRemove, mixInfo.source_ws_id);
                 }
             }
 
-            // 7. CRITICAL: Refresh the in-memory loader from the database.
-            // This synchronizes our data source with the change we just made.
+            // 6. CRITICAL: Refresh the in-memory loader from the database.
             if (!m_mixLoader->reloadFromDatabase())
             {
                 spdlog::error("Failed to reload MixProjectLoader from database after deletion!");
                 return false;
             }
 
-            spdlog::info("MixProjectLoader successfully reloaded from DB. It now has {} tracks.", m_mixLoader->getMixTracks().size());
+            // --- FIX: Reload the now-modified mix into the playback engine ---
+            spdlog::debug("TimelineComponent: Reloading mix in playback controller.");
+            bool loadSuccess = playbackController->loadMix(m_mixLoader);
 
-            // 8. Repopulate the UI from the fresh, updated loader.
-            // We are calling our own function with the loader we've just updated.
+            // --- FIX: Resume playback if it was active before ---
+            if (wasPlaying && loadSuccess)
+            {
+                spdlog::debug("TimelineComponent: Resuming playback from position {}", playbackPosition);
+                playbackController->playMixFrom(playbackPosition);
+            }
+
+            // 7. Repopulate the UI from the fresh, updated loader.
             return populateFrom();
         }
 
@@ -656,8 +648,10 @@ namespace jucyaudio
                 g.drawVerticalLine(juce::roundToInt(x), 0.0f, static_cast<float>(getHeight()));
 
                 int minutes = (i * 30) / 60;
-                int seconds = (i * 30) % 60;
-                juce::String time = juce::String::formatted("%d:%02d", minutes, seconds);
+                const int seconds = (i * 30) % 60;
+                const int hours = minutes / 60;
+                minutes %= 60;
+                juce::String time = juce::String::formatted("%d:%02d:%02d", hours, minutes, seconds);
                 g.drawText(time, juce::roundToInt(x) + 4, 4, 100, 20, juce::Justification::topLeft);
             }
         }
@@ -819,7 +813,7 @@ namespace jucyaudio
 
         void TimelineComponent::maintainViewportPosition(double timeAtMouse, int mouseX)
         {
-            if (auto *viewport = findParentComponentOfClass<juce::Viewport>())
+            if (auto *viewport = findParentComponentOfClass<juce::Viewport>()) // JUCE_API
             {
                 // Calculate where that time position should be after zoom
                 int newMouseX = static_cast<int>(timeAtMouse * m_pixelsPerSecond);
@@ -966,7 +960,7 @@ namespace jucyaudio
             const int yGap = 5;
 
             // Always match the viewport height if we have one
-            if (auto *viewport = findParentComponentOfClass<juce::Viewport>())
+            if (auto *viewport = findParentComponentOfClass<juce::Viewport>()) // JUCE_API
             {
                 const int viewportHeight = viewport->getHeight();
 
@@ -1064,6 +1058,19 @@ namespace jucyaudio
                                     // xToTime returns cueStart + offset_within_component
                                     // componentStartTime is where the component starts on the timeline
                                     // So absolute position = componentStartTime + offset_within_component
+                                    
+                                    // Debug for track 22650
+                                    if (tv.mixTrackData->trackId == 22650)
+                                    {
+                                        spdlog::info("[Track 22650 Timeline Debug] Preview line calculation:");
+                                        spdlog::info("  - componentStartTime: {} ms", tv.componentStartTime.count());
+                                        spdlog::info("  - previewTime: {} ms", previewTime->count());
+                                        spdlog::info("  - cueStart: {} ms", tv.mixTrackData->cueStart.count());
+                                        spdlog::info("  - offset: {} ms", (*previewTime - tv.mixTrackData->cueStart).count());
+                                        spdlog::info("  - final preview position: {} ms", 
+                                            (tv.componentStartTime + (*previewTime - tv.mixTrackData->cueStart)).count());
+                                    }
+                                    
                                     m_cueDragPreviewTime = tv.componentStartTime + (*previewTime - tv.mixTrackData->cueStart);
                                     break;
                                 }
@@ -1091,7 +1098,7 @@ namespace jucyaudio
             m_calculatedHeight = rulerHeight + (numLanesForHeightCalc * (trackHeight + yGap));
 
             // If we have a parent viewport, ensure we're at least as tall as its visible area
-            if (auto *viewport = findParentComponentOfClass<juce::Viewport>())
+            if (auto *viewport = findParentComponentOfClass<juce::Viewport>()) // JUCE_API
             {
                 const int viewportHeight = viewport->getHeight();
                 if (viewportHeight > m_calculatedHeight)
