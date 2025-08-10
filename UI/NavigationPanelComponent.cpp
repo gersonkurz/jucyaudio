@@ -61,7 +61,9 @@ namespace jucyaudio
                 g.fillRect(localBounds);
 
                 // Use a contrasting text color.
-                g.setColour(lf.findColour(juce::PopupMenu::highlightedTextColourId));
+                const auto textColor = lf.findColour(juce::PopupMenu::highlightedTextColourId);
+                g.setColour(textColor);
+                spdlog::info("NavTreeViewItem::paintItem - Selected text color: #{}", textColor.toDisplayString(true).toStdString());
             }
             else
             {
@@ -71,6 +73,7 @@ namespace jucyaudio
 
                 const auto foregroundColour = lf.findColour(juce::Label::textColourId);
                 g.setColour(foregroundColour);
+                spdlog::info("NavTreeViewItem::paintItem - Non-selected text color: #{}", foregroundColour.toDisplayString(true).toStdString());
             }
 
             if (m_node)

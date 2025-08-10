@@ -42,6 +42,8 @@ namespace jucyaudio
                 
                 DECLARE_COLOUR_ID(Slider::thumbColourId)
                 DECLARE_COLOUR_ID(Slider::trackColourId)
+                DECLARE_COLOUR_ID(ScrollBar::thumbColourId) // New
+                DECLARE_COLOUR_ID(ScrollBar::trackColourId) // New
             };
         } // namespace
 

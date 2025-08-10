@@ -9,19 +9,19 @@ namespace jucyaudio
     namespace ui
     {
         ExportMixDialog::ExportMixDialog(const database::MixInfo &mixInfo, OnExportCallback callback)
-            : m_mixInfo(mixInfo),
-              m_callback(callback),
-              m_titleLabel("titleLabel", std::format("Export Mix: {}", mixInfo.name)),
-              m_fileLabel("fileLabel", "Output File:"),
-              m_tagsHeaderLabel("tagsHeader", "ID3 Tags (MP3 only):"),
-              m_artistLabel("artistLabel", "Artist:"),
-              m_albumLabel("albumLabel", "Album:"),
-              m_trackTitleLabel("trackTitleLabel", "Title:"),
-              m_yearLabel("yearLabel", "Year:"),
-              m_genreLabel("genreLabel", "Genre:"),
-              m_commentLabel("commentLabel", "Comment:"),
-              m_exportButton("Export"),
-              m_cancelButton("Cancel")
+            : m_mixInfo{mixInfo},
+              m_callback{callback},
+              m_titleLabel{"titleLabel", std::format("Export Mix: {}", mixInfo.name)},
+              m_fileLabel{"fileLabel", "Output File:"},
+              m_tagsHeaderLabel{"tagsHeader", "ID3 Tags (MP3 only):"},
+              m_artistLabel{"artistLabel", "Artist:"},
+              m_albumLabel{"albumLabel", "Album:"},
+              m_trackTitleLabel{"trackTitleLabel", "Title:"},
+              m_yearLabel{"yearLabel", "Year:"},
+              m_genreLabel{"genreLabel", "Genre:"},
+              m_commentLabel{"commentLabel", "Comment:"},
+              m_exportButton{"Export"},
+              m_cancelButton{"Cancel"}
         {
             theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
 

@@ -420,12 +420,16 @@ namespace jucyaudio
             if (rowIsSelected)
             {
                 // Use the PopupMenu's highlighted text color for selected items
-                g.setColour(lf.findColour(juce::PopupMenu::highlightedTextColourId));
+                const auto textColor = lf.findColour(juce::PopupMenu::highlightedTextColourId);
+                g.setColour(textColor);
+                //spdlog::info("DataViewComponent::paintCell - Selected text color: #{}", textColor.toDisplayString(true).toStdString());
             }
             else
             {
                 // Use the ListBox's standard text color for non-selected items
-                g.setColour(lf.findColour(juce::ListBox::textColourId));
+                const auto textColor = lf.findColour(juce::ListBox::textColourId);
+                g.setColour(textColor);
+                //spdlog::info("DataViewComponent::paintCell - Non-selected text color: #{}", textColor.toDisplayString(true).toStdString());
             }
 
             juce::Justification justification = juce::Justification::centredLeft;
