@@ -259,10 +259,7 @@ namespace jucyaudio
                         auto result = appDataDir.createDirectory();
                         if (!result.wasOk())
                         {
-                            // Critical error, cannot create app data dir for logs/DB
-                            // Fallback or assert/error
                             std::cerr << "FATAL: Could not create app data directory: " << appDataDir.getFullPathName().toStdString() << std::endl;
-                            // You might want to throw or gracefully exit here
                         }
                     }
 
@@ -277,60 +274,51 @@ namespace jucyaudio
 
                     // 2. Create Sinks
                     std::vector<spdlog::sink_ptr> sinks;
-
-                    // Sink 1: File Sink (rotating recommended for long-term use)
-                    // For simplicity, basic file sink first. Can change to rotating later.
-                    // Max size 10MB, 3 rotated files
-                    // auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(logFilePath_std, 1024 * 1024 * 10, 3);
                     auto fileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(logFilePath_std, true); // true = truncate if exists
                     sinks.push_back(fileSink);
 
-// Sink 2: Console Sink (platform-specific for best output)
 #if JUCE_WINDOWS
-                    // Use msvc_sink for OutputDebugString on Windows
                     auto debugSink = std::make_shared<spdlog::sinks::msvc_sink_mt>();
                     sinks.push_back(debugSink);
-                    // You could also add a color console sink if running from a terminal
-                    // auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-                    // sinks.push_back(consoleSink);
-#else // macOS, Linux
-      // Standard color console sink
-      // auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-      // sinks.push_back(consoleSink);
 #endif
 
-                    // 3. Create a Logger with Multiple Sinks
-                    // Use a descriptive name, "multi_sink_logger" or your app name
+                    // 3. Create loggers
                     auto combined_logger = std::make_shared<spdlog::logger>("jucyaudio_logger", begin(sinks), end(sinks));
-
                     auto conf_logger = std::make_shared<spdlog::logger>("conf", sinks.begin(), sinks.end());
-
-                    // Set levels per module
-                    conf_logger->set_level(spdlog::level::warn);
-
-                    // Optional: Flush level per logger
-                    conf_logger->flush_on(spdlog::level::warn);
-                    config::logger = conf_logger; // Store the config logger globally
-
-                    // Register them globally
+                    config::logger = conf_logger;
                     spdlog::register_logger(conf_logger);
-
-                    // 4. Set Log Level (can be configured from a file later)
-                    combined_logger->set_level(spdlog::level::debug); // Set level on the specific logger
-                    combined_logger->flush_on(spdlog::level::debug);  // Flush frequently during debugging
-
-                    // 5. Register it as the default logger (or use it explicitly)
                     spdlog::set_default_logger(combined_logger);
 
-                    // Test log message
+                    // 4. Set Log Level from config file
+                    config::TomlBackend backend{g_strConfigFilename};
+                    config::theSettings.load(backend);
+                    auto level_str = config::theSettings.loggingSettings.logLevel.get();
+                    auto level = spdlog::level::from_str(level_str);
+
+                    if (level == spdlog::level::off && level_str != "off")
+                    {
+                        level = spdlog::level::info;
+                    }
+
+#if JUCE_DEBUG
+                    level = spdlog::level::debug;
+#endif
+
+                    combined_logger->set_level(level);
+                    combined_logger->flush_on(level);
+                    conf_logger->set_level(spdlog::level::warn);
+                    conf_logger->flush_on(spdlog::level::warn);
+
+                    // 5. Test log message
                     spdlog::info("---------------------------------------------------------");
                     spdlog::info("jucyaudio Application Started. Logging initialised.");
                     spdlog::info("Log file: {}", logFilePath_std);
-                    spdlog::debug("Debug logging is enabled.");
+                    spdlog::info("Log level set to \"{}\"", spdlog::level::to_string_view(level));
+
                     try
                     {
                         std::locale loc("en_US.UTF-8");
-                        std::locale::global(loc); // Set the global locale
+                        std::locale::global(loc);
                         spdlog::info("Locale set to: {}", loc.name());
                         spdlog::info("info: {:L}", 1234567); // Test formatting with thousands separators
                     }
@@ -341,11 +329,8 @@ namespace jucyaudio
                 }
                 catch (const spdlog::spdlog_ex &ex)
                 {
-                    // Fallback to std::cerr or std::cout if spdlog init fails
                     std::cerr << "Log initialisation failed: " << ex.what() << std::endl;
-                    // You could also try a Juce AlertWindow here, but it might be too early in app init
                 }
-                // ... rest of your initialise method ...
             }
 
             std::unique_ptr<MainWindow> mainWindow;

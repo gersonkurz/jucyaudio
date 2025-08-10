@@ -90,6 +90,17 @@ namespace jucyaudio
                 TypedValue<bool> clearWorkingSetAfterExport{this, "ClearWorkingSetAfterExport", true};
                 
             } mixEditingSettings{this};
+
+            struct LoggingSettings : public Section
+            {
+                LoggingSettings(Section *parent)
+                    : Section{parent, "Logging"}
+                {
+                }
+                
+                TypedValue<std::string> logLevel{this, "log_level", "info"};
+
+            } loggingSettings{this};
         };
 
         extern RootSettings theSettings;
