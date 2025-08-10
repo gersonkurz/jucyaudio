@@ -297,13 +297,8 @@ namespace jucyaudio
 
                     if (level == spdlog::level::off && level_str != "off")
                     {
-                        level = spdlog::level::info;
+                        level = spdlog::level::critical;
                     }
-
-#if JUCE_DEBUG
-                    level = spdlog::level::debug;
-#endif
-
                     combined_logger->set_level(level);
                     combined_logger->flush_on(level);
                     conf_logger->set_level(spdlog::level::warn);

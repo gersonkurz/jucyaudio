@@ -333,10 +333,10 @@ namespace jucyaudio
              */
             // ------ Constants -------
             /** @brief Minimum zoom level (pixels per second) */
-            static constexpr double MIN_ZOOM = 1.0;
+            static constexpr double MIN_ZOOM = 0.25;
             
             /** @brief Maximum zoom level (pixels per second) */
-            static constexpr double MAX_ZOOM = 100.0;
+            static constexpr double MAX_ZOOM = 400.0;
             
             /** @brief Zoom factor for mouse wheel operations (20% steps) */
             static constexpr double ZOOM_FACTOR = 1.2;
