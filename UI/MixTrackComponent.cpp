@@ -1,6 +1,7 @@
 #include "BinaryData.h"
 #include <Database/Includes/Constants.h>
 #include <UI/MixTrackComponent.h>
+#include <UI/CustomColourIds.h>
 #include <UI/TimelineComponent.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
@@ -119,7 +120,7 @@ namespace jucyaudio
             // --- 5. Drawing ---
             if (waveformDrawRect.getWidth() > 0)
             {
-                g.setColour(lf.findColour(juce::Slider::thumbColourId));
+                g.setColour(lf.findColour(jucyaudio::ui::waveformColourId).withAlpha(0.7f));
                 // Draw the waveform from the source file into its designated sub-rectangle.
                 m_thumbnail.drawChannel(g,
                     waveformDrawRect.reduced(2),

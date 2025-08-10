@@ -1,4 +1,5 @@
 #include <UI/EnhancedPlayerComponent.h>
+#include <UI/CustomColourIds.h>
 #include <Utils/UiUtils.h>
 #include <BinaryData.h>
 #include <spdlog/spdlog.h>
@@ -396,7 +397,7 @@ namespace jucyaudio
                 auto waveformBounds = bounds.reduced(2);
                 
                 // Draw unplayed portion first (full waveform)
-                g.setColour(lf.findColour(juce::Slider::thumbColourId).withAlpha(0.5f));
+                g.setColour(lf.findColour(jucyaudio::ui::waveformColourId).withAlpha(0.5f));
                 m_thumbnail.drawChannel(g, waveformBounds,
                                       0.0, totalLength,
                                       0, 1.0f);
@@ -409,7 +410,7 @@ namespace jucyaudio
                     
                     g.saveState();
                     g.reduceClipRegion(playedBounds);
-                    g.setColour(lf.findColour(juce::Slider::thumbColourId));
+                    g.setColour(lf.findColour(jucyaudio::ui::waveformColourId));
                     m_thumbnail.drawChannel(g, waveformBounds,
                                           0.0, totalLength,
                                           0, 1.0f);

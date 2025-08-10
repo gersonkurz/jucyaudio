@@ -1,4 +1,5 @@
 #include <UI/ThemeManager.h>
+#include <UI/CustomColourIds.h>
 #include <spdlog/spdlog.h>
 #include <toml++/toml.h> // Include the parser implementation here
 
@@ -9,6 +10,7 @@ namespace jucyaudio
         namespace
         {
 #define DECLARE_COLOUR_ID(name) {#name, juce::name},
+#define DECLARE_CUSTOM_COLOUR_ID(name) {#name, jucyaudio::ui::name},
 
             const std::unordered_map<std::string, int> colourNameMap
             {
@@ -44,6 +46,9 @@ namespace jucyaudio
                 DECLARE_COLOUR_ID(Slider::trackColourId)
                 DECLARE_COLOUR_ID(ScrollBar::thumbColourId) // New
                 DECLARE_COLOUR_ID(ScrollBar::trackColourId) // New
+                
+                // Custom JucyAudio colour IDs
+                DECLARE_CUSTOM_COLOUR_ID(waveformColourId)
             };
         } // namespace
 

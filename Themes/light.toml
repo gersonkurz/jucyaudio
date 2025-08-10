@@ -28,3 +28,4 @@ name = "Jucy Light"
 "TreeView::linesColourId"                  = "#FFD1D1D6"
 "TreeView::oddItemsColourId"               = "#00000000"
 "TreeView::selectedItemBackgroundColourId" = "#FFF96E00"
+"waveformColourId"                         = "#FF404040"  # Dark gray waveform for light theme
