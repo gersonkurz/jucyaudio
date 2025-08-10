@@ -508,6 +508,31 @@ FROM Mixes m
             return true;
         }
 
+        bool SqliteMixManager::updateMixTrack(MixId mixId, const MixTrack& updatedTrack) const
+        {
+            if (SqliteTransaction transaction{m_db})
+            {
+                // Serialize the entire MixTrack data to JSON
+                json mixDataJson = updatedTrack; // This uses the to_json serializer from MixInfo.h
+
+                SqliteStatement stmt{m_db,
+                    "UPDATE MixTracks SET mix_data = ? WHERE mix_id = ? AND track_id = ?;"};
+                
+                stmt.addParam(mixDataJson.dump());
+                stmt.addParam(mixId);
+                stmt.addParam(updatedTrack.trackId);
+
+                if (!stmt.execute())
+                {
+                    spdlog::error("Failed to update MixTrack for mix {} track {}", mixId, updatedTrack.trackId);
+                    return transaction.rollback();
+                }
+                spdlog::info("Successfully updated MixTrack for mix {} track {}", mixId, updatedTrack.trackId);
+                return transaction.commit();
+            }
+            return false;
+        }
+
         bool SqliteMixManager::createAndSaveAutoMix(const std::vector<TrackInfo> &trackInfos,
             /*in/out*/ MixInfo &mixInfo,
             /*out*/ std::vector<MixTrack> &resultingTracks,

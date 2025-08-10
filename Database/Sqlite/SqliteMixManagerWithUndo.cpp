@@ -251,5 +251,81 @@ namespace jucyaudio
             return result;
         }
 
+        bool SqliteMixManagerWithUndo::updateMixTrack(MixId mixId, const MixTrack& updatedTrack) const
+        {
+            const auto operationId = m_undoManager.beginOperation();
+
+            // Get the old track data for undo recording
+            auto oldTracks = m_wrappedManager.getMixTracks(mixId);
+            std::optional<MixTrack> oldTrackData;
+
+            for (const auto& track : oldTracks)
+            {
+                if (track.trackId == updatedTrack.trackId)
+                {
+                    oldTrackData = track;
+                    break;
+                }
+            }
+
+            // Delegate the actual update to the wrapped manager
+            bool result = m_wrappedManager.updateMixTrack(mixId, updatedTrack);
+
+            if (result)
+            {
+                // Only record undo if the track actually existed and changed
+                if (oldTrackData.has_value())
+                {
+                    // Compare old and new track data to avoid recording unnecessary undo operations
+                    bool changed = false;
+                    if (oldTrackData->gainAdjustment != updatedTrack.gainAdjustment)
+                    {
+                        changed = true;
+                    }
+                    if (!changed && oldTrackData->envelopePoints.size() != updatedTrack.envelopePoints.size())
+                    {
+                        changed = true;
+                    }
+                    if (!changed)
+                    {
+                        for (size_t i = 0; i < oldTrackData->envelopePoints.size(); ++i)
+                        {
+                            if (oldTrackData->envelopePoints[i].time != updatedTrack.envelopePoints[i].time ||
+                                oldTrackData->envelopePoints[i].volume != updatedTrack.envelopePoints[i].volume)
+                            {
+                                changed = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!changed && (oldTrackData->cueStart != updatedTrack.cueStart ||
+                                     oldTrackData->cueEnd != updatedTrack.cueEnd ||
+                                     oldTrackData->attachFrom != updatedTrack.attachFrom ||
+                                     oldTrackData->attachTo != updatedTrack.attachTo))
+                    {
+                        changed = true;
+                    }
+
+
+                    if (changed)
+                    {
+                        m_undoManager.recordMixTrackChange(mixId, updatedTrack.trackId, &oldTrackData.value(), &updatedTrack, operationId);
+                    }
+                    else
+                    {
+                        spdlog::info("MixTrack {} in mix {} did not change, no undo recorded.", updatedTrack.trackId, mixId);
+                    }
+                }
+                else
+                {
+                    // If oldTrackData was not found, it means this is a new track being inserted
+                    // This case should ideally be handled by createOrUpdateMix or a dedicated insert method
+                    // For now, log a warning if this path is unexpectedly hit for an update
+                    spdlog::warn("Attempted to update non-existent MixTrack {} in mix {}. No undo recorded for insert.", updatedTrack.trackId, mixId);
+                }
+            }
+            return result;
+        }
+
     } // namespace database
 } // namespace jucyaudio

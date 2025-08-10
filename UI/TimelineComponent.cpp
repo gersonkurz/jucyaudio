@@ -1050,24 +1050,37 @@ namespace jucyaudio
                     };
                     view.component->onGainAdjustmentChanged = [this](int orderInMix, float newGain)
                     {
-                        // Update the MixTrack data in the loader
-                        auto& mixTracks = m_mixLoader->getMixTracks();
+                        // Find the MixTrack in the loader's vector
+                        MixTrack* targetMixTrack = nullptr;
+                        auto& mixTracks = m_mixLoader->getMixTracks(); // Get mutable reference to the vector
                         for (auto& mt : mixTracks) {
                             if (mt.orderInMix == orderInMix) {
-                                mt.gainAdjustment = newGain;
+                                targetMixTrack = &mt;
                                 break;
                             }
                         }
 
-                        // Notify parent (e.g., MixEditorComponent) that the mix has changed
-                        if (!m_isPopulating && onMixChanged) {
-                            onMixChanged();
-                        }
+                        if (targetMixTrack) {
+                            // Create a copy of the found MixTrack to pass to the manager
+                            MixTrack updatedTrack = *targetMixTrack;
+                            updatedTrack.gainAdjustment = newGain;
 
-                        // Also propagate if TimelineComponent itself has a listener for this
-                        if (!m_isPopulating && onGainAdjustmentChanged) { // This is the TimelineComponent's own callback
-                            onGainAdjustmentChanged(orderInMix, newGain);
+                            // Call the new updateMixTrack method on the MixManager
+                            if (m_mixLoader && m_mixLoader->getMixId() > 0) {
+                                if (!theTrackLibrary.getMixManager().updateMixTrack(m_mixLoader->getMixId(), updatedTrack)) {
+                                    spdlog::error("Failed to update single MixTrack gain for mix {} track {}", m_mixLoader->getMixId(), updatedTrack.trackId);
+                                } else {
+                                    // If successful, update the in-memory MixTrack in the loader as well
+                                    // This is crucial to keep the UI and internal model in sync
+                                    targetMixTrack->gainAdjustment = newGain;
+                                }
+                            }
+                        } else {
+                            spdlog::error("MixTrack with orderInMix {} not found in loader for gain adjustment.", orderInMix);
                         }
+                        
+                        // No need to call onMixChanged here, as updateMixTrack handles its own undo and persistence
+                        // The UI will be refreshed by the TimelineComponent's own update mechanism if needed.
                     };
                     view.component->onCueDragInProgress = [this](int orderInMix, bool isAttachPoint, std::optional<Duration_t> previewTime)
                     {

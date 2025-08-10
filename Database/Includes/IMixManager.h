@@ -97,6 +97,12 @@ namespace jucyaudio
             // @param mixId The ID of the mix to update.
             // @return True if the operation was successful, false otherwise.
             virtual bool clearMixWorkingSetId(MixId mixId) const = 0;
+
+            // @brief Update a single MixTrack within a mix.
+            // @param mixId The ID of the mix to which the track belongs.
+            // @param updatedTrack The MixTrack object containing the updated data.
+            // @return True if the track was successfully updated, false otherwise.
+            virtual bool updateMixTrack(MixId mixId, const MixTrack& updatedTrack) const = 0;
         };
 
     } // namespace database

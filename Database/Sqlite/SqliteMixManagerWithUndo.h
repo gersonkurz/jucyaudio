@@ -55,6 +55,7 @@ namespace jucyaudio
             bool removeTracksFromMix(MixId mixId, const std::vector<TrackId>& trackIds) const override;
             bool finalizeMix(MixId mixId) const override;
             bool clearMixWorkingSetId(MixId mixId) const override;
+            bool updateMixTrack(MixId mixId, const MixTrack& updatedTrack) const override;
 
         private:
             IMixManager& m_wrappedManager;
