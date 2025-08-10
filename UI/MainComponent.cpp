@@ -21,6 +21,7 @@
 #include <UI/LibraryRootsComponent.h>
 #include <UI/SettingsDialog.h>
 #include <UI/TaskDialog.h>
+#include <UI/Settings.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
 #include <algorithm>
@@ -146,6 +147,9 @@ namespace jucyaudio
                 // TODO: have a way to crash here?
                 m_statusPanel.setStatusMessage("Error: Could not load navigation.", true);
             }
+
+            // Set the undo manager's limit
+            theTrackLibrary.getUndoManager().setMaxOperations(config::theSettings.undoSettings.maxOperations);
 
             // --- Playback Controller Setup ---
             // Listen to changes from the transport source (e.g., when a track

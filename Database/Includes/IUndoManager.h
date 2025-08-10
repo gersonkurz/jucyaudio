@@ -98,6 +98,13 @@ namespace jucyaudio
              * @param mixId The ID of the mix to clear history for
              */
             virtual void clearHistory(MixId mixId) = 0;
+
+            /**
+             * @brief Sets the maximum number of undo operations to store for a mix.
+             *        Older operations will be purged when the limit is exceeded.
+             * @param limit The maximum number of operations. A value of 0 means no limit.
+             */
+            virtual void setMaxOperations(int limit) = 0;
         };
 
     } // namespace database

@@ -43,8 +43,11 @@ namespace jucyaudio
             bool canRedo(MixId mixId) const override;
 
             void clearHistory(MixId mixId) override;
+            void setMaxOperations(int limit) override; // New method declaration
 
         private:
+            int m_maxOperationsLimit = 0; // New member variable, 0 means no limit by default
+
             // Enums for operation types and table names
             enum class OperationType : int
             {
@@ -132,6 +135,8 @@ namespace jucyaudio
              */
             void deleteRecordsBeyondStackPosition(MixId mixId);
             
+            void purgeOldOperations(MixId mixId); // New private helper
+
             // Operation ID generator
             mutable std::atomic<int64_t> m_nextOperationId{0};
         };

@@ -36,6 +36,14 @@ namespace jucyaudio
             spdlog::info("UndoManager initialized. Next operation ID will be {}.", m_nextOperationId.load());
         }
 
+        void SqliteUndoManager::setMaxOperations(int limit)
+        {
+            m_maxOperationsLimit = limit;
+            spdlog::info("UndoManager: Max operations limit set to {}", m_maxOperationsLimit);
+            // Optionally, trigger a cleanup here if the new limit is lower than current operations
+            // For now, we'll rely on recordMixTrackChange/recordMixInfoChange to trigger cleanup
+        }
+
         void SqliteUndoManager::recordMixTrackChange(MixId mixId, TrackId trackId,
                                                     const MixTrack* oldTrack,
                                                     const MixTrack* newTrack,
@@ -82,6 +90,7 @@ namespace jucyaudio
                 spdlog::info("Successfully recorded operation {} for track {} in mix {}", static_cast<int>(operationType), trackId, mixId);
                 // Update stack position to this operation
                 updateStackPosition(mixId, operationId);
+                purgeOldOperations(mixId); // Call purge after recording and updating stack
             }
         }
 
@@ -127,6 +136,7 @@ namespace jucyaudio
             {
                 // Update stack position to this operation
                 updateStackPosition(mixId, operationId);
+                purgeOldOperations(mixId); // Call purge after recording and updating stack
             }
         }
 
@@ -626,6 +636,63 @@ namespace jucyaudio
             else
             {
                 spdlog::error("Failed to delete records beyond stack position for mix {}", mixId);
+            }
+        }
+
+    void SqliteUndoManager::purgeOldOperations(MixId mixId)
+        {
+            if (m_maxOperationsLimit <= 0)
+            {
+                return; // No limit set
+            }
+
+            // Get the total number of distinct operations for this mix
+            SqliteStatement countStmt{m_db, "SELECT COUNT(DISTINCT operation_id) FROM MixUndoHistory WHERE mix_id = ?;"};
+            countStmt.addParam(mixId);
+            if (!countStmt.getNextResult())
+            {
+                spdlog::error("Failed to get operation count for mix {}", mixId);
+                return;
+            }
+            const int currentOperationsCount = countStmt.getInt32(0);
+
+            if (currentOperationsCount <= m_maxOperationsLimit)
+            {
+                return; // No need to purge
+            }
+
+            // Determine the operation_id threshold
+            // Get the operation_id of the (m_maxOperationsLimit + 1)th oldest operation
+            SqliteStatement thresholdStmt{m_db, R"SQL(
+                SELECT operation_id FROM MixUndoHistory
+                WHERE mix_id = ?
+                GROUP BY operation_id
+                ORDER BY operation_id ASC
+                LIMIT 1 OFFSET ?;
+            )SQL"};
+            thresholdStmt.addParam(mixId);
+            thresholdStmt.addParam(m_maxOperationsLimit); // Offset to get the (limit + 1)th oldest
+            
+            if (!thresholdStmt.getNextResult())
+            {
+                spdlog::error("Failed to get threshold operation_id for mix {}", mixId);
+                return;
+            }
+            const int64_t thresholdOperationId = thresholdStmt.getInt64(0);
+
+            // Delete all operations older than or equal to the threshold
+            SqliteStatement deleteStmt{m_db, "DELETE FROM MixUndoHistory WHERE mix_id = ? AND operation_id <= ?;"};
+            deleteStmt.addParam(mixId);
+            deleteStmt.addParam(thresholdOperationId);
+
+            if (deleteStmt.execute())
+            {
+                const auto deletedCount = m_db.getChangesCount();
+                spdlog::info("Purged {} old undo records for mix {} (operations up to {})", deletedCount, mixId, thresholdOperationId);
+            }
+            else
+            {
+                spdlog::error("Failed to purge old undo records for mix {}", mixId);
             }
         }
 

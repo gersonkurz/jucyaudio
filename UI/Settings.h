@@ -101,6 +101,17 @@ namespace jucyaudio
                 TypedValue<std::string> logLevel{this, "log_level", "info"};
 
             } loggingSettings{this};
+
+            struct UndoSettings : public Section
+            {
+                UndoSettings(Section *parent)
+                    : Section{parent, "Undo"}
+                {
+                }
+                
+                TypedValue<int> maxOperations{this, "MaxOperations", 100};
+
+            } undoSettings{this};
         };
 
         extern RootSettings theSettings;
