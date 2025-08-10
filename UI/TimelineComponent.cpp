@@ -1001,6 +1001,8 @@ namespace jucyaudio
 
         bool TimelineComponent::populateFrom(audio::MixProjectLoader *mixLoader)
         {
+            m_isPopulating = true; // Set flag at the beginning
+
             if (!mixLoader)
             {
                 if (!m_mixLoader)
@@ -1038,13 +1040,34 @@ namespace jucyaudio
 
                     view.component->onCueAttachChanged = [this](int orderInMix, const database::MixTrack &updatedTrack)
                     {
-                        if (onCueAttachChanged)
+                        if (!m_isPopulating && onCueAttachChanged)
                             onCueAttachChanged(orderInMix, updatedTrack);
                     };
                     view.component->onEnvelopeChanged = [this](int orderInMix, const std::vector<database::EnvelopePoint> &points)
                     {
-                        if (onEnvelopeChanged)
+                        if (!m_isPopulating && onEnvelopeChanged)
                             onEnvelopeChanged(orderInMix, points);
+                    };
+                    view.component->onGainAdjustmentChanged = [this](int orderInMix, float newGain)
+                    {
+                        // Update the MixTrack data in the loader
+                        auto& mixTracks = m_mixLoader->getMixTracks();
+                        for (auto& mt : mixTracks) {
+                            if (mt.orderInMix == orderInMix) {
+                                mt.gainAdjustment = newGain;
+                                break;
+                            }
+                        }
+
+                        // Notify parent (e.g., MixEditorComponent) that the mix has changed
+                        if (!m_isPopulating && onMixChanged) {
+                            onMixChanged();
+                        }
+
+                        // Also propagate if TimelineComponent itself has a listener for this
+                        if (!m_isPopulating && onGainAdjustmentChanged) { // This is the TimelineComponent's own callback
+                            onGainAdjustmentChanged(orderInMix, newGain);
+                        }
                     };
                     view.component->onCueDragInProgress = [this](int orderInMix, bool isAttachPoint, std::optional<Duration_t> previewTime)
                     {
@@ -1111,6 +1134,7 @@ namespace jucyaudio
             // This must be called AFTER setting m_calculatedHeight
             recalculateTrackPositions();
 
+            m_isPopulating = false; // Reset flag at the end
             return true;
         }
 

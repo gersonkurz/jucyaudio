@@ -472,7 +472,7 @@ namespace jucyaudio
                     juce::int64 sampleInTrack = trackReadStart + sample;
                     Duration_t timeInTrack{static_cast<int64_t>((sampleInTrack * 1000.0) / m_sampleRate)};
 
-                    float gain = getEnvelopeGainForTrack(mixTrack, timeInTrack) * masterGain;
+                    float gain = getEnvelopeGainForTrack(mixTrack, timeInTrack) * masterGain * mixTrack.gainAdjustment; // Apply per-track gain adjustment
 
                     int outputSample = outputOffset + sample;
                     if (outputSample >= 0 && outputSample < numSamples)

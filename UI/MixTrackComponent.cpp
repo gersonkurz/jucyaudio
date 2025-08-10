@@ -51,6 +51,19 @@ namespace jucyaudio
             m_infoLabel.setText(infoText, juce::dontSendNotification);
             m_infoLabel.setJustificationType(juce::Justification::centredLeft);
             addAndMakeVisible(m_infoLabel);
+
+            // Initialize m_gainSlider
+            m_gainSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+            m_gainSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 50, 20);
+            m_gainSlider.setRange(0.0, 2.0, 0.01); // Range from 0.0 to 2.0, with 0.01 step
+            m_gainSlider.setDoubleClickReturnValue(true, 1.0); // Allow double-click to reset to 1.0
+            
+            // Temporarily remove listener to prevent callback during initialization
+            m_gainSlider.removeListener(this); 
+            m_gainSlider.setValue(m_mixTrack.gainAdjustment, juce::dontSendNotification); // Set initial value without sending notification
+            m_gainSlider.addListener(this); // Re-add listener
+
+            addAndMakeVisible(m_gainSlider);
         }
 
         MixTrackComponent::~MixTrackComponent()
@@ -252,9 +265,26 @@ namespace jucyaudio
 
         void MixTrackComponent::resized()
         {
+            spdlog::info("[MixTrackComponent::resized] Track ID: {}, Component Width: {}", m_mixTrack.trackId, getWidth());
+
             auto bounds = getLocalBounds();
-            // Place the label in the top section
-            m_infoLabel.setBounds(bounds.removeFromTop(TEXT_SECTION_HEIGHT).reduced(4, 0));
+            auto topSectionBounds = bounds.removeFromTop(TEXT_SECTION_HEIGHT);
+            spdlog::info("[MixTrackComponent::resized] topSectionBounds initial width: {}", topSectionBounds.getWidth());
+
+            // Define desired slider width (including padding)
+            const int desiredSliderWidth = 150 + 8; // 150px for slider + 4px padding on each side
+
+            // Calculate available width for the slider
+            int availableWidthForSlider = topSectionBounds.getWidth();
+            int actualSliderWidth = std::min(desiredSliderWidth, availableWidthForSlider);
+
+            // Position the slider on the right
+            m_gainSlider.setBounds(topSectionBounds.removeFromRight(actualSliderWidth).reduced(4, 0));
+            spdlog::info("[MixTrackComponent::resized] m_gainSlider width: {}", m_gainSlider.getWidth());
+
+            // The remaining topSectionBounds is for the label
+            m_infoLabel.setBounds(topSectionBounds.reduced(4, 0));
+            spdlog::info("[MixTrackComponent::resized] m_infoLabel width: {}", m_infoLabel.getWidth());
         }
 
         bool MixTrackComponent::isSelected() const
@@ -870,6 +900,18 @@ namespace jucyaudio
 
             default:
                 break;
+            }
+        }
+
+        void MixTrackComponent::sliderValueChanged(juce::Slider* slider)
+        {
+            if (slider == &m_gainSlider)
+            {
+                m_mixTrack.gainAdjustment = (float)m_gainSlider.getValue();
+                if (onGainAdjustmentChanged)
+                {
+                    onGainAdjustmentChanged(m_mixTrack.orderInMix, m_mixTrack.gainAdjustment);
+                }
             }
         }
 

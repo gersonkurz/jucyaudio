@@ -134,6 +134,12 @@ namespace jucyaudio
              */
             std::vector<EnvelopePoint> envelopePoints;
 
+            /**
+             * @brief Per-track gain adjustment. Applied as a linear multiplier to the track's audio.
+             * Default is 1.0f (no change). Values < 1.0f reduce volume, > 1.0f increase volume.
+             */
+            float gainAdjustment = 1.0f;
+
             // --- COMPUTED PROPERTIES (Not stored in DB) ---
             /**
              * @brief Calculates the absolute end time of the audible portion, relative to the start of the source audio.
@@ -186,7 +192,8 @@ namespace nlohmann
             // Only serialize the mix_data portion (not mixId, trackId, orderInMix)
             j = json{{"cue", {{"start", mt.cueStart.count()}, {"end", mt.cueEnd.count()}}},
                 {"attach", {{"from", mt.attachFrom.count()}, {"to", mt.attachTo.count()}}},
-                {"envelope", mt.envelopePoints}};
+                {"envelope", mt.envelopePoints},
+                {"gainAdjustment", mt.gainAdjustment}};
         }
 
         static void from_json(const json &j, jucyaudio::database::MixTrack &mt)
@@ -200,6 +207,10 @@ namespace nlohmann
             mt.attachTo = jucyaudio::Duration_t(attach.at("to").get<int64_t>());
 
             mt.envelopePoints = j.at("envelope").get<std::vector<jucyaudio::database::EnvelopePoint>>();
+            // Check if "gainAdjustment" exists before trying to get it, for backward compatibility
+            if (j.contains("gainAdjustment")) {
+                mt.gainAdjustment = j.at("gainAdjustment").get<float>();
+            }
         }
     };
 } // namespace nlohmann

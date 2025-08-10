@@ -29,7 +29,7 @@ namespace jucyaudio
          *
          * Inherits from ChangeListener to receive waveform thumbnail updates.
          */
-        class MixTrackComponent : public juce::Component, public juce::ChangeListener
+        class MixTrackComponent : public juce::Component, public juce::ChangeListener, public juce::Slider::Listener
         {            
             /** @brief Thickness of the path between envelope points */
             static constexpr double ENVELOPE_PATH_LINE_THICKESS = 4.0f;
@@ -65,6 +65,9 @@ namespace jucyaudio
             
             // Callback when cue or attach points change
             std::function<void(int orderInMix, const MixTrack &)> onCueAttachChanged;
+            
+            // Callback when the gain adjustment changes
+            std::function<void(int orderInMix, float newGain)> onGainAdjustmentChanged;
             
             // Callback during cue/attach point dragging for visual feedback
             // isAttachPoint: true for attach points, false for cue points
@@ -318,6 +321,9 @@ namespace jucyaudio
              */
             bool keyPressed(const juce::KeyPress &key) override;
 
+            /** @brief JUCE Slider::Listener callback */
+            void sliderValueChanged(juce::Slider* slider) override;
+
             /**
              * @brief Converts a horizontal pixel coordinate into a logical time value.
              * @param x The horizontal pixel position relative to the component's left edge.
@@ -353,6 +359,9 @@ namespace jucyaudio
             
             /** @brief Label displaying track title and mix position in the top section */
             juce::Label m_infoLabel;
+            
+            /** @brief Slider for per-track gain adjustment */
+            juce::Slider m_gainSlider;
             
             /** @brief Index of the currently selected envelope point, if any */
             std::optional<size_t> m_selectedEnvelopePointIndex;

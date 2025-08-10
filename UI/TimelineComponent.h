@@ -78,6 +78,7 @@ namespace jucyaudio
             std::function<void(double)> onMixPlaybackAlwaysRequested; // For double-clicks
             std::function<void(int orderInMix, const database::MixTrack&)> onCueAttachChanged;
             std::function<void(int orderInMix, const std::vector<database::EnvelopePoint>&)> onEnvelopeChanged;
+            std::function<void(int orderInMix, float newGain)> onGainAdjustmentChanged;
 
 
             /**
@@ -365,6 +366,9 @@ namespace jucyaudio
 
             /** @brief The preview time for cue drag operations, showing where the edge will be if released. */
             std::optional<Duration_t> m_cueDragPreviewTime;
+            
+            /** @brief Flag to indicate if the timeline is currently being populated, to prevent unwanted save triggers. */
+            bool m_isPopulating = false;
             
             /** @brief Clipboard for cut/copy/paste operations */
             ClipboardData m_clipboard;
