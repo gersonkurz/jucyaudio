@@ -254,10 +254,23 @@ namespace jucyaudio
                         newMixTrack.attachFrom = defaultCrossfade;
                     }
                     newMixTrack.attachTo = trackInfo.duration - defaultCrossfade;
+
+                    // CUE points - use full track (default behavior)
+                    newMixTrack.cueStart = Duration_t{0};
+                    newMixTrack.cueEnd = Duration_t{0}; // 0 means use full track duration
                     
-                    // Default envelope with full volume
-                    newMixTrack.envelopePoints.push_back({Duration_t{0}, database::VOLUME_NORMALIZATION});
-                    newMixTrack.envelopePoints.push_back({trackInfo.duration, database::VOLUME_NORMALIZATION});
+                    // Create envelope points for crossfade, mirroring the automix logic
+                    const auto fadeInMidpoint = Duration_t{2000};  // 2 seconds
+                    const auto fadeOutMidpoint = trackInfo.duration - Duration_t{2000}; // 2 seconds before end
+
+                    newMixTrack.envelopePoints = {
+                        {Duration_t{0}, Volume_t{200}},
+                        {fadeInMidpoint, Volume_t{700}},
+                        {defaultCrossfade, database::VOLUME_NORMALIZATION},
+                        {trackInfo.duration - defaultCrossfade, database::VOLUME_NORMALIZATION},
+                        {fadeOutMidpoint, Volume_t{700}},
+                        {trackInfo.duration, Volume_t{200}}
+                    };
                     
                     existingTracks.push_back(newMixTrack);
                 }
