@@ -117,14 +117,10 @@ namespace jucyaudio
                 
                 // Find the primary track at current position
                 const auto currentTimeMs = (context.samplesWrittenTotal * 1000) / static_cast<juce::int64>(outputSampleRate());
-                for (size_t i = 0; i < m_mixTracks.size(); ++i) {
-                    const auto& track = m_mixTracks[i];
-                    auto it = m_trackPositions.find(track.trackId);
-                    if (it != m_trackPositions.end()) {
-                        if (currentTimeMs >= it->second.startTime.count() && 
-                            currentTimeMs <= it->second.endTime.count()) {
-                            return static_cast<int>(i + 1);
-                        }
+                for (size_t i = 0; i < m_trackPositions.size(); ++i) {
+                    const auto& pos = m_trackPositions[i];
+                    if (currentTimeMs >= pos.startTime.count() && currentTimeMs <= pos.endTime.count()) {
+                        return static_cast<int>(i + 1);
                     }
                 }
                 return totalTracks;
@@ -140,12 +136,10 @@ namespace jucyaudio
                 if (context.samplesToProcessInThisBlock <= 0)
                     break;
 
-                // Fill the master output block (same logic as WAV)
-                for (auto &activeSource : m_activeSources)
+                // Fill the master output block by iterating through each track by its index
+                for (size_t i = 0; i < m_activeSources.size(); ++i)
                 {
-                    if (!activeSource.reader)
-                        continue;
-                    contributeFromActiveSource(activeSource, context, masterOutputBlock);
+                    contributeFromActiveSource(i, context, masterOutputBlock);
                 }
 
                 // --- MP3 Encoding with LAME (NOT using m_writer) ---

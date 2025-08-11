@@ -93,7 +93,7 @@ namespace jucyaudio
             bool prepareActiveTrackSources();
 
             // Renamed and takes an ActiveTrackSource
-            bool contributeFromActiveSource(ActiveTrackSource &activeSource,     // Non-const to update reader pos
+            bool contributeFromActiveSource(size_t trackIndex,                // The index of the track in the mix
                                             const SampleContext &overallContext, // Overall timeline context
                                             juce::AudioBuffer<float> &masterOutputBlock);
 
@@ -112,7 +112,7 @@ namespace jucyaudio
                 Duration_t startTime{0};
                 Duration_t endTime{0};
             };
-            std::unordered_map<TrackId, TrackTimelinePosition> m_trackPositions;
+            std::vector<TrackTimelinePosition> m_trackPositions;
 
             // TBD: Determine Output Format Properties (Sample Rate, Channels)
             //    - Iterate through tracks, find the highest sample rate, max channels, or enforce a standard.

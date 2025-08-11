@@ -101,6 +101,7 @@ namespace jucyaudio
         void ExportMixImplementation::calculateTrackPositions()
         {
             m_trackPositions.clear();
+            m_trackPositions.resize(m_mixTracks.size());
             Duration_t previousTrackStart{0};
             
             for (size_t i = 0; i < m_mixTracks.size(); ++i)
@@ -131,12 +132,13 @@ namespace jucyaudio
                 TrackTimelinePosition pos;
                 pos.startTime = trackStart;
                 pos.endTime = trackStart + trackInfo->duration;
-                m_trackPositions[mixTrack.trackId] = pos;
+                m_trackPositions[i] = pos;
                 
                 // Remember this track's start for the next iteration
                 previousTrackStart = trackStart;
                 
-                spdlog::debug("Track {} positioned at [{}, {}]", 
+                spdlog::debug("Track at index {} (ID {}) positioned at [{}, {}]", 
+                    i,
                     mixTrack.trackId, 
                     durationToString(pos.startTime), 
                     durationToString(pos.endTime));
@@ -202,7 +204,7 @@ namespace jucyaudio
 
             // Find the maximum end time among all tracks
             Duration_t maxEndTime{0};
-            for (const auto& [trackId, pos] : m_trackPositions)
+            for (const auto& pos : m_trackPositions)
             {
                 if (pos.endTime > maxEndTime)
                 {
@@ -329,21 +331,19 @@ namespace jucyaudio
         }
 
         // Renamed and takes an ActiveTrackSource
-        bool ExportMixImplementation::contributeFromActiveSource(ActiveTrackSource &activeSource, const SampleContext &overallContext,
+        bool ExportMixImplementation::contributeFromActiveSource(size_t trackIndex, const SampleContext &overallContext,
                                                                  juce::AudioBuffer<float> &masterOutputBlock)
         {
+            // Get the source and position data using the track's index in the mix
+            ActiveTrackSource& activeSource = m_activeSources[trackIndex];
+            const TrackTimelinePosition& trackPos = m_trackPositions[trackIndex];
+
             const MixTrack &mixTrackDef = *activeSource.mixTrackDefPtr;
             const TrackInfo &trackInfo = *activeSource.trackInfoPtr;
             juce::AudioFormatReader *reader = activeSource.reader.get();
 
             // --- Calculate timing for *this specific track* based on calculated positions ---
-            const auto posIt = m_trackPositions.find(mixTrackDef.trackId);
-            if (posIt == m_trackPositions.end())
-            {
-                spdlog::error("Track position not calculated for track {}", mixTrackDef.trackId);
-                return false;
-            }
-            juce::int64 trackMixStartSamples = static_cast<juce::int64>((posIt->second.startTime.count() / 1000.0) * outputSampleRate());
+            juce::int64 trackMixStartSamples = static_cast<juce::int64>((trackPos.startTime.count() / 1000.0) * outputSampleRate());
 
             // With envelope system, tracks play their full duration
             Duration_t trackFileEffectiveDurationMs = trackInfo.duration;

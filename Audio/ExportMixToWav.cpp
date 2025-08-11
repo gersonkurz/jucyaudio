@@ -63,14 +63,10 @@ namespace jucyaudio
                 
                 // Find the primary track at current position
                 const auto currentTimeMs = (context.samplesWrittenTotal * 1000) / static_cast<juce::int64>(outputSampleRate());
-                for (size_t i = 0; i < m_mixTracks.size(); ++i) {
-                    const auto& track = m_mixTracks[i];
-                    auto it = m_trackPositions.find(track.trackId);
-                    if (it != m_trackPositions.end()) {
-                        if (currentTimeMs >= it->second.startTime.count() && 
-                            currentTimeMs <= it->second.endTime.count()) {
-                            return static_cast<int>(i + 1);
-                        }
+                for (size_t i = 0; i < m_trackPositions.size(); ++i) {
+                    const auto& pos = m_trackPositions[i];
+                    if (currentTimeMs >= pos.startTime.count() && currentTimeMs <= pos.endTime.count()) {
+                        return static_cast<int>(i + 1);
                     }
                 }
                 return totalTracks;
@@ -87,16 +83,10 @@ namespace jucyaudio
                 if (context.samplesToProcessInThisBlock <= 0)
                     break;
 
-                // For each block in the output timeline:
-                // Iterate through ALL MixTrack definitions
-
-                for (auto &activeSource : m_activeSources)
-                { // Note: non-const to modify reader state (position)
-                    if (!activeSource.reader)
-                        continue; // Skip if reader failed to init
-
-                    // No per-block timing needed for the log here, use overall block timing.
-                    contributeFromActiveSource(activeSource, context, masterOutputBlock);
+                // For each block in the output timeline, iterate through all active sources by index
+                for (size_t i = 0; i < m_activeSources.size(); ++i)
+                {
+                    contributeFromActiveSource(i, context, masterOutputBlock);
                 }
 
                 // Write the processed masterOutputBlock to the file
