@@ -49,11 +49,10 @@ namespace jucyaudio
             /**
              * @brief Updates the scan statistics for a library root.
              * @param rootId The ID of the library root to update.
-             * @param fileCount The number of files found in this root.
              * @param scanTime The timestamp of the scan (defaults to current time).
              * @return true if successful, false otherwise.
              */
-            virtual bool updateScanStats(LibraryRootId rootId, int64_t fileCount, 
+            virtual bool updateScanStats(LibraryRootId rootId, 
                 std::optional<std::chrono::system_clock::time_point> scanTime = std::chrono::system_clock::now()) = 0;
         };
 

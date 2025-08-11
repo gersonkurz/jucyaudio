@@ -1,6 +1,7 @@
 #include <Database/Sqlite/SqliteLibraryRootManager.h>
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteTransaction.h>
+#include <Database/TrackLibrary.h>
 #include <spdlog/spdlog.h>
 
 namespace
@@ -11,10 +12,9 @@ namespace
         jucyaudio::database::LibraryRootInfo info{};
         info.id = stmt.getInt64(0);
         info.path = stmt.getText(1);
-        info.fileCount = stmt.getInt64(2);
-        if (!stmt.isNull(3))
+        if (!stmt.isNull(2))
         {
-            const auto timestamp = stmt.getInt64(3);
+            const auto timestamp = stmt.getInt64(2);
             info.lastScanned = std::chrono::system_clock::from_time_t(timestamp);
         }
         return info;
@@ -41,7 +41,15 @@ namespace jucyaudio
                     roots.emplace_back(libraryRootInfoFromStatement(stmt));
                     return true;
                 },
-                "SELECT root_id, path, file_count, last_scanned FROM LibraryRoots ORDER BY path;");
+                "SELECT root_id, path, last_scanned FROM LibraryRoots ORDER BY path;");
+
+            auto &folderDb{theTrackLibrary.getTrackDatabase()->getFolderDatabase()};
+                        for (auto& root: roots)
+            {
+                const auto folderId = folderDb.findOrCreateFolderByPath(root.path);
+                root.folderInfo = folderDb.getFolderById(folderId).value_or(database::FolderInfo{});
+            }
+
             return roots;
         }
 
@@ -57,12 +65,11 @@ namespace jucyaudio
             }
 
             SqliteTransaction transaction{m_db};
-            if (transaction.execute("INSERT INTO LibraryRoots (path, file_count) VALUES (?, 0);", path))
+            if (transaction.execute("INSERT INTO LibraryRoots (path) VALUES (?);", path))
             {
                 LibraryRootInfo newRoot;
                 newRoot.id = m_db.getLastInsertRowId();
                 newRoot.path = path;
-                newRoot.fileCount = 0;
                 // lastScanned remains std::nullopt for new roots
                 if (transaction.commit())
                 {
@@ -96,7 +103,7 @@ namespace jucyaudio
             return false;
         }
 
-        bool SqliteLibraryRootManager::updateScanStats(LibraryRootId rootId, int64_t fileCount, 
+        bool SqliteLibraryRootManager::updateScanStats(LibraryRootId rootId, 
             std::optional<std::chrono::system_clock::time_point> scanTime)
         {
             SqliteTransaction transaction{m_db};
@@ -105,12 +112,12 @@ namespace jucyaudio
                 ? std::chrono::system_clock::to_time_t(scanTime.value())
                 : std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
             
-            if (transaction.execute("UPDATE LibraryRoots SET file_count = ?, last_scanned = ? WHERE root_id = ?;", 
-                                    fileCount, timestamp, rootId))
+            if (transaction.execute("UPDATE LibraryRoots SET last_scanned = ? WHERE root_id = ?;", 
+                                    timestamp, rootId))
             {
                 if (transaction.commit())
                 {
-                    spdlog::info("Updated library root {} with file_count={}", rootId, fileCount);
+                    spdlog::info("Updated library root {}", rootId);
                     return true;
                 }
             }

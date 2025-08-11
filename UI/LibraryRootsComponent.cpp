@@ -46,11 +46,15 @@ namespace jucyaudio
                     // FIXED: This call now matches the expected signature
                     theTrackLibrary.scanLibrary(m_idsToScan, m_bForceRescan, m_bRemoveMissingFiles, progressCb, completionCb, &shouldCancel);
                     
-                    // After scan completes, update the file counts for each root
+                    // After scan completes, invalidate folder cache to recalculate track counts
                     auto &db = *theTrackLibrary.getTrackDatabase();
                     auto &rootManager = db.getLibraryRootManager();
                     auto &folderDb = db.getFolderDatabase();
                     
+                    // Force the folder database to rebuild its cache with updated track counts
+                    folderDb.invalidateCache();
+                    
+                    // Now get the updated track counts from the rebuilt cache
                     for (size_t i = 0; i < m_rootIdsToScan.size(); ++i)
                     {
                         if (i < m_idsToScan.size())
@@ -58,18 +62,16 @@ namespace jucyaudio
                             const auto rootId = m_rootIdsToScan[i];
                             const auto folderId = m_idsToScan[i];
                             
-                            // Count tracks under this folder
-                            TrackQueryArgs args{};
-                            args.folderIds = {folderId};
-                            args.recursive = true;
-                            args.usePaging = false;
-                            
-                            const auto tracks = db.getTracks(args);
-                            const int64_t fileCount = static_cast<int64_t>(tracks.size());
-                            
-                            // Update the root's statistics
-                            rootManager.updateScanStats(rootId, fileCount);
-                            spdlog::info("Updated root {} with {} files", rootId, fileCount);
+                            // Get the folder info which now has the correct recursive track count
+                            const auto folderInfo = folderDb.getFolderById(folderId);
+                            if (folderInfo.has_value())
+                            {
+                                const int64_t fileCount = folderInfo->trackCount;
+                                
+                                // Update the root's statistics
+                                rootManager.updateScanStats(rootId);
+                                spdlog::info("Updated root {} with {} files", rootId, fileCount);
+                            }
                         }
                     }
                 }
@@ -296,8 +298,8 @@ namespace jucyaudio
             }
             else if (columnId == RootFolderTableColumns::FileCount)
             {
-                const auto fileCountStr = rootInfo.fileCount > 0 ? std::to_string(rootInfo.fileCount) : "-";
-                g.drawText(fileCountStr, 2, 0, width - 4, height, juce::Justification::centred, true);
+                const auto fileCountStr = std::format("{:L}", rootInfo.folderInfo.trackCount);
+                g.drawText(fileCountStr, 2, 0, width - 4, height, juce::Justification::centredLeft, true);
             }
             else if (columnId == RootFolderTableColumns::LastScanned)
             {
@@ -332,9 +334,10 @@ namespace jucyaudio
                     m_displayedRoots.end(),
                     [isForwards](const auto &a, const auto &b)
                     {
+                        
                         if (isForwards)
-                            return a.fileCount < b.fileCount;
-                        return b.fileCount < a.fileCount;
+                            return a.folderInfo.trackCount < b.folderInfo.trackCount;
+                        return b.folderInfo.trackCount < a.folderInfo.trackCount;
                     });
             }
             else if (newSortColumnId == RootFolderTableColumns::LastScanned)

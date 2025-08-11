@@ -200,16 +200,50 @@ The application now operates on the following principles:
     *   Not easily fixable due to complex recalculation of attach points and positions
     *   Accepted for now but should be optimized in future
 
-## 12. Message to Next Instance
+## 12. Session Accomplishments: Theme System & Bug Fixes (2025-08-10)
 
-Today's session successfully fixed a critical database corruption issue where track deletion wasn't re-enumerating `orderInMix` values, causing duplicate values that led to the wrong tracks being updated when editing attach points.
+**Theme System Improvements:**
+- Created custom color ID system with `CustomColourIds.h` for application-specific colors
+- Added `waveformColourId` to theme system for configurable waveform colors
+- Updated dark theme: Fixed blue-tinted backgrounds, made all accents consistently orange, white/gray waveforms
+- Updated light theme: Dark gray waveforms for better contrast
+- Fixed scrollbar colors and button text colors in dark theme
 
-**CRITICAL UNRESOLVED ISSUE:** The mix playback engine still has issues after track deletion. The playback position indicator moves but no audio plays. This needs deeper investigation - possibly the MixPlaybackEngine needs a full reset or the audio buffers aren't being properly reconstructed after the mix structure changes.
+**Library Roots Component Fix:**
+- Fixed track count not updating after scanning
+- Changed to use folder database's recursive track count calculation
+- Calls `invalidateCache()` after scan to force recalculation
+- UI properly refreshes with `loadRoots()` after scan completion
 
-**RECOMMENDED NEXT STEPS:**
-1. Test the orderInMix fix thoroughly - verify no duplicates after various operations
-2. Add a database migration to fix existing corrupt orderInMix values
-3. Deep dive into MixPlaybackEngine to fix the audio-after-deletion issue
-4. Implement persistent waveform caching (high priority for UX)
+## 13. Critical Issues Found (2025-08-10 Evening)
 
-The codebase is stable with the orderInMix fix in place. The 7-state player system is working correctly. Focus should be on resolving the playback-after-deletion audio issue and improving performance with waveform caching.
+**CELEBRATION:** First "keeper" mix created successfully at 21:00! 🎉
+
+### CRITICAL BUG:
+- **Remove all following tracks causes crash** - Application removes tracks from database but crashes immediately after
+
+### Bugs:
+1. **Appended tracks don't show in mix display** - When appending tracks from working set to existing mix, they're added to database but not displayed until app restart
+2. **Cue-points not initialized on append** - When appending tracks to existing mix, cue-points aren't initialized like they are with automix function
+
+### Nice to Have Features:
+1. **Volume meter/VU meter** - Should show volume levels during mix playback
+2. **Cue-points should move with attach points** - When adjusting attach points, related cue-points should adjust accordingly
+
+## 14. Message to Next Instance
+
+The application is stable and functional - first successful mix created! However, there are critical issues to address:
+
+**HIGHEST PRIORITY:**
+1. Fix the crash when using "Remove all following tracks" - this is a critical stability issue
+2. Fix mix display refresh when appending tracks - users shouldn't need to restart
+
+**MEDIUM PRIORITY:**
+1. Fix cue-point initialization for appended tracks
+2. Implement linked movement of cue-points with attach points
+
+**LOWER PRIORITY (but would greatly improve UX):**
+1. Add volume/VU meter for mix playback
+2. Continue work on persistent waveform caching
+
+The theme system is now fully functional with custom colors. The library scanning and track counting works correctly.

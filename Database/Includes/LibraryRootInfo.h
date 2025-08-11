@@ -5,6 +5,8 @@
 #include <optional>
 #include <chrono>
 
+#include <Database\Includes\FolderInfo.h>
+
 namespace jucyaudio
 {
     namespace database
@@ -18,8 +20,10 @@ namespace jucyaudio
         {
             LibraryRootId id{0};
             std::string path;
-            int64_t fileCount{0};
             std::optional<std::chrono::system_clock::time_point> lastScanned;
+
+            // output only
+            FolderInfo folderInfo;
         };
 
     } // namespace database

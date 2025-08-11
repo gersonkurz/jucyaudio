@@ -108,7 +108,7 @@ namespace jucyaudio
                     filesProcessedThisSession++;
                     if (m_progressCb && (filesProcessedThisSession % 100 == 0))
                     {
-                        m_progressCb(-1.0f, std::format("Scanned {} files...", filesProcessedThisSession));
+                        m_progressCb(-1.0f, std::format("Scanned {:L} files...", filesProcessedThisSession));
                     }
 
                     // we're getting filenames, not folders

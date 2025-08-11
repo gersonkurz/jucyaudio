@@ -1469,8 +1469,33 @@ namespace jucyaudio
         {
             if (success)
             {
-                m_statusPanel.setStatusMessage("Mix '" + mixInfo.name + "' created successfully.", false);
+                m_statusPanel.setStatusMessage("Mix '" + mixInfo.name + "' created or updated successfully.", false);
                 m_navigationTree.onMixCreated(mixInfo.mixId);
+
+                // After creating/updating the mix, check if it's the one currently being viewed.
+                // If so, we need to force a refresh of the view to show the new tracks.
+                if (m_currentNode)
+                {
+                    if (auto* mixNode = dynamic_cast<MixNode*>(m_currentNode))
+                    {
+                        if (mixNode->getUniqueId() == mixInfo.mixId)
+                        {
+                            spdlog::info("Currently viewed mix (ID: {}) was updated, forcing view refresh.", mixInfo.mixId);
+                            
+                            // Invalidate the node's internal cache to pick up the new tracks
+                            mixNode->refreshCache(true);
+
+                            if (m_currentMainView == MainViewType::MixEditor)
+                            {
+                                m_mixEditorComponent.loadMix(mixNode);
+                            }
+                            else // DataView showing the mix's tracks
+                            {
+                                m_dataViewComponent.refreshView();
+                            }
+                        }
+                    }
+                }
             }
             else
             {
