@@ -1,6 +1,7 @@
 #pragma once
 
 #include <UI/EnhancedPlayerComponent.h>
+#include <UI/VUMeterComponent.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_graphics/juce_graphics.h>
 
@@ -12,7 +13,7 @@ namespace jucyaudio
         class MainComponent;
         // PlaybackController is not directly needed by MainPlaybackAndStatusComponent's interface now
 
-        class MainPlaybackAndStatusComponent : public juce::Component
+        class MainPlaybackAndStatusComponent : public juce::Component, private juce::Timer
         {
         public:
             explicit MainPlaybackAndStatusComponent(MainComponent &owner);
@@ -34,9 +35,14 @@ namespace jucyaudio
             }
 
         private:
+            void timerCallback() override;
+
             MainComponent &m_ownerMainComponent;
             EnhancedPlayerComponent& m_player; 
             juce::Label m_statusLabel;
+
+            VUMeterComponent m_vuMeterLeft;
+            VUMeterComponent m_vuMeterRight;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainPlaybackAndStatusComponent)
         };

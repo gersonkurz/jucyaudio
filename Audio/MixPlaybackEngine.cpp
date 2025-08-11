@@ -105,7 +105,7 @@ namespace jucyaudio
                 return false;
             }
 
-            std::lock_guard<std::mutex> lock(m_mutex);
+            const juce::ScopedLock lock(m_critSec);
 
             unloadMixInternal();
 
@@ -145,7 +145,7 @@ namespace jucyaudio
 
         void MixPlaybackEngine::unloadMix()
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
+            const juce::ScopedLock lock(m_critSec);
             unloadMixInternal();
         }
 
@@ -177,7 +177,7 @@ namespace jucyaudio
                 return;
             }
             
-            std::lock_guard<std::mutex> lock(m_mutex);
+            const juce::ScopedLock lock(m_critSec);
             
             const auto currentPos = getPosition();
             
@@ -262,7 +262,7 @@ namespace jucyaudio
         void MixPlaybackEngine::setPosition(Duration_t positionMs)
         {
             spdlog::debug("JUCYAUDIO: MixPlaybackEngine::setPosition -> Entry, ms: {}", positionMs.count());
-            std::lock_guard<std::mutex> lock(m_mutex);
+            const juce::ScopedLock lock(m_critSec);
             setPositionInternal(positionMs);
             spdlog::debug("JUCYAUDIO: MixPlaybackEngine::setPosition -> Exit");
         }
@@ -281,7 +281,7 @@ namespace jucyaudio
 
         void MixPlaybackEngine::prepareToPlay(int samplesPerBlockExpected, double sampleRate)
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
+            const juce::ScopedLock lock(m_critSec);
 
             auto currentPos = m_currentPositionSamples.load();
             
@@ -307,7 +307,7 @@ namespace jucyaudio
 
         void MixPlaybackEngine::releaseResources()
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
+            const juce::ScopedLock lock(m_critSec);
 
             for (auto &source : m_trackSources)
             {
@@ -328,7 +328,7 @@ namespace jucyaudio
                 return;
             }
 
-            std::lock_guard<std::mutex> lock(m_mutex);
+            const juce::ScopedLock lock(m_critSec);
             
             if (!m_mixLoader || m_trackSources.empty())
             {

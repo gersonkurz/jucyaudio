@@ -84,6 +84,14 @@ namespace jucyaudio
                 return m_audioTransportSource;
             }
 
+            // VU Meter processing
+            void processAudioBlock(const juce::AudioBuffer<float>& buffer);
+            float getPeakLeft() const { return m_peakLeft.load(); }
+            float getPeakRight() const { return m_peakRight.load(); }
+
+            // Thread-safe execution for mix-related operations
+            void withMixEngineLock(std::function<void()> action);
+
         private:
             void changeState(PlayerState newState);
             void loadFileInternal(const juce::File &audioFile);
@@ -110,6 +118,10 @@ namespace jucyaudio
             
             // Position tracking (absolute timeline position in seconds)
             double m_pausedPosition{0.0};
+
+            // VU Meter atomics
+            std::atomic<float> m_peakLeft{0.0f};
+            std::atomic<float> m_peakRight{0.0f};
 
             // To prevent re-entrancy or rapid state changes from UI/callbacks
             std::atomic<bool> m_isCurrentlyChangingState{false};

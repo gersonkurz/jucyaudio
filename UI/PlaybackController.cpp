@@ -467,5 +467,43 @@ namespace jucyaudio
             m_pausedPosition = 0.0;
         }
 
+        void PlaybackController::processAudioBlock(const juce::AudioBuffer<float>& buffer)
+        {
+            if (buffer.getNumChannels() > 0)
+            {
+                m_peakLeft = buffer.getMagnitude(0, 0, buffer.getNumSamples());
+            }
+            else
+            {
+                m_peakLeft = 0.0f;
+            }
+
+            if (buffer.getNumChannels() > 1)
+            {
+                m_peakRight = buffer.getMagnitude(1, 0, buffer.getNumSamples());
+            }
+            else
+            {
+                // For mono, copy left to right
+                m_peakRight = m_peakLeft.load();
+            }
+        }
+
+        void PlaybackController::withMixEngineLock(std::function<void()> action)
+        {
+            if (m_mixPlaybackEngine)
+            {
+                const juce::ScopedLock lock(m_mixPlaybackEngine->getLock());
+                action();
+            }
+            else
+            {
+                // If there's no engine, there's nothing to lock.
+                // It might be safer to just run the action, or log a warning.
+                // For now, we'll just run it, assuming the action is safe without a mix.
+                action();
+            }
+        }
+
     } // namespace ui
 } // namespace jucyaudio

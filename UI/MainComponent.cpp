@@ -459,6 +459,7 @@ namespace jucyaudio
         void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo &bufferToFill)
         {
             m_playbackController.getNextAudioBlock(bufferToFill);
+            m_playbackController.processAudioBlock(*bufferToFill.buffer);
         }
 
         void MainComponent::releaseResources()
@@ -961,15 +962,24 @@ namespace jucyaudio
         {
             if (result == 1) // User clicked "Delete"
             {
+                // Stop playback before modifying the mix data to prevent audio thread issues
+                stopMixPlayback();
+
                 std::string statusMessage;
-                if (m_navigationTree.removeObjectsForRows(dc->node, dc->selectedRows))
+
+                // Use the new locking mechanism in the playback controller
+                m_playbackController.withMixEngineLock([&]()
                 {
-                    statusMessage = std::format("Removed tracks from {} {}", dc->node->m_refTypeNameForSingleObject, dc->node->getName());
-                }
-                else
-                {
-                    statusMessage = std::format("Failed to remove tracks from {} {}", dc->node->m_refTypeNameForSingleObject, dc->node->getName());
-                }
+                    if (m_navigationTree.removeObjectsForRows(dc->node, dc->selectedRows))
+                    {
+                        statusMessage = std::format("Removed tracks from {} {}", dc->node->m_refTypeNameForSingleObject, dc->node->getName());
+                    }
+                    else
+                    {
+                        statusMessage = std::format("Failed to remove tracks from {} {}", dc->node->m_refTypeNameForSingleObject, dc->node->getName());
+                    }
+                });
+
                 m_statusPanel.setStatusMessage(statusMessage, false);
                 dc->node->release(REFCOUNT_DEBUG_ARGS);
                 delete dc;

@@ -92,6 +92,9 @@ namespace jucyaudio
             {
                 return m_mixLoader;
             }
+
+            // Expose the critical section for external locking
+            juce::CriticalSection& getLock() { return m_critSec; }
             
             // Recalculate track positions after attach points change
             // This should be called when cue/attach points are modified
@@ -133,7 +136,7 @@ namespace jucyaudio
             std::atomic<float> m_masterGain{1.0f};
 
             // Thread safety
-            mutable std::mutex m_mutex;
+            mutable juce::CriticalSection m_critSec;
 
             // Helper methods
             bool prepareTrackSources();

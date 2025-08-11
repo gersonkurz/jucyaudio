@@ -1,4 +1,4 @@
-# JucyAudio - Architecture & Status (2025-08-09 End of Day)
+# JucyAudio - Architecture & Status (2025-08-11 End of Day)
 
 ## 1. Executive Summary
 
@@ -215,35 +215,27 @@ The application now operates on the following principles:
 - Calls `invalidateCache()` after scan to force recalculation
 - UI properly refreshes with `loadRoots()` after scan completion
 
-## 13. Critical Issues Found (2025-08-10 Evening)
+## 13. Session Accomplishments: Bug Fixes & New Features (2025-08-11)
 
-**CELEBRATION:** First "keeper" mix created successfully at 21:00! 🎉
+*   **Mix Display Refresh:** Fixed a bug where appending tracks to a mix would not update the UI until a restart. The `onMixCreatedCallback` now correctly identifies when the current view is affected and forces a refresh.
+*   **Appended Track Initialization:** Fixed an issue where tracks appended to a mix did not have their envelope points initialized correctly. The logic now mirrors the automix creation, providing a proper crossfade envelope.
+*   **Theme System Fixes:** Corrected an issue in the light theme where text in edit controls and on checkboxes was invisible (white-on-white). Added the missing `textColourId` definitions to the theme manager and the `light.toml` file.
+*   **Mix Export Robustness:**
+    *   Fixed a critical bug where exporting a mix that used the same audio file for multiple segments would result in silent audio for the second segment.
+    *   Refactored the audio export engine (`ExportMixImplementation`) to correctly handle repeated `TrackId`s by using a vector for timeline positions instead of a map, ensuring each segment is processed independently.
+*   **M3U Export Enhancement:**
+    *   Corrected the timeline calculation to account for `cueStart`, fixing incorrect negative start times for repeated tracks.
+    *   Added a comment before each track indicating its absolute start time in the mix in `HH:MM:SS` format.
+    *   Removed the unnecessary and incorrect `#EXTSTART` tag.
+*   **Crash Fix (Preventative):** Addressed a potential release-only crash when using "Remove all following tracks". The logic now correctly identifies the selected track by its unique `orderInMix` instead of the potentially duplicated `trackId`, preventing data inconsistencies.
+*   **New Feature: VU Meter:**
+    *   Implemented a real-time stereo VU meter in the main status panel.
+    *   Created a new `VUMeterComponent` with a smooth peak decay animation.
+    *   Integrated thread-safe peak level calculation into the `PlaybackController` to drive the meters without affecting audio performance.
 
-### CRITICAL BUG:
-- **Remove all following tracks causes crash** - Application removes tracks from database but crashes immediately after
+## 14. Next Session TODO:
 
-### Bugs:
-1. **Appended tracks don't show in mix display** - When appending tracks from working set to existing mix, they're added to database but not displayed until app restart
-2. **Cue-points not initialized on append** - When appending tracks to existing mix, cue-points aren't initialized like they are with automix function
-
-### Nice to Have Features:
-1. **Volume meter/VU meter** - Should show volume levels during mix playback
-2. **Cue-points should move with attach points** - When adjusting attach points, related cue-points should adjust accordingly
-
-## 14. Message to Next Instance
-
-The application is stable and functional - first successful mix created! However, there are critical issues to address:
-
-**HIGHEST PRIORITY:**
-1. Fix the crash when using "Remove all following tracks" - this is a critical stability issue
-2. Fix mix display refresh when appending tracks - users shouldn't need to restart
-
-**MEDIUM PRIORITY:**
-1. Fix cue-point initialization for appended tracks
-2. Implement linked movement of cue-points with attach points
-
-**LOWER PRIORITY (but would greatly improve UX):**
-1. Add volume/VU meter for mix playback
-2. Continue work on persistent waveform caching
-
-The theme system is now fully functional with custom colors. The library scanning and track counting works correctly.
+1.  **Nice to Have:** Implement linked movement of cue-points with attach points.
+2.  **Performance:** Continue work on persistent waveform caching.
+3.  **Known Issue:** Investigate remaining mix playback issue after track deletion.
+4.  **Database:** Implement a one-time migration/check for legacy databases with corrupt `orderInMix` values.

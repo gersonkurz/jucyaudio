@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
 project(jucyaudio VERSION 0.4.0)
 
+# Enable debug info in Release builds for MSVC (Visual Studio)
+# This allows for meaningful call stacks in release builds without sacrificing performance.
+if(MSVC)
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi")
+  set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /DEBUG")
+endif()
+
 # C++20 requirement
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -353,6 +360,8 @@ target_sources(jucyaudio PRIVATE
     UI/SplashScreenComponent.cpp
     UI/ExportMixDialog.h
     UI/ExportMixDialog.cpp
+    UI/VUMeterComponent.h
+    UI/VUMeterComponent.cpp
     Audio/Includes/ActiveExportSettings.h)
 
 # Add Windows-specific manifest
