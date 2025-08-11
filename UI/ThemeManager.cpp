@@ -23,7 +23,9 @@ namespace jucyaudio
                 DECLARE_COLOUR_ID(Label::textColourId)
                 DECLARE_COLOUR_ID(ComboBox::backgroundColourId)
                 DECLARE_COLOUR_ID(TextEditor::backgroundColourId)
+                DECLARE_COLOUR_ID(TextEditor::textColourId)
                 DECLARE_COLOUR_ID(TextEditor::outlineColourId)
+                DECLARE_COLOUR_ID(ToggleButton::textColourId)
                 
                 DECLARE_COLOUR_ID(TextButton::buttonColourId)
                 DECLARE_COLOUR_ID(TextButton::buttonOnColourId)
