@@ -53,32 +53,31 @@ namespace jucyaudio
             outFile << "#EXTMIXDURATION:" << std::chrono::duration_cast<std::chrono::seconds>(mixInfo.totalDuration).count() << "\n\n";
 
             // Calculate timeline positions using ATTACH model
-            std::unordered_map<TrackId, Duration_t> trackStartTimes;
-            Duration_t previousTrackStart{0};
-            
+            std::vector<Duration_t> trackAudibleStartTimes;
+            trackAudibleStartTimes.resize(mixTracks.size());
+            Duration_t previousFileStart{0};
+
             for (size_t i = 0; i < mixTracks.size(); ++i)
             {
-                const auto& mixTrack = mixTracks[i];
-                Duration_t trackStart{0};
-                
-                if (i == 0)
+                const auto &mixTrack = mixTracks[i];
+                Duration_t fileStart{0};
+
+                if (i > 0)
                 {
-                    trackStart = Duration_t{0};
-                }
-                else
-                {
-                    const auto& prevTrack = mixTracks[i-1];
-                    trackStart = previousTrackStart + prevTrack.attachTo - mixTrack.attachFrom;
+                    const auto &prevTrack = mixTracks[i - 1];
+                    fileStart = previousFileStart + prevTrack.attachTo - mixTrack.attachFrom;
                 }
                 
-                trackStartTimes[mixTrack.trackId] = trackStart;
-                previousTrackStart = trackStart;
+                trackAudibleStartTimes[i] = fileStart + mixTrack.cueStart;
+                previousFileStart = fileStart;
             }
 
             // Process each track
             size_t processedTracks{0};
-            for (const auto &mixTrack : mixTracks)
+            for (size_t i = 0; i < mixTracks.size(); ++i)
             {
+                const auto& mixTrack = mixTracks[i];
+
                 if (progressCallback)
                 {
                     float progress{static_cast<float>(processedTracks) / static_cast<float>(mixTracks.size())};
@@ -101,7 +100,7 @@ namespace jucyaudio
                 std::string artistTitle;
                 if (!trackInfo->artist_name.empty() && !trackInfo->title.empty())
                 {
-                    artistTitle = std::format("{} - {}", trackInfo->artist_name, trackInfo->title);
+                    artistTitle = std::format("{} - ", trackInfo->artist_name, trackInfo->title);
                 }
                 else if (!trackInfo->title.empty())
                 {
@@ -113,24 +112,15 @@ namespace jucyaudio
                     artistTitle = trackPath.stem().string();
                 }
 
+                // Write absolute start time as a comment
+                const auto absoluteStartTime = trackAudibleStartTimes[i];
+                outFile << "# Starts at: " << durationToString(absoluteStartTime) << "\n";
+
                 // Write EXTINF line
                 outFile << std::format("#EXTINF:{},{}\n", durationSeconds, artistTitle);
                 
                 // Write custom EXTREM line with original filename
                 outFile << std::format("#EXTREM:{}\n", trackPath.filename().string());
-                
-                // Write EXTSTART line with calculated start time in seconds
-                const auto startTimeIt = trackStartTimes.find(mixTrack.trackId);
-                if (startTimeIt != trackStartTimes.end())
-                {
-                    const auto startSeconds{std::chrono::duration_cast<std::chrono::milliseconds>(startTimeIt->second).count() / 1000.0};
-                    outFile << std::format("#EXTSTART:{:.1f}\n", startSeconds);
-                }
-                else
-                {
-                    spdlog::warn("Start time not calculated for track {}", mixTrack.trackId);
-                    outFile << "#EXTSTART:0.0\n";
-                }
                 
                 // Write file path (absolute path as stored in database)
                 outFile << pathToString(trackPath) << "\n\n";
