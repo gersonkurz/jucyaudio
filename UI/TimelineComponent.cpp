@@ -406,31 +406,18 @@ namespace jucyaudio
                 return;
             }
 
-            const auto selectedTrackId = m_selectedTrack->getTrackId();
+            // Find the selected track's orderInMix. This is robust against duplicate track IDs.
+            const int selectedOrder = m_selectedTrack->getOrderInMix();
             const auto &mixTracks = m_mixLoader->getMixTracks();
 
-            // Find the selected track index
-            int selectedIndex = -1;
-            for (int i = 0; i < static_cast<int>(mixTracks.size()); ++i)
-            {
-                if (mixTracks[i].trackId == selectedTrackId)
-                {
-                    selectedIndex = i;
-                    break;
-                }
-            }
-
-            if (selectedIndex < 0)
-            {
-                spdlog::error("removeAllTracksAfterSelected: Selected track not found in mix");
-                return;
-            }
-
-            // Collect IDs of tracks to remove (all after the selected one)
+            // Collect IDs of tracks to remove (all with orderInMix > selectedOrder)
             std::vector<TrackId> tracksToRemove;
-            for (int i = selectedIndex + 1; i < static_cast<int>(mixTracks.size()); ++i)
+            for (const auto &track : mixTracks)
             {
-                tracksToRemove.push_back(mixTracks[i].trackId);
+                if (track.orderInMix > selectedOrder)
+                {
+                    tracksToRemove.push_back(track.trackId);
+                }
             }
 
             if (tracksToRemove.empty())
@@ -439,27 +426,14 @@ namespace jucyaudio
                 return;
             }
 
-            spdlog::info("Removing {} tracks after the selected track (from mix only, keeping in working set)", tracksToRemove.size());
+            spdlog::info("Removing {} tracks after order {} (from mix only, keeping in working set)", tracksToRemove.size(), selectedOrder);
 
-            // Remove each track from mix only (NOT from working set - these are tracks to revisit later)
             const auto currentMixId = m_mixLoader->getMixId();
-            bool anyRemoved = false;
-
-            for (const auto &trackId : tracksToRemove)
+            
+            // Use the efficient batch removal method
+            if (theTrackLibrary.getMixManager().removeTracksFromMix(currentMixId, tracksToRemove))
             {
-                if (theTrackLibrary.getMixManager().removeTrackFromMix(currentMixId, trackId))
-                {
-                    spdlog::info("Removed track {}", trackId);
-                    anyRemoved = true;
-                }
-                else
-                {
-                    spdlog::error("Failed to remove track {}", trackId);
-                }
-            }
-
-            if (anyRemoved)
-            {
+                spdlog::info("Successfully removed tracks from database.");
                 // Reload from database to get the updated mix
                 if (m_mixLoader->reloadFromDatabase())
                 {
@@ -475,6 +449,10 @@ namespace jucyaudio
                 {
                     spdlog::error("Failed to reload mix after removing tracks");
                 }
+            }
+            else
+            {
+                spdlog::error("Failed to remove tracks from mix using batch operation.");
             }
         }
 

@@ -84,6 +84,16 @@ namespace jucyaudio
                 return m_mixTrack.trackId;
             }
 
+            /**
+             * @brief Returns the order of this track in the mix.
+             *
+             * @return The 0-based order index of this track.
+             */
+            int getOrderInMix() const
+            {
+                return m_mixTrack.orderInMix;
+            }
+
         private:
             /**
              * @brief Enumeration of interactive marker types in the component.
