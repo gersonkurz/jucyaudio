@@ -729,6 +729,9 @@ namespace jucyaudio
             case DataAction::RunBpmAnalysis:
                 onRunBpmAnalysis(node);
                 break;
+            case DataAction::SelectTracksFromMix:
+                spdlog::info("Action 'SelectTracksFromMix' triggered for node '{}'.", node->getName());
+                break;
             case DataAction::ShowMixEditor:
                 onShowMixEditor();
                 break;

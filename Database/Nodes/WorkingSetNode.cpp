@@ -9,7 +9,7 @@ namespace jucyaudio
 {
     namespace database
     {
-        const DataActions WorkingSetNodeActions{DataAction::EditWorkingSetMetadata, DataAction::CreateMix, DataAction::RunBpmAnalysis, DataAction::Delete};
+        const DataActions WorkingSetNodeActions{DataAction::EditWorkingSetMetadata, DataAction::CreateMix, DataAction::RunBpmAnalysis, DataAction::SelectTracksFromMix, DataAction::Delete};
 
         const DataActions WorkingSetRowActions{DataAction::Play,
             DataAction::CreateMix,

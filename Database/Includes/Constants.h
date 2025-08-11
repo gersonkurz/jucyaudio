@@ -211,6 +211,7 @@ namespace jucyaudio
             Delete,                 ///< Delete the selected working set
             ExportMix,              ///< Export mix to audio file
             RunBpmAnalysis,         ///< Run BPM analysis on selected items
+            SelectTracksFromMix,    ///< Select tracks in a working set that are part of a specific mix
             ShowMixEditor,          ///< Open the mix editor for the selected mix
             ShowTrackEditor,        ///< Open the track editor for the selected track
             Separator,              ///< Separator in context menus (not an action)

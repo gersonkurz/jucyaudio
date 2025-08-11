@@ -37,6 +37,8 @@ namespace jucyaudio
                 return "Remove Tracks";
             case DataAction::RunBpmAnalysis:
                 return "Run BPM Analysis";
+            case DataAction::SelectTracksFromMix:
+                return "Select Tracks from Mix...";
             case DataAction::ShowMixEditor:
                 return "Show Mix Editor";
             case DataAction::ShowTrackEditor:
