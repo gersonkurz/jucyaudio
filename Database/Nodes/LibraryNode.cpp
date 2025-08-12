@@ -21,7 +21,8 @@ namespace jucyaudio
             TrackId,
             Filepath,
             Filename,
-            LastModified
+            LastModified,
+            Bitrate
         };
     } // namespace
 
@@ -42,6 +43,7 @@ namespace jucyaudio
             DataColumn{(ColumnIndex_t)Column::Artist, "artist_name", "Artist", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
             DataColumn{(ColumnIndex_t)Column::Album, "album_title", "Album", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
             DataColumn{(ColumnIndex_t)Column::Duration, "duration", "Duration", 100, ColumnAlignment::Right, ColumnDataTypeHint::Duration},
+            DataColumn{(ColumnIndex_t)Column::Bitrate, "bitrate", "Bitrate", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
             DataColumn{(ColumnIndex_t)Column::BPM, "bpm", "BPM at start", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
             DataColumn{(ColumnIndex_t)Column::Intro, "intro_end", "Intro", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
             DataColumn{(ColumnIndex_t)Column::Outro, "outro_start", "Outro", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
@@ -178,7 +180,8 @@ namespace jucyaudio
                 return track->filename;
             case Column::LastModified:
                 return jucyaudio::timestampToString(track->last_modified_fs);
-
+            case Column::Bitrate:
+                return std::to_string(track->bitrate);
             default:
                 spdlog::warn("Invalid column index {} for LibraryRow", index);
                 return "";

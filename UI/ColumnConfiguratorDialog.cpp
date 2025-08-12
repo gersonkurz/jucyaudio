@@ -21,17 +21,17 @@ namespace jucyaudio
             const std::vector<database::DataColumn> &allAvailableColumnsFromNode,
             config::TypedValueVector<config::DataViewColumnSection> &columnsConfigToModify,
             ColumnsConfiguredCallback onConfiguredCallback)
-            : m_titleLabel("title", "Configure Columns for " + viewName),
-              m_columnsListBox("colsListBox", this),
-              m_moveUpButton("Move Up"),
-              m_moveDownButton("Move Down"),
-              m_okButton("OK"),
-              m_cancelButton("Cancel"),
-              m_resetButton("Reset to Defaults"),
-              m_viewName(viewName),
-              m_allAvailableColumns(allAvailableColumnsFromNode),
-              m_columnsConfigToModifyRef(columnsConfigToModify),
-              m_onConfiguredCallback(std::move(onConfiguredCallback))
+            : m_titleLabel{"title", "Configure Columns for " + viewName},
+              m_columnsListBox{"colsListBox", this},
+              m_moveUpButton{"Move Up"},
+              m_moveDownButton{"Move Down"},
+              m_okButton{"OK"},
+              m_cancelButton{"Cancel"},
+              m_resetButton{"Reset to Defaults"},
+              m_viewName{viewName},
+              m_allAvailableColumns{allAvailableColumnsFromNode},
+              m_columnsConfigToModifyRef{columnsConfigToModify},
+              m_onConfiguredCallback{std::move(onConfiguredCallback)}
         {
             theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
             setSize(dialogWidth, dialogHeight);
