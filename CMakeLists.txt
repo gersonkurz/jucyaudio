@@ -362,6 +362,8 @@ target_sources(jucyaudio PRIVATE
     UI/ExportMixDialog.cpp
     UI/VUMeterComponent.h
     UI/VUMeterComponent.cpp
+    UI/StatusBarComponent.h
+    UI/StatusBarComponent.cpp
     Audio/Includes/ActiveExportSettings.h)
 
 # Add Windows-specific manifest
