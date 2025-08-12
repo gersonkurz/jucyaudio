@@ -106,10 +106,10 @@ namespace jucyaudio
             {
                 m_stmt.addParam(wsId);
             }
-            for (const auto &searchTerm : args.searchTerms)
+            if (!args.searchTerms.empty() && !args.searchTerms[0].empty())
             {
-                const std::string wildcardTerm = "%" + searchTerm + "%";
-                m_stmt.addParam(wildcardTerm);
+                // For FTS5, we bind the single raw search string.
+                m_stmt.addParam(args.searchTerms[0]);
             }
             if (args.workingSetId > 0)
             {

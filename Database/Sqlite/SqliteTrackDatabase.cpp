@@ -488,7 +488,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 11;
+            const int latestSchemaVersion = 12;
 
             if (currentVersion == 0)
             {

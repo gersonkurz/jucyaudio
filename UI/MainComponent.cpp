@@ -664,18 +664,12 @@ namespace jucyaudio
         {
             if (m_currentNode)
             {
-                // Convert juce::String to std::vector<std::string> for
-                // setSearchTerms Simple split by space for now.
+                // For FTS5, we pass the entire search string as a single term.
+                // The FTS engine will handle parsing quotes, AND/OR logic, etc.
                 std::vector<std::string> searchTerms;
                 if (!newFilterText.isEmpty())
                 {
-                    auto termsArray = juce::StringArray::fromTokens(newFilterText, " ", "\"");
-                    termsArray.removeEmptyStrings();
                     searchTerms.push_back(newFilterText.toStdString());
-                    for (const auto &term : termsArray)
-                    {
-                         //searchTerms.push_back(term.toStdString());
-                    }
                 }
 
                 if (m_currentNode->setSearchTerms(searchTerms))
