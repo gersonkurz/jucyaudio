@@ -671,9 +671,10 @@ namespace jucyaudio
                 {
                     auto termsArray = juce::StringArray::fromTokens(newFilterText, " ", "\"");
                     termsArray.removeEmptyStrings();
+                    searchTerms.push_back(newFilterText.toStdString());
                     for (const auto &term : termsArray)
                     {
-                        searchTerms.push_back(term.toStdString());
+                         //searchTerms.push_back(term.toStdString());
                     }
                 }
 

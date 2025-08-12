@@ -406,6 +406,20 @@ namespace jucyaudio
                 return;
             }
 
+            // --- FIX: Get the playback controller from the parent editor ---
+            auto* editor = findParentComponentOfClass<MixEditorComponent>();
+            if (!editor)
+            {
+                spdlog::error("Could not find parent MixEditorComponent. Cannot stop playback engine.");
+                return;
+            }
+            auto* playbackController = editor->getPlaybackController();
+            if (!playbackController)
+            {
+                spdlog::error("Could not get PlaybackController from editor.");
+                return;
+            }
+
             // Find the selected track's orderInMix. This is robust against duplicate track IDs.
             const int selectedOrder = m_selectedTrack->getOrderInMix();
             const auto &mixTracks = m_mixLoader->getMixTracks();
@@ -428,6 +442,18 @@ namespace jucyaudio
 
             spdlog::info("Removing {} tracks after order {} (from mix only, keeping in working set)", tracksToRemove.size(), selectedOrder);
 
+            // --- FIX: Stop playback BEFORE any data model changes ---
+            const bool wasPlaying = playbackController->isPlaying();
+            double playbackPosition = 0.0;
+
+            if (wasPlaying)
+            {
+                playbackPosition = playbackController->getCurrentPositionSeconds();
+                spdlog::debug("TimelineComponent: Was playing at position {}. Stopping playback.", playbackPosition);
+                playbackController->stop();
+                juce::Thread::sleep(50); // Give audio thread a moment to stop
+            }
+
             const auto currentMixId = m_mixLoader->getMixId();
             
             // Use the efficient batch removal method
@@ -437,12 +463,23 @@ namespace jucyaudio
                 // Reload from database to get the updated mix
                 if (m_mixLoader->reloadFromDatabase())
                 {
+                    // --- FIX: Reload the now-modified mix into the playback engine ---
+                    spdlog::debug("TimelineComponent: Reloading mix in playback controller.");
+                    bool loadSuccess = playbackController->loadMix(m_mixLoader);
+
                     // Refresh the UI
                     populateFrom();
 
                     if (onMixChanged)
                     {
                         onMixChanged();
+                    }
+
+                    // --- FIX: Resume playback if it was active before ---
+                    if (wasPlaying && loadSuccess)
+                    {
+                        spdlog::debug("TimelineComponent: Resuming playback from position {}", playbackPosition);
+                        playbackController->playMixFrom(playbackPosition);
                     }
                 }
                 else

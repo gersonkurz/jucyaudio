@@ -110,9 +110,6 @@ namespace jucyaudio
             {
                 const std::string wildcardTerm = "%" + searchTerm + "%";
                 m_stmt.addParam(wildcardTerm);
-                m_stmt.addParam(wildcardTerm);
-                m_stmt.addParam(wildcardTerm);
-                m_stmt.addParam(wildcardTerm);
             }
             if (args.workingSetId > 0)
             {

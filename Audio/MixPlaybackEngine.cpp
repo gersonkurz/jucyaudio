@@ -435,11 +435,11 @@ namespace jucyaudio
                     continue;
                 }
 
-                juce::int64 trackStartSamples = static_cast<juce::int64>((m_trackStartTimes[i].count() / 1000.0) * m_sampleRate);
-                juce::int64 trackDurationSamples = static_cast<juce::int64>((source->trackInfo->duration.count() / 1000.0) * m_sampleRate);
-                juce::int64 trackEndSamples = trackStartSamples + trackDurationSamples;
+                const auto trackStartSamples = static_cast<juce::int64>((m_trackStartTimes[i].count() / 1000.0) * m_sampleRate);
+                const auto trackDurationSamples = static_cast<juce::int64>((source->trackInfo->duration.count() / 1000.0) * m_sampleRate);
+                const auto trackEndSamples = trackStartSamples + trackDurationSamples;
 
-                juce::int64 blockEndSample = startSample + numSamples;
+                const auto blockEndSample = startSample + numSamples;
 
                 if (trackEndSamples <= startSample || trackStartSamples >= blockEndSample)
                 {
@@ -447,8 +447,8 @@ namespace jucyaudio
                 }
 
                 activeTracksThisBlock++;
-                juce::int64 trackReadStart = std::max(startSample - trackStartSamples, juce::int64(0));
-                juce::int64 trackReadEnd = std::min(blockEndSample - trackStartSamples, trackDurationSamples);
+                const auto trackReadStart = std::max(startSample - trackStartSamples, juce::int64(0));
+                const auto trackReadEnd = std::min(blockEndSample - trackStartSamples, trackDurationSamples);
                 int samplesToRead = static_cast<int>(trackReadEnd - trackReadStart);
 
                 if (samplesToRead <= 0)
@@ -469,7 +469,7 @@ namespace jucyaudio
                 const float masterGain = m_masterGain.load();
                 for (int sample = 0; sample < samplesToRead; ++sample)
                 {
-                    juce::int64 sampleInTrack = trackReadStart + sample;
+                    const auto sampleInTrack = trackReadStart + sample;
                     Duration_t timeInTrack{static_cast<int64_t>((sampleInTrack * 1000.0) / m_sampleRate)};
 
                     float gain = getEnvelopeGainForTrack(mixTrack, timeInTrack) * masterGain * mixTrack.gainAdjustment; // Apply per-track gain adjustment
