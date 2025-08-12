@@ -267,21 +267,32 @@ namespace jucyaudio
             
             spdlog::info("Updating envelope for track at position {} with {} points", orderInMix, points.size());
             
-            // Get access to the mix tracks
-            auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
-            
-            // Find and update the track by orderInMix (and trackId if available)
-            for (auto& track : mixTracks)
+            // Use thread-safe locking when modifying envelope points that the audio thread reads
+            if (m_playbackController)
             {
-                if (track.orderInMix == orderInMix)
+                m_playbackController->withMixEngineLock([&]()
                 {
-                    track.envelopePoints = points;
-                    spdlog::info("Updated envelope points for track {} at position {}", track.trackId, orderInMix);
+                    // Get access to the mix tracks
+                    auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
                     
-                    // Save changes
-                    saveMixChanges();
-                    break;
-                }
+                    // Find and update the track by orderInMix (and trackId if available)
+                    for (auto& track : mixTracks)
+                    {
+                        if (track.orderInMix == orderInMix)
+                        {
+                            track.envelopePoints = points;
+                            spdlog::info("Updated envelope points for track {} at position {}", track.trackId, orderInMix);
+                            
+                            // Save changes
+                            saveMixChanges();
+                            break;
+                        }
+                    }
+                });
+            }
+            else
+            {
+                spdlog::error("MixEditorComponent::updateEnvelopeInData - No playback controller available");
             }
         }
 
