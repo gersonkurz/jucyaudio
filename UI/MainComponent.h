@@ -91,6 +91,7 @@ namespace jucyaudio
             void playFileFromPosition(const juce::File &audioFile, double startPosition);
             void seekToTimelinePosition(double timePosition);
             void removeTrackFromMix(TrackId trackId);
+            void updateTrackCountStatus();
             
 
             // menu management --------------------------------

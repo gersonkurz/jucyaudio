@@ -145,7 +145,7 @@ namespace jucyaudio
             if (!m_navigationTree.initialize())
             {
                 // TODO: have a way to crash here?
-                m_statusPanel.setStatusMessage("Error: Could not load navigation.", true);
+                m_statusPanel.getStatusBar().postMessage("Error: Could not load navigation.", true);
             }
 
             // Set the undo manager's limit
@@ -448,7 +448,7 @@ namespace jucyaudio
         void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate)
         {
             m_playbackController.prepareToPlay(samplesPerBlockExpected, sampleRate);
-            m_statusPanel.setStatusMessage("Audio device prepared.", false);
+            m_statusPanel.getStatusBar().postMessage("Audio device prepared.", false);
         }
 
         void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo &bufferToFill)
@@ -460,7 +460,7 @@ namespace jucyaudio
         void MainComponent::releaseResources()
         {
             m_playbackController.releaseResources();
-            m_statusPanel.setStatusMessage("Audio resources released.", false);
+            m_statusPanel.getStatusBar().postMessage("Audio resources released.", false);
         }
 
         // --- juce::Timer Override ---
@@ -554,11 +554,7 @@ namespace jucyaudio
                     m_dataViewComponent.setCurrentNode(m_currentNode); // DataView updates its content source
                     m_dataViewComponent.refreshView();                 // Tell DataView to redraw
                 }
-                int64_t totalTracks = 0;
-                if (m_currentNode->getTotalTrackCount(totalTracks))
-                {
-                    m_statusPanel.setStatusMessage(std::format("{:L} tracks in '{}'", totalTracks, m_currentNode->getName()), false);
-                }
+                updateTrackCountStatus();
             }
             else
             {
@@ -572,7 +568,7 @@ namespace jucyaudio
                     m_dataViewComponent.setCurrentNode(nullptr);
                     m_dataViewComponent.refreshView();
                 }
-                m_statusPanel.setStatusMessage("", false);
+                updateTrackCountStatus();
             }
             // UI will update via timer in EnhancedPlayerComponent // Update play button enable
                                                // state
@@ -592,13 +588,13 @@ namespace jucyaudio
             auto *mixManager = &theTrackLibrary.getMixManager();
             if (mixManager->removeTrackFromMix(mixId, trackId))
             {
-                m_statusPanel.setStatusMessage("Track removed from mix.", false);
+                m_statusPanel.getStatusBar().postMessage("Track removed from mix.", false);
                 // Refresh the mix editor to show the change
                 m_mixEditorComponent.loadMix(static_cast<MixNode *>(m_currentNode));
             }
             else
             {
-                m_statusPanel.setStatusMessage("Failed to remove track from mix.", true);
+                m_statusPanel.getStatusBar().postMessage("Failed to remove track from mix.", true);
                 spdlog::error("Failed to soft-delete track {} from mix {}", trackId, mixId);
             }
         }
@@ -630,7 +626,7 @@ namespace jucyaudio
             {
                 spdlog::info("Nothing playing - just updating visual position (no playback change)");
                 // Just update the visual position - no playback starts
-                m_statusPanel.setStatusMessage("Position set to " + juce::String(timePosition, 1) + "s", false);
+                m_statusPanel.getStatusBar().postMessage("Position set to " + juce::String(timePosition, 1) + "s", false);
             }
         }
 
@@ -644,12 +640,12 @@ namespace jucyaudio
                     m_playbackController.stop();
                 }
                 
-                m_statusPanel.setStatusMessage(
+                m_statusPanel.getStatusBar().postMessage(
                     getSafeDisplayText("Playing: " + audioFile.getFileName() + " from " + juce::String(startPosition, 1) + "s"), false);
 
                 if (!m_playbackController.loadAndPlayFileFromPosition(audioFile, startPosition))
                 {
-                    m_statusPanel.setStatusMessage(getSafeDisplayText("Error playing: " + audioFile.getFileName()), true);
+                    m_statusPanel.getStatusBar().postMessage(getSafeDisplayText("Error playing: " + audioFile.getFileName()), true);
                 }
                 else
                 {
@@ -681,6 +677,7 @@ namespace jucyaudio
                     else
                     {
                         m_dataViewComponent.refreshView(); // Tell DataView data has changed due to filter
+                        updateTrackCountStatus();
                     }
                 }
             }
@@ -695,7 +692,7 @@ namespace jucyaudio
 
         void MainComponent::handleNodeActionFromNavigationPanel(INavigationNode *node, DataAction action)
         {
-            m_statusPanel.setStatusMessage("Node action: " + juce::String(dataActionToString(action, m_currentNode)), false);
+            m_statusPanel.getStatusBar().postMessage("Node action: " + juce::String(dataActionToString(action, m_currentNode)), false);
 
             switch (action)
             {
@@ -757,7 +754,7 @@ namespace jucyaudio
                 onRunBpmAnalysisForSelectedRows();
                 break;
             case DataAction::ShowDetails:
-                m_statusPanel.setStatusMessage("Show details for: " + std::to_string(rowIndex), false);
+                m_statusPanel.getStatusBar().postMessage("Show details for: " + std::to_string(rowIndex), false);
                 break;
             case DataAction::RemoveTracks: // TODO: we should do this only from the data View
                 onDataActionRemoveNamedObjects("track", "tracks");
@@ -776,7 +773,7 @@ namespace jucyaudio
             auto trackIds = node->getAllTrackIds();
             if (trackIds.empty())
             {
-                m_statusPanel.setStatusMessage("No tracks to analyze.", true);
+                m_statusPanel.getStatusBar().postMessage("No tracks to analyze.", true);
                 return;
             }
 
@@ -804,7 +801,7 @@ namespace jucyaudio
             auto objectIds = m_dataViewComponent.getSelectedObjectIds();
             if (objectIds.empty())
             {
-                m_statusPanel.setStatusMessage("No tracks selected for analysis.", true);
+                m_statusPanel.getStatusBar().postMessage("No tracks selected for analysis.", true);
                 return;
             }
 
@@ -875,7 +872,7 @@ namespace jucyaudio
                                 }
                             }
 
-                            m_statusPanel.setStatusMessage(
+                            m_statusPanel.getStatusBar().postMessage(
                                 std::format("Marked {} bad files and removed from {} working sets", badFiles.size(), removedCount), false);
 
                             // Refresh the view to show updated working sets
@@ -890,13 +887,13 @@ namespace jucyaudio
         {
             if (!m_currentNode)
             {
-                m_statusPanel.setStatusMessage("No node selected for playback.", true);
+                m_statusPanel.getStatusBar().postMessage("No node selected for playback.", true);
                 return;
             }
             const auto track{m_currentNode->getTrackInfoForRow(rowIndex)};
             if (!track)
             {
-                m_statusPanel.setStatusMessage("No track info available for row: " + std::to_string(rowIndex), true);
+                m_statusPanel.getStatusBar().postMessage("No track info available for row: " + std::to_string(rowIndex), true);
                 return;
             }
             const auto trackPath{track->reconstructFullPath()};
@@ -910,10 +907,10 @@ namespace jucyaudio
                 }
                 
                 // uncomment this line, and you get the exceptio
-                m_statusPanel.setStatusMessage(getSafeDisplayText("Playing: " + audioFile.getFileName()), false);
+                m_statusPanel.getStatusBar().postMessage(getSafeDisplayText("Playing: " + audioFile.getFileName()), false);
                 if (!m_playbackController.loadAndPlayFile(audioFile))
                 {
-                    m_statusPanel.setStatusMessage(getSafeDisplayText("Error playing: " + audioFile.getFileName()), true);
+                    m_statusPanel.getStatusBar().postMessage(getSafeDisplayText("Error playing: " + audioFile.getFileName()), true);
                     juce::AlertWindow::showMessageBoxAsync(
                         juce::AlertWindow::WarningIcon, "Playback Error", "Cannot play file:\n" + audioFile.getFullPathName());
 
@@ -941,7 +938,7 @@ namespace jucyaudio
             }
             else
             {
-                m_statusPanel.setStatusMessage("Cannot play: " + std::to_string(track->trackId) + " (No path)", true);
+                m_statusPanel.getStatusBar().postMessage("Cannot play: " + std::to_string(track->trackId) + " (No path)", true);
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::WarningIcon, "Playback Error", "Cannot find audio file for: " + std::to_string(track->trackId));
             }
@@ -970,13 +967,14 @@ namespace jucyaudio
                     }
                 });
 
-                m_statusPanel.setStatusMessage(statusMessage, false);
+                m_statusPanel.getStatusBar().postMessage(statusMessage, false);
+                updateTrackCountStatus();
                 dc->node->release(REFCOUNT_DEBUG_ARGS);
                 delete dc;
             }
             else
             {
-                m_statusPanel.setStatusMessage("Operation cancelled", false);
+                m_statusPanel.getStatusBar().postMessage("Operation cancelled", false);
             }
         }
 
@@ -984,19 +982,19 @@ namespace jucyaudio
         {
             if (!m_currentNode)
             {
-                m_statusPanel.setStatusMessage("No data node selected.", true);
+                m_statusPanel.getStatusBar().postMessage("No data node selected.", true);
                 return;
             }
             if (m_currentMainView == MainViewType::MixEditor)
             {
-                m_statusPanel.setStatusMessage("Cannot delete rows in Mix Editor view.", true);
+                m_statusPanel.getStatusBar().postMessage("Cannot delete rows in Mix Editor view.", true);
                 return;
             }
             const auto dc{new DeleteContext{}};
             dc->selectedRows = m_dataViewComponent.getSelectedRowIndices();
             if (dc->selectedRows.empty())
             {
-                m_statusPanel.setStatusMessage("No rows selected for deletion.", true);
+                m_statusPanel.getStatusBar().postMessage("No rows selected for deletion.", true);
                 return;
             }
             std::reverse(dc->selectedRows.begin(), dc->selectedRows.end());
@@ -1038,13 +1036,13 @@ namespace jucyaudio
         {
             if (!m_currentNode)
             {
-                m_statusPanel.setStatusMessage("No data node selected to create working set from.", true);
+                m_statusPanel.getStatusBar().postMessage("No data node selected to create working set from.", true);
                 return false;
             }
 
             if (m_currentMainView == MainViewType::MixEditor)
             {
-                m_statusPanel.setStatusMessage("Cannot create working set in Mix Editor view.", true);
+                m_statusPanel.getStatusBar().postMessage("Cannot create working set in Mix Editor view.", true);
                 return false;
             }
 
@@ -1056,7 +1054,7 @@ namespace jucyaudio
             {
                 return createWorkingSetFromNode(m_currentNode);
             }
-            m_statusPanel.setStatusMessage("Internal error: no selection, and no current node?", true);
+            m_statusPanel.getStatusBar().postMessage("Internal error: no selection, and no current node?", true);
             return false;
         }
 
@@ -1073,12 +1071,12 @@ namespace jucyaudio
         {
             if (success)
             {
-                m_statusPanel.setStatusMessage("Working set '" + workingSetInfo.name + "' created successfully.", false);
+                m_statusPanel.getStatusBar().postMessage("Working set '" + workingSetInfo.name + "' created successfully.", false);
                 m_navigationTree.onWorkingSetCreated(workingSetInfo.id);
             }
             else
             {
-                m_statusPanel.setStatusMessage("Failed to create working set: " + workingSetInfo.name, true);
+                m_statusPanel.getStatusBar().postMessage("Failed to create working set: " + workingSetInfo.name, true);
             }
         }
 
@@ -1094,7 +1092,7 @@ namespace jucyaudio
             int64_t trackCount;
             if (!node->getTotalTrackCount(trackCount))
             {
-                m_statusPanel.setStatusMessage("Error retrieving track count from node.", true);
+                m_statusPanel.getStatusBar().postMessage("Error retrieving track count from node.", true);
                 return false;
             }
             node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid during working set creation
@@ -1110,7 +1108,7 @@ namespace jucyaudio
         {
             if (trackCount <= 0)
             {
-                m_statusPanel.setStatusMessage("No tracks available for working-set creation", true);
+                m_statusPanel.getStatusBar().postMessage("No tracks available for working-set creation", true);
                 return false;
             }
             auto *dialog = new CreateWorkingSetDialogComponent{trackCount, callback};
@@ -1343,7 +1341,7 @@ namespace jucyaudio
             else
             {
                 // Handle other node types here if needed in the future
-                m_statusPanel.setStatusMessage("Details not available for this item.", true);
+                m_statusPanel.getStatusBar().postMessage("Details not available for this item.", true);
             }
         }
 
@@ -1375,7 +1373,7 @@ namespace jucyaudio
             else
             {
                 // Handle other node types here if needed in the future
-                m_statusPanel.setStatusMessage("Details not available for this item.", true);
+                m_statusPanel.getStatusBar().postMessage("Details not available for this item.", true);
             }
         }
 
@@ -1410,7 +1408,8 @@ namespace jucyaudio
                 const std::string nodeName{node->getName()};
                 if (m_navigationTree.deleteObject(node))
                 {
-                    m_statusPanel.setStatusMessage(std::format("{} {} successfully removed.", typeName, nodeName));
+                    m_statusPanel.getStatusBar().postMessage(std::format("{} {} successfully removed.", typeName, nodeName));
+                    updateTrackCountStatus();
                 }
                 else
                 {
@@ -1421,7 +1420,7 @@ namespace jucyaudio
             }
             else // User clicked "Cancel" (result == 0) or closed the dialog
             {
-                m_statusPanel.setStatusMessage(std::format("{} deletion cancelled.", node->m_refTypeNameForSingleObject), false);
+                m_statusPanel.getStatusBar().postMessage(std::format("{} deletion cancelled.", node->m_refTypeNameForSingleObject), false);
             }
         }
 
@@ -1429,12 +1428,12 @@ namespace jucyaudio
         {
             if (!m_currentNode)
             {
-                m_statusPanel.setStatusMessage("No data node selected.", true);
+                m_statusPanel.getStatusBar().postMessage("No data node selected.", true);
                 return;
             }
             if (m_currentMainView == MainViewType::MixEditor)
             {
-                m_statusPanel.setStatusMessage("Cannot create mix in Mix Editor view.", true);
+                m_statusPanel.getStatusBar().postMessage("Cannot create mix in Mix Editor view.", true);
                 return;
             }
 
@@ -1449,7 +1448,7 @@ namespace jucyaudio
 
             if (selectedTracks.empty())
             {
-                m_statusPanel.setStatusMessage("Not enough tracks selected to create a mix.", true);
+                m_statusPanel.getStatusBar().postMessage("Not enough tracks selected to create a mix.", true);
                 return;
             }
             auto *dialog = new ui::CreateMixDialogComponent(m_audioLibrary,
@@ -1472,7 +1471,7 @@ namespace jucyaudio
         {
             if (success)
             {
-                m_statusPanel.setStatusMessage("Mix '" + mixInfo.name + "' created or updated successfully.", false);
+                m_statusPanel.getStatusBar().postMessage("Mix '" + mixInfo.name + "' created or updated successfully.", false);
                 m_navigationTree.onMixCreated(mixInfo.mixId);
 
                 // After creating/updating the mix, check if it's the one currently being viewed.
@@ -1502,7 +1501,7 @@ namespace jucyaudio
             }
             else
             {
-                m_statusPanel.setStatusMessage("Failed to create mix: " + mixInfo.name, true);
+                m_statusPanel.getStatusBar().postMessage("Failed to create mix: " + mixInfo.name, true);
             }
         }
 
@@ -1536,7 +1535,7 @@ namespace jucyaudio
             }
 
             // No selection and nothing to resume
-            m_statusPanel.setStatusMessage("No track selected to play.", true);
+            m_statusPanel.getStatusBar().postMessage("No track selected to play.", true);
         }
 
         bool MainComponent::onShowScanDialog()
@@ -1600,11 +1599,11 @@ namespace jucyaudio
                     m_dataViewComponent.refreshView();
                 }
 
-                m_statusPanel.setStatusMessage("Scan dialog closed.", false);
+                m_statusPanel.getStatusBar().postMessage("Scan dialog closed.", false);
             };
 
             launchOptions.launchAsync();
-            m_statusPanel.setStatusMessage("Folder management dialog opened.", false);
+            m_statusPanel.getStatusBar().postMessage("Folder management dialog opened.", false);
             return true;
         }
 
@@ -1629,14 +1628,14 @@ namespace jucyaudio
 
             if (m_currentMainView == MainViewType::MixEditor)
             {
-                m_statusPanel.setStatusMessage("Column configuration not available in Mix Editor view.", true);
+                m_statusPanel.getStatusBar().postMessage("Column configuration not available in Mix Editor view.", true);
                 return false;
             }
             TypedValueVector<DataViewColumnSection> *pConfigSection = nullptr;
             const auto currentNode = m_dataViewComponent.getCurrentNode();
             if (!currentNode)
             {
-                m_statusPanel.setStatusMessage("No node selected at all.", true);
+                m_statusPanel.getStatusBar().postMessage("No node selected at all.", true);
                 return false;
             }
             const auto currentNodeName = currentNode->getName();
@@ -1658,7 +1657,7 @@ namespace jucyaudio
             }
             else
             {
-                m_statusPanel.setStatusMessage("No valid node selected for column configuration.", true);
+                m_statusPanel.getStatusBar().postMessage("No valid node selected for column configuration.", true);
                 return false;
             }
 
@@ -1751,7 +1750,7 @@ namespace jucyaudio
                     const auto comment = dialog->getComment().toStdString();
                     if (comment.empty())
                     {
-                        m_statusPanel.setStatusMessage("Marker comment cannot be empty", true);
+                        m_statusPanel.getStatusBar().postMessage("Marker comment cannot be empty", true);
                         return;
                     }
 
@@ -1761,7 +1760,7 @@ namespace jucyaudio
                     if (result == MarkerResult::Success)
                     {
                         spdlog::info("Created marker {} for track {} at {}ms", newMarkerId, trackId, position.count());
-                        m_statusPanel.setStatusMessage("Marker created", false);
+                        m_statusPanel.getStatusBar().postMessage("Marker created", false);
 
                         // Reload markers in the player
                         const auto markers = markerManager.getMarkersForTrack(trackId);
@@ -1776,7 +1775,7 @@ namespace jucyaudio
                     else
                     {
                         spdlog::error("Failed to create marker: result={}", static_cast<int>(result));
-                        m_statusPanel.setStatusMessage("Failed to create marker", true);
+                        m_statusPanel.getStatusBar().postMessage("Failed to create marker", true);
                     }
                 };
             }
@@ -1807,7 +1806,7 @@ namespace jucyaudio
                     const auto newComment = dialog->getComment().toStdString();
                     if (newComment.empty())
                     {
-                        m_statusPanel.setStatusMessage("Marker comment cannot be empty", true);
+                        m_statusPanel.getStatusBar().postMessage("Marker comment cannot be empty", true);
                         return;
                     }
 
@@ -1816,7 +1815,7 @@ namespace jucyaudio
                     if (result == MarkerResult::Success)
                     {
                         spdlog::info("Updated marker {}", marker.markerId);
-                        m_statusPanel.setStatusMessage("Marker updated", false);
+                        m_statusPanel.getStatusBar().postMessage("Marker updated", false);
 
                         // Reload markers in the player
                         const auto markers = markerManager.getMarkersForTrack(trackId);
@@ -1831,7 +1830,7 @@ namespace jucyaudio
                     else
                     {
                         spdlog::error("Failed to update marker: result={}", static_cast<int>(result));
-                        m_statusPanel.setStatusMessage("Failed to update marker", true);
+                        m_statusPanel.getStatusBar().postMessage("Failed to update marker", true);
                     }
                 };
 
@@ -1843,7 +1842,7 @@ namespace jucyaudio
                     if (result == MarkerResult::Success)
                     {
                         spdlog::info("Deleted marker {}", marker.markerId);
-                        m_statusPanel.setStatusMessage("Marker deleted", false);
+                        m_statusPanel.getStatusBar().postMessage("Marker deleted", false);
 
                         // Reload markers in the player
                         const auto markers = markerManager.getMarkersForTrack(trackId);
@@ -1858,7 +1857,7 @@ namespace jucyaudio
                     else
                     {
                         spdlog::error("Failed to delete marker: result={}", static_cast<int>(result));
-                        m_statusPanel.setStatusMessage("Failed to delete marker", true);
+                        m_statusPanel.getStatusBar().postMessage("Failed to delete marker", true);
                     }
                 };
             }
@@ -1915,6 +1914,27 @@ namespace jucyaudio
             const auto nodePath = getNodePath(m_currentNode);
             // Path should be: [0] = Root, [1] = Mixes, [2] = Specific Mix
             return nodePath.size() == 3 && nodePath[1]->getName() == getMixesRootNodeName();
+        }
+
+        void MainComponent::updateTrackCountStatus()
+        {
+            if (m_currentNode)
+            {
+                int64_t totalTracks = 0;
+                if (m_currentNode->getTotalTrackCount(totalTracks))
+                {
+                    m_statusPanel.getStatusBar().setInfoMessage(
+                        std::format("{:L} tracks in '{}'", totalTracks, m_currentNode->getName()));
+                }
+                else
+                {
+                    m_statusPanel.getStatusBar().setInfoMessage(m_currentNode->getName());
+                }
+            }
+            else
+            {
+                m_statusPanel.getStatusBar().setInfoMessage("");
+            }
         }
 
     } // namespace ui

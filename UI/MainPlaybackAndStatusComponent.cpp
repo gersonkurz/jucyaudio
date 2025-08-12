@@ -11,8 +11,7 @@ namespace jucyaudio
               m_player{owner.m_enhancedPlayer}
         {
             addAndMakeVisible(m_player);
-            addAndMakeVisible(m_statusLabel);
-            m_statusLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+            addAndMakeVisible(m_statusBar);
 
             addAndMakeVisible(m_vuMeterLeft);
             addAndMakeVisible(m_vuMeterRight);
@@ -28,7 +27,7 @@ namespace jucyaudio
         void MainPlaybackAndStatusComponent::resized()
         {
             auto bounds = getLocalBounds();
-            m_statusLabel.setBounds(bounds.removeFromBottom(20).reduced(5, 0));
+            m_statusBar.setBounds(bounds.removeFromBottom(20).reduced(5, 0));
             
             auto vuArea = bounds.removeFromRight(50);
             m_vuMeterLeft.setBounds(vuArea.removeFromLeft(20).reduced(0, 2));
@@ -41,12 +40,6 @@ namespace jucyaudio
         void MainPlaybackAndStatusComponent::paint(juce::Graphics &g)
         {
             g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId).darker(0.2f));
-        }
-
-        void MainPlaybackAndStatusComponent::setStatusMessage(const juce::String &message, bool isError)
-        {
-            m_statusLabel.setText(message, juce::dontSendNotification);
-            m_statusLabel.setColour(juce::Label::textColourId, isError ? juce::Colours::red : juce::Colours::lightgrey);
         }
 
         void MainPlaybackAndStatusComponent::timerCallback()

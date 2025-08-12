@@ -1,6 +1,7 @@
 #pragma once
 
 #include <UI/EnhancedPlayerComponent.h>
+#include <UI/StatusBarComponent.h>
 #include <UI/VUMeterComponent.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_graphics/juce_graphics.h>
@@ -22,7 +23,10 @@ namespace jucyaudio
             void resized() override;
             void paint(juce::Graphics &g) override;
 
-            void setStatusMessage(const juce::String &message, bool isError = false);
+            StatusBarComponent &getStatusBar()
+            {
+                return m_statusBar;
+            }
 
             // Provide access to the player for MainComponent to wire it up
             EnhancedPlayerComponent &getPlayer()
@@ -39,7 +43,7 @@ namespace jucyaudio
 
             MainComponent &m_ownerMainComponent;
             EnhancedPlayerComponent& m_player; 
-            juce::Label m_statusLabel;
+            StatusBarComponent m_statusBar;
 
             VUMeterComponent m_vuMeterLeft;
             VUMeterComponent m_vuMeterRight;
