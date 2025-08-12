@@ -488,7 +488,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 12;
+            const int latestSchemaVersion = 13;
 
             if (currentVersion == 0)
             {
@@ -1049,6 +1049,110 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 11;
+            }
+
+            if (currentVersion < 12)
+            {
+                spdlog::info("Migrating database from version 11 to 12 - placeholder migration...");
+                // Version 12 was already handled in initial setup, just update version
+                if (auto result = setDBSchemaVersion(12); !result.isOk())
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 12.");
+                }
+                currentVersion = 12;
+            }
+
+            if (currentVersion < 13)
+            {
+                spdlog::info("Migrating database from version 12 to 13 - Adding FTS5 search support...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Create FTS5 virtual table for full-text search
+                    const char* createFTS5Table = R"SQL(
+                        CREATE VIRTUAL TABLE IF NOT EXISTS TracksSearchFTS USING fts5(
+                            title,
+                            artist_name,
+                            album_title,
+                            filename,
+                            content='Tracks',
+                            content_rowid='track_id'
+                        );
+                    )SQL";
+
+                    if (!m_db.execute(createFTS5Table))
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create FTS5 virtual table: " + m_db.getLastError());
+                    }
+
+                    // Populate FTS5 table with existing data
+                    const char* populateFTS = R"SQL(
+                        INSERT INTO TracksSearchFTS(rowid, title, artist_name, album_title, filename)
+                        SELECT track_id, title, artist_name, album_title, filename FROM Tracks;
+                    )SQL";
+
+                    if (!m_db.execute(populateFTS))
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to populate FTS5 table: " + m_db.getLastError());
+                    }
+
+                    // Create triggers to keep FTS5 table in sync with Tracks table
+                    const char* createInsertTrigger = R"SQL(
+                        CREATE TRIGGER IF NOT EXISTS tracks_fts_insert 
+                        AFTER INSERT ON Tracks
+                        BEGIN
+                            INSERT INTO TracksSearchFTS(rowid, title, artist_name, album_title, filename)
+                            VALUES (new.track_id, new.title, new.artist_name, new.album_title, new.filename);
+                        END;
+                    )SQL";
+
+                    const char* createUpdateTrigger = R"SQL(
+                        CREATE TRIGGER IF NOT EXISTS tracks_fts_update
+                        AFTER UPDATE OF title, artist_name, album_title, filename ON Tracks
+                        BEGIN
+                            UPDATE TracksSearchFTS 
+                            SET title = new.title, 
+                                artist_name = new.artist_name,
+                                album_title = new.album_title,
+                                filename = new.filename
+                            WHERE rowid = new.track_id;
+                        END;
+                    )SQL";
+
+                    const char* createDeleteTrigger = R"SQL(
+                        CREATE TRIGGER IF NOT EXISTS tracks_fts_delete
+                        AFTER DELETE ON Tracks
+                        BEGIN
+                            DELETE FROM TracksSearchFTS WHERE rowid = old.track_id;
+                        END;
+                    )SQL";
+
+                    if (!m_db.execute(createInsertTrigger) || 
+                        !m_db.execute(createUpdateTrigger) || 
+                        !m_db.execute(createDeleteTrigger))
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create FTS5 sync triggers: " + m_db.getLastError());
+                    }
+
+                    if (auto result = setDBSchemaVersion(13); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 13.");
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated database to version 13 with FTS5 support.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 13;
             }
 
             return DbResult::success();
