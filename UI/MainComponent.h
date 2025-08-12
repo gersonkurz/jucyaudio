@@ -147,8 +147,6 @@ namespace jucyaudio
             int m_navPanelWidth{250};        // << NEW: Current width of the navigation panel
             const int m_dividerThickness{5}; // << NEW: Thickness of the divider bar
 
-            RootNode *m_rootNavigationNode{nullptr};
-            
             // Marker handling
             void showMarkerDialog(TrackId trackId, std::chrono::milliseconds position, bool isNewMarker);
             INavigationNode *m_currentNode{nullptr};

@@ -105,6 +105,7 @@ namespace jucyaudio
                 }
             }
         }
+
         void NavigationTree::onWorkingSetCreated(WorkingSetId workingSetId)
         {
             if (const auto workingSetsRootNode{m_root->getWorkingSetsRootNode()})

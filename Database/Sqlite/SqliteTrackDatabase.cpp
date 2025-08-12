@@ -487,19 +487,54 @@ namespace jucyaudio
             }
 
             spdlog::info("Verifying/Creating database schema...");
-            for (const auto *sql : initialSqlStatements)
+            int currentVersion = getDBSchemaVersion();
+            const int latestSchemaVersion = 11;
+
+            if (currentVersion == 0)
             {
-                if (!m_db.execute(sql))
+                // This is a new database, create the full schema from scratch.
+                spdlog::info("No schema found. Creating new database with latest schema (version {}).", latestSchemaVersion);
+
+                if (SqliteTransaction transaction{m_db})
                 {
-                    m_lastErrorMessage = "Schema creation failed on SQL: [" + std::string(sql) + "] Error: " + m_db.getLastError();
-                    return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                    for (const auto *sql : initialSqlStatements)
+                    {
+                        if (!m_db.execute(sql))
+                        {
+                            m_lastErrorMessage = "Schema creation failed on SQL: [" + std::string(sql) + "] Error: " + m_db.getLastError();
+                            transaction.rollback();
+                            return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                        }
+                    }
+
+                    // After creating tables, set the schema version to the latest.
+                    SqliteStatement stmt{m_db, "INSERT INTO SchemaInfo (key, value) VALUES ('schema_version', ?);"};
+                    stmt.addParam(std::to_string(latestSchemaVersion));
+                    if (!stmt.execute())
+                    {
+                        m_lastErrorMessage = "Failed to set initial schema version: " + m_db.getLastError();
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit new schema creation transaction.");
+                    }
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin new schema creation transaction.");
                 }
             }
-
-            const auto migrationResult{runMigrations()};
-            if (!migrationResult.isOk())
+            else if (currentVersion < latestSchemaVersion)
             {
-                return migrationResult;
+                // An existing database was found, run migrations if necessary.
+                const auto migrationResult{runMigrations()};
+                if (!migrationResult.isOk())
+                {
+                    return migrationResult;
+                }
             }
 
             spdlog::info("Database schema verified/created successfully.");

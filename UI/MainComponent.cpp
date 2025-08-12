@@ -305,11 +305,6 @@ namespace jucyaudio
                 m_currentNode->release(REFCOUNT_DEBUG_ARGS);
                 m_currentNode = nullptr;
             }
-            if (m_rootNavigationNode)
-            {
-                m_rootNavigationNode->release(REFCOUNT_DEBUG_ARGS);
-                m_rootNavigationNode = nullptr;
-            }
         }
 
         void MainComponent::paint(juce::Graphics &g)
@@ -1553,6 +1548,34 @@ namespace jucyaudio
         {
             auto *scanDialog = new LibraryRootsComponent{};
 
+            scanDialog->onScanCompleted = [this]()
+            {
+                spdlog::info("MainComponent: Scan completed. Refreshing views.");
+                
+                if (auto rootNavigationNode = m_navigationTree.getRootNode())
+                {
+                    std::vector<INavigationNode *> children;
+                    rootNavigationNode->expand(children);
+                    for (const auto node : children)
+                    {
+                        node->refreshCache(true); // true = flush cache
+                        if (auto *treeItem = m_navigationPanel.findTreeViewItemForNode(node))
+                        {
+                            treeItem->treeHasChanged();
+                        }
+                        node->release(REFCOUNT_DEBUG_ARGS);
+                    }
+                    rootNavigationNode->release(REFCOUNT_DEBUG_ARGS); // Release the root node after use
+                }
+                
+
+                // Also refresh the data view of the currently selected node
+                if (m_currentMainView == MainViewType::DataView)
+                {
+                    m_dataViewComponent.refreshView();
+                }
+            };
+
             juce::DialogWindow::LaunchOptions launchOptions;
             launchOptions.content.setOwned(scanDialog);
             launchOptions.dialogTitle = "Manage Library Folders & Scan";
@@ -1561,21 +1584,21 @@ namespace jucyaudio
             scanDialog->onDialogClosed = [this]()
             {
                 spdlog::info("MainComponent: ScanDialogComponent closed");
-
-                // Force the Folders node to refresh its cache to pick up new folders
-                if (const auto foldersRootNode = m_rootNavigationNode->getFoldersRootNode())
+                if (auto rootNavigationNode = m_navigationTree.getRootNode())
                 {
-                    foldersRootNode->refreshCache(true); // true = flush cache
-
-                    // Find the tree item and trigger a visual update
-                    if (auto *treeItem = m_navigationPanel.findTreeViewItemForNode(foldersRootNode))
+                    std::vector<INavigationNode *> children;
+                    rootNavigationNode->expand(children);
+                    for (const auto node : children)
                     {
-                        treeItem->treeHasChanged();
+                        node->refreshCache(true); // true = flush cache
+                        if (auto *treeItem = m_navigationPanel.findTreeViewItemForNode(node))
+                        {
+                            treeItem->treeHasChanged();
+                        }
+                        node->release(REFCOUNT_DEBUG_ARGS);
                     }
-
-                    foldersRootNode->release(REFCOUNT_DEBUG_ARGS);
+                    rootNavigationNode->release(REFCOUNT_DEBUG_ARGS); // Release the root node after use
                 }
-
                 // If we are in DataView, we refresh it.
                 if (m_currentMainView == MainViewType::DataView)
                 {

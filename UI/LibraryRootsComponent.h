@@ -20,6 +20,7 @@ namespace jucyaudio
             void buttonClicked(juce::Button *button) override;
 
             std::function<void()> onDialogClosed;
+            std::function<void()> onScanCompleted;
 
             int getNumRows() override;
             void paintRowBackground(juce::Graphics &g, int rowNumber, int width, int height, bool rowIsSelected) override;

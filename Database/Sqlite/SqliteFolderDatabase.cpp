@@ -414,23 +414,42 @@ namespace jucyaudio
             buildCacheIfNeeded();
            
             const auto key{normalizeForCache(pathToString(path))};
+            if (key.empty())
+            {
+                return -1; // Cannot process an empty path
+            }
+
             const auto item{m_idFromFolderPath.find(key)};
             if (item != m_idFromFolderPath.end())
             {
                 return item->second;
             }
             
-            const std::filesystem::path parentDirectory = path.parent_path();
-            const auto parentId{findOrCreateFolderByPath(parentDirectory)};
-            if (parentId <= 0)
+            // --- RECURSION BASE CASE ---
+            // If the path has no parent (e.g., "C:\") or its parent is itself,
+            // it's a root. We create it with no parent.
+            FolderId parentId = -1;
+            if (path.has_parent_path())
             {
-                spdlog::error("findOrCreateFolderByPath: Failed to find or create parent folder for path '{}'", pathToString(parentDirectory));
-                return -1; // Indicate failure to find or create parent folder
+                const auto parentDirectory = path.parent_path();
+                if (parentDirectory != path) // Stop recursion if parent is same as current
+                {
+                    parentId = findOrCreateFolderByPath(parentDirectory);
+                    if (parentId <= 0)
+                    {
+                        spdlog::error("findOrCreateFolderByPath: Failed to find or create parent folder for path '{}'", pathToString(parentDirectory));
+                        return -1; // Indicate failure
+                    }
+                }
             }
 
             FolderInfo newFolder{};
             newFolder.parentId = parentId;
             newFolder.name = pathToString(path.filename());
+            // For root paths like "C:\", filename() might be empty. Use the whole path.
+            if (newFolder.name.empty()) {
+                newFolder.name = key;
+            }
             newFolder.path = key;
             newFolder.trackCount = -1; // not yet known - will be calculated later
             if (addFolder(newFolder))

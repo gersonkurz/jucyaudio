@@ -11,7 +11,7 @@ namespace jucyaudio
         class NavigationPanelComponent;
         class DataViewComponent;
 
-        // --- INavigationTree Interface (remains an interface) ---
+        // --- INavigationTree Interface  ---
         class NavigationTree final
         {
         public:
@@ -47,6 +47,15 @@ namespace jucyaudio
             void onWorkingSetCreated(WorkingSetId workingSetId);
 
             void onNodeRenamed(INavigationNode *node, std::string_view newName);
+
+            auto getRootNode() const
+            {
+                if (m_root)
+                {
+                    m_root->retain(REFCOUNT_DEBUG_ARGS); // Retain the root node to ensure it stays valid
+                }
+                return m_root;
+            }
 
         private:
             RootNode *m_root{nullptr}; // Pointer to the root node of the navigation tree

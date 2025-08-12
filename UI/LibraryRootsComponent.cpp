@@ -411,6 +411,10 @@ namespace jucyaudio
                     [this]()
                     {
                         this->loadRoots();
+                        if (this->onScanCompleted)
+                        {
+                            this->onScanCompleted();
+                        }
                     });
             };
 

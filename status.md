@@ -1,4 +1,4 @@
-# JucyAudio - Architecture & Status (2025-08-11 End of Day)
+# JucyAudio - Architecture & Status (2025-08-12 End of Day)
 
 ## 1. Executive Summary
 
@@ -233,7 +233,45 @@ The application now operates on the following principles:
     *   Created a new `VUMeterComponent` with a smooth peak decay animation.
     *   Integrated thread-safe peak level calculation into the `PlaybackController` to drive the meters without affecting audio performance.
 
-## 14. Next Session TODO:
+## 14. Session Accomplishments: VU Meter & Critical Crash Fix (2025-08-12)
+
+*   **VU Meter Enhancement:**
+    *   Improved the `VUMeterComponent` to display a standard, segmented bar with distinct color regions.
+    *   The meter now shows green up to 70%, yellow from 70-85%, and red for the top 15%, providing a much clearer indication of audio levels.
+*   **Release Build Debugging:**
+    *   Modified the `CMakeLists.txt` to automatically add debug symbol generation (`/Zi`) to MSVC release builds. This enables meaningful, symbolicated call stacks in release mode, which was essential for diagnosing the following crash.
+*   **Critical Concurrency Crash Fix:**
+    *   **Problem:** Identified and fixed a critical race condition that occurred when deleting tracks from a mix (e.g., "Remove all following tracks") while the audio thread was active. The audio thread could attempt to access a partially-deleted track from the mix, leading to a crash when reading its empty envelope points.
+    *   **Solution:** Implemented a robust, thread-safe locking strategy.
+        *   Replaced the `std::mutex` in `MixPlaybackEngine` with a `juce::CriticalSection` for better integration with the JUCE message loop.
+        *   Exposed a safe locking mechanism through the `PlaybackController` by adding a `withMixEngineLock()` method that takes a lambda.
+        *   Wrapped the track removal logic in `MainComponent` inside this lock, ensuring that the audio thread and the UI thread cannot access the mix data simultaneously during a modification.
+    *   **Result:** The application is now stable when performing destructive operations on a mix that is loaded in the playback engine.
+
+## 15. Known Issues to Address:
+
+1.  **Playback State After Deletion:**
+    *   While the crash is fixed, deleting a track during playback stops audio and may prevent it from resuming without "resetting" the engine (e.g., playing a different track).
+    *   This is likely a state management issue within the `PlaybackController` or `MixPlaybackEngine` that needs further investigation.
+    *   **Status:** Needs further work.
+
+2.  **Database Cleanup Needed:**
+    *   Existing user databases may have corrupt `orderInMix` values from previous deletion operations.
+    *   Should implement a one-time migration to detect and fix duplicate values.
+    *   Could add integrity check on startup.
+
+3.  **Performance: Waveform Loading**
+    *   Takes ~1 minute to load waveforms for 70-track mixes.
+    *   Happens every time user navigates to a mix.
+    *   HIGH PRIORITY: Need persistent file-based waveform caching.
+    *   Database groundwork exists (schema v9) but needs implementation.
+
+4.  **Efficiency: Track Deletion UI Rebuild**
+    *   Deleting a single track rebuilds entire timeline (all waveforms regenerate).
+    *   Not easily fixable due to complex recalculation of attach points and positions.
+    *   Accepted for now but should be optimized in future.
+
+## 16. Next Session TODO:
 
 1.  **Nice to Have:** Implement linked movement of cue-points with attach points.
 2.  **Performance:** Continue work on persistent waveform caching.
