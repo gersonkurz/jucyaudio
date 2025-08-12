@@ -59,6 +59,19 @@ namespace jucyaudio
             bool addParam(nullptr_t parameter1);
             bool addParam(double value);
             bool addParam(const std::vector<unsigned char> &blob);
+
+            template <typename T> bool addNullableParam(const std::optional<T> &value)
+            {
+                if (value.has_value())
+                {
+                    return addParam(value.value());
+                }
+                else
+                {
+                    return addNullParam();
+                }
+            }
+
             bool execute();
             bool isQueryEmpty() const
             {

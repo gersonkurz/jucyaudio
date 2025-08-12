@@ -4,6 +4,7 @@
 #include <Database/Sqlite/SqliteStatementConstruction.h>
 #include <Database/Sqlite/SqliteTrackDatabase.h>
 #include <Database/Sqlite/SqliteTransaction.h>
+#include <Database/Sqlite/SqliteAlbumManager.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/StringWriter.h>
 #include <algorithm> // For std::reverse
@@ -319,6 +320,7 @@ namespace jucyaudio
               m_libraryRoootManager{m_db},
               m_undoManager{m_db},
               m_mixManagerWithUndo{m_mixManager, m_undoManager},
+              m_albumManager{m_db},
               m_databaseFilePath{},
               m_lastErrorMessage{},
               m_cachedTotalTrackCount{0},
@@ -411,6 +413,18 @@ namespace jucyaudio
         {
             assert(isOpen() && "Cannot get undo manager when database is not open");
             return m_undoManager;
+        }
+
+        IAlbumManager &SqliteTrackDatabase::getAlbumManager()
+        {
+            assert(isOpen() && "Cannot get album manager when database is not open");
+            return m_albumManager;
+        }
+
+        const IAlbumManager &SqliteTrackDatabase::getAlbumManager() const
+        {
+            assert(isOpen() && "Cannot get album manager when database is not open");
+            return m_albumManager;
         }
 
         std::string SqliteTrackDatabase::getLastError() const

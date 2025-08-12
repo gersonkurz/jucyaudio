@@ -7,6 +7,7 @@
 #include <Database/Includes/IWorkingSetManager.h>
 #include <Database/Includes/IMarkerManager.h>
 #include <Database/Includes/IUndoManager.h>
+#include <Database/Includes/IAlbumManager.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
 #include <Database/Includes/TrackQueryArgs.h>
@@ -172,6 +173,9 @@ namespace jucyaudio
             
             virtual IUndoManager &getUndoManager() = 0;
             virtual const IUndoManager &getUndoManager() const = 0;
+
+            virtual IAlbumManager &getAlbumManager() = 0;
+            virtual const IAlbumManager &getAlbumManager() const = 0;
 
             /// @brief Update the tags for a track.
             /// @param trackId track ID

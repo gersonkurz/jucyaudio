@@ -1,4 +1,5 @@
 #include <Database/BackgroundService.h>
+#include <Database/Includes/IAlbumManager.h>
 #include <UI/LibraryRootsComponent.h>
 #include <UI/TaskDialog.h>
 #include <UI/ThemeManager.h>
@@ -50,6 +51,7 @@ namespace jucyaudio
                     auto &db = *theTrackLibrary.getTrackDatabase();
                     auto &rootManager = db.getLibraryRootManager();
                     auto &folderDb = db.getFolderDatabase();
+                    auto &albumManager = db.getAlbumManager();
                     
                     // Force the folder database to rebuild its cache with updated track counts
                     folderDb.invalidateCache();

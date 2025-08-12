@@ -4,6 +4,7 @@
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteTagManager.h>
+#include <Database/Sqlite/SqliteAlbumManager.h>
 #include <Database/Sqlite/SqliteMixManager.h>
 #include <Database/Sqlite/SqliteMixManagerWithUndo.h>
 #include <Database/Sqlite/SqliteLibraryRootManager.h>
@@ -101,6 +102,9 @@ namespace jucyaudio
             IUndoManager &getUndoManager() override;
             const IUndoManager &getUndoManager() const override;
 
+            IAlbumManager &getAlbumManager() override;
+            const IAlbumManager &getAlbumManager() const override;
+
             DbResult updateTrackTags(TrackId trackId, const std::vector<TagId>& tagIds) override;
             std::vector<TagId> getTrackTags(TrackId trackId) const override;
             std::vector<TagId> getAllTags() const override;
@@ -124,6 +128,7 @@ namespace jucyaudio
             mutable SqliteMarkerManager m_markerManager; // Marker manager instance
             mutable SqliteUndoManager m_undoManager; // Undo manager instance
             mutable SqliteMixManagerWithUndo m_mixManagerWithUndo;
+            mutable SqliteAlbumManager m_albumManager; // Album manager instance
             std::filesystem::path m_databaseFilePath; // Store the path
             mutable std::string m_lastErrorMessage;   // For getLastError()
 

@@ -118,6 +118,12 @@ namespace jucyaudio
     typedef ObjectId FolderId;
 
     /**
+     * @brief Unique identifier for albums in the database
+     * @note Albums are identified by the combination of title and folder_id
+     */
+    typedef ObjectId AlbumId;
+
+    /**
      * @brief Volume level representation as integer to avoid floating-point issues
      * @note Stored as integer * VOLUME_NORMALIZATION for precision
      * @see VOLUME_NORMALIZATION

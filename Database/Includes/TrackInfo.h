@@ -74,6 +74,8 @@ namespace jucyaudio
             int year = 0;
             /// @brief A vector of Tag IDs associated with this track.
             std::vector<TagId> tag_ids;
+            /// @brief The album ID this track belongs to (optional, -1 if not associated)
+            AlbumId albumId = -1;
 
             // Audio Properties
             /// @brief The total duration of the audio file.

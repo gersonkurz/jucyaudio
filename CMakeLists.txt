@@ -217,8 +217,10 @@ target_sources(jucyaudio PRIVATE
     # Database includes
     UI/ILongRunningTask.h
     Database/Includes/Constants.h
+    Database/Includes/AlbumInfo.h
     Database/Includes/DataColumn.h
     Database/Includes/FolderInfo.h
+    Database/Includes/IAlbumManager.h
     Database/Includes/IBackgroundTask.h
     Database/Includes/IFolderDatabase.h
     Database/Includes/IMixManager.h
@@ -263,6 +265,8 @@ target_sources(jucyaudio PRIVATE
     Database/Sqlite/SqliteTransaction.h
     Database/Sqlite/SqliteWorkingSetManager.cpp
     Database/Sqlite/SqliteWorkingSetManager.h
+    Database/Sqlite/SqliteAlbumManager.cpp
+    Database/Sqlite/SqliteAlbumManager.h
     
     # Database Nodes
     Database/Nodes/WorkingSetsOverview.cpp

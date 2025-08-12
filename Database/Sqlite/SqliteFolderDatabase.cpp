@@ -1,3 +1,4 @@
+#include <Database/Includes/AlbumInfo.h>
 #include <Database/Sqlite/SqliteFolderDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteTransaction.h>
@@ -41,7 +42,7 @@ namespace jucyaudio
             std::unordered_map<FolderId, std::string> pathUpdates;
 
             spdlog::info("buildCacheIfNeeded: Fetching all folders from the database...");
-            
+
             FolderInfo info{};
             while (stmt.getNextResult())
             {
@@ -121,12 +122,130 @@ namespace jucyaudio
                 updateRootPathValuesInDatabase(pathUpdates);
             }
             spdlog::info("BEGIN recursive track count calculation");
-            
-            SqliteStatement countStmt{m_db, "SELECT track_id, folder_id FROM Tracks;"};
+
+            struct ExistingAlbumInfo
+            {
+                AlbumId albumId;
+                std::string albumArtist;
+                std::string title;
+            };
+
+            struct NewAlbumInfo
+            {
+                std::string albumArtist;
+                std::string title;
+                FolderId folderId;
+            };
+
+            // build lookup map of existing albums by folder ID
+            std::unordered_map<FolderId, ExistingAlbumInfo> albumsByFolder;
+            SqliteStatement albumQuery{m_db, "SELECT album_id, album_artist, title, folder_id FROM Albums"};
+            while (albumQuery.getNextResult())
+            {
+                ExistingAlbumInfo albumInfo;
+                albumInfo.albumId = albumQuery.getInt64(0);
+                albumInfo.albumArtist = albumQuery.getText(1);
+                albumInfo.title = albumQuery.getText(2);
+                const FolderId folderId = albumQuery.getInt64(3);
+                assert(albumInfo.albumId >= 0 && "Album ID should be non-negative");
+                assert(!albumsByFolder.contains(albumInfo.folderId) && "Folder should not have multiple albums in this context");
+
+                // Other fields are not used in this context, so we can skip them
+                albumsByFolder[folderId] = std::move(albumInfo);
+            }
+
+            FolderId lastKnownFolderId = -1;
+            std::string lastKnownArtistName;
+            std::string lastKnownAlbumName;
+            bool useThisFolder = true;
+            bool folderAlreadyHasAlbum = false;
+
+            // TODO: read in existing albums first. Right now, we assume there are no albums in the database.
+            std::vector<NewAlbumInfo> albums;
+            std::unordered_set<FolderId> albumFolders;
+
+            SqliteStatement countStmt{m_db, "SELECT track_id, folder_id, artist_name, album_title FROM Tracks ORDER BY folder_ID ASC"};
             while (countStmt.getNextResult())
             {
                 const TrackId trackId = countStmt.getInt64(0);
                 const FolderId folderId = countStmt.getInt64(1);
+                const std::string artistName = countStmt.getText(2);
+                const std::string albumName = countStmt.getText(3);
+
+                if (folderId != lastKnownFolderId)
+                {
+                    if (useThisFolder)
+                    {
+                        assert(!lastKnownAlbumName.empty() && "Album name should not be empty if artist name is set");
+                        assert(!lastKnownArtistName.empty() && "Artist name should not be empty if album name is set");           
+
+                        if (!folderAlreadyHasAlbum && (lastKnownFolderId > 0))
+                        {
+                            if (albumFolders.contains(lastKnownFolderId))
+                            {
+                                spdlog::warn("Folder {} already has an album, skipping for folder ID {}", lastKnownFolderId, lastKnownFolderId);
+                            }
+                            else if (!lastKnownArtistName.empty() && !lastKnownArtistName.empty())
+                            {
+                                // Create a new album info entry
+                                albumFolders.insert(lastKnownFolderId);
+
+                                NewAlbumInfo nai;
+                                nai.albumArtist = lastKnownArtistName;
+                                nai.title = lastKnownAlbumName;
+                                nai.folderId = lastKnownFolderId;
+                                albums.push_back(nai);
+                            }
+                        }
+                    }
+                    lastKnownArtistName.clear();
+                    lastKnownAlbumName.clear();
+                    useThisFolder = true;
+                    folderAlreadyHasAlbum = false;
+                    lastKnownFolderId = folderId;
+                }
+                else if (useThisFolder)
+                {
+                    if (artistName.empty())
+                    {
+                        // spdlog::warn("Track {} has empty artist name, skipping for folder ID {}", trackId, folderId);
+                        useThisFolder = false; // Skip this folder for album creation
+                    }
+                    else if (albumName.empty())
+                    {
+                        // spdlog::warn("Track {} has empty album name, skipping for folder ID {}", trackId, folderId);
+                        useThisFolder = false; // Skip this folder for album creation
+                    }
+                    else if (lastKnownArtistName.empty())
+                    {
+                        // check if this folder already has an album
+                        auto item = albumsByFolder.find(folderId);
+                        if (item != albumsByFolder.end())
+                        {
+                            if (item->second.albumArtist != artistName || item->second.title != albumName)
+                            {
+                                // spdlog::warn("Folder {} already has an album with different artist/album, skipping for folder ID {}", folderId, folderId);
+                                useThisFolder = false; // Skip this folder for album creation
+                            }
+                            else
+                            {
+                                folderAlreadyHasAlbum = true; // This folder already has an album
+                            }
+                        }
+                        if (useThisFolder)
+                        {
+                            lastKnownArtistName = artistName;
+                            lastKnownAlbumName = albumName;
+                        }
+                    }
+                    else if (lastKnownArtistName != artistName || lastKnownAlbumName != albumName)
+                    {
+                        // spdlog::warn("Folder has two or more artists/albums, skipping for folder ID {}", folderId);
+                        lastKnownArtistName.clear();
+                        lastKnownAlbumName.clear();
+                        useThisFolder = false; // Skip this folder for album creation
+                    }
+                }
 
                 auto item = m_parentsFromChildren.find(folderId);
                 if (item != m_parentsFromChildren.end())
@@ -139,15 +258,36 @@ namespace jucyaudio
                             ++(it->second.trackCount);
                         }
                     }
-                }                   
+                }
             }
-            spdlog::info("FINISHED recursive track count calculation for {} folders", m_folderInfoFromId.size());
+            spdlog::info("FINISHED recursive track count calculation for {:L} folders and {:L} new albums", m_folderInfoFromId.size(), albums.size());
+
+            if (!albums.empty())
+            {
+                if (SqliteTransaction transaction{m_db})
+                {
+                    SqliteStatement stmt{m_db, "INSERT INTO Albums (album_artist, title, folder_id) VALUES (?, ?, ?)"};
+                    for (const auto &item : albums)
+                    {
+                        stmt.addParam(item.albumArtist);
+                        stmt.addParam(item.title);
+                        stmt.addParam(item.folderId);
+                        if (!stmt.execute())
+                        {
+                            spdlog::error("Failed to update folder with ID: {}", item.folderId);
+                            return transaction.rollback();
+                        }
+                        stmt.reset();
+                    }
+                    transaction.commit();
+                }
+            }
 
             m_isCacheValid = true;
             return true;
         }
 
-        void SqliteFolderDatabase::getChildFoldersRecursive(std::unordered_set<FolderId>& allChildIds, FolderId folderId) const
+        void SqliteFolderDatabase::getChildFoldersRecursive(std::unordered_set<FolderId> &allChildIds, FolderId folderId) const
         {
             allChildIds.insert(folderId);
 
@@ -161,7 +301,6 @@ namespace jucyaudio
                     getChildFoldersRecursive(allChildIds, childId);
                 }
             }
-
         }
 
         std::unordered_set<FolderId> SqliteFolderDatabase::getAllChildFolders(const std::vector<FolderId> &folderIdsToScan) const
@@ -178,7 +317,7 @@ namespace jucyaudio
 
         bool SqliteFolderDatabase::updateRootPathValuesInDatabase(const std::unordered_map<FolderId, std::string> &pathUpdates) const
         {
-            if(SqliteTransaction transaction{m_db})
+            if (SqliteTransaction transaction{m_db})
             {
                 SqliteStatement stmt{m_db, "UPDATE Folders SET root_path=? WHERE folder_id = ?"};
 
@@ -301,7 +440,7 @@ namespace jucyaudio
             }
 
             folder.folderId = m_db.getLastInsertRowId();
-            
+
             std::lock_guard lock{m_cacheMutex};
             if (m_isCacheValid)
             {
@@ -353,7 +492,7 @@ namespace jucyaudio
                 {
                     if (!foldersInUse.contains(item.first))
                     {
-                       // This folder is not in use, we can delete it
+                        // This folder is not in use, we can delete it
                         deleteStmt.addParam(item.first);
                         if (!deleteStmt.execute())
                         {
@@ -412,7 +551,7 @@ namespace jucyaudio
         {
             std::lock_guard dbLock{m_db.getMutex()};
             buildCacheIfNeeded();
-           
+
             const auto key{normalizeForCache(pathToString(path))};
             if (key.empty())
             {
@@ -424,7 +563,7 @@ namespace jucyaudio
             {
                 return item->second;
             }
-            
+
             // --- RECURSION BASE CASE ---
             // If the path has no parent (e.g., "C:\") or its parent is itself,
             // it's a root. We create it with no parent.
@@ -447,7 +586,8 @@ namespace jucyaudio
             newFolder.parentId = parentId;
             newFolder.name = pathToString(path.filename());
             // For root paths like "C:\", filename() might be empty. Use the whole path.
-            if (newFolder.name.empty()) {
+            if (newFolder.name.empty())
+            {
                 newFolder.name = key;
             }
             newFolder.path = key;
