@@ -18,7 +18,19 @@ namespace
     using namespace database;
 
     // Array of initial SQL statements for schema creation
-    const char *maintenanceSqlStatements[] = {"PRAGMA optimize;", "VACUUM;"};
+    const char *maintenanceSqlStatements[] = {
+        "PRAGMA optimize;",  // Optimize query planner statistics
+        
+        // FTS5 maintenance - rebuild the full-text search index
+        // This ensures the index is completely accurate and up-to-date
+        "INSERT INTO TracksSearchFTS(TracksSearchFTS) VALUES('rebuild');",
+        
+        // FTS5 maintenance - optimize the full-text search index
+        // This merges b-tree structures in the FTS index for better performance
+        "INSERT INTO TracksSearchFTS(TracksSearchFTS) VALUES('optimize');",
+        
+        "VACUUM;"  // Reclaim unused space and defragment the database file
+    };
 
     // --- THIS IS THE FINAL, CORRECTED SCHEMA FOR A NEW DATABASE ---
     const char *initialSqlStatements[] = {
@@ -463,19 +475,56 @@ namespace jucyaudio
         {
             if (!isOpen())
             {
-                spdlog::error("DB not open for schema creation.");
+                spdlog::error("Database not open for maintenance tasks.");
                 return false;
             }
+            
+            spdlog::info("Starting database maintenance tasks...");
+            
             for (const auto *sql : maintenanceSqlStatements)
             {
+                if (shouldCancel)
+                {
+                    spdlog::info("Database maintenance cancelled by user.");
+                    return false;
+                }
+                
+                // Log what we're about to do
+                if (std::string(sql).find("PRAGMA optimize") != std::string::npos)
+                {
+                    spdlog::info("Optimizing query planner statistics...");
+                }
+                else if (std::string(sql).find("TracksSearchFTS") != std::string::npos && 
+                         std::string(sql).find("optimize") != std::string::npos)
+                {
+                    spdlog::info("Optimizing FTS5 search index...");
+                }
+                else if (std::string(sql).find("TracksSearchFTS") != std::string::npos && 
+                         std::string(sql).find("rebuild") != std::string::npos)
+                {
+                    spdlog::info("Rebuilding FTS5 search index...");
+                }
+                else if (std::string(sql).find("VACUUM") != std::string::npos)
+                {
+                    spdlog::info("Vacuuming database (this may take a while)...");
+                }
+                
                 if (!m_db.execute(sql))
                 {
+                    // FTS5 optimize might fail if the table doesn't exist yet (pre-migration databases)
+                    if (std::string(sql).find("TracksSearchFTS") != std::string::npos)
+                    {
+                        spdlog::warn("FTS5 maintenance skipped (table may not exist): {}", m_db.getLastError());
+                        continue;  // Don't fail the whole maintenance for this
+                    }
+                    
                     m_lastErrorMessage = "Maintenance statement failed [" + std::string(sql) + "] Error: " + m_db.getLastError();
                     spdlog::error("Maintenance task failed: {}", m_lastErrorMessage);
                     return false;
                 }
             }
-            spdlog::info("Database schema verified/created successfully.");
+            
+            spdlog::info("Database maintenance tasks completed successfully.");
             return true;
         }
 
