@@ -120,7 +120,11 @@ namespace jucyaudio
             // --- 5. Drawing ---
             if (waveformDrawRect.getWidth() > 0)
             {
-                g.setColour(lf.findColour(jucyaudio::ui::waveformColourId).withAlpha(0.7f));
+                auto waveformColour = isSelected()
+                                          ? lf.findColour(juce::TreeView::selectedItemBackgroundColourId).withAlpha(0.5f)
+                                          : lf.findColour(jucyaudio::ui::waveformColourId).withAlpha(0.7f);
+                g.setColour(waveformColour);
+                
                 // Draw the waveform from the source file into its designated sub-rectangle.
                 m_thumbnail.drawChannel(g,
                     waveformDrawRect.reduced(2),
