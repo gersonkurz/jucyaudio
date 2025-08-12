@@ -46,6 +46,22 @@ namespace
         );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_folders_parent_name ON Folders(parent_id, name);",
         R"SQL(
+        CREATE TABLE IF NOT EXISTS Albums (
+            album_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            album_artist TEXT,
+            title TEXT NOT NULL,
+            year INTEGER,
+            folder_id INTEGER NOT NULL,
+            genres TEXT,
+            moods TEXT,
+            tags TEXT,
+            bandcamp_url TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (folder_id) REFERENCES Folders(folder_id) ON DELETE CASCADE
+        );)SQL",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_albums_title_folder ON Albums(title, folder_id);",
+        R"SQL(
         CREATE TABLE IF NOT EXISTS Tracks (
             track_id            INTEGER PRIMARY KEY,
             folder_id           INTEGER NOT NULL,
@@ -79,7 +95,9 @@ namespace
             user_notes          TEXT,
             is_missing          INTEGER DEFAULT 0,
             status              TEXT NOT NULL DEFAULT 'unknown',
-            FOREIGN KEY (folder_id) REFERENCES Folders(folder_id) ON DELETE CASCADE
+            album_id            INTEGER,
+            FOREIGN KEY (folder_id) REFERENCES Folders(folder_id) ON DELETE CASCADE,
+            FOREIGN KEY (album_id) REFERENCES Albums(album_id) ON DELETE SET NULL
         );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_tracks_parent_filename ON Tracks(folder_id, filename);",
         "CREATE INDEX IF NOT EXISTS idx_tracks_artist ON Tracks (artist_name COLLATE NOCASE);",
@@ -88,6 +106,7 @@ namespace
         "CREATE INDEX IF NOT EXISTS idx_tracks_bpm ON Tracks (bpm);",
         "CREATE INDEX IF NOT EXISTS idx_tracks_rating ON Tracks (rating);",
         "CREATE INDEX IF NOT EXISTS idx_tracks_liked_status ON Tracks (liked_status);",
+        "CREATE INDEX IF NOT EXISTS idx_tracks_album_id ON Tracks(album_id);",
         R"SQL(CREATE TABLE IF NOT EXISTS Tags (tag_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE);)SQL",
         R"SQL(
         CREATE TABLE IF NOT EXISTS TrackTags (
@@ -537,7 +556,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 12;
+            const int latestSchemaVersion = 13;
 
             if (currentVersion == 0)
             {
@@ -1458,6 +1477,96 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 12;
+            }
+
+            if (currentVersion < 13)
+            {
+                spdlog::info("Migrating database from version 12 to 13 - Adding Albums table...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Create Albums table
+                    const char* createAlbumsTable = R"SQL(
+                        CREATE TABLE Albums (
+                            album_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            album_artist TEXT,
+                            title TEXT NOT NULL,
+                            year INTEGER,
+                            folder_id INTEGER NOT NULL,
+                            genres TEXT,
+                            moods TEXT,
+                            tags TEXT,
+                            bandcamp_url TEXT,
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (folder_id) REFERENCES Folders(folder_id) ON DELETE CASCADE
+                        );
+                    )SQL";
+
+                    // Create unique index for album identification
+                    const char* createAlbumsIndex = R"SQL(
+                        CREATE UNIQUE INDEX idx_albums_title_folder ON Albums(title, folder_id);
+                    )SQL";
+
+                    // Add album_id column to Tracks table (nullable for gradual migration)
+                    const char* addAlbumIdToTracks = R"SQL(
+                        ALTER TABLE Tracks ADD COLUMN album_id INTEGER REFERENCES Albums(album_id) ON DELETE SET NULL;
+                    )SQL";
+
+                    // Create index on album_id for efficient joins
+                    const char* createTracksAlbumIndex = R"SQL(
+                        CREATE INDEX idx_tracks_album_id ON Tracks(album_id);
+                    )SQL";
+
+                    // Execute all migration statements
+                    if (!m_db.execute(createAlbumsTable))
+                    {
+                        spdlog::error("Failed to create Albums table: {}", m_db.getLastError());
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create Albums table.");
+                    }
+
+                    if (!m_db.execute(createAlbumsIndex))
+                    {
+                        spdlog::error("Failed to create Albums index: {}", m_db.getLastError());
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create Albums index.");
+                    }
+
+                    if (!m_db.execute(addAlbumIdToTracks))
+                    {
+                        spdlog::error("Failed to add album_id to Tracks: {}", m_db.getLastError());
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to add album_id to Tracks.");
+                    }
+
+                    if (!m_db.execute(createTracksAlbumIndex))
+                    {
+                        spdlog::error("Failed to create Tracks album_id index: {}", m_db.getLastError());
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create Tracks album_id index.");
+                    }
+
+                    // Update schema version
+                    if (auto result = setDBSchemaVersion(13); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 13.");
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated database to version 13 with Albums table.");
+                    
+                    // Note: Album population will be done by C++ logic after migration,
+                    // not as part of the SQL migration, to ensure only high-confidence albums are created.
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 13;
             }
 
             return DbResult::success();
