@@ -488,7 +488,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 13;
+            const int latestSchemaVersion = 12;
 
             if (currentVersion == 0)
             {
@@ -1053,106 +1053,362 @@ CREATE TABLE MixUndoHistory (
 
             if (currentVersion < 12)
             {
-                spdlog::info("Migrating database from version 11 to 12 - placeholder migration...");
-                // Version 12 was already handled in initial setup, just update version
-                if (auto result = setDBSchemaVersion(12); !result.isOk())
-                {
-                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 12.");
-                }
-                currentVersion = 12;
-            }
-
-            if (currentVersion < 13)
-            {
-                spdlog::info("Migrating database from version 12 to 13 - Adding FTS5 search support...");
+                spdlog::info("Migrating database from version 11 to 12 - Adding comprehensive FTS5 search...");
                 if (SqliteTransaction transaction{m_db})
                 {
-                    // Create FTS5 virtual table for full-text search
+                    // Create the search data table
+                    spdlog::info("Creating TracksSearchData table...");
+                    const char* createSearchDataTable = R"SQL(
+                        CREATE TABLE IF NOT EXISTS TracksSearchData (
+                            track_id INTEGER PRIMARY KEY,
+                            search_content TEXT NOT NULL,
+                            FOREIGN KEY (track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
+                        );
+                    )SQL";
+
+                    if (!m_db.execute(createSearchDataTable))
+                    {
+                        transaction.rollback();
+                        spdlog::error("Failed to create TracksSearchData table: {}", m_db.getLastError());
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create TracksSearchData table: " + m_db.getLastError());
+                    }
+
+                    // Populate the search data table with existing data
+                    spdlog::info("Populating TracksSearchData with comprehensive search content...");
+                    
+                    // First check how many tracks we have
+                    SqliteStatement trackCountStmt{m_db, "SELECT COUNT(*) FROM Tracks;"};
+                    if (trackCountStmt.getNextResult())
+                    {
+                        spdlog::info("Found {} tracks to process", trackCountStmt.getInt32(0));
+                    }
+                    
+                    const char* populateSearchData = R"SQL(
+                        INSERT INTO TracksSearchData (track_id, search_content)
+                        SELECT 
+                            t.track_id,
+                            COALESCE(t.title, '') || ' ' ||
+                            COALESCE(t.artist_name, '') || ' ' ||
+                            COALESCE(t.album_title, '') || ' ' ||
+                            COALESCE(t.filename, '') || ' ' ||
+                            COALESCE(f.root_path, '') || ' ' ||
+                            COALESCE(f.name, '') || ' ' ||
+                            COALESCE(
+                                (SELECT GROUP_CONCAT(tags.name, ' ') 
+                                 FROM TrackTags tt 
+                                 JOIN Tags ON tt.tag_id = Tags.tag_id 
+                                 WHERE tt.track_id = t.track_id), 
+                                ''
+                            ) as search_content
+                        FROM Tracks t
+                        LEFT JOIN Folders f ON t.folder_id = f.folder_id;
+                    )SQL";
+
+                    if (!m_db.execute(populateSearchData))
+                    {
+                        transaction.rollback();
+                        spdlog::error("Failed to populate TracksSearchData: {}", m_db.getLastError());
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to populate TracksSearchData: " + m_db.getLastError());
+                    }
+                    
+                    spdlog::info("Successfully executed TracksSearchData population query");
+
+                    // Create the FTS5 virtual table
+                    spdlog::info("Creating FTS5 virtual table with comprehensive search...");
                     const char* createFTS5Table = R"SQL(
-                        CREATE VIRTUAL TABLE IF NOT EXISTS TracksSearchFTS USING fts5(
-                            title,
-                            artist_name,
-                            album_title,
-                            filename,
-                            content='Tracks',
-                            content_rowid='track_id'
+                        CREATE VIRTUAL TABLE TracksSearchFTS USING fts5(
+                            search_content,
+                            content='TracksSearchData',
+                            content_rowid='track_id',
+                            tokenize='unicode61'
                         );
                     )SQL";
 
                     if (!m_db.execute(createFTS5Table))
                     {
                         transaction.rollback();
-                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create FTS5 virtual table: " + m_db.getLastError());
+                        spdlog::error("Failed to create FTS5 table: {}", m_db.getLastError());
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create FTS5 table: " + m_db.getLastError());
                     }
-
-                    // Populate FTS5 table with existing data
-                    const char* populateFTS = R"SQL(
-                        INSERT INTO TracksSearchFTS(rowid, title, artist_name, album_title, filename)
-                        SELECT track_id, title, artist_name, album_title, filename FROM Tracks;
-                    )SQL";
-
-                    if (!m_db.execute(populateFTS))
+                    spdlog::info("Successfully created FTS5 virtual table");
+                    
+                    // IMPORTANT: With external content tables, we need to explicitly populate the FTS5 index
+                    spdlog::info("Rebuilding FTS5 index from content table...");
+                    const char* rebuildFTS = "INSERT INTO TracksSearchFTS(TracksSearchFTS) VALUES('rebuild');";
+                    if (!m_db.execute(rebuildFTS))
                     {
-                        transaction.rollback();
-                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to populate FTS5 table: " + m_db.getLastError());
+                        spdlog::error("Failed to rebuild FTS5 index: {}", m_db.getLastError());
+                        // Try an alternative method - manually insert all rows
+                        spdlog::info("Trying alternative: manually populating FTS5 index...");
+                        const char* populateFTS = R"SQL(
+                            INSERT INTO TracksSearchFTS(rowid, search_content)
+                            SELECT track_id, search_content FROM TracksSearchData;
+                        )SQL";
+                        
+                        if (!m_db.execute(populateFTS))
+                        {
+                            transaction.rollback();
+                            spdlog::error("Failed to populate FTS5 index: {}", m_db.getLastError());
+                            return DbResult::failure(DbResultStatus::ErrorDB, "Failed to populate FTS5 index: " + m_db.getLastError());
+                        }
                     }
+                    spdlog::info("FTS5 index rebuild complete");
 
-                    // Create triggers to keep FTS5 table in sync with Tracks table
+                    // Create trigger for track inserts
                     const char* createInsertTrigger = R"SQL(
-                        CREATE TRIGGER IF NOT EXISTS tracks_fts_insert 
+                        CREATE TRIGGER tracks_search_insert 
                         AFTER INSERT ON Tracks
                         BEGIN
-                            INSERT INTO TracksSearchFTS(rowid, title, artist_name, album_title, filename)
-                            VALUES (new.track_id, new.title, new.artist_name, new.album_title, new.filename);
+                            INSERT INTO TracksSearchData (track_id, search_content)
+                            SELECT 
+                                NEW.track_id,
+                                COALESCE(NEW.title, '') || ' ' ||
+                                COALESCE(NEW.artist_name, '') || ' ' ||
+                                COALESCE(NEW.album_title, '') || ' ' ||
+                                COALESCE(NEW.filename, '') || ' ' ||
+                                COALESCE((SELECT root_path FROM Folders WHERE folder_id = NEW.folder_id), '') || ' ' ||
+                                COALESCE((SELECT name FROM Folders WHERE folder_id = NEW.folder_id), '') || ' ' ||
+                                COALESCE(
+                                    (SELECT GROUP_CONCAT(Tags.name, ' ') 
+                                     FROM TrackTags tt 
+                                     JOIN Tags ON tt.tag_id = Tags.tag_id 
+                                     WHERE tt.track_id = NEW.track_id), 
+                                    ''
+                                );
                         END;
                     )SQL";
 
+                    // Create trigger for track updates
                     const char* createUpdateTrigger = R"SQL(
-                        CREATE TRIGGER IF NOT EXISTS tracks_fts_update
-                        AFTER UPDATE OF title, artist_name, album_title, filename ON Tracks
+                        CREATE TRIGGER tracks_search_update
+                        AFTER UPDATE OF title, artist_name, album_title, filename, folder_id ON Tracks
                         BEGIN
-                            UPDATE TracksSearchFTS 
-                            SET title = new.title, 
-                                artist_name = new.artist_name,
-                                album_title = new.album_title,
-                                filename = new.filename
-                            WHERE rowid = new.track_id;
+                            UPDATE TracksSearchData 
+                            SET search_content = (
+                                SELECT 
+                                    COALESCE(NEW.title, '') || ' ' ||
+                                    COALESCE(NEW.artist_name, '') || ' ' ||
+                                    COALESCE(NEW.album_title, '') || ' ' ||
+                                    COALESCE(NEW.filename, '') || ' ' ||
+                                    COALESCE((SELECT root_path FROM Folders WHERE folder_id = NEW.folder_id), '') || ' ' ||
+                                    COALESCE((SELECT name FROM Folders WHERE folder_id = NEW.folder_id), '') || ' ' ||
+                                    COALESCE(
+                                        (SELECT GROUP_CONCAT(Tags.name, ' ') 
+                                         FROM TrackTags tt 
+                                         JOIN Tags ON tt.tag_id = Tags.tag_id 
+                                         WHERE tt.track_id = NEW.track_id), 
+                                        ''
+                                    )
+                            )
+                            WHERE track_id = NEW.track_id;
                         END;
                     )SQL";
 
+                    // Create trigger for track deletes
                     const char* createDeleteTrigger = R"SQL(
-                        CREATE TRIGGER IF NOT EXISTS tracks_fts_delete
+                        CREATE TRIGGER tracks_search_delete
                         AFTER DELETE ON Tracks
                         BEGIN
-                            DELETE FROM TracksSearchFTS WHERE rowid = old.track_id;
+                            DELETE FROM TracksSearchData WHERE track_id = OLD.track_id;
                         END;
                     )SQL";
 
-                    if (!m_db.execute(createInsertTrigger) || 
-                        !m_db.execute(createUpdateTrigger) || 
-                        !m_db.execute(createDeleteTrigger))
+                    // Create trigger for tag changes (insert)
+                    const char* createTagInsertTrigger = R"SQL(
+                        CREATE TRIGGER tracktags_search_insert
+                        AFTER INSERT ON TrackTags
+                        BEGIN
+                            UPDATE TracksSearchData 
+                            SET search_content = (
+                                SELECT 
+                                    COALESCE(t.title, '') || ' ' ||
+                                    COALESCE(t.artist_name, '') || ' ' ||
+                                    COALESCE(t.album_title, '') || ' ' ||
+                                    COALESCE(t.filename, '') || ' ' ||
+                                    COALESCE(f.root_path, '') || ' ' ||
+                                    COALESCE(f.name, '') || ' ' ||
+                                    COALESCE(
+                                        (SELECT GROUP_CONCAT(Tags.name, ' ') 
+                                         FROM TrackTags tt 
+                                         JOIN Tags ON tt.tag_id = Tags.tag_id 
+                                         WHERE tt.track_id = NEW.track_id), 
+                                        ''
+                                    )
+                                FROM Tracks t
+                                LEFT JOIN Folders f ON t.folder_id = f.folder_id
+                                WHERE t.track_id = NEW.track_id
+                            )
+                            WHERE track_id = NEW.track_id;
+                        END;
+                    )SQL";
+
+                    // Create trigger for tag changes (delete)
+                    const char* createTagDeleteTrigger = R"SQL(
+                        CREATE TRIGGER tracktags_search_delete
+                        AFTER DELETE ON TrackTags
+                        BEGIN
+                            UPDATE TracksSearchData 
+                            SET search_content = (
+                                SELECT 
+                                    COALESCE(t.title, '') || ' ' ||
+                                    COALESCE(t.artist_name, '') || ' ' ||
+                                    COALESCE(t.album_title, '') || ' ' ||
+                                    COALESCE(t.filename, '') || ' ' ||
+                                    COALESCE(f.root_path, '') || ' ' ||
+                                    COALESCE(f.name, '') || ' ' ||
+                                    COALESCE(
+                                        (SELECT GROUP_CONCAT(Tags.name, ' ') 
+                                         FROM TrackTags tt 
+                                         JOIN Tags ON tt.tag_id = Tags.tag_id 
+                                         WHERE tt.track_id = OLD.track_id), 
+                                        ''
+                                    )
+                                FROM Tracks t
+                                LEFT JOIN Folders f ON t.folder_id = f.folder_id
+                                WHERE t.track_id = OLD.track_id
+                            )
+                            WHERE track_id = OLD.track_id;
+                        END;
+                    )SQL";
+
+                    // Execute all triggers
+                    spdlog::info("Creating database triggers for FTS5 synchronization...");
+                    if (!m_db.execute(createInsertTrigger))
                     {
+                        spdlog::error("Failed to create insert trigger: {}", m_db.getLastError());
                         transaction.rollback();
-                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create FTS5 sync triggers: " + m_db.getLastError());
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create insert trigger: " + m_db.getLastError());
+                    }
+                    
+                    if (!m_db.execute(createUpdateTrigger))
+                    {
+                        spdlog::error("Failed to create update trigger: {}", m_db.getLastError());
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create update trigger: " + m_db.getLastError());
+                    }
+                    
+                    if (!m_db.execute(createDeleteTrigger))
+                    {
+                        spdlog::error("Failed to create delete trigger: {}", m_db.getLastError());
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create delete trigger: " + m_db.getLastError());
+                    }
+                    
+                    if (!m_db.execute(createTagInsertTrigger))
+                    {
+                        spdlog::error("Failed to create tag insert trigger: {}", m_db.getLastError());
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create tag insert trigger: " + m_db.getLastError());
+                    }
+                    
+                    if (!m_db.execute(createTagDeleteTrigger))
+                    {
+                        spdlog::error("Failed to create tag delete trigger: {}", m_db.getLastError());
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create tag delete trigger: " + m_db.getLastError());
+                    }
+                    
+                    spdlog::info("Successfully created all FTS5 sync triggers");
+
+                    // Debug: Check how many rows we have in the search data
+                    spdlog::info("Verifying TracksSearchData population...");
+                    SqliteStatement checkStmt{m_db, "SELECT COUNT(*) FROM TracksSearchData;"};
+                    if (checkStmt.getNextResult())
+                    {
+                        const auto count = checkStmt.getInt32(0);
+                        spdlog::info("TracksSearchData populated with {} rows", count);
+                        
+                        if (count == 0)
+                        {
+                            spdlog::error("WARNING: TracksSearchData is empty after population!");
+                        }
+                    }
+                    
+                    // Debug: Check a few samples of the search content
+                    spdlog::info("Checking sample search content...");
+                    SqliteStatement sampleStmt{m_db, "SELECT track_id, search_content FROM TracksSearchData LIMIT 3;"};
+                    int sampleCount = 0;
+                    while (sampleStmt.getNextResult())
+                    {
+                        const auto trackId = sampleStmt.getInt32(0);
+                        const auto sample = sampleStmt.getText(1);
+                        spdlog::info("Track {} search_content (first 300 chars): {}", trackId, 
+                                     sample.length() > 300 ? sample.substr(0, 300) + "..." : sample);
+                        sampleCount++;
+                    }
+                    
+                    if (sampleCount == 0)
+                    {
+                        spdlog::error("No sample data found in TracksSearchData!");
+                    }
+                    
+                    // First verify the FTS5 table is properly linked
+                    spdlog::info("Verifying FTS5 virtual table linkage...");
+                    SqliteStatement verifyStmt{m_db, "SELECT COUNT(*) FROM TracksSearchFTS;"};
+                    if (verifyStmt.getNextResult())
+                    {
+                        const auto ftsCount = verifyStmt.getInt32(0);
+                        spdlog::info("TracksSearchFTS virtual table has {} searchable rows", ftsCount);
+                        if (ftsCount == 0)
+                        {
+                            spdlog::error("FTS5 virtual table is empty! Content table might not be linked properly.");
+                        }
+                    }
+                    
+                    // Test FTS5 with a simple query
+                    spdlog::info("Testing FTS5 with sample queries...");
+                    
+                    // Test 1: Simple word that should exist
+                    SqliteStatement test1{m_db, "SELECT COUNT(*) FROM TracksSearchFTS WHERE TracksSearchFTS MATCH 'mp3';"};
+                    if (test1.getNextResult())
+                    {
+                        spdlog::info("FTS5 test: 'mp3' found {} matches", test1.getInt32(0));
+                    }
+                    
+                    // Test 2: Try a known artist
+                    SqliteStatement test2{m_db, "SELECT COUNT(*) FROM TracksSearchFTS WHERE TracksSearchFTS MATCH 'Walker';"};
+                    if (test2.getNextResult())
+                    {
+                        spdlog::info("FTS5 test: 'Walker' found {} matches", test2.getInt32(0));
+                    }
+                    
+                    // Test 3: Path component
+                    SqliteStatement test3{m_db, "SELECT COUNT(*) FROM TracksSearchFTS WHERE TracksSearchFTS MATCH 'amazon';"};
+                    if (test3.getNextResult())
+                    {
+                        spdlog::info("FTS5 test: 'amazon' found {} matches", test3.getInt32(0));
+                    }
+                    
+                    // Test 4: Check if the table is actually working
+                    SqliteStatement test4{m_db, "SELECT COUNT(*) FROM TracksSearchData WHERE search_content LIKE '%dark%';"};
+                    if (test4.getNextResult())
+                    {
+                        spdlog::info("LIKE test: TracksSearchData has {} rows with 'dark'", test4.getInt32(0));
+                    }
+                    
+                    SqliteStatement test5{m_db, "SELECT COUNT(*) FROM TracksSearchData WHERE search_content LIKE '%ambient%';"};
+                    if (test5.getNextResult())
+                    {
+                        spdlog::info("LIKE test: TracksSearchData has {} rows with 'ambient'", test5.getInt32(0));
                     }
 
-                    if (auto result = setDBSchemaVersion(13); !result.isOk())
+                    if (auto result = setDBSchemaVersion(12); !result.isOk())
                     {
                         transaction.rollback();
-                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 13.");
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 12.");
                     }
 
                     if (!transaction.commit())
                     {
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
                     }
-                    spdlog::info("Successfully migrated database to version 13 with FTS5 support.");
+                    spdlog::info("Successfully migrated database to version 12 with comprehensive FTS5 search.");
                 }
                 else
                 {
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
-                currentVersion = 13;
+                currentVersion = 12;
             }
 
             return DbResult::success();

@@ -1,5 +1,7 @@
 #include <Database/Includes/Constants.h>
 #include <Database/Sqlite/SqliteStatementConstruction.h>
+#include <Database/Sqlite/SqliteDatabase.h>
+#include <Database/Sqlite/SqliteStatement.h>
 #include <Utils/AssortedUtils.h>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -94,6 +96,7 @@ namespace jucyaudio
             // FTS5 search term binding is now handled directly in the create methods
             if (!args.searchTerms.empty() && !args.searchTerms[0].empty())
             {
+                spdlog::info("Binding FTS5 search parameter: '{}'", args.searchTerms[0]);
                 m_stmt.addParam(args.searchTerms[0]);
             }
             if (args.workingSetId > 0)
@@ -119,6 +122,7 @@ namespace jucyaudio
             // If we have search terms, use FTS5 for searching
             if (!args.searchTerms.empty() && !args.searchTerms[0].empty())
             {
+                spdlog::info("FTS5 Search: Using search term: '{}'", args.searchTerms[0]);
                 writer.append("SELECT ");
                 if (args.columns.empty())
                 {
@@ -133,6 +137,7 @@ namespace jucyaudio
                         writer.append(args.columns[i]);
                     }
                 }
+                // FTS5 with content table - just join on track_id directly
                 writer.append(" FROM Tracks INNER JOIN TracksSearchFTS ON Tracks.track_id = TracksSearchFTS.rowid");
                 writer.appendFormatted(" WHERE TracksSearchFTS MATCH ?{}", m_paramIndex++);
                 
@@ -180,6 +185,12 @@ namespace jucyaudio
             {
                 writer.appendFormatted(" LIMIT {} OFFSET {}", QUERY_PAGE_SIZE, args.offset);
             }
+            
+            // Log the complete SQL statement before finalizing
+            const auto sqlPreview = writer.asString();
+            spdlog::info("FTS5 Search SQL: {}", sqlPreview);
+            spdlog::info("FTS5 Search will bind {} parameters", m_paramIndex - 1);
+            
             return finalizeStatement(writer, args);
         }
 
@@ -191,6 +202,7 @@ namespace jucyaudio
             // If we have search terms, use FTS5 for searching
             if (!args.searchTerms.empty() && !args.searchTerms[0].empty())
             {
+                spdlog::info("FTS5 Count: Using search term: '{}'", args.searchTerms[0]);
                 writer.append("SELECT COUNT(*) FROM Tracks INNER JOIN TracksSearchFTS ON Tracks.track_id = TracksSearchFTS.rowid");
                 writer.appendFormatted(" WHERE TracksSearchFTS MATCH ?{}", m_paramIndex++);
                 
