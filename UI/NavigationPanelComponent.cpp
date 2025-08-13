@@ -645,7 +645,20 @@ namespace jucyaudio
                 if (i == pathFromRoot.size() - 1)
                 {
                     navItem->setSelected(true, true);
+                    
+                    // Ensure the item is visible - do it both immediately and async
+                    // Immediate scroll for already laid out items
                     m_treeView.scrollToKeepItemVisible(navItem);
+                    
+                    // Also do async scroll in case the tree needs to finish layout after expansion
+                    juce::MessageManager::callAsync([this, navItem]()
+                    {
+                        if (navItem != nullptr && navItem->isSelected())
+                        {
+                            m_treeView.scrollToKeepItemVisible(navItem);
+                        }
+                    });
+                    
                     spdlog::info("expandPathAndSelectTarget: Successfully navigated to target folder");
                     return true;
                 }
