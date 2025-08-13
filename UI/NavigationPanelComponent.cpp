@@ -244,9 +244,25 @@ namespace jucyaudio
                 // want default behavior for other clicks.
             }
         }
+        
+        void NavigationPanelComponent::releaseRootNode()
+        {
+            m_treeView.deleteRootItem(); // This will delete the root item and all its children
+            if (m_currentRootNode)
+            {
+                m_currentRootNode->release(REFCOUNT_DEBUG_ARGS);
+                m_currentRootNode = nullptr;
+            }
+        }
 
         bool NavigationPanelComponent::setRootNode(INavigationNode *rootNode)
         {
+            if (!rootNode && m_currentRootNode)
+            {
+                m_currentRootNode->release(REFCOUNT_DEBUG_ARGS);
+                m_currentRootNode = nullptr;
+                return true;
+            }
             if (m_currentRootNode != nullptr)
             {
                 spdlog::error("You cannot set a new root node in NavigationPanelComponent while one is already set. Please clear the current root node first.");

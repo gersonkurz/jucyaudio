@@ -27,7 +27,9 @@ namespace jucyaudio
                 return false;
             }
             if (!m_npc.setRootNode(m_root))
+            {
                 return false;
+            }
 
             // get first child of the root node - or rather, all of them
             assert(m_root->canExpand()); // The root node should be expandable

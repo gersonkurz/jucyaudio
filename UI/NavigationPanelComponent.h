@@ -91,6 +91,8 @@ namespace jucyaudio
             // @return True if the root node was set successfully, false if a root node is already set.
             bool setRootNode(INavigationNode *rootNode);
 
+            void releaseRootNode();
+
         private:
             juce::TreeView m_treeView;
             INavigationNode *m_currentRootNode{nullptr}; // Retained

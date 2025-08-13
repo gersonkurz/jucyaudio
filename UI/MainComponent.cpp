@@ -284,6 +284,10 @@ namespace jucyaudio
             // This is important for clean shutdown. It tells all child components
             // to stop using our m_lookAndFeel object before it gets destroyed.
             setLookAndFeel(nullptr);
+
+            m_navigationPanel.releaseRootNode();
+            m_navigationTree.releaseRootNode();
+
 #ifdef USE_REFCOUNT_DEBUGGING
             for (const auto item : theBaseNodes)
             {
@@ -1384,12 +1388,15 @@ namespace jucyaudio
 
         bool MainComponent::navigateToFolder(FolderId folderId)
         {
-            auto foldersRootNode = m_navigationTree.getRootNode()->getFoldersRootNode();
+            auto rootNode{m_navigationTree.getRootNode()};
+            auto foldersRootNode = rootNode->getFoldersRootNode();
+            rootNode->release(REFCOUNT_DEBUG_ARGS); // Release the root node reference, we don't own it
             if (!foldersRootNode)
             {
                 spdlog::error("No folders found in navigation tree root node.");
                 return false;
             }
+            const EnsureNodeIsReleased enirFolderNodesRoot{foldersRootNode};
 
             auto& folderDb{theTrackLibrary.getFolderDatabase()};
             const auto parents{folderDb.getParentSet(folderId)};
@@ -1406,8 +1413,8 @@ namespace jucyaudio
 
             // Build the path from root to target folder
             std::vector<INavigationNode*> pathToTarget;
-            pathToTarget.push_back(foldersRootNode);
-            foldersRootNode->retain(REFCOUNT_DEBUG_ARGS);
+            // Don't add foldersRootNode to pathToTarget since we don't own it
+            // It's owned by the navigation tree
             
             auto currentParent = foldersRootNode;
             bool foundTarget = false;
@@ -1430,24 +1437,36 @@ namespace jucyaudio
                     {
                         // Found the target folder!
                         pathToTarget.push_back(childNode);
-                        childNode->retain(REFCOUNT_DEBUG_ARGS);
+                        // Note: childNode already has refcount 1 from expand(), so we keep it
                         foundTarget = true;
                         spdlog::info("Found target folder: {} (ID: {})", childNode->getName(), childFolderId);
                     }
                     else if (parents.contains(childFolderId))
                     {
-                        nextInPath = childNode;
-                        childNode->retain(REFCOUNT_DEBUG_ARGS);
-                        spdlog::info("node {} ({}) is a valid parent", childNode->getName(), childFolderId);
+                        // This is on the path to our target
+                        if (!nextInPath)  // Only keep the first matching parent
+                        {
+                            nextInPath = childNode;
+                            // Note: childNode already has refcount 1 from expand(), so we keep it
+                            spdlog::info("node {} ({}) is a valid parent", childNode->getName(), childFolderId);
+                        }
+                        else
+                        {
+                            // Release any additional matching parents (shouldn't happen but be safe)
+                            childNode->release(REFCOUNT_DEBUG_ARGS);
+                        }
                     }
                     else
                     {
+                        // Not needed, release it
                         childNode->release(REFCOUNT_DEBUG_ARGS);
                     }
                 }
                 
                 if (foundTarget)
                 {
+                    // We found the target, but need to release any remaining children we haven't processed yet
+                    // Actually, the for loop above processes all children, so we're good
                     break;
                 }
                 
@@ -1462,20 +1481,15 @@ namespace jucyaudio
                     break;
                 }
             }
-            
+
             // Now expand the UI tree along the path
             if (foundTarget && !pathToTarget.empty())
             {
-                // Remove the foldersRootNode from the path since it's not part of the tree path
-                // The path should start with the first actual folder (like "MP3")
-                std::vector<INavigationNode*> treePathFromFoldersRoot;
-                if (pathToTarget.size() > 1)
-                {
-                    treePathFromFoldersRoot.assign(pathToTarget.begin() + 1, pathToTarget.end());
-                }
+                // pathToTarget now contains only the actual folder nodes (no foldersRootNode)
+                // so we can use it directly
                 
                 // Use the new method to expand and navigate
-                if (m_navigationPanel.expandPathAndSelectTarget(treePathFromFoldersRoot))
+                if (m_navigationPanel.expandPathAndSelectTarget(pathToTarget))
                 {
                     m_statusPanel.getStatusBar().postMessage("Navigated to folder", false);
                 }

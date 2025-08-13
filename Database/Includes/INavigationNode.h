@@ -178,15 +178,15 @@ namespace jucyaudio
             virtual WorkingSetId getWorkingSetId() const = 0;
         };
 
-        class EnsureNodeIsRelease final
+        class EnsureNodeIsReleased final
         {
         public:
-            explicit EnsureNodeIsRelease(INavigationNode *node)
+            explicit EnsureNodeIsReleased(INavigationNode *node)
                 : m_node{node}
             {
                 // deliberately NO retain here, because this is just a helper class to ensure the node is released
             }
-            ~EnsureNodeIsRelease() noexcept
+            ~EnsureNodeIsReleased() noexcept
             {
                 if (m_node)
                 {
@@ -194,10 +194,10 @@ namespace jucyaudio
                 }
             }
 
-            EnsureNodeIsRelease(const EnsureNodeIsRelease &) = delete; // No copy
-            EnsureNodeIsRelease& operator=(const EnsureNodeIsRelease &) = delete; // No assignment
-            EnsureNodeIsRelease(EnsureNodeIsRelease &&other) = delete;
-            EnsureNodeIsRelease &operator=(EnsureNodeIsRelease &&other) = delete;
+            EnsureNodeIsReleased(const EnsureNodeIsReleased &) = delete;            // No copy
+            EnsureNodeIsReleased &operator=(const EnsureNodeIsReleased &) = delete; // No assignment
+            EnsureNodeIsReleased(EnsureNodeIsReleased &&other) = delete;
+            EnsureNodeIsReleased &operator=(EnsureNodeIsReleased &&other) = delete;
 
         private:
             INavigationNode *m_node{nullptr}; // Non-owning pointer to the node

@@ -1,4 +1,6 @@
 #include "VUMeterComponent.h"
+#include <algorithm>
+#include <cmath>
 
 namespace jucyaudio
 {
@@ -51,14 +53,30 @@ namespace jucyaudio
             g.fillRect(barX, greenY, barWidth, greenHeight);
 
             // Draw the "unlit" part of the meter on top, covering the colored sections
-            const float unlitHeight = totalHeight * (1.0f - m_level);
-            g.setColour(juce::Colours::black);
-            g.fillRect(barX, barY, barWidth, unlitHeight);
+            // Ensure m_level is valid to prevent crashes
+            const float safeLevel = std::isfinite(m_level) ? std::clamp(m_level, 0.0f, 1.0f) : 0.0f;
+            const float unlitHeight = totalHeight * (1.0f - safeLevel);
+            
+            // Only draw if we have valid dimensions
+            if (unlitHeight > 0.0f && std::isfinite(unlitHeight))
+            {
+                g.setColour(juce::Colours::black);
+                g.fillRect(barX, barY, barWidth, unlitHeight);
+            }
         }
 
         void VUMeterComponent::setLevel(float newLevel)
         {
-            m_level = newLevel;
+            // Validate the input to prevent crashes from NaN or infinite values
+            if (!std::isfinite(newLevel))
+            {
+                m_level = 0.0f;
+                return;
+            }
+            
+            // Clamp the level to valid range [0.0, 1.0]
+            m_level = std::clamp(newLevel, 0.0f, 1.0f);
+            
             if (m_level > m_peak)
             {
                 m_peak = m_level;

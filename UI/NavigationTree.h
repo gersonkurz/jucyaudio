@@ -48,6 +48,15 @@ namespace jucyaudio
 
             void onNodeRenamed(INavigationNode *node, std::string_view newName);
 
+            void releaseRootNode()
+            {
+                if (m_root)
+                {
+                    m_root->release(REFCOUNT_DEBUG_ARGS); // Release the root node to allow it to be deleted
+                    m_root = nullptr;
+                }
+            }
+
             auto getRootNode() const
             {
                 if (m_root)
