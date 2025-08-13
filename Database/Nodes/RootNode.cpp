@@ -9,6 +9,7 @@
 #include <Database/Nodes/VirtualFoldersOverview.h>
 #include <Database/Nodes/WorkingSetNode.h>
 #include <Database/Nodes/WorkingSetsOverview.h>
+#include <Database/Nodes/AlbumsNode.h>
 #include <Utils/AssortedUtils.h>
 #include <cassert>
 #include <spdlog/spdlog.h>
@@ -58,6 +59,7 @@ namespace jucyaudio
             : BaseNode{nullptr, "Root", "", ""}
         {
             m_children.emplace_back(new LibraryNode{this, "", "Library", "Libraries"});
+            m_children.emplace_back(new AlbumsNode{this, "Albums", "Album", "Albums"});
             // Use VirtualFoldersOverview instead of filesystem-based folders
             m_children.emplace_back(new VirtualFoldersOverview{this});
             m_children.emplace_back(new TypedOverviewNode<WorkingSetInfo, WorkingSetNode>{

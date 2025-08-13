@@ -68,5 +68,54 @@ namespace jucyaudio
             return EmptyActions;
         }
 
+        INavigationNode* VirtualFoldersOverview::findFolderNode(FolderId targetFolderId)
+        {
+            // First check if we need to expand to get children
+            if (m_children.empty())
+            {
+                std::vector<INavigationNode*> children;
+                expand(children);
+                for (auto child : children)
+                {
+                    child->release(REFCOUNT_DEBUG_ARGS);
+                }
+            }
+            
+            // Now search through our children for the matching folder
+            for (auto child : m_children)
+            {
+                if (auto *folderNode = dynamic_cast<VirtualFolderNode*>(child))
+                {
+                    if (folderNode->getFolderId() == targetFolderId)
+                    {
+                        child->retain(REFCOUNT_DEBUG_ARGS);
+                        return child;
+                    }
+                    
+                    // Also check if it's a child folder
+                    // We need to recursively search through subfolders
+                    std::vector<INavigationNode*> subChildren;
+                    if (folderNode->canExpand() && folderNode->expand(subChildren))
+                    {
+                        for (auto subChild : subChildren)
+                        {
+                            if (auto *subFolderNode = dynamic_cast<VirtualFolderNode*>(subChild))
+                            {
+                                if (subFolderNode->getFolderId() == targetFolderId)
+                                {
+                                    // Found it! Return the retained pointer
+                                    return subChild;
+                                }
+                            }
+                            subChild->release(REFCOUNT_DEBUG_ARGS);
+                        }
+                    }
+                }
+            }
+            
+            // Not found
+            return nullptr;
+        }
+
     } // namespace database
 } // namespace jucyaudio

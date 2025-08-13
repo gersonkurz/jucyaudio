@@ -117,6 +117,7 @@ namespace jucyaudio
 
             void onEditWorkingSetMetadata(INavigationNode *node);
             void onEditMixMetadata(INavigationNode *node);
+            void onShowInFolder(RowIndex_t rowIndex);
 
             audio::AudioLibrary m_audioLibrary;
             juce::ApplicationCommandManager &m_commandManager;

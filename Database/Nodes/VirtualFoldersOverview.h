@@ -23,6 +23,10 @@ namespace jucyaudio
             // No actions on the overview node itself
             const DataActions &getNodeActions() const override;
             const DataActions &getRowActions(RowIndex_t /*rowIndex*/) const override;
+            
+            // Find a specific folder node by folder ID
+            // Returns a retained pointer that must be released by the caller
+            INavigationNode* findFolderNode(FolderId folderId);
         };
     } // namespace database
 } // namespace jucyaudio

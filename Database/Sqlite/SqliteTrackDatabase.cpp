@@ -501,6 +501,7 @@ namespace jucyaudio
                 return schemaResult;
             }
             m_undoManager.initialize();
+            m_folderDatabase.initialize();
             return DbResult::success();
         }
 

@@ -37,6 +37,11 @@ namespace jucyaudio
             FolderId findOrCreateFolderByPath(const std::filesystem::path &path) override;
             std::unordered_set<FolderId> getAllChildFolders(const std::vector<FolderId> &folderIdsToScan) const override;
 
+            void initialize()
+            {
+                buildCacheIfNeeded();
+            }
+
         private:
             bool addFolder(FolderInfo &folder) override;
             void insertParentsRecursive(FolderId folderId, std::unordered_set<FolderId> &foldersInUse) const;

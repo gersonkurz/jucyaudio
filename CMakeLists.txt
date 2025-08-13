@@ -272,6 +272,7 @@ target_sources(jucyaudio PRIVATE
     Database/Nodes/WorkingSetsOverview.cpp
     Database/Nodes/BaseNode.cpp
     Database/Nodes/LibraryNode.cpp
+    Database/Nodes/AlbumsNode.cpp
     Database/Nodes/MixesOverview.cpp
     Database/Nodes/LogicalFolderNode.cpp
     Database/Nodes/VirtualFolderNode.cpp
@@ -284,6 +285,7 @@ target_sources(jucyaudio PRIVATE
     Database/Nodes/WorkingSetsOverview.h
     Database/Nodes/BaseNode.h
     Database/Nodes/LibraryNode.h
+    Database/Nodes/AlbumsNode.h
     Database/Nodes/VirtualFolderNode.h
     Database/Nodes/VirtualFoldersOverview.h
     Database/Nodes/MixesOverview.h

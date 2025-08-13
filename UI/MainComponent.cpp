@@ -8,6 +8,8 @@
 #include <Database/Nodes/TypedOverviewNode.h>
 #include <Database/Nodes/WorkingSetNode.h>
 #include <Database/Nodes/VirtualFolderNode.h>
+#include <Database/Nodes/VirtualFoldersOverview.h>
+#include <Database/Nodes/AlbumsNode.h>
 #include <UI/ColumnConfiguratorDialog.h>
 #include <UI/CreateMixDialogComponent.h>
 #include <UI/ExportMixDialog.h>
@@ -756,6 +758,9 @@ namespace jucyaudio
             case DataAction::ShowDetails:
                 m_statusPanel.getStatusBar().postMessage("Show details for: " + std::to_string(rowIndex), false);
                 break;
+            case DataAction::ShowInFolder:
+                onShowInFolder(rowIndex);
+                break;
             case DataAction::RemoveTracks: // TODO: we should do this only from the data View
                 onDataActionRemoveNamedObjects("track", "tracks");
                 break;
@@ -1374,6 +1379,55 @@ namespace jucyaudio
             {
                 // Handle other node types here if needed in the future
                 m_statusPanel.getStatusBar().postMessage("Details not available for this item.", true);
+            }
+        }
+
+        void MainComponent::onShowInFolder(RowIndex_t rowIndex)
+        {
+            // Check if we're viewing albums
+            if (auto *albumsNode = dynamic_cast<database::AlbumsNode *>(m_currentNode))
+            {
+                // Get the folder ID for the selected album
+                const auto folderId = albumsNode->getFolderIdForRow(rowIndex);
+                if (folderId < 0)
+                {
+                    m_statusPanel.getStatusBar().postMessage("Cannot navigate to folder", true);
+                    return;
+                }
+                
+                // Navigate to the folder in the navigation tree
+                // We need to find the VirtualFoldersOverview node and then find the specific folder
+                if (const auto rootNode = m_navigationTree.getRootNode())
+                {
+                    // Find the Folders node
+                    std::vector<INavigationNode*> children;
+                    if (rootNode->expand(children))
+                    {
+                        for (auto child : children)
+                        {
+                            if (auto *foldersOverview = dynamic_cast<database::VirtualFoldersOverview*>(child))
+                            {
+                                // Navigate to the specific folder
+                                if (auto folderNode = foldersOverview->findFolderNode(folderId))
+                                {
+                                    m_navigationPanel.selectNode(folderNode);
+                                    folderNode->release(REFCOUNT_DEBUG_ARGS);
+                                    m_statusPanel.getStatusBar().postMessage("Navigated to folder", false);
+                                }
+                                else
+                                {
+                                    m_statusPanel.getStatusBar().postMessage("Folder not found in navigation tree", true);
+                                }
+                            }
+                            child->release(REFCOUNT_DEBUG_ARGS);
+                        }
+                    }
+                    rootNode->release(REFCOUNT_DEBUG_ARGS);
+                }
+            }
+            else
+            {
+                m_statusPanel.getStatusBar().postMessage("Show in folder is only available for albums", true);
             }
         }
 

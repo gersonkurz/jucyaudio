@@ -220,6 +220,7 @@ namespace jucyaudio
             SelectTracksFromMix,    ///< Select tracks in a working set that are part of a specific mix
             ShowMixEditor,          ///< Open the mix editor for the selected mix
             ShowTrackEditor,        ///< Open the track editor for the selected track
+            ShowInFolder,           ///< Navigate to the folder containing the item
             Separator,              ///< Separator in context menus (not an action)
         };
 

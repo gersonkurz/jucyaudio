@@ -271,9 +271,43 @@ The application now operates on the following principles:
     *   Not easily fixable due to complex recalculation of attach points and positions.
     *   Accepted for now but should be optimized in future.
 
-## 16. Next Session TODO:
+## 16. Session Accomplishments: Album Data Model & FTS5 Search (2025-08-12)
+
+*   **Album-Centric Data Model Implementation:**
+    *   Successfully added Albums table (schema v12→v13) with proper foreign key relationships
+    *   Created full C++ infrastructure: `AlbumInfo.h`, `IAlbumManager.h`, `SqliteAlbumManager` implementation
+    *   Integrated AlbumManager throughout the system (SqliteTrackDatabase, TrackLibrary)
+    *   Added automatic album detection after library scans
+    *   Implemented "conservative" album detection - only creates albums for folders containing tracks from a single album
+    *   Successfully populated 230k albums from existing track data
+    
+*   **Album Detection Philosophy:**
+    *   **Key Learning:** Complex SQL queries for data processing are harder to debug and maintain than C++ implementations
+    *   Moved album detection logic from convoluted SQL to clean C++ code in folder cache building
+    *   Leverages existing high-performance folder cache infrastructure
+    *   Album artist population handled efficiently in C++ during cache rebuild
+    *   Entire process (including 230k albums) takes less than a second on startup
+    
+*   **FTS5 Search Enhancement:**
+    *   Extended FTS5 search to include album data (future work, schema prepared)
+    *   Conservative approach ensures data quality over quantity
+    *   Only "fully clear" cases create albums initially, avoiding ambiguous data
+
+*   **StatusBar Refactoring (from feature branch):**
+    *   Merged feature/refactor-status-bar branch successfully
+    *   Refactored status messages to use new StatusBarComponent with separate message types
+    *   Cleaned up and removed feature branch after merge
+
+*   **Critical Bug Fixes:**
+    *   Fixed race condition in envelope point editing that caused crashes during mix playback
+    *   Added proper thread-safe locking when modifying envelope points
+    *   Used existing `withMixEngineLock` pattern for safe concurrent access
+
+## 17. Next Session TODO:
 
 1.  **Nice to Have:** Implement linked movement of cue-points with attach points.
 2.  **Performance:** Continue work on persistent waveform caching.
 3.  **Known Issue:** Investigate remaining mix playback issue after track deletion.
 4.  **Database:** Implement a one-time migration/check for legacy databases with corrupt `orderInMix` values.
+5.  **Album UI:** Create navigation nodes and UI for browsing by album.
+6.  **Album Enrichment:** Implement Python script for Bandcamp metadata enrichment (Phase 3 of enrich.md).
