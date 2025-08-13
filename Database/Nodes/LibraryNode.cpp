@@ -192,7 +192,7 @@ namespace jucyaudio
                 spdlog::info("LibraryNode::getCellText for row {} took {} us", rowIndex, duration.count());
         }
 
-        int64_t LibraryNode::getObjectIdForRow(RowIndex_t rowIndex) const
+        ObjectId LibraryNode::getObjectIdForRow(RowIndex_t rowIndex) const
         {
             const auto trackInfo{getTrackInfoForRow(rowIndex)};
             return trackInfo ? trackInfo->trackId : 0;

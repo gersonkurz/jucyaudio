@@ -148,7 +148,7 @@ namespace jucyaudio
                 albumInfo.title = albumQuery.getText(2);
                 const FolderId folderId = albumQuery.getInt64(3);
                 assert(albumInfo.albumId >= 0 && "Album ID should be non-negative");
-                assert(!albumsByFolder.contains(albumInfo.folderId) && "Folder should not have multiple albums in this context");
+                assert(!albumsByFolder.contains(folderId) && "Folder should not have multiple albums in this context");
 
                 // Other fields are not used in this context, so we can skip them
                 albumsByFolder[folderId] = std::move(albumInfo);
@@ -176,9 +176,6 @@ namespace jucyaudio
                 {
                     if (useThisFolder)
                     {
-                        assert(!lastKnownAlbumName.empty() && "Album name should not be empty if artist name is set");
-                        assert(!lastKnownArtistName.empty() && "Artist name should not be empty if album name is set");           
-
                         if (!folderAlreadyHasAlbum && (lastKnownFolderId > 0))
                         {
                             if (albumFolders.contains(lastKnownFolderId))
@@ -367,6 +364,24 @@ namespace jucyaudio
             buildCacheIfNeeded();
             std::lock_guard lock{m_cacheMutex};
             return m_childrenFromParents.find(parentId) != m_childrenFromParents.end();
+        }
+
+
+        std::unordered_set<FolderId> SqliteFolderDatabase::getParentSet(FolderId folderId) const
+        {
+            buildCacheIfNeeded();
+            std::lock_guard lock(m_cacheMutex);
+
+            std::unordered_set<FolderId> parents;
+            while (folderId > 0)
+            {
+                parents.insert(folderId);
+                auto it = m_folderInfoFromId.find(folderId);
+                if (it == m_folderInfoFromId.end())
+                    break;
+                folderId = it->second.parentId;
+            }
+            return parents;
         }
 
         std::vector<FolderInfo> SqliteFolderDatabase::getChildFolders(FolderId parentId) const

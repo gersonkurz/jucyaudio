@@ -16,6 +16,7 @@ namespace jucyaudio
 
             // Override INavigationNode interface
             bool canExpand() override;
+            ObjectId getUniqueId() const override;
             bool expand(std::vector<INavigationNode *> &outChildren) override;
             bool getTotalTrackCount(int64_t &outCount) const override;
 

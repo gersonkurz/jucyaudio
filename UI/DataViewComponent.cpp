@@ -502,10 +502,10 @@ namespace jucyaudio
                 DataAction actionToExecute = DataAction::None;
                 for (const auto &action : availableActions)
                 {
-                    if (action == DataAction::Play || action == DataAction::ShowDetails)
+                    if (action == DataAction::Play || action == DataAction::ShowDetails || action == DataAction::ShowInFolder)
                     {
                         actionToExecute = action;
-                        if (action == DataAction::Play)
+                        if (action == DataAction::Play || action == DataAction::ShowInFolder)
                             break;
                     }
                 }

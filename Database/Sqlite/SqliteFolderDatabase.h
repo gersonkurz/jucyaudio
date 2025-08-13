@@ -30,6 +30,7 @@ namespace jucyaudio
              * @return A vector of FolderInfo structs for all direct children.
              */
             std::vector<FolderInfo> getChildFolders(FolderId parentId) const override;
+            std::unordered_set<FolderId> getParentSet(FolderId folderId) const override;
             bool hasChildren(FolderId parentId) const override;
             bool removeEmptyFolders() const override;
             bool updateFolder(const FolderInfo &folder) override;

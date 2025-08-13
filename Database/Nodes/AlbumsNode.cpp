@@ -301,7 +301,7 @@ namespace jucyaudio
             return albumInfo ? albumInfo->folderId : -1;
         }
 
-        int64_t AlbumsNode::getObjectIdForRow(RowIndex_t rowIndex) const
+        ObjectId AlbumsNode::getObjectIdForRow(RowIndex_t rowIndex) const
         {
             const auto albumInfo = getAlbumInfoForRow(rowIndex);
             return albumInfo ? albumInfo->albumId : -1;

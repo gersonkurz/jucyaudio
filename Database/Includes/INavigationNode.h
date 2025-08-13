@@ -145,7 +145,7 @@ namespace jucyaudio
 
             virtual std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const = 0;
             virtual const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const = 0;
-            virtual int64_t getObjectIdForRow(RowIndex_t rowIndex) const = 0;
+            virtual ObjectId getObjectIdForRow(RowIndex_t rowIndex) const = 0;
 
             /// @brief Prepare to show data for this node.
             /// This method is called when the node's data is about to be displayed.
@@ -176,6 +176,32 @@ namespace jucyaudio
 
             /// @brief Get the working set ID associated with this node. Will be 0 for all non-working-sets
             virtual WorkingSetId getWorkingSetId() const = 0;
+        };
+
+        class EnsureNodeIsRelease final
+        {
+        public:
+            explicit EnsureNodeIsRelease(INavigationNode *node)
+                : m_node{node}
+            {
+                // deliberately NO retain here, because this is just a helper class to ensure the node is released
+            }
+            ~EnsureNodeIsRelease() noexcept
+            {
+                if (m_node)
+                {
+                    m_node->release(REFCOUNT_DEBUG_ARGS);
+                }
+            }
+
+            EnsureNodeIsRelease(const EnsureNodeIsRelease &) = delete; // No copy
+            EnsureNodeIsRelease& operator=(const EnsureNodeIsRelease &) = delete; // No assignment
+            EnsureNodeIsRelease(EnsureNodeIsRelease &&other) = delete;
+            EnsureNodeIsRelease &operator=(EnsureNodeIsRelease &&other) = delete;
+
+        private:
+            INavigationNode *m_node{nullptr}; // Non-owning pointer to the node
+
         };
 
     } // namespace database

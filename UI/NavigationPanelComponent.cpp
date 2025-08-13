@@ -319,7 +319,7 @@ namespace jucyaudio
             }
         }
 
-        void NavigationPanelComponent::selectNode(INavigationNode *nodeToSelect)
+        void NavigationPanelComponent::selectNode(const INavigationNode *nodeToSelect)
         {
             if (!nodeToSelect || !m_treeView.getRootItem())
             {
@@ -499,6 +499,168 @@ namespace jucyaudio
             }
 
             m_treeView.repaint(); // Ensure the tree view repaints
+        }
+
+        void NavigationPanelComponent::expand(INavigationNode *nodeToExpand)
+        {
+            if (!m_currentRootNode || !nodeToExpand || !m_treeView.getRootItem())
+            {
+                return;
+            }
+
+            nodeToExpand->refreshChildren();
+
+            // Find the TreeViewItem associated with the nodeToRemove
+            const auto treeViewItemToRefresh = findTreeViewItemForNode(nodeToExpand);
+            if (!treeViewItemToRefresh)
+            {
+                return;
+            }
+            // 5. Trigger the GUI update for this TreeViewItem's children
+            const std::string strDisplayNode{treeViewItemToRefresh->getNode() ? treeViewItemToRefresh->getNode()->getName() : "UNKNOWN_NODE_IN_GUI_ITEM"};
+            spdlog::info("NavigationPanel::refreshNode - Refreshing GUI sub-items for "
+                         "TreeViewItem displaying node: {}",
+                strDisplayNode);
+
+            treeViewItemToRefresh->clearSubItems(); 
+
+            treeViewItemToRefresh->rebuildSubItemsFromModel(); // You will create this method
+
+            if (!treeViewItemToRefresh->isOpen())
+            {
+                treeViewItemToRefresh->setOpen(true); // Open it to trigger buildSubItems
+            }
+            m_treeView.repaint(); // Ensure the tree view repaints
+        }
+        
+        bool NavigationPanelComponent::expandPathAndSelectTarget(const std::vector<INavigationNode*>& pathFromRoot)
+        {
+            if (pathFromRoot.empty() || !m_treeView.getRootItem())
+            {
+                return false;
+            }
+            
+            // First we need to find the Folders node in the tree
+            NavTreeViewItem* foldersTreeItem = nullptr;
+            auto* rootTreeItem = m_treeView.getRootItem();
+            
+            // Look for the Folders node among root's children
+            for (int i = 0; i < rootTreeItem->getNumSubItems(); ++i)
+            {
+                auto* item = dynamic_cast<NavTreeViewItem*>(rootTreeItem->getSubItem(i));
+                if (item && item->getNode() && item->getNode()->getName() == "Folders")
+                {
+                    foldersTreeItem = item;
+                    break;
+                }
+            }
+            
+            if (!foldersTreeItem)
+            {
+                spdlog::error("expandPathAndSelectTarget: Could not find Folders node in tree");
+                return false;
+            }
+            
+            // Make sure the Folders node is expanded
+            if (!foldersTreeItem->isOpen())
+            {
+                foldersTreeItem->setOpen(true);
+            }
+            
+            // Start from the Folders item
+            juce::TreeViewItem* currentTreeItem = foldersTreeItem;
+            
+            // Navigate through the path
+            for (size_t i = 0; i < pathFromRoot.size(); ++i)
+            {
+                auto targetNode = pathFromRoot[i];
+                
+                // Find the tree item for this node
+                NavTreeViewItem* navItem = nullptr;
+                
+                // Search among the current item's children
+                for (int j = 0; j < currentTreeItem->getNumSubItems(); ++j)
+                {
+                    auto* subItem = dynamic_cast<NavTreeViewItem*>(currentTreeItem->getSubItem(j));
+                    if (subItem && subItem->getNode())
+                    {
+                        // For VirtualFolderNodes, match by folder ID (getUniqueId returns the folder ID)
+                        // This handles the case where tree shows "D:\MP3" but path has node named "MP3"
+                        if (subItem->getNode()->getUniqueId() == targetNode->getUniqueId())
+                        {
+                            navItem = subItem;
+                            spdlog::debug("Found node by folder ID match: tree node '{}' matches path node '{}' (ID: {})", 
+                                        subItem->getNode()->getName(), targetNode->getName(), targetNode->getUniqueId());
+                            break;
+                        }
+                        
+                        // Fallback: check if this is the exact same node instance
+                        if (subItem->getNode() == targetNode)
+                        {
+                            navItem = subItem;
+                            spdlog::debug("Found node by pointer match: {} (ID: {})", 
+                                        subItem->getNode()->getName(), targetNode->getUniqueId());
+                            break;
+                        }
+                    }
+                }
+                
+                // If we didn't find it and the parent might have children, expand it
+                if (!navItem && currentTreeItem->mightContainSubItems())
+                {
+                    // Expand the parent to create child items
+                    currentTreeItem->setOpen(true);
+                    
+                    // Try again to find the item
+                    for (int j = 0; j < currentTreeItem->getNumSubItems(); ++j)
+                    {
+                        auto* subItem = dynamic_cast<NavTreeViewItem*>(currentTreeItem->getSubItem(j));
+                        if (subItem && subItem->getNode())
+                        {
+                            // Match by folder ID first
+                            if (subItem->getNode()->getUniqueId() == targetNode->getUniqueId())
+                            {
+                                navItem = subItem;
+                                spdlog::debug("Found node after expansion by folder ID: tree node '{}' matches path node '{}' (ID: {})", 
+                                            subItem->getNode()->getName(), targetNode->getName(), targetNode->getUniqueId());
+                                break;
+                            }
+                            // Fallback to pointer match
+                            if (subItem->getNode() == targetNode)
+                            {
+                                navItem = subItem;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                if (!navItem)
+                {
+                    spdlog::error("expandPathAndSelectTarget: Failed to find or create tree item for node '{}'", targetNode->getName());
+                    return false;
+                }
+                
+                // If this is the last node in the path, select it
+                if (i == pathFromRoot.size() - 1)
+                {
+                    navItem->setSelected(true, true);
+                    m_treeView.scrollToKeepItemVisible(navItem);
+                    spdlog::info("expandPathAndSelectTarget: Successfully navigated to target folder");
+                    return true;
+                }
+                else
+                {
+                    // Otherwise, make sure this node is expanded and continue
+                    if (!navItem->isOpen())
+                    {
+                        navItem->setOpen(true);
+                    }
+                    currentTreeItem = navItem;
+                }
+            }
+            
+            return false;
         }
 
         void NavTreeViewItem::rebuildSubItemsFromModel()

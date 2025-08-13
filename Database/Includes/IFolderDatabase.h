@@ -42,6 +42,7 @@ namespace jucyaudio
             virtual bool addFolder(FolderInfo &folder) = 0;
 
             virtual std::unordered_set<FolderId> getAllChildFolders(const std::vector<FolderId> &folderIdsToScan) const = 0;
+
             virtual bool removeEmptyFolders() const = 0;
 
             /**
@@ -64,6 +65,9 @@ namespace jucyaudio
              * @return The ID of the folder, or -1 on failure.
              */
             virtual FolderId findOrCreateFolderByPath(const std::filesystem::path &path) = 0;
+
+
+            virtual std::unordered_set<FolderId> getParentSet(FolderId folderId) const = 0;
         };
     } // namespace database
 } // namespace jucyaudio

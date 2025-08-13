@@ -92,7 +92,7 @@ namespace jucyaudio
             void seekToTimelinePosition(double timePosition);
             void removeTrackFromMix(TrackId trackId);
             void updateTrackCountStatus();
-            
+            bool navigateToFolder(FolderId folderId);
 
             // menu management --------------------------------
             bool onShowScanDialog();

@@ -71,8 +71,9 @@ namespace jucyaudio
             void removeNodeFromTree(INavigationNode *nodeToRemove); // nodeToRemove will be removed from the
                                                                               // tree, but not deleted
             void refreshNode(INavigationNode *node);                // rootNode will be retained
-            void selectNode(INavigationNode *nodeToSelect);         // Selects a node in the
-                                                                              // TreeView, retaining it
+            void selectNode(const INavigationNode *nodeToSelect);         // Selects a node in the
+            void expand(INavigationNode *node);
+            bool expandPathAndSelectTarget(const std::vector<INavigationNode*>& pathFromRoot);
 
             // Callback for when a node is selected in the TreeView
             std::function<void(INavigationNode *)> m_onNodeSelected;

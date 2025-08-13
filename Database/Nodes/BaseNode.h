@@ -55,7 +55,7 @@ namespace jucyaudio
             const DataActions &getRowActions(RowIndex_t rowIndex) const override;
             std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const override;
             const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;
-            int64_t getObjectIdForRow(RowIndex_t rowIndex) const override;
+            ObjectId getObjectIdForRow(RowIndex_t rowIndex) const override;
             bool getNumberOfRows(int64_t &outCount) const override;
             bool getTotalTrackCount(int64_t &outCount) const override;
             void nodeHasBeenDeleted(INavigationNode *node) override;

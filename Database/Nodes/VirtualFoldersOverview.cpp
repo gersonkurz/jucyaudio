@@ -2,6 +2,7 @@
 #include <Database/Nodes/VirtualFoldersOverview.h>
 #include <Database/TrackLibrary.h>
 #include <spdlog/spdlog.h>
+#include <functional>
 
 namespace jucyaudio
 {
@@ -70,9 +71,12 @@ namespace jucyaudio
 
         INavigationNode* VirtualFoldersOverview::findFolderNode(FolderId targetFolderId)
         {
+            spdlog::info("VirtualFoldersOverview::findFolderNode searching for folder ID {}", targetFolderId);
+            
             // First check if we need to expand to get children
             if (m_children.empty())
             {
+                spdlog::debug("Children empty, expanding VirtualFoldersOverview");
                 std::vector<INavigationNode*> children;
                 expand(children);
                 for (auto child : children)
@@ -81,35 +85,58 @@ namespace jucyaudio
                 }
             }
             
-            // Now search through our children for the matching folder
-            for (auto child : m_children)
+            spdlog::debug("Searching through {} root folders", m_children.size());
+            
+            // Helper lambda for recursive search
+            std::function<INavigationNode*(INavigationNode*)> searchFolder = 
+                [&searchFolder, targetFolderId](INavigationNode* node) -> INavigationNode* 
             {
-                if (auto *folderNode = dynamic_cast<VirtualFolderNode*>(child))
+                if (auto *folderNode = dynamic_cast<VirtualFolderNode*>(node))
                 {
-                    if (folderNode->getFolderId() == targetFolderId)
+                    const auto currentFolderId = folderNode->getFolderId();
+                    spdlog::debug("Checking folder: {} (ID: {})", node->getName(), currentFolderId);
+                    
+                    if (currentFolderId == targetFolderId)
                     {
-                        child->retain(REFCOUNT_DEBUG_ARGS);
-                        return child;
+                        spdlog::info("Found target folder: {} (ID: {})", node->getName(), currentFolderId);
+                        node->retain(REFCOUNT_DEBUG_ARGS);
+                        return node;
                     }
                     
-                    // Also check if it's a child folder
-                    // We need to recursively search through subfolders
-                    std::vector<INavigationNode*> subChildren;
-                    if (folderNode->canExpand() && folderNode->expand(subChildren))
+                    // Recursively search children
+                    if (folderNode->canExpand())
                     {
-                        for (auto subChild : subChildren)
+                        std::vector<INavigationNode*> children;
+                        if (folderNode->expand(children))
                         {
-                            if (auto *subFolderNode = dynamic_cast<VirtualFolderNode*>(subChild))
+                            for (auto child : children)
                             {
-                                if (subFolderNode->getFolderId() == targetFolderId)
+                                if (auto found = searchFolder(child))
                                 {
-                                    // Found it! Return the retained pointer
-                                    return subChild;
+                                    // Release the child reference since we're returning the found node
+                                    for (auto remaining : children)
+                                    {
+                                        if (remaining != found)
+                                        {
+                                            remaining->release(REFCOUNT_DEBUG_ARGS);
+                                        }
+                                    }
+                                    return found;
                                 }
+                                child->release(REFCOUNT_DEBUG_ARGS);
                             }
-                            subChild->release(REFCOUNT_DEBUG_ARGS);
                         }
                     }
+                }
+                return nullptr;
+            };
+            
+            // Search through our children
+            for (auto child : m_children)
+            {
+                if (auto found = searchFolder(child))
+                {
+                    return found;
                 }
             }
             

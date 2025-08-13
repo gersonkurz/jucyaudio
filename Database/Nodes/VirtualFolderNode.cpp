@@ -20,6 +20,11 @@ namespace jucyaudio
             return theTrackLibrary.getFolderDatabase().hasChildren(m_folderId);
         }
 
+        ObjectId VirtualFolderNode::getUniqueId() const
+        {
+            return m_folderId;
+        }
+
         bool VirtualFolderNode::getTotalTrackCount(int64_t &outCount) const
         {
             const auto &folderDb = theTrackLibrary.getFolderDatabase();

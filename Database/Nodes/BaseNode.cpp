@@ -90,7 +90,7 @@ namespace jucyaudio
             return nullptr;
         }
 
-        int64_t BaseNode::getObjectIdForRow(RowIndex_t rowIndex) const
+        ObjectId BaseNode::getObjectIdForRow(RowIndex_t rowIndex) const
         {
             return 0;
         }

@@ -1382,48 +1382,136 @@ namespace jucyaudio
             }
         }
 
+        bool MainComponent::navigateToFolder(FolderId folderId)
+        {
+            auto foldersRootNode = m_navigationTree.getRootNode()->getFoldersRootNode();
+            if (!foldersRootNode)
+            {
+                spdlog::error("No folders found in navigation tree root node.");
+                return false;
+            }
+
+            auto& folderDb{theTrackLibrary.getFolderDatabase()};
+            const auto parents{folderDb.getParentSet(folderId)};
+
+            const auto underlyingFolder{folderDb.getFolderById(folderId)};
+            if (!underlyingFolder)
+            {
+                spdlog::error("Folder ID {} not found in database.", folderId);
+                m_statusPanel.getStatusBar().postMessage("Folder not found in database.", true);
+                return false;
+            }
+
+            spdlog::info("Navigating to folder ID {}: {}", folderId, underlyingFolder.value().path);
+
+            // Build the path from root to target folder
+            std::vector<INavigationNode*> pathToTarget;
+            pathToTarget.push_back(foldersRootNode);
+            foldersRootNode->retain(REFCOUNT_DEBUG_ARGS);
+            
+            auto currentParent = foldersRootNode;
+            bool foundTarget = false;
+            
+            // Build the complete path
+            while (currentParent && currentParent->canExpand())
+            {
+                std::vector<INavigationNode *> children;
+                if (!currentParent->expand(children))
+                {
+                    spdlog::error("Failed to expand node: {}", currentParent->getName());
+                    break;
+                }
+
+                INavigationNode* nextInPath = nullptr;
+                for (auto childNode : children)
+                {
+                    const auto childFolderId{childNode->getUniqueId()};
+                    if (childFolderId == folderId)
+                    {
+                        // Found the target folder!
+                        pathToTarget.push_back(childNode);
+                        childNode->retain(REFCOUNT_DEBUG_ARGS);
+                        foundTarget = true;
+                        spdlog::info("Found target folder: {} (ID: {})", childNode->getName(), childFolderId);
+                    }
+                    else if (parents.contains(childFolderId))
+                    {
+                        nextInPath = childNode;
+                        childNode->retain(REFCOUNT_DEBUG_ARGS);
+                        spdlog::info("node {} ({}) is a valid parent", childNode->getName(), childFolderId);
+                    }
+                    else
+                    {
+                        childNode->release(REFCOUNT_DEBUG_ARGS);
+                    }
+                }
+                
+                if (foundTarget)
+                {
+                    break;
+                }
+                
+                if (nextInPath)
+                {
+                    pathToTarget.push_back(nextInPath);
+                    currentParent = nextInPath;
+                }
+                else
+                {
+                    spdlog::warn("Could not find next node in path to target folder");
+                    break;
+                }
+            }
+            
+            // Now expand the UI tree along the path
+            if (foundTarget && !pathToTarget.empty())
+            {
+                // Remove the foldersRootNode from the path since it's not part of the tree path
+                // The path should start with the first actual folder (like "MP3")
+                std::vector<INavigationNode*> treePathFromFoldersRoot;
+                if (pathToTarget.size() > 1)
+                {
+                    treePathFromFoldersRoot.assign(pathToTarget.begin() + 1, pathToTarget.end());
+                }
+                
+                // Use the new method to expand and navigate
+                if (m_navigationPanel.expandPathAndSelectTarget(treePathFromFoldersRoot))
+                {
+                    m_statusPanel.getStatusBar().postMessage("Navigated to folder", false);
+                }
+                else
+                {
+                    m_statusPanel.getStatusBar().postMessage("Failed to navigate to folder", true);
+                    spdlog::error("Failed to navigate to folder in tree");
+                }
+            }
+            
+            // Clean up - release all retained nodes
+            for (auto node : pathToTarget)
+            {
+                node->release(REFCOUNT_DEBUG_ARGS);
+            }
+            
+            return foundTarget;
+        }
+
         void MainComponent::onShowInFolder(RowIndex_t rowIndex)
         {
+            spdlog::info("onShowInFolder called for row {}", rowIndex);
+            
             // Check if we're viewing albums
-            if (auto *albumsNode = dynamic_cast<database::AlbumsNode *>(m_currentNode))
+            if (const auto *albumsNode = dynamic_cast<database::AlbumsNode *>(m_currentNode))
             {
                 // Get the folder ID for the selected album
                 const auto folderId = albumsNode->getFolderIdForRow(rowIndex);
+                spdlog::info("Album folder ID: {}", folderId);
+                
                 if (folderId < 0)
                 {
                     m_statusPanel.getStatusBar().postMessage("Cannot navigate to folder", true);
                     return;
                 }
-                
-                // Navigate to the folder in the navigation tree
-                // We need to find the VirtualFoldersOverview node and then find the specific folder
-                if (const auto rootNode = m_navigationTree.getRootNode())
-                {
-                    // Find the Folders node
-                    std::vector<INavigationNode*> children;
-                    if (rootNode->expand(children))
-                    {
-                        for (auto child : children)
-                        {
-                            if (auto *foldersOverview = dynamic_cast<database::VirtualFoldersOverview*>(child))
-                            {
-                                // Navigate to the specific folder
-                                if (auto folderNode = foldersOverview->findFolderNode(folderId))
-                                {
-                                    m_navigationPanel.selectNode(folderNode);
-                                    folderNode->release(REFCOUNT_DEBUG_ARGS);
-                                    m_statusPanel.getStatusBar().postMessage("Navigated to folder", false);
-                                }
-                                else
-                                {
-                                    m_statusPanel.getStatusBar().postMessage("Folder not found in navigation tree", true);
-                                }
-                            }
-                            child->release(REFCOUNT_DEBUG_ARGS);
-                        }
-                    }
-                    rootNode->release(REFCOUNT_DEBUG_ARGS);
-                }
+                navigateToFolder(folderId);
             }
             else
             {

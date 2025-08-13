@@ -43,6 +43,8 @@ namespace jucyaudio
                 return "Show Mix Editor";
             case DataAction::ShowTrackEditor:
                 return "Show Track Editor";
+            case DataAction::ShowInFolder:
+                return "Show in Folder";
             case DataAction::Separator:
                 return "------";
             default:
