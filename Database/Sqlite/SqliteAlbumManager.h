@@ -39,6 +39,7 @@ namespace jucyaudio
                 const std::vector<std::string>& tags) override;
             
             bool updateAlbumBandcampUrl(AlbumId albumId, const std::string& url) override;
+            bool updateAlbumBitrate(AlbumId albumId, std::optional<int> bitrate) override;
             bool setTrackAlbum(TrackId trackId, AlbumId albumId) override;
             std::vector<TrackId> getAlbumTracks(AlbumId albumId) const override;
             bool deleteAlbum(AlbumId albumId) override;

@@ -67,6 +67,12 @@ namespace jucyaudio
             /// @return true if successful
             virtual bool updateAlbumBandcampUrl(AlbumId albumId, const std::string& url) = 0;
 
+            /// @brief Update album's bitrate
+            /// @param albumId The album to update
+            /// @param bitrate The average bitrate in kbps (nullopt to clear)
+            /// @return true if successful
+            virtual bool updateAlbumBitrate(AlbumId albumId, std::optional<int> bitrate) = 0;
+
             /// @brief Associate a track with an album
             /// @param trackId The track to update
             /// @param albumId The album to associate (or -1 to clear)

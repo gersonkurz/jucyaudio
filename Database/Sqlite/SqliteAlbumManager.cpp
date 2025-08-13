@@ -60,7 +60,7 @@ namespace jucyaudio
         {
             const char* sql = R"SQL(
                 SELECT album_id, album_artist, title, year, folder_id, 
-                       genres, moods, tags, bandcamp_url, created_at, updated_at
+                       genres, moods, tags, bandcamp_url, bitrate, created_at, updated_at
                 FROM Albums WHERE album_id = ?;
             )SQL";
             
@@ -81,7 +81,7 @@ namespace jucyaudio
             
             const char* sql = R"SQL(
                 SELECT album_id, album_artist, title, year, folder_id, 
-                       genres, moods, tags, bandcamp_url, created_at, updated_at
+                       genres, moods, tags, bandcamp_url, bitrate, created_at, updated_at
                 FROM Albums WHERE folder_id = ?
                 ORDER BY title COLLATE NOCASE;
             )SQL";
@@ -103,7 +103,7 @@ namespace jucyaudio
             
             std::string sql = R"SQL(
                 SELECT album_id, album_artist, title, year, folder_id, 
-                       genres, moods, tags, bandcamp_url, created_at, updated_at
+                       genres, moods, tags, bandcamp_url, bitrate, created_at, updated_at
                 FROM Albums 
                 ORDER BY album_artist COLLATE NOCASE, title COLLATE NOCASE
             )SQL";
@@ -166,6 +166,21 @@ namespace jucyaudio
             
             SqliteStatement stmt{m_db, sql};
             stmt.addParam(url);
+            stmt.addParam(albumId);
+
+            return stmt.execute();
+        }
+
+        bool SqliteAlbumManager::updateAlbumBitrate(AlbumId albumId, std::optional<int> bitrate)
+        {
+            const char* sql = R"SQL(
+                UPDATE Albums 
+                SET bitrate = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE album_id = ?;
+            )SQL";
+            
+            SqliteStatement stmt{m_db, sql};
+            stmt.addNullableParam(bitrate);
             stmt.addParam(albumId);
 
             return stmt.execute();
@@ -242,7 +257,7 @@ namespace jucyaudio
             // For now, simple LIKE search. Later can integrate with FTS5
             const char* sql = R"SQL(
                 SELECT album_id, album_artist, title, year, folder_id, 
-                       genres, moods, tags, bandcamp_url, created_at, updated_at
+                       genres, moods, tags, bandcamp_url, bitrate, created_at, updated_at
                 FROM Albums 
                 WHERE title LIKE ? OR album_artist LIKE ? OR genres LIKE ? OR tags LIKE ?
                 ORDER BY album_artist COLLATE NOCASE, title COLLATE NOCASE
@@ -319,6 +334,10 @@ namespace jucyaudio
             col++;
             
             album.bandcampUrl = stmt.isNull(col) ? "" : stmt.getText(col);
+            col++;
+            
+            // Bitrate
+            album.bitrate = stmt.isNull(col) ? std::nullopt : std::optional(stmt.getInt32(col));
             col++;
             
             // Timestamps

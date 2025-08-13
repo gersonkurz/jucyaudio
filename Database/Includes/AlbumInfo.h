@@ -45,6 +45,9 @@ namespace jucyaudio
             /// @brief Optional Bandcamp URL for the album
             std::string bandcampUrl;
 
+            /// @brief Average bitrate of tracks in the album (in kbps, optional)
+            std::optional<int> bitrate;
+
             /// @brief Timestamp when the album was created in the database
             Timestamp_t createdAt;
 

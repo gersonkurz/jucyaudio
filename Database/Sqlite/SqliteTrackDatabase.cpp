@@ -57,6 +57,7 @@ namespace
             moods TEXT,
             tags TEXT,
             bandcamp_url TEXT,
+            bitrate INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (folder_id) REFERENCES Folders(folder_id) ON DELETE CASCADE
@@ -571,7 +572,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 13;
+            const int latestSchemaVersion = 14;
 
             if (currentVersion == 0)
             {
@@ -1582,6 +1583,48 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 13;
+            }
+
+            if (currentVersion < 14)
+            {
+                spdlog::info("Migrating database from version 13 to 14 - Adding bitrate column to Albums table...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Add bitrate column to Albums table
+                    const char* addBitrateColumn = R"SQL(
+                        ALTER TABLE Albums ADD COLUMN bitrate INTEGER;
+                    )SQL";
+
+                    if (!m_db.execute(addBitrateColumn))
+                    {
+                        const auto error{m_db.getLastError()};
+                        spdlog::error("Failed to add bitrate column to Albums table: {}", error);
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to add bitrate column: " + error);
+                    }
+
+                    // Update schema version
+                    if (auto result = setDBSchemaVersion(14); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 14.");
+                    }
+
+                    if (transaction.commit())
+                    {
+                        spdlog::info("Migration to version 14 completed successfully.");
+                    }
+                    else
+                    {
+                        const auto error{m_db.getLastError()};
+                        spdlog::error("Failed to commit migration transaction: {}", error);
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration: " + error);
+                    }
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 14;
             }
 
             return DbResult::success();
