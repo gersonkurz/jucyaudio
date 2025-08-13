@@ -1,4 +1,4 @@
-# JucyAudio - Architecture & Status (2025-08-12 End of Day)
+# JucyAudio - Architecture & Status (2025-08-13 End of Day)
 
 ## 1. Executive Summary
 
@@ -248,28 +248,18 @@ The application now operates on the following principles:
         *   Wrapped the track removal logic in `MainComponent` inside this lock, ensuring that the audio thread and the UI thread cannot access the mix data simultaneously during a modification.
     *   **Result:** The application is now stable when performing destructive operations on a mix that is loaded in the playback engine.
 
-## 15. Known Issues to Address:
+## Known Issues (Current):
 
-1.  **Playback State After Deletion:**
-    *   While the crash is fixed, deleting a track during playback stops audio and may prevent it from resuming without "resetting" the engine (e.g., playing a different track).
-    *   This is likely a state management issue within the `PlaybackController` or `MixPlaybackEngine` that needs further investigation.
-    *   **Status:** Needs further work.
-
-2.  **Database Cleanup Needed:**
-    *   Existing user databases may have corrupt `orderInMix` values from previous deletion operations.
-    *   Should implement a one-time migration to detect and fix duplicate values.
-    *   Could add integrity check on startup.
-
-3.  **Performance: Waveform Loading**
-    *   Takes ~1 minute to load waveforms for 70-track mixes.
-    *   Happens every time user navigates to a mix.
-    *   HIGH PRIORITY: Need persistent file-based waveform caching.
-    *   Database groundwork exists (schema v9) but needs implementation.
-
-4.  **Efficiency: Track Deletion UI Rebuild**
+1.  **Efficiency: Track Deletion UI Rebuild**
     *   Deleting a single track rebuilds entire timeline (all waveforms regenerate).
     *   Not easily fixable due to complex recalculation of attach points and positions.
     *   Accepted for now but should be optimized in future.
+
+## Recently Fixed Issues:
+
+1.  ✅ **Waveform Caching** - Fully implemented, no longer an issue
+2.  ✅ **Mix Playback After Deletion** - Fixed, audio resumes correctly
+3.  ✅ **Database Cleanup** - Corrupt orderInMix values have been addressed
 
 ## 16. Session Accomplishments: Album Data Model & FTS5 Search (2025-08-12)
 
@@ -303,11 +293,73 @@ The application now operates on the following principles:
     *   Added proper thread-safe locking when modifying envelope points
     *   Used existing `withMixEngineLock` pattern for safe concurrent access
 
-## 17. Next Session TODO:
+## 17. Session Accomplishments: Album UI & Critical Fixes (2025-08-13)
 
-1.  **Nice to Have:** Implement linked movement of cue-points with attach points.
-2.  **Performance:** Continue work on persistent waveform caching.
-3.  **Known Issue:** Investigate remaining mix playback issue after track deletion.
-4.  **Database:** Implement a one-time migration/check for legacy databases with corrupt `orderInMix` values.
-5.  **Album UI:** Create navigation nodes and UI for browsing by album.
-6.  **Album Enrichment:** Implement Python script for Bandcamp metadata enrichment (Phase 3 of enrich.md).
+*   **Album UI Implementation:**
+    *   ✅ Created AlbumsNode for displaying all albums in a filterable table view
+    *   ✅ Implemented proper columns: Artist, Title, Year, Track Count, Duration, Folder
+    *   ✅ Added double-click navigation from album to its folder in the tree
+    *   ✅ Fixed navigation system to properly match folders by ID instead of name
+    *   ✅ Added scrolling to make selected folder visible after navigation
+    
+*   **Critical Refcounting Fixes:**
+    *   Fixed memory leaks in navigation system where nodes weren't being properly released
+    *   Corrected double-retain issues in navigateToFolder method
+    *   Navigation now properly manages node lifetimes with correct retain/release patterns
+    
+*   **Mix Creation Enhancement:**
+    *   Fixed issue where short tracks (< 10 seconds) were being completely skipped from mixes
+    *   Implemented adaptive crossfade duration:
+        - Tracks < 10 seconds: No crossfade (play in full)
+        - Tracks 10-20 seconds: Reduced crossfade (10% of track duration)
+        - Tracks > 20 seconds: Normal 5-second crossfade
+    *   Now properly handles intro tracks and short segments
+    
+*   **VUMeter Crash Fix:**
+    *   Added validation for NaN and infinite values in setLevel()
+    *   Added safety checks in paint() method to prevent drawing with invalid dimensions
+    *   Prevents crashes when audio processing produces invalid peak levels
+    
+*   **Schema v14 Migration:**
+    *   Added `bitrate INTEGER` column to Albums table for storing average bitrate
+    *   Updated all database queries and AlbumInfo structure
+    *   Added updateAlbumBitrate() method to IAlbumManager interface
+    *   Migration handles existing databases gracefully
+
+## 18. Next Session TODO:
+
+### High Priority:
+1.  **FLAC Support:** 
+    *   Add FLAC file scanning and playback support (JUCE already supports FLAC)
+    *   Extract and store FLAC metadata tags in database
+    *   Should be straightforward - similar to MP3 handling
+    *   See enrich.md Part 1.6 for implementation details
+    
+2.  **WAV Support with Basic Import:**
+    *   Add WAV file scanning and playback support
+    *   Initial import with minimal metadata (filename → title, folder → album)
+    *   Mark WAV files with `needs_enrichment = true` flag
+    *   Store full path for later AI parsing
+    *   See enrich.md Part 1.6 for implementation strategy
+    
+3.  **Unified AI Enrichment Script:** 
+    *   Single Python tool for ALL metadata enrichment (see enrich.md Part 2)
+    *   Album metadata (genres, moods, tags)
+    *   WAV path intelligence (parse complex paths like "Taksi Inc- nachtschleife - Force Inc")
+    *   Missing metadata enhancement
+    *   Cost-controlled, batch processing, database-only updates
+
+### Medium Priority:
+4.  **In-App Tagging System:**
+    *   Implement mp3tag-like functionality for editing track metadata
+    *   Store all edits in database only (never modify source files)
+    *   Particularly important for WAV files from vinyl digitization
+    *   UI for batch editing and tag management
+    
+5.  **Nice to Have:** Implement linked movement of cue-points with attach points.
+
+### Completed Items:
+- ✅ Album UI: Create navigation nodes and UI for browsing by album
+- ✅ Performance: Waveform caching (fully implemented)
+- ✅ Mix playback issue after track deletion (fixed)
+- ✅ Database cleanup for corrupt orderInMix values (done)

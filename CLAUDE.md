@@ -1,4 +1,4 @@
-# JucyAudio - AI Introduction Prompt (v6)
+# JucyAudio - AI Introduction Prompt (v7)
 
 **Objective:** To collaboratively develop **JucyAudio**, a sophisticated audio curation and mixing application for macOS (primary target, Apple Silicon) and Windows. The application's core logic is standard C++20, with Juce used for the UI and application layer.
 
@@ -318,3 +318,51 @@ The refactoring successfully addresses the architectural issues identified in Se
 
 **Current Status:**
 The library management and scanning systems are now feature-complete, performant, and robust. The application correctly handles adding/removing roots, targeted scanning, and pruning of missing files and folders. The startup experience has been improved with a splash screen. The project is now ready for full-system verification of its core audio functionalities.
+
+## Session 10: Album UI & Enrichment Planning
+
+**Objective:** Implement album browsing UI and plan comprehensive metadata enrichment strategy.
+
+**Work Done:**
+
+1. **Album UI Implementation:**
+   - Created `AlbumsNode` for displaying all albums in a filterable table view
+   - Implemented album-specific columns (Artist, Title, Year, Track Count, Duration, Folder)
+   - Added double-click navigation from album to its folder in the folder tree
+   - Fixed complex navigation issues with folder ID matching instead of name matching
+
+2. **Critical Bug Fixes:**
+   - **Refcounting:** Fixed memory leaks in navigation system, corrected node retain/release patterns
+   - **Mix Creation:** Fixed issue where short tracks (<10s) were skipped; now uses adaptive crossfade
+   - **VUMeter:** Added validation for NaN/infinite values preventing crashes
+
+3. **Schema Evolution (v14):**
+   - Added `bitrate INTEGER` column to Albums table for future enrichment
+
+4. **Enrichment Strategy Defined:**
+   - Two-phase approach: Basic C++ import (free) + Python AI enrichment (paid, controlled)
+   - Planned support for FLAC (easy - has tags) and WAV (harder - needs path parsing)
+   - Single Python script for all AI tasks: album metadata, WAV path parsing, missing data
+   - See `enrich.md` for comprehensive implementation plan
+
+**Key Architectural Decisions:**
+- WAV files import with minimal metadata, marked with `needs_enrichment` flag
+- AI enrichment is database-only, never modifies source files
+- Cost control through batch processing and configurable limits
+
+## Important Implementation Notes
+
+**Database Schema:** Currently at version 14. Albums table fully implemented with bitrate column.
+
+**Refcounting:** The navigation system uses manual retain/release. Always match retains with releases!
+
+**Mix Editor:** Uses shared `MixProjectLoader` between DataView and Timeline for consistency.
+
+**Performance:** Waveform caching is fully implemented - no longer an issue.
+
+**Next Major Tasks:** 
+1. FLAC/WAV support (C++ side)
+2. Python enrichment script (see enrich.md Part 2)
+3. In-app tagging system (database-only metadata editing)
+
+For detailed status and TODO items, see `status.md`. For enrichment implementation details, see `enrich.md`.
