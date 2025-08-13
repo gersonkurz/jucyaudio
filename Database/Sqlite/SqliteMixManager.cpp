@@ -556,16 +556,6 @@ FROM Mixes m
                 assert(trackInfo.trackId != 0 && "Track ID should not be zero when creating a new mix");
                 const auto trackPath{trackInfo.reconstructFullPath()};
 
-                // check track is longer than minimumExpectedSongLength - otherwise it's not suitable for mixing
-                if (trackInfo.duration < minimumExpectedSongLength)
-                {
-                    spdlog::debug("Track {} ({}) is only {} long: too short for mixing, skipping",
-                        trackInfo.trackId,
-                        pathToString(trackPath),
-                        durationToString(trackInfo.duration));
-                    continue;
-                }
-
                 MixTrack mixTrack{};
                 mixTrack.mixId = mixInfo.mixId;
                 mixTrack.trackId = trackInfo.trackId;
@@ -577,23 +567,61 @@ FROM Mixes m
                 mixTrack.cueEnd = Duration_t{0}; // 0 means use full track duration
                 
                 // ATTACH points - define where overlaps happen
-                // For a simple automix, let's use symmetrical attach points
-                mixTrack.attachFrom = defaultCrossfadeDuration;  // Start overlapping after 5s into this track
-                mixTrack.attachTo = trackInfo.duration - defaultCrossfadeDuration; // Next track starts 5s before this ends
+                // For short tracks (< 2 * crossfade duration), reduce or eliminate crossfade
+                Duration_t effectiveCrossfade = defaultCrossfadeDuration;
+                
+                if (trackInfo.duration < minimumExpectedSongLength)
+                {
+                    // For very short tracks (like intros), eliminate crossfade entirely
+                    // This ensures the track plays in full
+                    effectiveCrossfade = Duration_t{0};
+                    spdlog::info("Track {} ({}) is only {} long: using no crossfade",
+                        trackInfo.trackId,
+                        pathToString(trackPath),
+                        durationToString(trackInfo.duration));
+                }
+                else if (trackInfo.duration < minimumExpectedSongLength * 2)
+                {
+                    // For medium-short tracks, use a reduced crossfade (10% of track duration)
+                    effectiveCrossfade = trackInfo.duration / 10;
+                    spdlog::info("Track {} ({}) is {} long: reducing crossfade to {}",
+                        trackInfo.trackId,
+                        pathToString(trackPath),
+                        durationToString(trackInfo.duration),
+                        durationToString(effectiveCrossfade));
+                }
+                
+                // Set attach points based on effective crossfade
+                mixTrack.attachFrom = effectiveCrossfade;  // Start overlapping after this duration into the track
+                mixTrack.attachTo = trackInfo.duration - effectiveCrossfade; // Next track starts this duration before end
                 
                 // Create envelope points for crossfade
                 // These are relative to the track's cue start (which is 0 in this case)
-                const auto fadeInMidpoint = Duration_t{2000};  // 2 seconds
-                const auto fadeOutMidpoint = trackInfo.duration - Duration_t{2000}; // 2 seconds before end
-
-                mixTrack.envelopePoints = {
-                    {Duration_t{0}, Volume_t{200}},                                        // Start at 20%
-                    {fadeInMidpoint, Volume_t{700}},                                       // 2s: 70%
-                    {defaultCrossfadeDuration, VOLUME_NORMALIZATION},                      // 5s: 100%
-                    {trackInfo.duration - defaultCrossfadeDuration, VOLUME_NORMALIZATION}, // duration-5s: 100%
-                    {fadeOutMidpoint, Volume_t{700}},                                      // duration-2s: 70%
-                    {trackInfo.duration, Volume_t{200}}                                    // End at 20%
-                };
+                // Adapt the envelope based on the effective crossfade duration
+                
+                if (effectiveCrossfade == Duration_t{0})
+                {
+                    // No crossfade - track plays at full volume throughout
+                    mixTrack.envelopePoints = {
+                        {Duration_t{0}, VOLUME_NORMALIZATION},           // Start at 100%
+                        {trackInfo.duration, VOLUME_NORMALIZATION}       // End at 100%
+                    };
+                }
+                else
+                {
+                    // Calculate midpoints based on effective crossfade
+                    const auto fadeInMidpoint = std::min(Duration_t{2000}, effectiveCrossfade / 2);
+                    const auto fadeOutMidpoint = trackInfo.duration - std::min(Duration_t{2000}, effectiveCrossfade / 2);
+                    
+                    mixTrack.envelopePoints = {
+                        {Duration_t{0}, Volume_t{200}},                                        // Start at 20%
+                        {fadeInMidpoint, Volume_t{700}},                                       // midpoint: 70%
+                        {effectiveCrossfade, VOLUME_NORMALIZATION},                            // crossfade end: 100%
+                        {trackInfo.duration - effectiveCrossfade, VOLUME_NORMALIZATION},       // before fade out: 100%
+                        {fadeOutMidpoint, Volume_t{700}},                                      // midpoint: 70%
+                        {trackInfo.duration, Volume_t{200}}                                    // End at 20%
+                    };
+                }
 
                 resultingTracks.emplace_back(mixTrack);
             }
