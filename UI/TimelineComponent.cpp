@@ -10,9 +10,9 @@ namespace jucyaudio
     namespace ui
     {
         TimelineComponent::TimelineComponent(juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache)
-            : m_formatManager{formatManager},
-              m_thumbnailCache{thumbnailCache},
-              m_mixLoader{nullptr}
+            : m_mixLoader{nullptr},
+              m_formatManager{formatManager},
+              m_thumbnailCache{thumbnailCache}
         {
             spdlog::info("[Timeline] Constructor called");
             setWantsKeyboardFocus(true);
@@ -310,7 +310,7 @@ namespace jucyaudio
             {
                 // Inserting at the beginning before all tracks
                 // Set up to crossfade into the first track
-                const auto &nextTrack = mixTracks[0];
+                //const auto &nextTrack = mixTracks[0];
                 const auto trackDuration = m_clipboard.trackInfo.duration;
 
                 // Set attachTo to crossfade into next track's attachFrom
@@ -370,7 +370,7 @@ namespace jucyaudio
 
             // Save the updated mix using createOrUpdateMix
             auto mixInfo = m_mixLoader->getMixInfo();
-            const auto currentMixId = m_mixLoader->getMixId();
+            //const auto currentMixId = m_mixLoader->getMixId();
 
             if (theTrackLibrary.getMixManager().createOrUpdateMix(mixInfo, mixTracks))
             {
@@ -969,7 +969,7 @@ namespace jucyaudio
 
         void TimelineComponent::resized()
         {
-            auto visibleArea = getParentComponent()->getLocalBounds();
+            //auto visibleArea = getParentComponent()->getLocalBounds();
             const int rulerHeight = 30;
             const int trackHeight = MixTrackComponent::TOTAL_COMPONENT_HEIGHT;
             const int yGap = 5;
@@ -1175,10 +1175,10 @@ namespace jucyaudio
                     break; // No next track to crossfade with
 
                 const auto &currentView = m_trackViews[i];
-                const auto &nextView = m_trackViews[i + 1];
+                //const auto &nextView = m_trackViews[i + 1];
 
                 const auto &currentTrack = *currentView.mixTrackData;
-                const auto &nextTrack = *nextView.mixTrackData;
+                //const auto &nextTrack = *nextView.mixTrackData;
 
                 // The ATTACH point is calculated relative to the AUDIO start time, not the component start time.
                 const double currentAudioStart = std::chrono::duration<double>(currentView.audioStartTime).count();

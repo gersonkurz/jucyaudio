@@ -74,21 +74,21 @@ namespace jucyaudio
               m_commandManager{commandManager},
               m_dynamicToolbar{*this}, // Pass *this as MainComponent& owner
               m_navigationPanel{*this},
+              m_navigationTree{m_navigationPanel, m_dataViewComponent},
               m_currentMainView{MainViewType::DataView},
               m_currentMainViewComponent{&m_dataViewComponent},
               m_verticalDivider{*this, true},
               m_playbackController{},
               m_enhancedPlayer{m_playbackController, m_audioFormatManager, m_audioThumbnailCache},
-              m_statusPanel{*this},
-              m_navigationTree{m_navigationPanel, m_dataViewComponent}
+              m_statusPanel{*this}
         {
-            theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
+                  theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
 
             // Register audio formats
             m_audioFormatManager.registerBasicFormats();
             
             // Set up state change callback
-            m_playbackController.onStateChanged = [this](PlaybackController::PlayerState state)
+            m_playbackController.onStateChanged = [](PlaybackController::PlayerState state)
             {
                 spdlog::info("[MainComponent] Player state changed to {}", static_cast<int>(state));
                 // UI components will poll the state via timer

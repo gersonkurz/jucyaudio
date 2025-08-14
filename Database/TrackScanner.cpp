@@ -63,7 +63,7 @@ namespace jucyaudio
             spdlog::info("Determining tracks in scope for the scan...");
             const auto tracksInScope{m_db.getTracks(args)};
             spdlog::info("Found {} tracks in the database for the scan scope.", tracksInScope.size());
-            uint64_t index = 0;
+            //uint64_t index = 0;
             for (const auto &track : tracksInScope)
             {
                 if (track.is_missing)
@@ -79,7 +79,7 @@ namespace jucyaudio
                 assert(item != existingTrackCache.end() && "Track folder ID should exist in the cache now.");
                 const auto key{normalizeForCache(track.filename)};
                 item->second[key] = track.trackId;
-                ++index;
+                //++index;
             }
 
             spdlog::debug("Cache built with {} folders and {} tracks.", existingTrackCache.size(), tracksInScope.size());
@@ -180,7 +180,7 @@ namespace jucyaudio
                     spdlog::info("User opted to remove missing files. Collecting IDs for deletion...");
 
                     std::vector<TrackId> idsToDelete;
-                    for (const auto item : existingTrackCache)
+                    for (const auto& item : existingTrackCache)
                     {
                         for (const auto &track : item.second)
                         {

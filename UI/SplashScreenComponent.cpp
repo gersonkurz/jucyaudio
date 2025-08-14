@@ -52,7 +52,7 @@ namespace jucyaudio
             
             // Draw version number in bottom right
             g.setColour(juce::Colours::white);
-            g.setFont(juce::Font(16.0f));
+            g.setFont(juce::Font{juce::FontOptions{}.withHeight(24.0f)}.boldened());
             
             juce::String versionText = "v" + juce::String(PROJECT_VERSION);
             const int textWidth = 100;

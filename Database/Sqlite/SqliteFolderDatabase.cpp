@@ -35,8 +35,8 @@ namespace jucyaudio
                 return false;
             }
 
-            size_t rowCount = 0;
-            size_t lookupCacheInserts = 0;
+            //size_t rowCount = 0;
+            //size_t lookupCacheInserts = 0;
 
             // lookup list for updates of the root_path value
             std::unordered_map<FolderId, std::string> pathUpdates;
@@ -167,7 +167,7 @@ namespace jucyaudio
             SqliteStatement countStmt{m_db, "SELECT track_id, folder_id, artist_name, album_title FROM Tracks ORDER BY folder_ID ASC"};
             while (countStmt.getNextResult())
             {
-                const TrackId trackId = countStmt.getInt64(0);
+                //const TrackId trackId = countStmt.getInt64(0);
                 const FolderId folderId = countStmt.getInt64(1);
                 const std::string artistName = countStmt.getText(2);
                 const std::string albumName = countStmt.getText(3);

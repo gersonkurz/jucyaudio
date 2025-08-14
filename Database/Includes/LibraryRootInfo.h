@@ -5,7 +5,7 @@
 #include <optional>
 #include <chrono>
 
-#include <Database\Includes\FolderInfo.h>
+#include <Database/Includes/FolderInfo.h>
 
 namespace jucyaudio
 {

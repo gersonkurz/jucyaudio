@@ -95,7 +95,7 @@ namespace jucyaudio
             {
                 const auto &trackLibrary = theTrackLibrary;
                 const auto &albumManager = trackLibrary.getAlbumManager();
-                const auto &folderDb = trackLibrary.getFolderDatabase();
+                //const auto &folderDb = trackLibrary.getFolderDatabase();
 
                 // Get all albums from the database
                 m_albums = albumManager.getAllAlbums();

@@ -37,7 +37,7 @@ namespace jucyaudio
             {
                 m_trackInfosMap[ti.trackId] = &ti;
             }
-            int index = 0;
+            //int index = 0;
             
             dumpContext(__FILE__, __LINE__);
             spdlog::info("MixProjectLoader: Indexed {} track infos for mix ID {}", m_trackInfosMap.size(), m_mixId);
@@ -252,7 +252,7 @@ namespace jucyaudio
                     return false;
                 }
                 
-                int currentPos = std::distance(m_mixTracks.begin(), it);
+                //int currentPos = std::distance(m_mixTracks.begin(), it);
                 
                 // Adjust target position based on how many tracks we've already moved
                 int adjustedTarget = targetPosition;

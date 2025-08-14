@@ -401,7 +401,7 @@ namespace jucyaudio
 
         void DataViewComponent::paintCell(juce::Graphics &g, int rowNumber, int columnId, int width, int height, bool rowIsSelected)
         {
-            const auto start{std::chrono::high_resolution_clock::now()};
+            //const auto start{std::chrono::high_resolution_clock::now()};
             // columns are 1-based in the TableListBoxModel, so we need to adjust
             const int dataColumnIndex = columnId - 1;
 
@@ -443,8 +443,8 @@ namespace jucyaudio
             const float baseFontSize = 14.0f;
             g.setFont(juce::Font{juce::FontOptions{}.withHeight(baseFontSize * m_fontScale)});
             g.drawText(textToDisplay, 2, 0, width - 4, height, justification, true);
-            const auto end{std::chrono::high_resolution_clock::now()};
-            const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
+            //const auto end{std::chrono::high_resolution_clock::now()};
+            // const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
             // if (duration.count() > 100)
             //     spdlog::info("DataViewComponent::paintCell for row {} took {} us", rowNumber, duration.count());
         }

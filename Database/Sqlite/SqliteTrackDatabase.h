@@ -146,8 +146,8 @@ namespace jucyaudio
             DbResult setDBSchemaVersion(int version);
 
         // Waveform Cache
-        DbResult saveWaveform(TrackId trackId, const std::vector<unsigned char>& blob);
-        DbResult loadWaveform(TrackId trackId, std::vector<unsigned char>& blob);
+        DbResult saveWaveform(TrackId trackId, const std::vector<unsigned char>& blob) override;
+        DbResult loadWaveform(TrackId trackId, std::vector<unsigned char>& blob) override;
             DbResult runMigrations(); // Calls specific migration steps
         };
 

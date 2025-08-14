@@ -316,10 +316,10 @@ namespace jucyaudio
             : m_db{},
               m_tagManager{m_db},
               m_mixManager{m_db},
+              m_libraryRoootManager{m_db},
               m_workingSetManager{m_db},
               m_folderDatabase{m_db},
               m_markerManager{m_db},
-              m_libraryRoootManager{m_db},
               m_undoManager{m_db},
               m_mixManagerWithUndo{m_mixManager, m_undoManager},
               m_albumManager{m_db},
@@ -2322,14 +2322,9 @@ CREATE TABLE MixUndoHistory (
         {
             StringWriter sql;
             sql.append("SELECT COUNT(*) FROM Tracks WHERE folder_id IN (");
-            bool first = true;
-            for (const auto& folderId : folderIds)
+            for (size_t idx = 0; idx < folderIds.size(); ++idx)
             {
-                if (first)
-                {
-                    first = false;
-                }
-                else
+                if(idx > 0)
                 {
                     sql.append(',');
                 }

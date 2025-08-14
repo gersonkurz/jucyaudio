@@ -2,6 +2,7 @@
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/TrackLibrary.h>
+#include <Utils/AssortedUtils.h>
 #include <spdlog/spdlog.h>
 
 namespace
@@ -104,16 +105,16 @@ namespace jucyaudio
         }
 
         bool SqliteLibraryRootManager::updateScanStats(LibraryRootId rootId, 
-            std::optional<std::chrono::system_clock::time_point> scanTime)
+            std::optional<Timestamp_t> scanTime)
         {
             SqliteTransaction transaction{m_db};
             
-            const auto timestamp = scanTime.has_value() 
-                ? std::chrono::system_clock::to_time_t(scanTime.value())
-                : std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            const Timestamp_t timestamp = scanTime.has_value() 
+                ? scanTime.value()
+                : std::chrono::system_clock::now();
             
             if (transaction.execute("UPDATE LibraryRoots SET last_scanned = ? WHERE root_id = ?;", 
-                                    timestamp, rootId))
+                                    timestampToInt64(timestamp), rootId))
             {
                 if (transaction.commit())
                 {

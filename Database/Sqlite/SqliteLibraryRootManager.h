@@ -18,7 +18,7 @@ namespace jucyaudio
             bool updateRootPath(LibraryRootId rootId, std::string_view newPath) override;
             bool removeRoot(LibraryRootId rootId) override;
             bool updateScanStats(LibraryRootId rootId, 
-                std::optional<std::chrono::system_clock::time_point> scanTime = std::chrono::system_clock::now()) override;
+                std::optional<Timestamp_t> scanTime = std::chrono::system_clock::now()) override;
 
         private:
             SqliteDatabase &m_db;

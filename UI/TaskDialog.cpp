@@ -20,9 +20,9 @@ namespace jucyaudio
         TaskDialog::TaskDialog(ILongRunningTask *task, std::function<void()> onCompletion, std::optional<int> autoCloseOnSuccessDelayMs)
             : m_task{task}, // Store raw pointer
               m_onCompletion{std::move(onCompletion)},
+              m_autoCloseOnSuccessDelayMs{autoCloseOnSuccessDelayMs},
               m_lastProgressInPercent{-1},
               m_lastStatusMessage{},
-              m_autoCloseOnSuccessDelayMs{autoCloseOnSuccessDelayMs},
               // Use taskName from the task object for the title label
               m_titleLabel{"title", task ? juce::String(task->m_taskName) : "Processing Task"},
               m_statusLabel{"status", "Initializing..."},

@@ -130,6 +130,12 @@ if(WIN32)
 else()
     find_package(PkgConfig REQUIRED)
     
+    # Set ICU root path for Homebrew installation
+    set(ICU_ROOT "/opt/homebrew/opt/icu4c@77")
+    
+    # Find ICU (International Components for Unicode)
+    find_package(ICU REQUIRED COMPONENTS uc i18n)
+    
     # macOS/Linux paths (original)
     find_library(AUBIO_LIBRARY aubio PATHS /Users/gersonkurz/development/aubio_install_macos/lib)
     find_library(SPDLOG_LIBRARY spdlog PATHS /Users/gersonkurz/development/spdlog/build)

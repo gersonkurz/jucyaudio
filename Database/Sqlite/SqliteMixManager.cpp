@@ -16,6 +16,7 @@ namespace
     using namespace jucyaudio;
     using namespace jucyaudio::database;
 
+    /*
     // to_json
     void envelopePointToJson(json &j, const EnvelopePoint &ep)
     {
@@ -29,8 +30,8 @@ namespace
         ep.time = Duration_t{j.at("time_ms").get<int64_t>()};
         ep.volume = j.at("volume").get<Volume_t>();
     }
-
-    std::string envelopePointsToJson(const std::vector<EnvelopePoint> &points)
+*/
+    /*std::string envelopePointsToJson(const std::vector<EnvelopePoint> &points)
     {
         json j;
         for (const auto &point : points)
@@ -56,7 +57,7 @@ namespace
         }
         return points;
     }
-
+*/
     MixInfo mixInfoFromStatement(const SqliteStatement &stmt)
     {
         MixInfo info{};

@@ -79,7 +79,7 @@ namespace jucyaudio
              *
              * @return The ID of this track.
              */
-            const auto getTrackId() const
+            auto getTrackId() const
             {
                 return m_mixTrack.trackId;
             }

@@ -2,6 +2,7 @@
 
 #include <Database/Includes/IAlbumManager.h>
 #include <Database/Sqlite/SqliteDatabase.h>
+#include <Database/Sqlite/SqliteStatement.h>
 
 namespace jucyaudio
 {

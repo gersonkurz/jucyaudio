@@ -12,10 +12,10 @@ namespace jucyaudio
         EnhancedPlayerComponent::EnhancedPlayerComponent(PlaybackController& controller,
                                                        juce::AudioFormatManager& formatManager,
                                                        juce::AudioThumbnailCache& thumbnailCache)
-            : m_playbackController(controller),
-              m_formatManager(formatManager),
-              m_thumbnailCache(thumbnailCache),
-              m_waveformDisplay(formatManager, thumbnailCache)
+            : m_waveformDisplay{formatManager, thumbnailCache},
+              m_playbackController{controller},
+              m_formatManager{formatManager},
+              m_thumbnailCache{thumbnailCache}
         {
             loadButtonIcons();
             setupButtons();
@@ -91,7 +91,7 @@ namespace jucyaudio
         {
             auto bounds = getLocalBounds();
             const int topRowHeight = static_cast<int>(bounds.getHeight() * 0.7f);
-            const int bottomRowHeight = bounds.getHeight() - topRowHeight;
+            //const int bottomRowHeight = bounds.getHeight() - topRowHeight;
             
             auto topRow = bounds.removeFromTop(topRowHeight);
             auto bottomRow = bounds;

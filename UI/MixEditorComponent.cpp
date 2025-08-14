@@ -307,7 +307,7 @@ namespace jucyaudio
 
             // Get the current mix info and tracks
             auto &mixProjectLoader = m_node->getMixProjectLoader();
-            auto mixId = mixProjectLoader.getMixId();
+            //auto mixId = mixProjectLoader.getMixId();
             auto &mixTracks = mixProjectLoader.getMixTracks();
 
             // Get mix info from database

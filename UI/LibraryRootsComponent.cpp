@@ -51,7 +51,7 @@ namespace jucyaudio
                     auto &db = *theTrackLibrary.getTrackDatabase();
                     auto &rootManager = db.getLibraryRootManager();
                     auto &folderDb = db.getFolderDatabase();
-                    auto &albumManager = db.getAlbumManager();
+                    //auto &albumManager = db.getAlbumManager();
                     
                     // Force the folder database to rebuild its cache with updated track counts
                     folderDb.invalidateCache();
@@ -142,7 +142,7 @@ namespace jucyaudio
             m_scanButton.setEnabled(false);
 
             addAndMakeVisible(m_titleLabel);
-            m_titleLabel.setFont(juce::Font{24.0f, juce::Font::bold});
+            m_titleLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(24.0f)}.boldened());
             m_titleLabel.setJustificationType(juce::Justification::left);
 
             setWantsKeyboardFocus(true);

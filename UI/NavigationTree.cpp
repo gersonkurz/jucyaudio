@@ -73,7 +73,7 @@ namespace jucyaudio
         {
             // what to do depends entirely on the context of the operation
             bool success = false;
-            const auto nrSelectedRows{rows.size()};
+            //const auto nrSelectedRows{rows.size()};
             std::string statusMessage;
             const auto objectIds{m_dvc.getUnderlyingObjectIds(rows)};
             success = node->removeObjects(objectIds);

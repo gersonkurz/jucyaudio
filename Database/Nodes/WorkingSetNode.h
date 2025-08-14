@@ -25,7 +25,7 @@ namespace jucyaudio
             }
 
             const DataActions &getNodeActions() const override;
-            const DataActions &getRowActions(RowIndex_t rowIndex) const;
+            const DataActions &getRowActions(RowIndex_t rowIndex) const override;
             bool deleteThisObject() override; 
             bool removeObjects(const std::vector<ObjectId> &objectIds) const override;
             WorkingSetId getWorkingSetId() const override;

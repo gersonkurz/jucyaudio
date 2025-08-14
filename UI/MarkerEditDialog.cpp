@@ -9,7 +9,7 @@ namespace jucyaudio
         {
             // Title label
             m_titleLabel.setText("Marker", juce::dontSendNotification);
-            m_titleLabel.setFont(juce::Font(16.0f).withStyle(juce::Font::bold));
+            m_titleLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(24.0f)}.boldened());
             m_titleLabel.setJustificationType(juce::Justification::centred);
             addAndMakeVisible(m_titleLabel);
             
@@ -24,7 +24,7 @@ namespace jucyaudio
             m_commentEditor.setReturnKeyStartsNewLine(true);
             m_commentEditor.setPopupMenuEnabled(true);
             m_commentEditor.setScrollbarsShown(true);
-            m_commentEditor.setFont(juce::Font(14.0f));
+            m_commentEditor.setFont(juce::Font{juce::FontOptions{}.withHeight(14.0f)});
             addAndMakeVisible(m_commentEditor);
             
             // Buttons

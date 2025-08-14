@@ -2,6 +2,7 @@
 
 #include <Database/Includes/IMarkerManager.h>
 #include <Database/Sqlite/SqliteDatabase.h>
+#include <Database/Sqlite/SqliteStatement.h>
 #include <memory>
 
 namespace jucyaudio

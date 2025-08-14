@@ -14,7 +14,7 @@ namespace jucyaudio::ui
     ExportSettingsTab::ExportSettingsTab()
     {
         // Configure header
-        m_headerLabel.setFont(juce::Font(18.0f, juce::Font::bold));
+        m_headerLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(24.0f)}.boldened());
         m_headerLabel.setJustificationType(juce::Justification::centred);
         addAndMakeVisible(m_headerLabel);
         
@@ -43,7 +43,7 @@ namespace jucyaudio::ui
         m_yearEditor.setText(juce::String(1900 + tm->tm_year));
         
         // Configure note label
-        m_noteLabel.setFont(juce::Font(11.0f));
+        m_noteLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(11.0f)});
         m_noteLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
         m_noteLabel.setJustificationType(juce::Justification::centred);
         addAndMakeVisible(m_noteLabel);
@@ -134,7 +134,7 @@ namespace jucyaudio::ui
     
     GeneralSettingsTab::GeneralSettingsTab()
     {
-        m_headerLabel.setFont(juce::Font(18.0f, juce::Font::bold));
+        m_headerLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(24.0f)}.boldened());
         m_headerLabel.setJustificationType(juce::Justification::centred);
         addAndMakeVisible(m_headerLabel);
         

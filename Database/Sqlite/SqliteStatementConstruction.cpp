@@ -59,11 +59,9 @@ namespace jucyaudio
                     auto allFolderIds = folderDb.getAllChildFolders(args.folderIds);
                     
                     folderCondition.append("folder_id IN (");
-                    size_t idx = 0;
-                    for (const auto& folderId : allFolderIds)
+                    for(size_t idx = 0; idx < allFolderIds.size(); ++idx)
                     {
                         folderCondition.append(idx == 0 ? std::format("?{}", m_paramIndex++) : std::format(", ?{}", m_paramIndex++));
-                        idx++;
                     }
                     folderCondition.append(")");
                 }
