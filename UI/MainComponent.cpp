@@ -1070,9 +1070,9 @@ namespace jucyaudio
         bool MainComponent::createWorkingSetFromTrackIds(std::vector<TrackId> trackIds)
         {
             return onHandleCreateWorkingSetDialog(static_cast<int64_t>(trackIds.size()),
-                [this, trackIds](const juce::String &name)
+                [this, trackIds](const juce::String &name, WorkingSetId targetWsId)
                 {
-                    onCreateWorkingSetFromTrackIdsCallback(name, trackIds);
+                    onCreateWorkingSetFromTrackIdsCallback(name, targetWsId, trackIds);
                 });
         }
 
@@ -1089,11 +1089,41 @@ namespace jucyaudio
             }
         }
 
-        void MainComponent::onCreateWorkingSetFromTrackIdsCallback(const juce::String &name, std::vector<TrackId> trackIds)
+        void MainComponent::onCreateWorkingSetFromTrackIdsCallback(const juce::String &name, WorkingSetId targetWsId, std::vector<TrackId> trackIds)
         {
             WorkingSetInfo workingSetInfo;
-            onCommonCreateWorkingSetCallback(
-                theTrackLibrary.getWorkingSetManager().createWorkingSetFromTrackIds(trackIds, name.toStdString(), workingSetInfo), workingSetInfo);
+            
+            if (targetWsId == -1)
+            {
+                // Create new working set
+                onCommonCreateWorkingSetCallback(
+                    theTrackLibrary.getWorkingSetManager().createWorkingSetFromTrackIds(trackIds, name.toStdString(), workingSetInfo), workingSetInfo);
+            }
+            else
+            {
+                // Append to existing working set
+                bool success = theTrackLibrary.getWorkingSetManager().addToWorkingSet(targetWsId, trackIds);
+                if (success)
+                {
+                    // Get the working set name for the success message
+                    auto workingSets = theTrackLibrary.getWorkingSetManager().getWorkingSets({});
+                    auto it = std::find_if(workingSets.begin(), workingSets.end(), 
+                        [targetWsId](const WorkingSetInfo& ws) { return ws.id == targetWsId; });
+                    
+                    if (it != workingSets.end())
+                    {
+                        workingSetInfo = *it;
+                        m_statusPanel.getStatusBar().postMessage(
+                            std::format("Added {} tracks to working set '{}'", trackIds.size(), workingSetInfo.name), false);
+                        // Refresh the working set node to show the new track count
+                        m_navigationTree.onWorkingSetCreated(targetWsId);
+                    }
+                }
+                else
+                {
+                    m_statusPanel.getStatusBar().postMessage("Failed to append tracks to working set", true);
+                }
+            }
         }
 
         bool MainComponent::createWorkingSetFromNode(const INavigationNode *node)
@@ -1106,9 +1136,9 @@ namespace jucyaudio
             }
             node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid during working set creation
             return onHandleCreateWorkingSetDialog(trackCount,
-                [this, node](const juce::String &name)
+                [this, node](const juce::String &name, WorkingSetId targetWsId)
                 {
-                    onCreateWorkingSetFromNodeCallback(name, node);
+                    onCreateWorkingSetFromNodeCallback(name, targetWsId, node);
                     node->release(REFCOUNT_DEBUG_ARGS); // Release the node after working set creation
                 });
         }
@@ -1131,25 +1161,56 @@ namespace jucyaudio
             return true;
         }
 
-        void MainComponent::onCreateWorkingSetFromNodeCallback(const juce::String &name, const INavigationNode *node)
+        void MainComponent::onCreateWorkingSetFromNodeCallback(const juce::String &name, WorkingSetId targetWsId, const INavigationNode *node)
         {
             assert(node != nullptr);
             WorkingSetInfo workingSetInfo;
 
-            // Check if this is a VirtualFolderNode
-            if (const auto *virtualFolderNode = dynamic_cast<const VirtualFolderNode *>(node))
+            if (targetWsId == -1)
             {
-                // Use the new recursive method for virtual folders
-                onCommonCreateWorkingSetCallback(theTrackLibrary.getWorkingSetManager().createWorkingSetFromVirtualFolder(
-                                                     virtualFolderNode->getFolderId(), name.toStdString(), workingSetInfo, true),
-                    workingSetInfo);
+                // Create new working set
+                // Check if this is a VirtualFolderNode
+                if (const auto *virtualFolderNode = dynamic_cast<const VirtualFolderNode *>(node))
+                {
+                    // Use the new recursive method for virtual folders
+                    onCommonCreateWorkingSetCallback(theTrackLibrary.getWorkingSetManager().createWorkingSetFromVirtualFolder(
+                                                         virtualFolderNode->getFolderId(), name.toStdString(), workingSetInfo, true),
+                        workingSetInfo);
+                }
+                else
+                {
+                    // Use the standard query-based method for other nodes
+                    onCommonCreateWorkingSetCallback(
+                        theTrackLibrary.getWorkingSetManager().createWorkingSetFromQuery(*node->getQueryArgs(), name.toStdString(), workingSetInfo),
+                        workingSetInfo);
+                }
             }
             else
             {
-                // Use the standard query-based method for other nodes
-                onCommonCreateWorkingSetCallback(
-                    theTrackLibrary.getWorkingSetManager().createWorkingSetFromQuery(*node->getQueryArgs(), name.toStdString(), workingSetInfo),
-                    workingSetInfo);
+                // Append to existing working set
+                auto trackIds = node->getAllTrackIds();
+                bool success = theTrackLibrary.getWorkingSetManager().addToWorkingSet(targetWsId, trackIds);
+                
+                if (success)
+                {
+                    // Get the working set name for the success message
+                    auto workingSets = theTrackLibrary.getWorkingSetManager().getWorkingSets({});
+                    auto it = std::find_if(workingSets.begin(), workingSets.end(), 
+                        [targetWsId](const WorkingSetInfo& ws) { return ws.id == targetWsId; });
+                    
+                    if (it != workingSets.end())
+                    {
+                        workingSetInfo = *it;
+                        m_statusPanel.getStatusBar().postMessage(
+                            std::format("Added {} tracks to working set '{}'", trackIds.size(), workingSetInfo.name), false);
+                        // Refresh the working set node to show the new track count
+                        m_navigationTree.onWorkingSetCreated(targetWsId);
+                    }
+                }
+                else
+                {
+                    m_statusPanel.getStatusBar().postMessage("Failed to append tracks to working set", true);
+                }
             }
         }
 

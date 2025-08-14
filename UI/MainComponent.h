@@ -104,9 +104,9 @@ namespace jucyaudio
             // working set management -------------------------------
             bool createWorkingSet();
             bool createWorkingSetFromTrackIds(std::vector<TrackId> trackIds);
-            void onCreateWorkingSetFromTrackIdsCallback(const juce::String &name, std::vector<TrackId> trackIds);
+            void onCreateWorkingSetFromTrackIdsCallback(const juce::String &name, WorkingSetId targetWsId, std::vector<TrackId> trackIds);
             bool createWorkingSetFromNode(const INavigationNode *node);
-            void onCreateWorkingSetFromNodeCallback(const juce::String &name, const INavigationNode *node);
+            void onCreateWorkingSetFromNodeCallback(const juce::String &name, WorkingSetId targetWsId, const INavigationNode *node);
             void onCommonCreateWorkingSetCallback(bool success, const WorkingSetInfo &workingSetInfo);
             void onMixCreatedCallback(bool success, const MixInfo &mixInfo);
             bool onHandleCreateWorkingSetDialog(int64_t trackCount, OnCreateWorkingSetCallback callback);
