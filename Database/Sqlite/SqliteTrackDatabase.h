@@ -44,6 +44,9 @@ namespace jucyaudio
             DbResult createTablesIfNeeded() override;
             // int getCurrentSchemaVersion() override; // Implementation for schema versioning
             // DbResult upgradeSchemaTo(int targetVersion) override;
+            
+            // WAV metadata enrichment (called during maintenance)
+            bool enrichWavMetadata(std::atomic<bool> &shouldCancel);
 
             // Path Reconstruction (NEW)
             std::filesystem::path reconstructFullPath(const TrackInfo &trackInfo) const override;

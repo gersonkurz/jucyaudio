@@ -2,6 +2,7 @@
 #include <Database/Sqlite/SqliteStatementConstruction.h>
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
+#include <Database/TrackLibrary.h>
 #include <Utils/AssortedUtils.h>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -49,12 +50,34 @@ namespace jucyaudio
             if (!args.folderIds.empty())
             {
                 StringWriter folderCondition;
-                folderCondition.append("folder_id IN (");
-                for (size_t i = 0; i < args.folderIds.size(); ++i)
+                
+                if (args.recursive)
                 {
-                    folderCondition.append(i == 0 ? std::format("?{}", m_paramIndex++) : std::format(", ?{}", m_paramIndex++));
+                    // When recursive, we need to get all child folders too
+                    // Import necessary header at top of file for folder database access
+                    const auto& folderDb = theTrackLibrary.getFolderDatabase();
+                    auto allFolderIds = folderDb.getAllChildFolders(args.folderIds);
+                    
+                    folderCondition.append("folder_id IN (");
+                    size_t idx = 0;
+                    for (const auto& folderId : allFolderIds)
+                    {
+                        folderCondition.append(idx == 0 ? std::format("?{}", m_paramIndex++) : std::format(", ?{}", m_paramIndex++));
+                        idx++;
+                    }
+                    folderCondition.append(")");
                 }
-                folderCondition.append(")");
+                else
+                {
+                    // Non-recursive: just use the provided folder IDs
+                    folderCondition.append("folder_id IN (");
+                    for (size_t i = 0; i < args.folderIds.size(); ++i)
+                    {
+                        folderCondition.append(i == 0 ? std::format("?{}", m_paramIndex++) : std::format(", ?{}", m_paramIndex++));
+                    }
+                    folderCondition.append(")");
+                }
+                
                 const auto conditionAsString{folderCondition.asString()};
                 addCondition(conditionAsString);
             }
@@ -107,9 +130,27 @@ namespace jucyaudio
             {
                 m_stmt.addParam(args.mixId);
             }
-            for (const auto &folderId : args.folderIds)
+            // For folder IDs, we need to handle recursive case differently
+            if (!args.folderIds.empty())
             {
-                m_stmt.addParam(folderId);
+                if (args.recursive)
+                {
+                    // When recursive, bind all child folder IDs
+                    const auto& folderDb = theTrackLibrary.getFolderDatabase();
+                    auto allFolderIds = folderDb.getAllChildFolders(args.folderIds);
+                    for (const auto &folderId : allFolderIds)
+                    {
+                        m_stmt.addParam(folderId);
+                    }
+                }
+                else
+                {
+                    // Non-recursive: just bind the provided folder IDs
+                    for (const auto &folderId : args.folderIds)
+                    {
+                        m_stmt.addParam(folderId);
+                    }
+                }
             }
             return true;
         }

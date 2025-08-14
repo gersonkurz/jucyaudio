@@ -9,6 +9,7 @@
 #include <Utils/StringWriter.h>
 #include <algorithm> // For std::reverse
 #include <cassert>   // For assert
+#include <cctype>    // For ::isdigit
 #include <ranges>
 #include <spdlog/spdlog.h>
 #include <unordered_map>
@@ -557,6 +558,13 @@ namespace jucyaudio
                     spdlog::error("Maintenance task failed: {}", m_lastErrorMessage);
                     return false;
                 }
+            }
+            
+            // Run WAV metadata enrichment
+            spdlog::info("Running WAV metadata enrichment...");
+            if (!enrichWavMetadata(shouldCancel))
+            {
+                spdlog::warn("WAV metadata enrichment failed, but continuing maintenance.");
             }
             
             spdlog::info("Database maintenance tasks completed successfully.");
@@ -2437,6 +2445,213 @@ CREATE TABLE MixUndoHistory (
             }
             
             return DbResult::failure(DbResultStatus::ErrorGeneric, "No waveform found in cache.");
+        }
+        
+        bool SqliteTrackDatabase::enrichWavMetadata(std::atomic<bool> &shouldCancel)
+        {
+            if (!isOpen())
+            {
+                spdlog::error("Database not open for WAV metadata enrichment.");
+                return false;
+            }
+            
+            // Query all WAV files with missing metadata
+            const auto sql = R"SQL(
+                SELECT track_id, filename, title, artist_name, album_title, folder_id
+                FROM Tracks 
+                WHERE (filename LIKE '%.wav' OR filename LIKE '%.WAV')
+                AND (title IS NULL OR title = '' 
+                     OR artist_name IS NULL OR artist_name = ''
+                     OR album_title IS NULL OR album_title = '')
+            )SQL";
+            
+            SqliteStatement stmt{m_db, sql};
+            if (!stmt.isValid())
+            {
+                spdlog::error("Failed to prepare WAV enrichment query: {}", m_db.getLastError());
+                return false;
+            }
+            
+            std::vector<std::tuple<TrackId, std::string, std::string, std::string>> updates;
+            int processedCount = 0;
+            int updatedCount = 0;
+            
+            while (stmt.getNextResult() && !shouldCancel)
+            {
+                const auto trackId = stmt.getInt32(0);
+                const auto filename = stmt.getText(1);
+                auto title = stmt.isNull(2) ? "" : stmt.getText(2);
+                auto artist = stmt.isNull(3) ? "" : stmt.getText(3);
+                auto album = stmt.isNull(4) ? "" : stmt.getText(4);
+                const auto folderId = stmt.getInt32(5);
+                
+                processedCount++;
+                bool needsUpdate = false;
+                
+                // Get folder info for context
+                const auto folderPath = reconstructFullPath(folderId);
+                const auto folderName = folderPath.filename().string();
+                
+                // Extract title from filename if missing
+                if (title.empty())
+                {
+                    auto stem = std::filesystem::path(filename).stem().string();
+                    
+                    // Clean up common WAV naming patterns
+                    // Remove track number prefix like "01-" or "A1-"
+                    if (stem.length() > 2 && (stem[2] == '-' || stem[2] == '_'))
+                    {
+                        stem = stem.substr(3);
+                    }
+                    
+                    // Remove common suffixes
+                    const std::vector<std::string> suffixes = {
+                        "dither", "_master", "_final", "_mix", "_mastered", 
+                        "-master", "-final", "-mix", "-mastered"
+                    };
+                    for (const auto& suffix : suffixes)
+                    {
+                        const auto pos = stem.rfind(suffix);
+                        if (pos != std::string::npos)
+                        {
+                            stem = stem.substr(0, pos);
+                            // Trim trailing underscore or dash
+                            if (!stem.empty() && (stem.back() == '_' || stem.back() == '-'))
+                            {
+                                stem.pop_back();
+                            }
+                        }
+                    }
+                    
+                    title = stem;
+                    needsUpdate = true;
+                }
+                
+                // Extract album from folder if missing
+                if (album.empty() && !folderName.empty())
+                {
+                    album = folderName;
+                    needsUpdate = true;
+                }
+                
+                // Try to extract artist from folder structure
+                if (artist.empty() && !folderName.empty())
+                {
+                    // Common patterns: "Artist - Album", "Artist_-_Album", "Artist - Album - Year"
+                    size_t separatorPos = folderName.find(" - ");
+                    if (separatorPos == std::string::npos)
+                    {
+                        separatorPos = folderName.find("_-_");
+                    }
+                    
+                    if (separatorPos != std::string::npos)
+                    {
+                        artist = folderName.substr(0, separatorPos);
+                        
+                        // Update album to just the album part if it was the full folder name
+                        if (album == folderName && separatorPos + 3 < folderName.length())
+                        {
+                            auto albumPart = folderName.substr(separatorPos + 3);
+                            
+                            // Remove year suffix if present (e.g., " - 2020")
+                            const auto lastDash = albumPart.rfind(" - ");
+                            if (lastDash != std::string::npos && lastDash + 3 < albumPart.length())
+                            {
+                                // Check if what follows is a year (4 digits)
+                                const auto possibleYear = albumPart.substr(lastDash + 3);
+                                if (possibleYear.length() == 4 && 
+                                    std::all_of(possibleYear.begin(), possibleYear.end(), ::isdigit))
+                                {
+                                    albumPart = albumPart.substr(0, lastDash);
+                                }
+                            }
+                            
+                            album = albumPart;
+                        }
+                        needsUpdate = true;
+                    }
+                }
+                
+                if (needsUpdate)
+                {
+                    updates.emplace_back(trackId, title, artist, album);
+                    updatedCount++;
+                    
+                    spdlog::debug("WAV enrichment: {} -> Title: '{}', Artist: '{}', Album: '{}'",
+                        filename, title, artist, album);
+                }
+                
+                // Log progress every 100 files
+                if (processedCount % 100 == 0)
+                {
+                    spdlog::info("WAV enrichment progress: {} files processed, {} updated",
+                        processedCount, updatedCount);
+                }
+            }
+            
+            // Apply updates in a transaction
+            if (!updates.empty() && !shouldCancel)
+            {
+                if (SqliteTransaction transaction{m_db})
+                {
+                    const auto updateSql = R"SQL(
+                        UPDATE Tracks 
+                        SET title = ?, artist_name = ?, album_title = ?
+                        WHERE track_id = ?
+                    )SQL";
+                    
+                    SqliteStatement updateStmt{m_db, updateSql};
+                    if (!updateStmt.isValid())
+                    {
+                        spdlog::error("Failed to prepare update statement: {}", m_db.getLastError());
+                        transaction.rollback();
+                        return false;
+                    }
+                    
+                    for (const auto& [trackId, title, artist, album] : updates)
+                    {
+                        if (shouldCancel)
+                        {
+                            transaction.rollback();
+                            return false;
+                        }
+                        
+                        updateStmt.reset();
+                        updateStmt.addParam(title);
+                        updateStmt.addParam(artist);
+                        updateStmt.addParam(album);
+                        updateStmt.addParam(trackId);
+                        
+                        if (!updateStmt.execute())
+                        {
+                            spdlog::error("Failed to update track {}: {}", trackId, m_db.getLastError());
+                            transaction.rollback();
+                            return false;
+                        }
+                    }
+                    
+                    if (!transaction.commit())
+                    {
+                        spdlog::error("Failed to commit WAV enrichment transaction: {}", m_db.getLastError());
+                        return false;
+                    }
+                    
+                    spdlog::info("WAV metadata enrichment completed: {} files processed, {} updated",
+                        processedCount, updatedCount);
+                }
+            }
+            else if (shouldCancel)
+            {
+                spdlog::info("WAV metadata enrichment cancelled: {} files processed, {} pending updates discarded",
+                    processedCount, updatedCount);
+                return false;
+            }
+            else
+            {
+                spdlog::info("WAV metadata enrichment: {} files checked, none needed updates", processedCount);
+            }
+            
+            return true;
         }
 
     } // namespace database
