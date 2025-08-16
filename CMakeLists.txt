@@ -157,6 +157,7 @@ juce_add_gui_app(jucyaudio
     PRODUCT_NAME "jucyaudio"
     BUNDLE_ID "com.p-nand-q.jucyaudio"
     VERSION 0.4.0
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Assets/JucyAudio.icns"
 )
 
 # Platform-specific deployment target

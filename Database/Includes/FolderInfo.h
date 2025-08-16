@@ -23,8 +23,12 @@ namespace jucyaudio
             /// @brief The name of this specific folder (e.g., "2025" or "Vaporwave").
             std::string name;
 
-            /// @brief The full path of this folder on the filesystem.
+            /// @brief The full path of this folder on the filesystem (normalized for cache lookups).
             std::string path;
+
+            /// @brief The actual case-preserving path of this folder (for file operations).
+            /// If empty, falls back to using the normalized path.
+            std::string actualPath;
 
             /// @brief The total number of tracks in this folder and all its subfolders.
             int64_t trackCount{-1}; 

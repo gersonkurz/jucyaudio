@@ -28,7 +28,7 @@ namespace jucyaudio
             m_folderInfoFromId.clear();
             m_idFromFolderPath.clear();
 
-            SqliteStatement stmt{m_db, "SELECT folder_id, parent_id, name, root_path FROM Folders;"};
+            SqliteStatement stmt{m_db, "SELECT folder_id, parent_id, name, root_path, actual_path FROM Folders;"};
             if (!stmt.isValid())
             {
                 spdlog::error("buildCacheIfNeeded: Failed to prepare statement. DB error: {}", m_db.getLastError());
@@ -50,6 +50,7 @@ namespace jucyaudio
                 info.parentId = stmt.isNull(1) ? -1 : stmt.getInt64(1);
                 info.name = stmt.getText(2);
                 info.path = stmt.isNull(3) ? "" : stmt.getText(3);
+                info.actualPath = stmt.isNull(4) ? "" : stmt.getText(4);
                 info.trackCount = 0;
 
                 m_folderInfoFromId[info.folderId] = info;
@@ -436,7 +437,7 @@ namespace jucyaudio
                 return false;
             }
 
-            const char *sql = "INSERT INTO Folders (parent_id, name, root_path) VALUES (?, ?, ?);";
+            const char *sql = "INSERT INTO Folders (parent_id, name, root_path, actual_path) VALUES (?, ?, ?, ?);";
             SqliteStatement stmt{m_db, sql};
             if (!stmt.isValid())
             {
@@ -447,6 +448,7 @@ namespace jucyaudio
             (folder.parentId > 0) ? stmt.addParam(folder.parentId) : stmt.addNullParam();
             stmt.addParam(folder.name);
             stmt.addParam(folder.path);
+            stmt.addParam(folder.actualPath.empty() ? folder.path : folder.actualPath); // If no actual path, use normalized
 
             if (!stmt.execute())
             {
@@ -539,7 +541,7 @@ namespace jucyaudio
         {
             assert(folder.isValid() && "FolderInfo must be valid for updateFolder");
 
-            const char *sql = "UPDATE Folders SET parent_id = ?, name = ?, root_path = ? WHERE folder_id = ?;";
+            const char *sql = "UPDATE Folders SET parent_id = ?, name = ?, root_path = ?, actual_path = ? WHERE folder_id = ?;";
             SqliteStatement stmt{m_db, sql};
             if (!stmt.isValid())
             {
@@ -550,6 +552,7 @@ namespace jucyaudio
             (folder.parentId != -1) ? stmt.addParam(folder.parentId) : stmt.addNullParam();
             stmt.addParam(folder.name);
             stmt.addParam(folder.path);
+            stmt.addParam(folder.actualPath.empty() ? folder.path : folder.actualPath);
             stmt.addParam(folder.folderId);
 
             if (!stmt.execute())
@@ -576,6 +579,27 @@ namespace jucyaudio
             const auto item{m_idFromFolderPath.find(key)};
             if (item != m_idFromFolderPath.end())
             {
+                // Found existing folder - check if we need to update actual_path
+                FolderId existingId = item->second;
+                auto folderIt = m_folderInfoFromId.find(existingId);
+                if (folderIt != m_folderInfoFromId.end() && folderIt->second.actualPath.empty())
+                {
+                    // Update the actual_path for this folder
+                    std::string actualPath = pathToString(path);
+                    spdlog::debug("Updating actual_path for folder {} to '{}'", existingId, actualPath);
+                    
+                    SqliteStatement stmt{m_db, "UPDATE Folders SET actual_path = ? WHERE folder_id = ?;"};
+                    if (stmt.isValid())
+                    {
+                        stmt.addParam(actualPath);
+                        stmt.addParam(existingId);
+                        if (stmt.execute())
+                        {
+                            // Update the cache
+                            folderIt->second.actualPath = actualPath;
+                        }
+                    }
+                }
                 return item->second;
             }
 
@@ -606,6 +630,7 @@ namespace jucyaudio
                 newFolder.name = key;
             }
             newFolder.path = key;
+            newFolder.actualPath = pathToString(path); // Store the actual case-preserving path
             newFolder.trackCount = -1; // not yet known - will be calculated later
             if (addFolder(newFolder))
             {

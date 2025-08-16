@@ -326,7 +326,23 @@ The application now operates on the following principles:
     *   Added updateAlbumBitrate() method to IAlbumManager interface
     *   Migration handles existing databases gracefully
 
-## 18. Next Session TODO:
+## 18. Session Notes: macOS Platform & Icon Issue (2025-08-14)
+
+*   **macOS Compilation Fix:**
+    *   Fixed path separator issue in LibraryRootInfo.h (backslashes to forward slashes)
+    *   Resolved database migration crash from old v1 database by starting fresh
+    
+*   **Application Icon Implementation (In Progress):**
+    *   Created .icns file from orange-jucyaudio-logo.png with all required resolutions
+    *   Multiple attempts to integrate icon into macOS app bundle:
+        - Tried JUCE's ICON_BIG parameter in CMakeLists.txt
+        - Attempted manual Info.plist modification
+        - Created icon with both white and transparent padding
+    *   **Current Issue:** Icon appears black/invisible instead of orange
+    *   **Root Cause:** Original PNG lacks proper alpha channel or needs specific format
+    *   **Status:** Postponed - requires properly formatted square PNG (1024x1024) with transparent background
+    
+## 19. Next Session TODO:
 
 ### High Priority:
 1.  **FLAC Support:** 

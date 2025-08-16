@@ -44,6 +44,7 @@ namespace
             name        TEXT NOT NULL,
             root_path   TEXT,
             track_count INTEGER,
+            actual_path TEXT,
             FOREIGN KEY (parent_id) REFERENCES Folders(folder_id) ON DELETE CASCADE
         );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_folders_parent_name ON Folders(parent_id, name);",
@@ -580,7 +581,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 14;
+            const int latestSchemaVersion = 15;
 
             if (currentVersion == 0)
             {
@@ -645,6 +646,12 @@ namespace jucyaudio
             {
                 spdlog::error("reconstructFullPath FAIL: Could not find folder with ID {}.", folderId);
                 return {};
+            }
+            
+            // Use actual_path if available, otherwise fall back to normalized path
+            if (!folderOpt->actualPath.empty())
+            {
+                return folderOpt->actualPath;
             }
             return folderOpt->path;
         }
@@ -1633,6 +1640,57 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 14;
+            }
+
+            if (currentVersion < 15)
+            {
+                spdlog::info("Migrating database from version 14 to 15 - Adding actual_path column to Folders table...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Add actual_path column to Folders table to store case-preserving paths
+                    const char* addActualPathColumn = R"SQL(
+                        ALTER TABLE Folders ADD COLUMN actual_path TEXT;
+                    )SQL";
+
+                    if (!m_db.execute(addActualPathColumn))
+                    {
+                        const auto error{m_db.getLastError()};
+                        // Check if column already exists (some databases might have been partially migrated)
+                        if (error.find("duplicate column name") == std::string::npos)
+                        {
+                            spdlog::error("Failed to add actual_path column to Folders table: {}", error);
+                            return DbResult::failure(DbResultStatus::ErrorDB, "Failed to add actual_path column: " + error);
+                        }
+                        else
+                        {
+                            spdlog::info("actual_path column already exists, continuing migration.");
+                        }
+                    }
+
+                    // Update schema version
+                    if (auto result = setDBSchemaVersion(15); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 15.");
+                    }
+
+                    if (transaction.commit())
+                    {
+                        spdlog::info("Migration to version 15 completed successfully.");
+                        spdlog::info("Note: actual_path will be populated during the next library scan.");
+                    }
+                    else
+                    {
+                        const auto error{m_db.getLastError()};
+                        spdlog::error("Failed to commit migration transaction: {}", error);
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration: " + error);
+                    }
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 15;
             }
 
             return DbResult::success();

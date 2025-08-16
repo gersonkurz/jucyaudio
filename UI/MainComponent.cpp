@@ -905,8 +905,19 @@ namespace jucyaudio
                 m_statusPanel.getStatusBar().postMessage("No track info available for row: " + std::to_string(rowIndex), true);
                 return;
             }
+            
+            spdlog::info("playDataRow: trackId={}, filename={}, folderId={}", 
+                track->trackId, track->filename, track->folderId);
+            
             const auto trackPath{track->reconstructFullPath()};
+            
+            spdlog::info("playDataRow: reconstructed path = '{}'", trackPath.string());
+            
             juce::File audioFile{jucePathFromFs(trackPath)};
+            
+            spdlog::info("playDataRow: juce::File path = '{}', exists = {}", 
+                audioFile.getFullPathName().toStdString(), audioFile.existsAsFile());
+            
             if (audioFile.existsAsFile())
             {
                 // Stop any mix playback before starting single track
