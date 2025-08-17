@@ -3,27 +3,27 @@
 #include <Database/BackgroundTasks/BpmAnalysis.h>
 #include <Database/BackgroundTasks/BpmAnalysisTask.h>
 #include <Database/Includes/MixInfo.h>
+#include <Database/Nodes/AlbumsNode.h>
 #include <Database/Nodes/MixNode.h>
 #include <Database/Nodes/RootNode.h>
 #include <Database/Nodes/TypedOverviewNode.h>
-#include <Database/Nodes/WorkingSetNode.h>
 #include <Database/Nodes/VirtualFolderNode.h>
 #include <Database/Nodes/VirtualFoldersOverview.h>
-#include <Database/Nodes/AlbumsNode.h>
+#include <Database/Nodes/WorkingSetNode.h>
+#include <UI/AboutDialog.h>
 #include <UI/ColumnConfiguratorDialog.h>
 #include <UI/CreateMixDialogComponent.h>
-#include <UI/ExportMixDialog.h>
-#include <UI/AboutDialog.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/EditMixMetaDataDialog.h>
 #include <UI/EditWorkingSetMetaDataDialog.h>
+#include <UI/ExportMixDialog.h>
 #include <UI/ILongRunningTask.h>
+#include <UI/LibraryRootsComponent.h>
 #include <UI/MainComponent.h>
 #include <UI/MarkerEditDialog.h>
-#include <UI/LibraryRootsComponent.h>
+#include <UI/Settings.h>
 #include <UI/SettingsDialog.h>
 #include <UI/TaskDialog.h>
-#include <UI/Settings.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
 #include <algorithm>
@@ -81,18 +81,18 @@ namespace jucyaudio
               m_enhancedPlayer{m_playbackController, m_audioFormatManager, m_audioThumbnailCache},
               m_statusPanel{*this}
         {
-                  theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
+            theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
 
             // Register audio formats
             m_audioFormatManager.registerBasicFormats();
-            
+
             // Set up state change callback
             m_playbackController.onStateChanged = [](PlaybackController::PlayerState state)
             {
                 spdlog::info("[MainComponent] Player state changed to {}", static_cast<int>(state));
                 // UI components will poll the state via timer
             };
-            
+
             // Set up mix editor to use the unified playback controller
             m_mixEditorComponent.setPlaybackController(&m_playbackController);
 
@@ -204,18 +204,18 @@ namespace jucyaudio
 
             menuManager.registerMenu("View",
                 {{"Configure Columns...",
-                    "Configure columns for the current view",
-                    [&]()
-                    {
-                        onShowConfigureColumnsDialog();
-                    }},
-                 {"-"},  // Separator
-                 {"Settings...",
-                    "Open application settings",
-                    [&]()
-                    {
-                        SettingsDialog::showSettingsDialog(this);
-                    }}});
+                     "Configure columns for the current view",
+                     [&]()
+                     {
+                         onShowConfigureColumnsDialog();
+                     }},
+                    {"-"}, // Separator
+                    {"Settings...",
+                        "Open application settings",
+                        [&]()
+                        {
+                            SettingsDialog::showSettingsDialog(this);
+                        }}});
 
             // 2. Define dynamic theme submenu
             std::vector<MenuItem> themeItems;
@@ -576,7 +576,7 @@ namespace jucyaudio
                 updateTrackCountStatus();
             }
             // UI will update via timer in EnhancedPlayerComponent // Update play button enable
-                                               // state
+            // state
             const auto end{std::chrono::high_resolution_clock::now()};
             const auto duration{std::chrono::duration_cast<std::chrono::milliseconds>(end - start)};
             spdlog::info("MainComponent::handleNodeSelection took {} ms", duration.count());
@@ -644,7 +644,7 @@ namespace jucyaudio
                 {
                     m_playbackController.stop();
                 }
-                
+
                 m_statusPanel.getStatusBar().postMessage(
                     getSafeDisplayText("Playing: " + audioFile.getFileName() + " from " + juce::String(startPosition, 1) + "s"), false);
 
@@ -703,6 +703,9 @@ namespace jucyaudio
             {
             case DataAction::CreateWorkingSet:
                 createWorkingSet();
+                break;
+            case DataAction::RemoveDuplicates:
+                onRemoveDuplicates(m_currentNode);
                 break;
             case DataAction::CreateMix:
                 createMix();
@@ -800,6 +803,94 @@ namespace jucyaudio
                     {
                         showBadFilesDialog(badFiles);
                     }
+                });
+            task->release(REFCOUNT_DEBUG_ARGS);
+        }
+
+        void MainComponent::onRemoveDuplicates(INavigationNode *node)
+        {
+            if (!node)
+                return;
+
+            const auto workingSetId = node->getWorkingSetId();
+            if (workingSetId <= 0)
+            {
+                m_statusPanel.getStatusBar().postMessage("No working set to analyze.", true);
+                return;
+            }
+
+            class RemoveDuplicatesFromWorkingSet : public ILongRunningTask
+            {
+            public:
+                RemoveDuplicatesFromWorkingSet(WorkingSetId workingSetId)
+                    : ILongRunningTask{"Remove duplicates from working set", true},
+                      m_workingSetId{workingSetId}
+                {
+                }
+            private:
+
+                ~RemoveDuplicatesFromWorkingSet() override
+                {
+                }
+            
+                static std::string createUniqueTrackKey(const TrackInfo& ti)
+                {
+                    return std::format("{}/{}/{}/{}/{}", ti.artist_name, ti.album_title, ti.title, ti.bpm.has_value() ? *ti.bpm : 0, ti.duration);
+                }
+
+                void run(ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel) override
+                {
+                    // Step 1: Finalize the mix (prune working set, update status)
+                    progressCb(-1, "Removing tracks from working set");
+                    if (shouldCancel)
+                    {
+                        completionCb(false, "Cancelled before finalization.");
+                        return;
+                    }
+
+                    TrackQueryArgs tqa{};
+                    tqa.workingSetId = m_workingSetId;
+                    tqa.usePaging = false;
+                    const auto allTracks{ theTrackLibrary.getTrackDatabase()->getTracks(tqa) };
+                    spdlog::info("Found a total of {} tracks in working set {}", allTracks.size(), m_workingSetId);
+
+                    std::vector<TrackId> trackIdsToRemove;
+
+                    std::unordered_set<std::string> uniqueTrackKeys;
+                    for (const auto &track : allTracks)
+                    {
+                        const auto uniqueTrackKey{createUniqueTrackKey(track)};
+                        if(uniqueTrackKeys.contains(uniqueTrackKey))
+                        {
+                            // Duplicate found, remove it
+                            trackIdsToRemove.push_back(track.trackId);
+                        }
+                        else
+                        {
+                            // Track is unique, keep it
+                            uniqueTrackKeys.insert(uniqueTrackKey);
+                        }
+                    }
+                    spdlog::info("Found {} duplicates in working set {}", trackIdsToRemove.size(), m_workingSetId);
+                    if(!trackIdsToRemove.empty())
+                    {
+                        theTrackLibrary.getWorkingSetManager().removeTracksFromWorkingSet(m_workingSetId, trackIdsToRemove);
+                    }
+                }
+
+
+            private:
+                const WorkingSetId m_workingSetId;
+            };
+
+            auto *task = new RemoveDuplicatesFromWorkingSet(workingSetId);
+            TaskDialog::launch("Removing Duplicates",
+                task,
+                500,
+                this,
+                [this]()
+                {
+                    m_dataViewComponent.refreshView();
                 });
             task->release(REFCOUNT_DEBUG_ARGS);
         }
@@ -904,19 +995,17 @@ namespace jucyaudio
                 m_statusPanel.getStatusBar().postMessage("No track info available for row: " + std::to_string(rowIndex), true);
                 return;
             }
-            
-            spdlog::info("playDataRow: trackId={}, filename={}, folderId={}", 
-                track->trackId, track->filename, track->folderId);
-            
+
+            spdlog::info("playDataRow: trackId={}, filename={}, folderId={}", track->trackId, track->filename, track->folderId);
+
             const auto trackPath{track->reconstructFullPath()};
-            
+
             spdlog::info("playDataRow: reconstructed path = '{}'", trackPath.string());
-            
+
             juce::File audioFile{jucePathFromFs(trackPath)};
-            
-            spdlog::info("playDataRow: juce::File path = '{}', exists = {}", 
-                audioFile.getFullPathName().toStdString(), audioFile.existsAsFile());
-            
+
+            spdlog::info("playDataRow: juce::File path = '{}', exists = {}", audioFile.getFullPathName().toStdString(), audioFile.existsAsFile());
+
             if (audioFile.existsAsFile())
             {
                 // Stop any mix playback before starting single track
@@ -924,7 +1013,7 @@ namespace jucyaudio
                 {
                     m_playbackController.stop();
                 }
-                
+
                 // uncomment this line, and you get the exceptio
                 m_statusPanel.getStatusBar().postMessage(getSafeDisplayText("Playing: " + audioFile.getFileName()), false);
                 if (!m_playbackController.loadAndPlayFile(audioFile))
@@ -975,18 +1064,19 @@ namespace jucyaudio
 
                 // Use the new locking mechanism in the playback controller
                 bool removalSuccess = false;
-                m_playbackController.withMixEngineLock([&]()
-                {
-                    removalSuccess = m_navigationTree.removeObjectsForRows(dc->node, dc->selectedRows);
-                    if (removalSuccess)
+                m_playbackController.withMixEngineLock(
+                    [&]()
                     {
-                        statusMessage = std::format("Removed tracks from {} {}", dc->node->m_refTypeNameForSingleObject, dc->node->getName());
-                    }
-                    else
-                    {
-                        statusMessage = std::format("Failed to remove tracks from {} {}", dc->node->m_refTypeNameForSingleObject, dc->node->getName());
-                    }
-                });
+                        removalSuccess = m_navigationTree.removeObjectsForRows(dc->node, dc->selectedRows);
+                        if (removalSuccess)
+                        {
+                            statusMessage = std::format("Removed tracks from {} {}", dc->node->m_refTypeNameForSingleObject, dc->node->getName());
+                        }
+                        else
+                        {
+                            statusMessage = std::format("Failed to remove tracks from {} {}", dc->node->m_refTypeNameForSingleObject, dc->node->getName());
+                        }
+                    });
 
                 // If deletion was successful, refresh all views to avoid stale data
                 if (removalSuccess)
@@ -994,22 +1084,22 @@ namespace jucyaudio
                     // The node needs to reload its data from the database
                     // This will also clear the cached row count
                     dc->node->refreshCache(true);
-                    
+
                     // If we're in mix editor view and this is a mix node, reload the mix editor FIRST
                     // This ensures the timeline doesn't have stale references when the data view refreshes
                     if (m_currentMainView == MainViewType::MixEditor)
                     {
                         // Try to cast to MixNode to see if this is a mix
-                        if (auto* mixNode = dynamic_cast<database::MixNode*>(dc->node))
+                        if (auto *mixNode = dynamic_cast<database::MixNode *>(dc->node))
                         {
                             // Stop any playback to avoid accessing deleted tracks
                             stopMixPlayback();
-                            
+
                             // Reload the mix in the editor to sync both views
                             m_mixEditorComponent.loadMix(mixNode);
                         }
                     }
-                    
+
                     // Now refresh the data view to show the updated list
                     // This must happen after the mix editor is updated to avoid race conditions
                     m_dataViewComponent.refreshView();
@@ -1131,7 +1221,7 @@ namespace jucyaudio
         void MainComponent::onCreateWorkingSetFromTrackIdsCallback(const juce::String &name, WorkingSetId targetWsId, std::vector<TrackId> trackIds)
         {
             WorkingSetInfo workingSetInfo;
-            
+
             if (targetWsId == -1)
             {
                 // Create new working set
@@ -1146,9 +1236,13 @@ namespace jucyaudio
                 {
                     // Get the working set name for the success message
                     auto workingSets = theTrackLibrary.getWorkingSetManager().getWorkingSets({});
-                    auto it = std::find_if(workingSets.begin(), workingSets.end(), 
-                        [targetWsId](const WorkingSetInfo& ws) { return ws.id == targetWsId; });
-                    
+                    auto it = std::find_if(workingSets.begin(),
+                        workingSets.end(),
+                        [targetWsId](const WorkingSetInfo &ws)
+                        {
+                            return ws.id == targetWsId;
+                        });
+
                     if (it != workingSets.end())
                     {
                         workingSetInfo = *it;
@@ -1229,14 +1323,18 @@ namespace jucyaudio
                 // Append to existing working set
                 auto trackIds = node->getAllTrackIds();
                 bool success = theTrackLibrary.getWorkingSetManager().addToWorkingSet(targetWsId, trackIds);
-                
+
                 if (success)
                 {
                     // Get the working set name for the success message
                     auto workingSets = theTrackLibrary.getWorkingSetManager().getWorkingSets({});
-                    auto it = std::find_if(workingSets.begin(), workingSets.end(), 
-                        [targetWsId](const WorkingSetInfo& ws) { return ws.id == targetWsId; });
-                    
+                    auto it = std::find_if(workingSets.begin(),
+                        workingSets.end(),
+                        [targetWsId](const WorkingSetInfo &ws)
+                        {
+                            return ws.id == targetWsId;
+                        });
+
                     if (it != workingSets.end())
                     {
                         workingSetInfo = *it;
@@ -1281,7 +1379,7 @@ namespace jucyaudio
 
             const auto mixNode{static_cast<MixNode *>(selectedNode)};
             const auto mixInfo{mixNode->getMixInfo()};
-            
+
             // Create and show the export dialog instead of just a file chooser
             auto *dialog = new ExportMixDialog{mixInfo,
                 [this, mixInfo](bool success, const audio::ActiveExportSettings &settings)
@@ -1291,7 +1389,7 @@ namespace jucyaudio
                         this->onExportMixSettingsReceived(mixInfo, settings);
                     }
                 }};
-            
+
             juce::DialogWindow::LaunchOptions launchOptions;
             launchOptions.content.setOwned(dialog);
             launchOptions.dialogTitle = "Export Mix";
@@ -1304,15 +1402,14 @@ namespace jucyaudio
         class FinalizeAndExportTask : public ILongRunningTask
         {
         public:
-            FinalizeAndExportTask(const MixInfo &mixInfo, const audio::IMixExporter &exporter, 
-                                 const audio::ActiveExportSettings &settings)
+            FinalizeAndExportTask(const MixInfo &mixInfo, const audio::IMixExporter &exporter, const audio::ActiveExportSettings &settings)
                 : ILongRunningTask{"Finalizing and Exporting Mix", true},
                   m_mixInfo{mixInfo},
                   m_exporter{exporter},
                   m_settings{settings}
             {
             }
-            
+
             ~FinalizeAndExportTask() override
             {
             }
@@ -1360,27 +1457,24 @@ namespace jucyaudio
                     if (config::theSettings.mixEditingSettings.clearWorkingSetAfterExport.get())
                     {
                         progressCb(-1, "Cleaning up working set...");
-                        
+
                         // Get the mix info again to check source_ws_id
                         if (m_mixInfo.source_ws_id > 0)
                         {
                             // Get all tracks in this mix
                             const auto mixTracks = theTrackLibrary.getMixManager().getMixTracks(m_mixInfo.mixId);
-                            
+
                             // Remove each track from the working set
-                            for (const auto& mixTrack : mixTracks)
+                            for (const auto &mixTrack : mixTracks)
                             {
-                                if (!theTrackLibrary.getWorkingSetManager().removeTrackFromWorkingSet(
-                                    m_mixInfo.source_ws_id, mixTrack.trackId))
+                                if (!theTrackLibrary.getWorkingSetManager().removeTrackFromWorkingSet(m_mixInfo.source_ws_id, mixTrack.trackId))
                                 {
-                                    spdlog::warn("Failed to remove track {} from working set {} after export", 
-                                                mixTrack.trackId, m_mixInfo.source_ws_id);
+                                    spdlog::warn("Failed to remove track {} from working set {} after export", mixTrack.trackId, m_mixInfo.source_ws_id);
                                 }
                             }
-                            
-                            spdlog::info("Removed {} tracks from working set {} after export", 
-                                        mixTracks.size(), m_mixInfo.source_ws_id);
-                            
+
+                            spdlog::info("Removed {} tracks from working set {} after export", mixTracks.size(), m_mixInfo.source_ws_id);
+
                             // Set the mix's working_set_id to NULL
                             if (!theTrackLibrary.getMixManager().clearMixWorkingSetId(m_mixInfo.mixId))
                             {
@@ -1392,10 +1486,9 @@ namespace jucyaudio
                             }
                         }
                     }
-                    
+
                     const auto filename = pathToString(m_settings.outputPath.filename());
-                    const auto successMsg = std::format("Mix '{}' successfully exported to:\n{}", 
-                        m_mixInfo.name, filename);
+                    const auto successMsg = std::format("Mix '{}' successfully exported to:\n{}", m_mixInfo.name, filename);
                     completionCb(true, successMsg);
                 }
                 else
@@ -1412,10 +1505,8 @@ namespace jucyaudio
 
         void MainComponent::onExportMixSettingsReceived(const MixInfo &mixInfo, const audio::ActiveExportSettings &settings)
         {
-            spdlog::info("Finalizing and exporting mix ID: {} (Name: '{}') to: {}", 
-                        mixInfo.mixId, mixInfo.name, pathToString(settings.outputPath));
+            spdlog::info("Finalizing and exporting mix ID: {} (Name: '{}') to: {}", mixInfo.mixId, mixInfo.name, pathToString(settings.outputPath));
 
-            
             auto *task = new FinalizeAndExportTask{mixInfo, m_audioLibrary.getMixExporter(), settings};
             TaskDialog::launch("Finalize & Export", task, std::nullopt, this);
             task->release(REFCOUNT_DEBUG_ARGS);
@@ -1498,7 +1589,7 @@ namespace jucyaudio
             }
             const EnsureNodeIsReleased enirFolderNodesRoot{foldersRootNode};
 
-            auto& folderDb{theTrackLibrary.getFolderDatabase()};
+            auto &folderDb{theTrackLibrary.getFolderDatabase()};
             const auto parents{folderDb.getParentSet(folderId)};
 
             const auto underlyingFolder{folderDb.getFolderById(folderId)};
@@ -1512,13 +1603,13 @@ namespace jucyaudio
             spdlog::info("Navigating to folder ID {}: {}", folderId, underlyingFolder.value().path);
 
             // Build the path from root to target folder
-            std::vector<INavigationNode*> pathToTarget;
+            std::vector<INavigationNode *> pathToTarget;
             // Don't add foldersRootNode to pathToTarget since we don't own it
             // It's owned by the navigation tree
-            
+
             auto currentParent = foldersRootNode;
             bool foundTarget = false;
-            
+
             // Build the complete path
             while (currentParent && currentParent->canExpand())
             {
@@ -1529,7 +1620,7 @@ namespace jucyaudio
                     break;
                 }
 
-                INavigationNode* nextInPath = nullptr;
+                INavigationNode *nextInPath = nullptr;
                 for (auto childNode : children)
                 {
                     const auto childFolderId{childNode->getUniqueId()};
@@ -1544,7 +1635,7 @@ namespace jucyaudio
                     else if (parents.contains(childFolderId))
                     {
                         // This is on the path to our target
-                        if (!nextInPath)  // Only keep the first matching parent
+                        if (!nextInPath) // Only keep the first matching parent
                         {
                             nextInPath = childNode;
                             // Note: childNode already has refcount 1 from expand(), so we keep it
@@ -1562,14 +1653,14 @@ namespace jucyaudio
                         childNode->release(REFCOUNT_DEBUG_ARGS);
                     }
                 }
-                
+
                 if (foundTarget)
                 {
                     // We found the target, but need to release any remaining children we haven't processed yet
                     // Actually, the for loop above processes all children, so we're good
                     break;
                 }
-                
+
                 if (nextInPath)
                 {
                     pathToTarget.push_back(nextInPath);
@@ -1587,7 +1678,7 @@ namespace jucyaudio
             {
                 // pathToTarget now contains only the actual folder nodes (no foldersRootNode)
                 // so we can use it directly
-                
+
                 // Use the new method to expand and navigate
                 if (m_navigationPanel.expandPathAndSelectTarget(pathToTarget))
                 {
@@ -1599,27 +1690,27 @@ namespace jucyaudio
                     spdlog::error("Failed to navigate to folder in tree");
                 }
             }
-            
+
             // Clean up - release all retained nodes
             for (auto node : pathToTarget)
             {
                 node->release(REFCOUNT_DEBUG_ARGS);
             }
-            
+
             return foundTarget;
         }
 
         void MainComponent::onShowInFolder(RowIndex_t rowIndex)
         {
             spdlog::info("onShowInFolder called for row {}", rowIndex);
-            
+
             // Check if we're viewing albums
             if (const auto *albumsNode = dynamic_cast<database::AlbumsNode *>(m_currentNode))
             {
                 // Get the folder ID for the selected album
                 const auto folderId = albumsNode->getFolderIdForRow(rowIndex);
                 spdlog::info("Album folder ID: {}", folderId);
-                
+
                 if (folderId < 0)
                 {
                     m_statusPanel.getStatusBar().postMessage("Cannot navigate to folder", true);
@@ -1707,8 +1798,7 @@ namespace jucyaudio
                 m_statusPanel.getStatusBar().postMessage("Not enough tracks selected to create a mix.", true);
                 return;
             }
-            auto *dialog = new ui::CreateMixDialogComponent(
-                selectedTracks,
+            auto *dialog = new ui::CreateMixDialogComponent(selectedTracks,
                 source_ws_id,
                 [this](bool success, const MixInfo &mixInfo)
                 {
@@ -1734,12 +1824,12 @@ namespace jucyaudio
                 // If so, we need to force a refresh of the view to show the new tracks.
                 if (m_currentNode)
                 {
-                    if (auto* mixNode = dynamic_cast<MixNode*>(m_currentNode))
+                    if (auto *mixNode = dynamic_cast<MixNode *>(m_currentNode))
                     {
                         if (mixNode->getUniqueId() == mixInfo.mixId)
                         {
                             spdlog::info("Currently viewed mix (ID: {}) was updated, forcing view refresh.", mixInfo.mixId);
-                            
+
                             // Invalidate the node's internal cache to pick up the new tracks
                             mixNode->refreshCache(true);
 
@@ -1783,7 +1873,7 @@ namespace jucyaudio
             }
 
             // Fallback: if nothing selected, resume current playback if paused
-            if (m_playbackController.getState() == PlaybackController::PlayerState::TrackPaused || 
+            if (m_playbackController.getState() == PlaybackController::PlayerState::TrackPaused ||
                 m_playbackController.getState() == PlaybackController::PlayerState::MixPaused)
             {
                 m_playbackController.play();
@@ -1801,7 +1891,7 @@ namespace jucyaudio
             scanDialog->onScanCompleted = [this]()
             {
                 spdlog::info("MainComponent: Scan completed. Refreshing views.");
-                
+
                 if (auto rootNavigationNode = m_navigationTree.getRootNode())
                 {
                     std::vector<INavigationNode *> children;
@@ -1817,7 +1907,6 @@ namespace jucyaudio
                     }
                     rootNavigationNode->release(REFCOUNT_DEBUG_ARGS); // Release the root node after use
                 }
-                
 
                 // Also refresh the data view of the currently selected node
                 if (m_currentMainView == MainViewType::DataView)
@@ -1865,8 +1954,8 @@ namespace jucyaudio
 
         bool MainComponent::onShowAboutDialog()
         {
-            auto* dialog = new AboutDialog();
-            
+            auto *dialog = new AboutDialog();
+
             juce::DialogWindow::LaunchOptions launchOptions;
             launchOptions.content.setOwned(dialog);
             launchOptions.dialogTitle = "About JucyAudio";
@@ -2156,7 +2245,7 @@ namespace jucyaudio
                 m_playbackController.stop();
             }
         }
-        
+
         bool MainComponent::isTrackEditorInMixView() const
         {
             // We're in track editor view for a mix if:
@@ -2179,8 +2268,7 @@ namespace jucyaudio
                 int64_t totalTracks = 0;
                 if (m_currentNode->getTotalTrackCount(totalTracks))
                 {
-                    m_statusPanel.getStatusBar().setInfoMessage(
-                        std::format("{:L} tracks in '{}'", totalTracks, m_currentNode->getName()));
+                    m_statusPanel.getStatusBar().setInfoMessage(std::format("{:L} tracks in '{}'", totalTracks, m_currentNode->getName()));
                 }
                 else
                 {

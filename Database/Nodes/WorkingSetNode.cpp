@@ -9,13 +9,15 @@ namespace jucyaudio
 {
     namespace database
     {
-        const DataActions WorkingSetNodeActions{DataAction::EditWorkingSetMetadata, DataAction::CreateMix, DataAction::RunBpmAnalysis, DataAction::SelectTracksFromMix, DataAction::Delete};
-
-        const DataActions WorkingSetRowActions{DataAction::Play,
+        const DataActions WorkingSetNodeActions{DataAction::EditWorkingSetMetadata,
             DataAction::CreateMix,
-            DataAction::ShowDetails,
-            DataAction::RemoveTracks,
-            DataAction::RunBpmAnalysis};
+            DataAction::RunBpmAnalysis,
+            DataAction::SelectTracksFromMix,
+            DataAction::Delete,
+            DataAction::RemoveDuplicates};
+
+        const DataActions WorkingSetRowActions{
+            DataAction::Play, DataAction::CreateMix, DataAction::ShowDetails, DataAction::RemoveTracks, DataAction::RunBpmAnalysis};
 
         WorkingSetNode::WorkingSetNode(INavigationNode *parent, const WorkingSetInfo &workingSet)
             : LibraryNode{parent, workingSet.name, "Working Set", "Working Sets"},
@@ -23,7 +25,7 @@ namespace jucyaudio
         {
             m_queryArgs.workingSetId = workingSet.id;
         }
-        
+
         void WorkingSetNode::rename(std::string_view newName)
         {
             m_workingSetInfo.name = newName;

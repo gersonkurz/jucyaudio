@@ -228,6 +228,7 @@ namespace jucyaudio
             ShowTrackEditor,        ///< Open the track editor for the selected track
             ShowInFolder,           ///< Navigate to the folder containing the item
             Separator,              ///< Separator in context menus (not an action)
+            RemoveDuplicates,       ///< Remove duplicate tracks from the selection 
         };
 
         // @brief Collection of data actions available in the application

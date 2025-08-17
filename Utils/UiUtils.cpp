@@ -47,6 +47,8 @@ namespace jucyaudio
                 return "Show in Folder";
             case DataAction::Separator:
                 return "------";
+            case DataAction::RemoveDuplicates:
+                return "Remove Duplicates";
             default:
                 return "dataActionToString()?";
             }
