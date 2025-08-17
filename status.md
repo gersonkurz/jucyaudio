@@ -366,13 +366,18 @@ The application now operates on the following principles:
 
 ## 21. Session Accomplishments: Export & Playhead Performance (2025-08-17)
 
-### Fixed: Mono Track Export Issue
-*   **Problem:** Mono audio tracks were being exported as garbage/noise in both MP3 and WAV exports
-*   **Root Cause:** `ExportMixImplementation::contributeFromActiveSource()` was creating buffers with stereo channel count but reading mono files directly into them, leaving channel 1 uninitialized
+### Fixed: Sample Rate Mismatch in Export (SOLVED!)
+*   **Initial Problem:** Mono audio tracks were being exported as garbage/noise in both MP3 and WAV exports
+*   **Investigation:** Multiple attempts to fix mono channel duplication didn't work
+*   **Real Root Cause:** The mono file had a sample rate of 22050 Hz but export was at 44100 Hz
+    - Code was reading correct offset (half the samples) but not resampling
+    - Audio played at double speed and ran out of data halfway through
 *   **Solution:** 
-    - Read audio into temporary buffer matching source file's channel count
-    - Properly convert between formats (mono→stereo by duplicating, stereo→mono by mixing)
-    - Fix applied to base class, automatically fixing both MP3 and WAV exports
+    - Detect sample rate mismatch between source file and export rate
+    - Calculate correct number of samples to read from source based on its rate
+    - Implement linear interpolation resampling to convert to output rate
+    - Then apply mono→stereo conversion on the resampled data
+*   **Result:** Export now works correctly for ANY sample rate mismatch, not just mono files
 
 ### Analyzed: Playhead Performance Issue  
 *   **Problem:** Enabling the playback position indicator (red line) caused severe performance degradation and VU meter stuttering
@@ -397,7 +402,7 @@ The application now operates on the following principles:
 ### Completed:
 1.  ✅ **FLAC Support** - Already implemented (per user confirmation)
 2.  ✅ **WAV Support** - Already implemented (per user confirmation)
-3.  ✅ **Mono Track Export** - Fixed garbage output issue
+3.  ✅ **Export with Sample Rate Mismatch** - Fixed resampling issue (was affecting mono 22050Hz files)
 
 ### High Priority:
     
