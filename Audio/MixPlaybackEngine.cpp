@@ -58,8 +58,23 @@ namespace jucyaudio
             const auto trackPath{trackInfo->reconstructFullPath()};
             juce::File sourceFile{ui::jucePathFromFs(trackPath)};
             
+            // Check if filename has special characters
+            const bool hasSpecialChars = trackInfo->filename.find('{') != std::string::npos ||
+                                        trackInfo->filename.find('}') != std::string::npos;
+            
+            if (hasSpecialChars) {
+                spdlog::info("[AUDIO DEBUG] Track {} has special chars in filename: {}", 
+                            trackId, trackInfo->filename);
+                spdlog::info("[AUDIO DEBUG] Full reconstructed path: {}", trackPath.string());
+                spdlog::info("[AUDIO DEBUG] JUCE file path: {}", sourceFile.getFullPathName().toStdString());
+            }
+            
+            spdlog::info("[AUDIO DEBUG] Preparing track {} from file: {}", 
+                        trackId, trackPath.string());
+            
             if (!sourceFile.exists())
             {
+                spdlog::error("[AUDIO DEBUG] File does not exist: {}", trackPath.string());
                 return false;
             }
             
@@ -67,19 +82,32 @@ namespace jucyaudio
 
             if (!reader)
             {
+                spdlog::error("[AUDIO DEBUG] Failed to create reader for: {}", trackPath.string());
                 return false;
             }
+
+            // Log detailed audio format information
+            spdlog::info("[AUDIO DEBUG] Track {} audio format: channels={}, sampleRate={}, bitsPerSample={}, formatName={}",
+                        trackId,
+                        reader->numChannels,
+                        reader->sampleRate,
+                        reader->bitsPerSample,
+                        reader->getFormatName().toStdString());
 
             readerSource = std::make_unique<juce::AudioFormatReaderSource>(reader.get(), false);
 
             if (std::abs(reader->sampleRate - targetSampleRate) > 0.01)
             {
+                spdlog::info("[AUDIO DEBUG] Track {} needs resampling from {} to {} Hz",
+                            trackId, reader->sampleRate, targetSampleRate);
                 resampler = std::make_unique<juce::ResamplingAudioSource>(readerSource.get(), false, reader->numChannels);
                 resampler->setResamplingRatio(reader->sampleRate / targetSampleRate);
                 resampler->prepareToPlay(blockSize, targetSampleRate);
             }
             else
             {
+                spdlog::info("[AUDIO DEBUG] Track {} no resampling needed (rate={})",
+                            trackId, reader->sampleRate);
                 readerSource->prepareToPlay(blockSize, targetSampleRate);
             }
 
@@ -336,6 +364,15 @@ namespace jucyaudio
                 return;
             }
 
+            // Log buffer info periodically
+            static int audioBlockCount = 0;
+            if (++audioBlockCount % 100 == 1) {
+                spdlog::info("[AUDIO DEBUG] getNextAudioBlock: buffer channels={}, startChannel={}, numSamples={}",
+                            bufferToFill.buffer->getNumChannels(),
+                            bufferToFill.startSample, 
+                            bufferToFill.numSamples);
+            }
+
             bufferToFill.clearActiveBufferRegion();
 
             juce::int64 startSample = m_currentPositionSamples.load();
@@ -418,6 +455,14 @@ namespace jucyaudio
         {
             const int numChannels = buffer.getNumChannels();
             int activeTracksThisBlock = 0;
+            
+            static int mixBlockCount = 0;
+            const bool shouldLogDetails = (++mixBlockCount % 100 == 1);
+            
+            if (shouldLogDetails) {
+                spdlog::info("[AUDIO DEBUG] mixActiveTracksForBlock: output buffer channels={}, numSamples={}", 
+                            numChannels, numSamples);
+            }
 
             for (size_t i = 0; i < m_trackSources.size(); ++i)
             {
@@ -456,14 +501,52 @@ namespace jucyaudio
 
                 int outputOffset = static_cast<int>(std::max(trackStartSamples - startSample, juce::int64(0)));
 
+                // Check if this track has special characters in filename
+                const bool hasSpecialChars = source->trackInfo->filename.find('{') != std::string::npos ||
+                                            source->trackInfo->filename.find('}') != std::string::npos;
+                
+                // Create track buffer - check if we need to handle mono->stereo conversion
+                const int sourceChannels = source->reader ? source->reader->numChannels : numChannels;
                 juce::AudioBuffer<float> trackBuffer(numChannels, samplesToRead);
                 trackBuffer.clear();
+
+                if (shouldLogDetails && hasSpecialChars) {
+                    spdlog::info("[AUDIO DEBUG] Processing track {} with special chars, source channels={}, buffer channels={}",
+                                source->trackId, sourceChannels, numChannels);
+                }
 
                 juce::AudioSourceChannelInfo trackInfo(&trackBuffer, 0, samplesToRead);
 
                 if (auto *audioSource = source->getAudioSource())
                 {
                     audioSource->getNextAudioBlock(trackInfo);
+                    
+                    // Handle mono-to-stereo conversion if needed
+                    if (sourceChannels == 1 && numChannels == 2) {
+                        // Source is mono but output is stereo - duplicate mono channel to right channel
+                        for (int sample = 0; sample < samplesToRead; ++sample) {
+                            const float monoSample = trackBuffer.getSample(0, sample);
+                            trackBuffer.setSample(1, sample, monoSample);
+                        }
+                        
+                        if (shouldLogDetails && hasSpecialChars) {
+                            spdlog::info("[AUDIO DEBUG] Duplicated mono channel to stereo for track {}", source->trackId);
+                        }
+                    }
+                    
+                    // Log if we're getting mono data when we expect stereo
+                    if (shouldLogDetails && hasSpecialChars && numChannels == 2) {
+                        // Check if right channel is silent (indicating mono playback)
+                        float leftMax = 0.0f, rightMax = 0.0f;
+                        for (int s = 0; s < std::min(100, samplesToRead); ++s) {
+                            leftMax = std::max(leftMax, std::abs(trackBuffer.getSample(0, s)));
+                            if (numChannels > 1) {
+                                rightMax = std::max(rightMax, std::abs(trackBuffer.getSample(1, s)));
+                            }
+                        }
+                        spdlog::info("[AUDIO DEBUG] Track {} channel levels after conversion: L={:.4f}, R={:.4f}",
+                                    source->trackId, leftMax, rightMax);
+                    }
                 }
 
                 const float masterGain = m_masterGain.load();
@@ -486,9 +569,9 @@ namespace jucyaudio
                     }
                 }
             }
-            static int blockCountForActiveLog = 0;
-            if (++blockCountForActiveLog % 50 == 1) { // Log every 50 blocks
-                spdlog::debug("JUCYAUDIO: MixPlaybackEngine::mixActiveTracksForBlock -> Found {} active tracks for this block.", activeTracksThisBlock);
+            
+            if (shouldLogDetails) {
+                spdlog::info("[AUDIO DEBUG] mixActiveTracksForBlock: {} active tracks processed", activeTracksThisBlock);
             }
         }
 

@@ -152,11 +152,29 @@ namespace jucyaudio
             m_audioTransportSource.setSource(nullptr);
             m_currentAudioFileSource.reset();
             
+            // Log if file has special characters
+            const auto filepath = audioFile.getFullPathName().toStdString();
+            const bool hasSpecialChars = filepath.find('{') != std::string::npos || 
+                                        filepath.find('}') != std::string::npos;
+            
+            if (hasSpecialChars) {
+                spdlog::info("[AUDIO DEBUG] Loading file with special chars: {}", filepath);
+            }
+            
             // Try to create a reader for the new file
             std::unique_ptr<juce::AudioFormatReader> reader(m_audioFormatManager.createReaderFor(audioFile));
             
             if (reader != nullptr)
             {
+                // Log audio format details for files with special chars
+                if (hasSpecialChars) {
+                    spdlog::info("[AUDIO DEBUG] Single track reader: channels={}, sampleRate={}, bitsPerSample={}, formatName={}",
+                                reader->numChannels,
+                                reader->sampleRate,
+                                reader->bitsPerSample,
+                                reader->getFormatName().toStdString());
+                }
+                
                 m_currentFile = audioFile;
                 m_currentAudioFileSource = std::make_unique<juce::AudioFormatReaderSource>(reader.release(), true);
                 m_audioTransportSource.setSource(m_currentAudioFileSource.get(), 0, nullptr, 
