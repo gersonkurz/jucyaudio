@@ -159,6 +159,12 @@ namespace
         "CREATE INDEX IF NOT EXISTS idx_mixundohistory_mix_id ON MixUndoHistory (mix_id);",
         "CREATE INDEX IF NOT EXISTS idx_mixundohistory_operation_id ON MixUndoHistory (operation_id);",
         "CREATE TABLE IF NOT EXISTS LibraryRoots (root_id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, file_count INTEGER DEFAULT 0, last_scanned INTEGER);",
+        R"SQL(
+        CREATE TABLE IF NOT EXISTS WaveformCache (
+            track_id INTEGER PRIMARY KEY NOT NULL,
+            waveform_blob BLOB NOT NULL,
+            FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
+        );)SQL",
     };
 
     TrackInfo trackInfoFromStatement(const SqliteStatement &stmt)
