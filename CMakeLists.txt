@@ -14,7 +14,7 @@ endif()
 # Set default build type to RelWithDebInfo if not specified
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   message(STATUS "Setting build type to 'RelWithDebInfo' as none was specified.")
-  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Choose the type of build." FORCE)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Choose the type of build.")
   # Set the possible values of build type for cmake-gui
   set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
@@ -229,6 +229,8 @@ target_sources(jucyaudio PRIVATE
     Database/BackgroundTasks/BpmAnalysis.h
     Database/BackgroundTasks/BpmAnalysisTask.cpp
     Database/BackgroundTasks/BpmAnalysisTask.h
+    Database/BackgroundTasks/Mp3QuickCheck.cpp
+    Database/BackgroundTasks/Mp3QuickCheck.h
     Database/BackgroundTasks/AudioAnalysis.cpp
     Database/BackgroundTasks/AudioAnalysis.h
     

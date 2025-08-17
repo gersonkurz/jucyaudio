@@ -116,7 +116,7 @@ namespace jucyaudio
 
         bool SqliteStatement::addNullParam()
         {
-            spdlog::debug("addParam null at {}", m_param_index);
+            //spdlog::debug("addParam null at {}", m_param_index);
             const int rc = sqlite3_bind_null(m_statement, m_param_index++);
             if (rc)
             {
@@ -137,7 +137,7 @@ namespace jucyaudio
 
         bool SqliteStatement::addParam(std::string_view text)
         {
-            spdlog::debug("addParam text \"{}\" at {}", text, m_param_index);
+            //spdlog::debug("addParam text \"{}\" at {}", text, m_param_index);
             m_copy_of_string_args.push_back(std::string{text});
             const auto &item{m_copy_of_string_args.back()};
 
@@ -160,7 +160,7 @@ namespace jucyaudio
 
         bool SqliteStatement::addParam(int64_t value)
         {
-            spdlog::debug("addParam int64_t {} at {}", value, m_param_index);
+            //spdlog::debug("addParam int64_t {} at {}", value, m_param_index);
             const int rc = sqlite3_bind_int64(m_statement, m_param_index++, value);
             if (rc)
             {
@@ -171,7 +171,7 @@ namespace jucyaudio
 
         bool SqliteStatement::addParam(int32_t value)
         {
-            spdlog::debug("addParam int32_t {} at {}", value, m_param_index);
+            //spdlog::debug("addParam int32_t {} at {}", value, m_param_index);
             const int rc = sqlite3_bind_int(m_statement, m_param_index++, value);
             if (rc)
             {
@@ -182,7 +182,7 @@ namespace jucyaudio
 
         bool SqliteStatement::addParam(double value)
         {
-            spdlog::debug("addParam double {} at {}", value, m_param_index);
+            //spdlog::debug("addParam double {} at {}", value, m_param_index);
             const int rc = sqlite3_bind_double(m_statement, m_param_index++, value);
             if (rc)
             {
@@ -193,7 +193,7 @@ namespace jucyaudio
 
         bool SqliteStatement::addParam(nullptr_t)
         {
-            spdlog::debug("addParam nullptr_t at {}", m_param_index);
+            //spdlog::debug("addParam nullptr_t at {}", m_param_index);
             const int rc = sqlite3_bind_null(m_statement, m_param_index++);
             if (rc)
             {

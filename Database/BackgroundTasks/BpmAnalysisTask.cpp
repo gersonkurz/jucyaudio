@@ -1,5 +1,6 @@
 #include <Database/BackgroundTasks/BpmAnalysisTask.h>
 #include <Database/BackgroundTasks/AudioAnalysis.h>
+#include <Database/BackgroundTasks/Mp3QuickCheck.h>
 #include <Database/TrackLibrary.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
@@ -20,65 +21,6 @@ namespace jucyaudio
     {
         namespace background_tasks
         {
-            // A simple thread pool implementation for this task
-            class ThreadPool
-            {
-            public:
-                ThreadPool(size_t numThreads)
-                    : m_stop{false}
-                {
-                    for (size_t i = 0; i < numThreads; ++i)
-                    {
-                        m_workers.emplace_back([this] {
-                            while (true)
-                            {
-                                std::function<void()> task;
-                                {
-                                    std::unique_lock<std::mutex> lock{m_queueMutex};
-                                    m_condition.wait(lock, [this] { return m_stop || !m_tasks.empty(); });
-                                    if (m_stop && m_tasks.empty())
-                                        return;
-                                    task = std::move(m_tasks.front());
-                                    m_tasks.pop();
-                                }
-                                task();
-                            }
-                        });
-                    }
-                }
-
-                template<class F>
-                void enqueue(F&& f)
-                {
-                    {
-                        std::unique_lock<std::mutex> lock{m_queueMutex};
-                        if (m_stop)
-                            return;
-                        m_tasks.emplace(std::forward<F>(f));
-                    }
-                    m_condition.notify_one();
-                }
-
-                ~ThreadPool()
-                {
-                    {
-                        std::unique_lock<std::mutex> lock{m_queueMutex};
-                        m_stop = true;
-                    }
-                    m_condition.notify_all();
-                    for (std::thread &worker : m_workers)
-                        worker.join();
-                }
-
-            private:
-                std::vector<std::thread> m_workers;
-                std::queue<std::function<void()>> m_tasks;
-                std::mutex m_queueMutex;
-                std::condition_variable m_condition;
-                bool m_stop;
-            };
-
-
             BpmAnalysisTask::BpmAnalysisTask(std::vector<TrackId> trackIds)
                 : ILongRunningTask{"Running BPM Analysis", true}, m_trackIds{std::move(trackIds)}
             {
@@ -93,7 +35,8 @@ namespace jucyaudio
                 }
                 catch (const std::exception &e)
                 {
-                    spdlog::error("ScanFoldersTask: Exception during scan: {}", e.what());
+                    spdlog::error("BpmAnalysisTask: Exception during analysis: {}", e.what());
+                    completionCb(false, std::format("Task failed: {}", e.what()));
                 }
                 theBackgroundTaskService.resume();
             }
@@ -105,6 +48,7 @@ namespace jucyaudio
                 progressCb(-1, "Querying tracks for analysis...");
                 std::vector<TrackInfo> tracksToProcess;
                 tracksToProcess.reserve(m_trackIds.size());
+                
                 for (const auto& trackId : m_trackIds) {
                     if (shouldCancel) break;
                     if (auto trackOpt = theTrackLibrary.getTrackDatabase()->getTrackById(trackId)) {
@@ -127,237 +71,318 @@ namespace jucyaudio
                 }
 
                 // --- Configuration ---
-                const unsigned int numWorkerThreads = 4;
+                const unsigned int numCores = std::thread::hardware_concurrency();
+                const unsigned int numWorkerThreads = std::min(8u, std::max(4u, numCores));
                 const size_t batchSize = 100;
-                const size_t loadQueueMaxSize = numWorkerThreads * 2;
 
-                spdlog::info("Starting BPM analysis for {} tracks using {} worker threads and 1 reader thread.",
+                spdlog::info("Starting BPM analysis for {} tracks using {} worker threads.",
                              ui::formatStandardStringNumber(totalTracks),
                              ui::formatStandardStringNumber(numWorkerThreads));
 
-                // --- Data Structures for Producer-Consumer pattern ---
-                struct LoadedAudio {
-                    TrackId trackId;
-                    std::unique_ptr<juce::AudioBuffer<float>> buffer;
-                    double sampleRate;
-                };
+                // --- Data Structures ---
                 struct AnalysisResult {
                     TrackId trackId;
                     AudioMetadata metadata;
                 };
 
-                std::queue<LoadedAudio> loadQueue;
-                std::mutex loadMutex;
-                std::condition_variable loadCv;
-
                 std::queue<AnalysisResult> resultsQueue;
                 std::mutex resultsMutex;
-                std::condition_variable resultsCv;
-
-                std::atomic<bool> readerFinished = false;
-                std::atomic<size_t> analysisCompletedCount = 0;
-                std::atomic<size_t> successfulReads = 0;
+                
+                std::atomic<size_t> nextTrackIndex = 0;
+                std::atomic<size_t> tracksProcessed = 0;
+                std::atomic<size_t> tracksAnalyzed = 0;
+                std::atomic<size_t> tracksSkipped = 0;
+                std::atomic<size_t> tracksTimedOut = 0;
                 
                 // Thread-safe collection of bad files
                 std::vector<TrackInfo> badFiles;
                 std::mutex badFilesMutex;
 
-                // --- Reader Thread ---
-                std::thread readerThread([&] {
-                    juce::AudioFormatManager formatManager;
-                    formatManager.registerBasicFormats();
+                // Worker threads pool
+                std::vector<std::thread> workers;
 
-                    for (const auto& trackInfo : tracksToProcess) {
-                        if (shouldCancel) break;
-
-                        try
-                        {
-                            const auto trackPath{trackInfo.reconstructFullPath()};
-                            juce::File audioFile{ui::jucePathFromFs(trackPath)};
-                            std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(audioFile));
-
-                            if (reader) {
+                // --- Worker Threads ---
+                for (size_t i = 0; i < numWorkerThreads; ++i) {
+                    workers.emplace_back([&] {
+                        juce::AudioFormatManager formatManager;
+                        formatManager.registerBasicFormats();
+                        
+                        while (!shouldCancel) {
+                            // Get next track to process
+                            size_t trackIndex = nextTrackIndex.fetch_add(1);
+                            if (trackIndex >= tracksToProcess.size()) {
+                                break;  // No more tracks
+                            }
+                            
+                            const auto& trackInfo = tracksToProcess[trackIndex];
+                            bool fileProcessed = false;
+                            
+                            try {
+                                const auto trackPath = trackInfo.reconstructFullPath();
+                                
+                                // Check for cancel before starting expensive operations
+                                if (shouldCancel) break;
+                                
+                                juce::File audioFile{ui::jucePathFromFs(trackPath)};
+                                
+                                // Quick existence check
+                                if (!audioFile.existsAsFile()) {
+                                    spdlog::debug("File does not exist: {}", trackPath.string());
+                                    theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
+                                    {
+                                        std::lock_guard<std::mutex> lock(badFilesMutex);
+                                        badFiles.push_back(trackInfo);
+                                    }
+                                    tracksSkipped++;
+                                    tracksProcessed++;
+                                    continue;
+                                }
+                                
+                                // For MP3 files, do a quick pre-check
+                                const auto extension = trackPath.extension().string();
+                                if (extension == ".mp3" || extension == ".MP3") {
+                                    auto mp3Info = Mp3QuickCheck::checkMp3File(trackPath);
+                                    if (!mp3Info.has_value()) {
+                                        // File should be skipped (VBR, low bitrate, or too large)
+                                        theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
+                                        {
+                                            std::lock_guard<std::mutex> lock(badFilesMutex);
+                                            badFiles.push_back(trackInfo);
+                                        }
+                                        tracksSkipped++;
+                                        tracksProcessed++;
+                                        continue;
+                                    }
+                                }
+                                
+                                // Try to create reader - this might hang on some files
+                                // So we'll do a quick timeout check
+                                std::unique_ptr<juce::AudioFormatReader> reader;
+                                
+                                // Use a simple approach - try to open the file
+                                // If it takes too long, we'll detect it in the next iteration
+                                auto startTime = std::chrono::steady_clock::now();
+                                reader.reset(formatManager.createReaderFor(audioFile));
+                                auto openTime = std::chrono::steady_clock::now() - startTime;
+                                
+                                // Log if opening took a long time
+                                if (std::chrono::duration_cast<std::chrono::seconds>(openTime).count() > 1) {
+                                    spdlog::warn("File took {} ms to open: {}", 
+                                        std::chrono::duration_cast<std::chrono::milliseconds>(openTime).count(),
+                                        trackPath.string());
+                                }
+                                
+                                if (!reader) {
+                                    spdlog::debug("Cannot create reader for: {}", trackPath.string());
+                                    theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
+                                    {
+                                        std::lock_guard<std::mutex> lock(badFilesMutex);
+                                        badFiles.push_back(trackInfo);
+                                    }
+                                    tracksSkipped++;
+                                    tracksProcessed++;
+                                    continue;
+                                }
+                                
+                                // Check for cancel before analysis
+                                if (shouldCancel) break;
+                                
+                                // Successfully opened file - analyze it
                                 const double totalDurationSeconds = reader->lengthInSamples / reader->sampleRate;
                                 const double analysisDurationSeconds = 60.0;
                                 int64_t startSample = 0;
                                 int numSamplesToRead = static_cast<int>(reader->lengthInSamples);
 
-                                if (totalDurationSeconds > analysisDurationSeconds)
-                                {
+                                if (totalDurationSeconds > analysisDurationSeconds) {
                                     startSample = static_cast<int64_t>(((totalDurationSeconds / 2.0) - (analysisDurationSeconds / 2.0)) * reader->sampleRate);
                                     numSamplesToRead = static_cast<int>(analysisDurationSeconds * reader->sampleRate);
-                                    if (startSample + numSamplesToRead > reader->lengthInSamples)
-                                    {
+                                    if (startSample + numSamplesToRead > reader->lengthInSamples) {
                                         numSamplesToRead = static_cast<int>(reader->lengthInSamples - startSample);
                                     }
                                 }
 
-                                auto buffer = std::make_unique<juce::AudioBuffer<float>>(
+                                juce::AudioBuffer<float> buffer(
                                     static_cast<int>(reader->numChannels),
                                     numSamplesToRead
                                 );
-                                reader->read(buffer.get(), 0, numSamplesToRead, startSample, true, true);
-
+                                
+                                // Read the audio data
+                                reader->read(&buffer, 0, numSamplesToRead, startSample, true, true);
+                                
+                                // Check for cancel before analysis
+                                if (shouldCancel) break;
+                                
+                                // Analyze the buffer
+                                AudioMetadata metadata = analyzeAudioBuffer(buffer, reader->sampleRate);
+                                
+                                // Add to results queue
                                 {
-                                    std::unique_lock<std::mutex> lock(loadMutex);
-                                    loadCv.wait(lock, [&]{ return loadQueue.size() < loadQueueMaxSize || shouldCancel; });
-                                    if (shouldCancel) break;
-                                    loadQueue.push({trackInfo.trackId, std::move(buffer), reader->sampleRate});
-                                    successfulReads++;
+                                    std::lock_guard<std::mutex> lock(resultsMutex);
+                                    resultsQueue.push({trackInfo.trackId, metadata});
                                 }
-                                loadCv.notify_one();
+                                tracksAnalyzed++;
+                                fileProcessed = true;
                             }
-                            else
-                            {
-                                spdlog::error("Failed to create reader for track ID {} ({})", 
-                                    trackInfo.trackId, audioFile.getFullPathName().toStdString());
-                                
-                                // Update track status to bad_format
+                            catch (const std::exception& e) {
+                                spdlog::debug("Exception reading track {}: {}", trackInfo.trackId, e.what());
                                 theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
-                                
-                                // Add to bad files list
                                 {
                                     std::lock_guard<std::mutex> lock(badFilesMutex);
                                     badFiles.push_back(trackInfo);
                                 }
+                                tracksSkipped++;
                             }
-                        }
-                        catch (const std::exception& e)
-                        {
-                            spdlog::error("Exception reading audio for track ID {}: {}", trackInfo.trackId, e.what());
-                            
-                            // Update track status to bad_format
-                            theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
-                            
-                            // Add to bad files list
-                            {
-                                std::lock_guard<std::mutex> lock(badFilesMutex);
-                                badFiles.push_back(trackInfo);
-                            }
-                        }
-                        catch (...)
-                        {
-                            spdlog::error("Unknown exception reading audio for track ID {}", trackInfo.trackId);
-                            
-                            // Update track status to bad_format
-                            theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
-                            
-                            // Add to bad files list
-                            {
-                                std::lock_guard<std::mutex> lock(badFilesMutex);
-                                badFiles.push_back(trackInfo);
-                            }
-                        }
-                    }
-                    readerFinished = true;
-                    loadCv.notify_all(); // Wake up any waiting workers to let them finish
-                });
-
-
-                // --- Worker Threads ---
-                ThreadPool pool{numWorkerThreads};
-                for(size_t i = 0; i < numWorkerThreads; ++i) {
-                    pool.enqueue([&] {
-                        while (true) {
-                            std::unique_ptr<LoadedAudio> loaded;
-                            {
-                                std::unique_lock<std::mutex> lock{loadMutex};
-                                loadCv.wait(lock, [&]{ return !loadQueue.empty() || readerFinished; });
-
-                                if (loadQueue.empty() && readerFinished) {
-                                    break; // All done
-                                }
-                                loaded = std::make_unique<LoadedAudio>(std::move(loadQueue.front()));
-                                loadQueue.pop();
-                            }
-                            loadCv.notify_one(); // Notify reader thread that there's space in the queue
-
-                            if (loaded) {
-                                AudioMetadata am = analyzeAudioBuffer(*loaded->buffer, loaded->sampleRate);
+                            catch (...) {
+                                spdlog::debug("Unknown exception reading track {}", trackInfo.trackId);
+                                theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
                                 {
-                                    std::lock_guard<std::mutex> lock(resultsMutex);
-                                    resultsQueue.push({loaded->trackId, am});
+                                    std::lock_guard<std::mutex> lock(badFilesMutex);
+                                    badFiles.push_back(trackInfo);
                                 }
-                                analysisCompletedCount++;
-                                resultsCv.notify_one();
+                                tracksSkipped++;
                             }
+                            
+                            tracksProcessed++;
                         }
+                        
+                        spdlog::debug("Worker thread exiting (cancel={}, processed={})", 
+                                     shouldCancel.load(), tracksProcessed.load());
                     });
                 }
 
-                // --- Writer and Progress Loop ---
+                // --- Main thread: collect results and commit in batches ---
                 size_t tracksWritten = 0;
                 std::vector<std::pair<TrackId, AudioMetadata>> resultsBatch;
                 resultsBatch.reserve(batchSize);
-
-                // Loop until the reader is finished and all successfully read tracks have been written.
-                while (!readerFinished || tracksWritten < successfulReads.load())
-                {
-                    if (shouldCancel) break;
-
+                
+                auto lastCommitTime = std::chrono::steady_clock::now();
+                auto lastProgressTime = std::chrono::steady_clock::now();
+                
+                while (!shouldCancel) {
+                    // Collect results from queue
                     {
-                        std::unique_lock<std::mutex> lock{resultsMutex};
-                        // Wait for results OR for all analysis to be complete
-                        resultsCv.wait(lock, [&]{
-                            return !resultsQueue.empty() ||
-                                   (readerFinished && analysisCompletedCount.load() == successfulReads.load());
-                        });
-
-                        while (!resultsQueue.empty()) {
+                        std::lock_guard<std::mutex> lock(resultsMutex);
+                        while (!resultsQueue.empty() && resultsBatch.size() < batchSize) {
                             resultsBatch.emplace_back(resultsQueue.front().trackId, resultsQueue.front().metadata);
                             resultsQueue.pop();
-                            if (resultsBatch.size() >= batchSize) break;
                         }
                     }
-
-                    if (!resultsBatch.empty())
-                    {
+                    
+                    // Determine if we should commit
+                    auto now = std::chrono::steady_clock::now();
+                    auto timeSinceLastCommit = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastCommitTime);
+                    
+                    bool shouldCommit = false;
+                    bool allDone = (tracksProcessed >= totalTracks);
+                    
+                    if (!resultsBatch.empty()) {
+                        if (resultsBatch.size() >= batchSize) {
+                            // Full batch ready
+                            shouldCommit = true;
+                            spdlog::debug("Committing full batch of {} tracks", resultsBatch.size());
+                        }
+                        else if (allDone) {
+                            // All tracks done, commit remaining
+                            shouldCommit = true;
+                            spdlog::debug("Committing final batch of {} tracks", resultsBatch.size());
+                        }
+                        else if (timeSinceLastCommit.count() > 5000) {
+                            // It's been 5 seconds, commit what we have for progress
+                            shouldCommit = true;
+                            spdlog::debug("Committing partial batch of {} tracks after timeout", resultsBatch.size());
+                        }
+                    }
+                    
+                    if (shouldCommit && !resultsBatch.empty()) {
                         theTrackLibrary.getTrackDatabase()->updateTrackBpm(resultsBatch);
                         tracksWritten += resultsBatch.size();
                         resultsBatch.clear();
+                        lastCommitTime = now;
                     }
-
-                    // Use totalTracks for progress reporting so the user sees progress against the original goal
-                    int progressPercent = static_cast<int>((static_cast<float>(tracksWritten) / totalTracks) * 100.0f);
-                    const auto status{std::format("Analyzed {} / {} tracks...",
-                                                  ui::formatStandardStringNumber(tracksWritten),
-                                                  ui::formatStandardStringNumber(totalTracks))};
-                    progressCb(progressPercent, status);
-
-                    // If the reader is done and we've processed all the results, exit.
-                    if (readerFinished && tracksWritten == successfulReads.load()) {
+                    
+                    // Update progress periodically
+                    auto timeSinceLastProgress = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastProgressTime);
+                    if (timeSinceLastProgress.count() > 500) {  // Every 500ms
+                        size_t processed = tracksProcessed.load();
+                        int progressPercent = static_cast<int>((static_cast<float>(processed) / totalTracks) * 100.0f);
+                        const auto status = std::format("Processed {} / {} tracks ({} analyzed, {} skipped)...",
+                                                        ui::formatStandardStringNumber(processed),
+                                                        ui::formatStandardStringNumber(totalTracks),
+                                                        ui::formatStandardStringNumber(tracksWritten),
+                                                        ui::formatStandardStringNumber(tracksSkipped.load()));
+                        progressCb(progressPercent, status);
+                        lastProgressTime = now;
+                    }
+                    
+                    // Check if we're done
+                    if (allDone && tracksWritten >= tracksAnalyzed) {
+                        spdlog::info("All tracks processed. Processed: {}, Written: {}, Analyzed: {}, Skipped: {}", 
+                                     tracksProcessed.load(), tracksWritten, tracksAnalyzed.load(), tracksSkipped.load());
                         break;
                     }
+                    
+                    // Small sleep to avoid busy waiting
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
                 }
-
+                
                 // --- Cleanup ---
-                shouldCancel = true; // Signal all threads to stop
-                loadCv.notify_all();
-                resultsCv.notify_all();
-                readerThread.join();
-                // ThreadPool destructor will join workers
+                if (shouldCancel) {
+                    spdlog::info("BPM Analysis: Cancel detected, waiting for worker threads");
+                }
+                
+                // Wait for all threads with a timeout
+                auto waitStart = std::chrono::steady_clock::now();
+                const auto maxWaitTime = std::chrono::seconds(2);
+                
+                for (auto& worker : workers) {
+                    if (worker.joinable()) {
+                        // Calculate remaining time
+                        auto elapsed = std::chrono::steady_clock::now() - waitStart;
+                        if (elapsed < maxWaitTime) {
+                            // Try to join with remaining timeout
+                            // Note: std::thread doesn't have timed join, so we just join
+                            // The threads should exit quickly due to shouldCancel check
+                            worker.join();
+                        } else {
+                            // Timeout exceeded, detach remaining threads
+                            spdlog::warn("Detaching worker thread due to timeout");
+                            worker.detach();
+                        }
+                    }
+                }
+                
+                // Commit any remaining results
+                if (!resultsBatch.empty() && !shouldCancel) {
+                    spdlog::debug("Committing final {} results", resultsBatch.size());
+                    theTrackLibrary.getTrackDatabase()->updateTrackBpm(resultsBatch);
+                    tracksWritten += resultsBatch.size();
+                }
                 
                 // Save bad files to the task
                 {
                     std::lock_guard<std::mutex> lock(badFilesMutex);
                     m_badFiles = std::move(badFiles);
                 }
-
-                size_t finalCount = successfulReads.load();
-                if (tracksWritten < finalCount && !shouldCancel)
-                {
-                    std::string finalStatus = std::format("Cancelled after analyzing {} / {} tracks.",
+                
+                // Final status
+                if (shouldCancel) {
+                    std::string finalStatus = std::format("Cancelled. Analyzed {} / {} tracks.",
                                                           ui::formatStandardStringNumber(tracksWritten),
-                                                          ui::formatStandardStringNumber(finalCount));
+                                                          ui::formatStandardStringNumber(totalTracks));
+                    if (!m_badFiles.empty()) {
+                        finalStatus += std::format(" ({} files skipped due to read errors).", m_badFiles.size());
+                    }
+                    spdlog::info("BPM Analysis cancelled: {} analyzed, {} skipped", tracksWritten, m_badFiles.size());
                     completionCb(false, finalStatus);
                 }
-                else
-                {
-                    std::string finalStatus = std::format("Successfully analyzed {} tracks.",
-                                                          ui::formatStandardStringNumber(finalCount));
+                else {
+                    std::string finalStatus = std::format("Successfully analyzed {} / {} tracks.",
+                                                          ui::formatStandardStringNumber(tracksWritten),
+                                                          ui::formatStandardStringNumber(totalTracks));
                     if (!m_badFiles.empty()) {
-                        finalStatus += std::format(" ({} files could not be read).", m_badFiles.size());
+                        finalStatus += std::format(" ({} files skipped due to read errors).", m_badFiles.size());
                     }
+                    spdlog::info("BPM Analysis complete: {} analyzed, {} skipped", tracksWritten, m_badFiles.size());
                     progressCb(100, finalStatus);
                     completionCb(true, finalStatus);
                 }

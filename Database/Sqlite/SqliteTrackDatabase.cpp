@@ -509,6 +509,20 @@ namespace jucyaudio
                 m_db.close(); // Close on critical pragma failure
                 return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
+            
+            // Check auto_vacuum setting
+            SqliteStatement checkVacuum{m_db, "PRAGMA auto_vacuum;"};
+            if (checkVacuum.getNextResult())
+            {
+                const auto mode = checkVacuum.getInt32(0);
+                if (mode == 0) // NONE - database will bloat
+                {
+                    spdlog::warn("Database has auto_vacuum=NONE. Consider running VACUUM to enable incremental vacuum.");
+                }
+            }
+            
+            // Moderate performance optimizations
+            m_db.execute("PRAGMA cache_size=-16000;");   // 16MB cache (was default ~2MB)
 
             DbResult schemaResult = createTablesIfNeeded();
             if (!schemaResult.isOk())
