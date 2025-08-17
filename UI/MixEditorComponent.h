@@ -20,7 +20,56 @@ namespace jucyaudio
         // Forward declarations
         class PlaybackController;
         
-        class MixEditorComponent : public juce::Component, private juce::Timer
+        // Lightweight overlay component that only draws the playhead
+        class PlayheadOverlay : public juce::Component
+        {
+        public:
+            PlayheadOverlay() { setInterceptsMouseClicks(false, false); }
+            
+            void setPlayheadPosition(double positionSeconds, double pixelsPerSecond)
+            {
+                if (m_positionSeconds != positionSeconds || m_pixelsPerSecond != pixelsPerSecond)
+                {
+                    // Calculate old and new x positions
+                    const int oldX = (m_positionSeconds >= 0) ? static_cast<int>(m_positionSeconds * m_pixelsPerSecond) : -1;
+                    const int newX = (positionSeconds >= 0) ? static_cast<int>(positionSeconds * pixelsPerSecond) : -1;
+                    
+                    m_positionSeconds = positionSeconds;
+                    m_pixelsPerSecond = pixelsPerSecond;
+                    
+                    // Only repaint the areas that changed
+                    if (oldX >= 0)
+                        repaint(oldX - 7, 0, 14, getHeight());
+                    if (newX >= 0)
+                        repaint(newX - 7, 0, 14, getHeight());
+                }
+            }
+            
+            void paint(juce::Graphics& g) override
+            {
+                if (m_positionSeconds >= 0.0 && m_pixelsPerSecond > 0)
+                {
+                    const float playheadX = static_cast<float>(m_positionSeconds * m_pixelsPerSecond);
+                    
+                    // Draw the red playhead line
+                    g.setColour(juce::Colours::red);
+                    g.fillRect(playheadX - 1.0f, 0.0f, 2.0f, static_cast<float>(getHeight()));
+                    
+                    // Draw triangle at top
+                    juce::Path playheadMarker;
+                    playheadMarker.addTriangle(playheadX - 6, 0, playheadX + 6, 0, playheadX, 12);
+                    g.fillPath(playheadMarker);
+                }
+            }
+            
+        private:
+            double m_positionSeconds = -1.0;
+            double m_pixelsPerSecond = 100.0;
+        };
+        
+        class MixEditorComponent : public juce::Component, 
+                                    private juce::Timer,
+                                    private juce::ScrollBar::Listener
         {
         public:
             MixEditorComponent();
@@ -60,12 +109,17 @@ namespace jucyaudio
             void saveMixMarker(const database::MixMarker& marker);
             void handleMarkerClick(MarkerId markerId);
             void handleMarkerAdd(std::chrono::milliseconds position);
+            
+            // ScrollBar::Listener callbacks
+            void scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) override;
+            void updatePlayheadOverlayPosition();
 
             juce::AudioFormatManager m_formatManager;
             juce::AudioThumbnailCache m_thumbnailCache{200}; // 200 items in the cache - enough for large mixes
 
             MarkerRulerComponent m_markerRuler;
             TimelineComponent m_timeline;
+            PlayheadOverlay m_playheadOverlay;  // Separate component for playhead
             juce::Viewport m_viewport;
             database::MixNode *m_node{nullptr};
             

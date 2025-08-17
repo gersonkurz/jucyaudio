@@ -364,11 +364,40 @@ The application now operates on the following principles:
     *   Efficient position-based queries with indices
     *   Reusable dialog system for marker editing
 
-## 21. Next Session TODO:
+## 21. Session Accomplishments: Export & Playhead Performance (2025-08-17)
+
+### Fixed: Mono Track Export Issue
+*   **Problem:** Mono audio tracks were being exported as garbage/noise in both MP3 and WAV exports
+*   **Root Cause:** `ExportMixImplementation::contributeFromActiveSource()` was creating buffers with stereo channel count but reading mono files directly into them, leaving channel 1 uninitialized
+*   **Solution:** 
+    - Read audio into temporary buffer matching source file's channel count
+    - Properly convert between formats (mono→stereo by duplicating, stereo→mono by mixing)
+    - Fix applied to base class, automatically fixing both MP3 and WAV exports
+
+### Analyzed: Playhead Performance Issue  
+*   **Problem:** Enabling the playback position indicator (red line) caused severe performance degradation and VU meter stuttering
+*   **Root Cause:** Multiple timer conflicts between UI components:
+    - VUMeter: 25 Hz
+    - MainComponent: 30 Hz
+    - MixEditor: 20 Hz (50ms)
+    - EnhancedPlayer: 20 Hz
+    - These different frequencies create beat patterns causing stuttering
+*   **Initial Attempt:** Created separate `PlayheadOverlay` component to avoid full timeline repaints
+*   **Result:** Still had performance issues due to timer conflicts
+*   **Current Status:** Playhead disabled (simple `return;` in `timerCallback()`) to maintain performance
+
+### Proposed Solutions for Playhead:
+1. **Unified Timer System**: Single timer in MainComponent driving all UI updates at consistent frequency
+2. **Dirty Rectangle System**: Use `repaint(Rectangle)` for selective region updates
+3. **OpenGL Rendering**: For complex animated UIs
+4. **Lock-free Audio/UI Decoupling**: Audio thread never waits for UI, uses lock-free queues for position data
+
+## 22. Next Session TODO:
 
 ### Completed:
 1.  ✅ **FLAC Support** - Already implemented (per user confirmation)
 2.  ✅ **WAV Support** - Already implemented (per user confirmation)
+3.  ✅ **Mono Track Export** - Fixed garbage output issue
 
 ### High Priority:
     

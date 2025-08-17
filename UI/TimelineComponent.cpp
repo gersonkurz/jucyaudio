@@ -105,7 +105,6 @@ namespace jucyaudio
 
             // 3. Check if we need to show a confirmation dialog (logic is unchanged)
             bool shouldRemoveFromWorkingSet = false;
-            bool userCancelled = false;
 
             if (config::theSettings.mixEditingSettings.removeFromWorkingSetOnDelete.get())
             {
@@ -123,30 +122,41 @@ namespace jucyaudio
                     const auto &mixInfo = m_mixLoader->getMixInfo();
                     if (mixInfo.source_ws_id > 0)
                     {
-                        if (config::theSettings.mixEditingSettings.askBeforeRemovingFromWorkingSet.get())
+                        auto usersChoice{config::theSettings.mixEditingSettings.removeTrackOption.get().value};
+                        if(usersChoice == config::RemoveTrackOption::AskUser)
                         {
-                            const auto result = juce::AlertWindow::showYesNoCancelBox(juce::AlertWindow::QuestionIcon,
+                            const auto result = juce::AlertWindow::showYesNoCancelBox(
+                                juce::AlertWindow::QuestionIcon,
                                 "Remove Track",
                                 "Remove this track from the mix?\n\nAlso remove from the source working set?",
                                 "Remove from Both",
-                                "Remove from Mix Only",
-                                "Cancel");
+                            "Remove from Mix Only",
+                            "Cancel");
 
-                            if (result == 0) userCancelled = true;
-                            else if (result == 1) shouldRemoveFromWorkingSet = true;
+                            if(result == 0)
+                            {
+                                usersChoice = config::RemoveTrackOption::CancelOperation;
+                            }
+                            else if(result == 1)
+                            {
+                                usersChoice = config::RemoveTrackOption::RemoveFromMixOnly;
+                            }
+                            else
+                            {
+                                usersChoice = config::RemoveTrackOption::RemoveFromBoth;
+                            }
                         }
-                        else
+                        if(usersChoice == config::RemoveTrackOption::CancelOperation)
+                        {
+                            spdlog::info("User cancelled track removal.");
+                            return false;
+                        }
+                        else if(usersChoice == config::RemoveTrackOption::RemoveFromBoth)
                         {
                             shouldRemoveFromWorkingSet = true;
                         }
                     }
                 }
-            }
-
-            if (userCancelled)
-            {
-                spdlog::info("User cancelled track removal");
-                return false;
             }
 
             // --- FIX: Stop playback BEFORE any data model changes ---
@@ -684,18 +694,7 @@ namespace jucyaudio
                 g.drawVerticalLine(juce::roundToInt(playheadX), 0.0f, static_cast<float>(getHeight()));
             }
 
-            // Draw mix playback position (thick red line)
-            if (m_mixPlaybackPosition >= 0.0)
-            {
-                float playheadX = static_cast<float>(m_mixPlaybackPosition * m_pixelsPerSecond);
-                g.setColour(juce::Colours::red);
-                g.fillRect(playheadX - 1.0f, 0.0f, 2.0f, static_cast<float>(getHeight()));
-
-                // Draw a triangle at the top
-                juce::Path playheadMarker;
-                playheadMarker.addTriangle(playheadX - 6, 0, playheadX + 6, 0, playheadX, 12);
-                g.fillPath(playheadMarker);
-            }
+            // Playhead is now drawn by PlayheadOverlay component for better performance
 
             // Draw cue drag preview line (dashed orange line)
             if (m_cueDragPreviewTime.has_value())
@@ -959,6 +958,10 @@ namespace jucyaudio
 
                 // Keep the time position under the mouse cursor stable
                 maintainViewportPosition(timeAtMouse, mousePos.x);
+                
+                // Notify parent of zoom change
+                if (onZoomChanged)
+                    onZoomChanged();
             }
         }
 

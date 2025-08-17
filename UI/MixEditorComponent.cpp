@@ -35,7 +35,15 @@ namespace jucyaudio
             // Set the timeline as the component to be viewed by the viewport.
             m_viewport.setViewedComponent(&m_timeline, false); // false = don't delete when replaced
             m_viewport.setScrollBarsShown(true, true);
+            
+            // Listen for scroll events
+            m_viewport.getHorizontalScrollBar().addListener(this);
+            m_viewport.getVerticalScrollBar().addListener(this);
+            
             addAndMakeVisible(m_viewport);
+            
+            // Add the playhead overlay on top of the viewport
+            m_viewport.addAndMakeVisible(m_playheadOverlay);
                         
             m_timeline.onCueAttachChanged = [this](int orderInMix, const database::MixTrack& updatedTrack)
             {
@@ -64,6 +72,13 @@ namespace jucyaudio
                 handleMixPlayback(startTime, true);
             };
             
+            // Set up zoom change callback
+            m_timeline.onZoomChanged = [this]()
+            {
+                // Update overlay when zoom changes to keep playhead in sync
+                updatePlayheadOverlayPosition();
+            };
+            
             // Set up seek callback for clicking on timeline
             m_timeline.onSeekRequested = [this](double timePosition)
             {
@@ -78,6 +93,8 @@ namespace jucyaudio
         MixEditorComponent::~MixEditorComponent()
         {
             stopTimer();
+            m_viewport.getHorizontalScrollBar().removeListener(this);
+            m_viewport.getVerticalScrollBar().removeListener(this);
             // Unload mix before cleanup
             unloadMix();
         }
@@ -210,8 +227,8 @@ namespace jucyaudio
             // Load markers for this mix
             loadMixMarkers();
             
-            // Start timer to monitor playback state
-            startTimer(50); // 20Hz update rate
+            // Start timer with lower frequency to reduce conflicts
+            startTimer(100); // 10Hz update rate instead of 20Hz
             
             // Ensure timeline has keyboard focus for playback controls
             m_timeline.grabKeyboardFocus();
@@ -226,6 +243,9 @@ namespace jucyaudio
             
             // The viewport fills the remaining area below the ruler
             m_viewport.setBounds(bounds);
+            
+            // Position the playhead overlay to match the viewport's viewed area
+            updatePlayheadOverlayPosition();
             
             // Notify the timeline that the viewport has resized
             m_timeline.viewportResized();
@@ -588,18 +608,28 @@ namespace jucyaudio
         
         void MixEditorComponent::timerCallback()
         {
-            // EXPERIMENT: Disable red playback bar updates to improve performance
+            // Simple solution: just comment this out to disable the playhead entirely
+            // Uncomment when we find a better solution
             return;
             
-            /* DISABLED FOR PERFORMANCE TESTING
+            /*
             if (m_playbackController && m_playbackController->isMixMode())
             {
                 if (m_playbackController->isPlaying())
                 {
-                    // Update timeline playback position
                     const double positionSeconds = m_playbackController->getCurrentPositionSeconds();
-                    m_timeline.setMixPlaybackPosition(positionSeconds);
-                    m_markerRuler.setPlaybackPosition(positionSeconds * 1000.0); // Convert to milliseconds
+                    
+                    // Throttle updates - only update if position changed significantly
+                    static double lastUpdatePosition = -1.0;
+                    const double delta = std::abs(positionSeconds - lastUpdatePosition);
+                    
+                    // Only update if moved more than 100ms or just started
+                    if (delta > 0.1 || lastUpdatePosition < 0)
+                    {
+                        m_playheadOverlay.setPlayheadPosition(positionSeconds, m_timeline.getPixelsPerSecond());
+                        m_markerRuler.setPlaybackPosition(positionSeconds * 1000.0);
+                        lastUpdatePosition = positionSeconds;
+                    }
                     
                     // Check if we've reached the end
                     const double totalSeconds = m_playbackController->getLengthInSeconds();
@@ -608,20 +638,21 @@ namespace jucyaudio
                         spdlog::info("Playback reached end of mix");
                         m_playbackController->stop();
                         stopTimer();
-                        m_timeline.setMixPlaybackPosition(-1.0); // Hide the red playhead
+                        m_playheadOverlay.setPlayheadPosition(-1.0, m_timeline.getPixelsPerSecond());
+                        lastUpdatePosition = -1.0;
                     }
                 }
                 else
                 {
-                    // Not playing but still in mix mode - hide playhead but keep timer for responsiveness
-                    m_timeline.setMixPlaybackPosition(-1.0);
+                    // Not playing - hide playhead
+                    m_playheadOverlay.setPlayheadPosition(-1.0, m_timeline.getPixelsPerSecond());
                 }
             }
             else
             {
                 // Not in mix mode - stop timer and hide playhead
                 stopTimer();
-                m_timeline.setMixPlaybackPosition(-1.0);
+                m_playheadOverlay.setPlayheadPosition(-1.0, m_timeline.getPixelsPerSecond());
             }
             */
         }
@@ -637,6 +668,20 @@ namespace jucyaudio
             
             m_markerRuler.setMarkers(markers);
             spdlog::info("Loaded {} markers for mix {}", markers.size(), mixId);
+        }
+        
+        void MixEditorComponent::scrollBarMoved(juce::ScrollBar* /*scrollBar*/, double /*newRangeStart*/)
+        {
+            updatePlayheadOverlayPosition();
+        }
+        
+        void MixEditorComponent::updatePlayheadOverlayPosition()
+        {
+            // When viewport scrolls or changes, update the playhead overlay position
+            // The overlay needs to match the timeline's position within the viewport
+            const auto viewPos = m_viewport.getViewPosition();
+            m_playheadOverlay.setTopLeftPosition(-viewPos.x, -viewPos.y);
+            m_playheadOverlay.setSize(m_timeline.getWidth(), m_viewport.getViewHeight());
         }
         
         void MixEditorComponent::saveMixMarker(const database::MixMarker& marker)

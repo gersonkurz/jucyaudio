@@ -65,6 +65,9 @@ namespace jucyaudio
                 m_mixPlaybackPosition = position;
                 repaint();
             }
+            
+            double getPixelsPerSecond() const { return m_pixelsPerSecond; }
+            
             void setCurrentTimePosition(double timeInSeconds);
             void playFromPosition(double timePosition);
             void playSelectedTrackFromPosition(double timePosition);
@@ -79,6 +82,7 @@ namespace jucyaudio
             std::function<void(int orderInMix, const database::MixTrack&)> onCueAttachChanged;
             std::function<void(int orderInMix, const std::vector<database::EnvelopePoint>&)> onEnvelopeChanged;
             std::function<void(int orderInMix, float newGain)> onGainAdjustmentChanged;
+            std::function<void()> onZoomChanged;
 
 
             /**
