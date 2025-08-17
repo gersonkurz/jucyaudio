@@ -47,6 +47,9 @@ namespace jucyaudio
 
             void timerCallback() override;
             void changeListenerCallback(juce::ChangeBroadcaster *source) override;
+            
+            // Keyboard handling for media keys
+            bool keyPressed(const juce::KeyPress &key) override;
 
             void adjustSplitterPosition(int deltaX);
 
@@ -80,6 +83,10 @@ namespace jucyaudio
 
             void playDataRow(RowIndex_t rowIndex);
             void createMix();
+            
+            // Media key actions
+            void playNextTrack();
+            void playPreviousTrack();
 
             // --- export mix functionality ---
             void onExportMix(INavigationNode *selectedNode);

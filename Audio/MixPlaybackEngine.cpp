@@ -63,13 +63,13 @@ namespace jucyaudio
                                         trackInfo->filename.find('}') != std::string::npos;
             
             if (hasSpecialChars) {
-                spdlog::info("[AUDIO DEBUG] Track {} has special chars in filename: {}", 
+                spdlog::debug("Track {} has special chars in filename: {}", 
                             trackId, trackInfo->filename);
-                spdlog::info("[AUDIO DEBUG] Full reconstructed path: {}", trackPath.string());
-                spdlog::info("[AUDIO DEBUG] JUCE file path: {}", sourceFile.getFullPathName().toStdString());
+                spdlog::debug("Full reconstructed path: {}", trackPath.string());
+                spdlog::debug("JUCE file path: {}", sourceFile.getFullPathName().toStdString());
             }
             
-            spdlog::info("[AUDIO DEBUG] Preparing track {} from file: {}", 
+            spdlog::debug("Preparing track {} from file: {}", 
                         trackId, trackPath.string());
             
             if (!sourceFile.exists())
@@ -87,7 +87,7 @@ namespace jucyaudio
             }
 
             // Log detailed audio format information
-            spdlog::info("[AUDIO DEBUG] Track {} audio format: channels={}, sampleRate={}, bitsPerSample={}, formatName={}",
+            spdlog::debug("Track {} audio format: channels={}, sampleRate={}, bitsPerSample={}, formatName={}",
                         trackId,
                         reader->numChannels,
                         reader->sampleRate,
@@ -98,7 +98,7 @@ namespace jucyaudio
 
             if (std::abs(reader->sampleRate - targetSampleRate) > 0.01)
             {
-                spdlog::info("[AUDIO DEBUG] Track {} needs resampling from {} to {} Hz",
+                spdlog::debug("Track {} needs resampling from {} to {} Hz",
                             trackId, reader->sampleRate, targetSampleRate);
                 resampler = std::make_unique<juce::ResamplingAudioSource>(readerSource.get(), false, reader->numChannels);
                 resampler->setResamplingRatio(reader->sampleRate / targetSampleRate);
@@ -106,7 +106,7 @@ namespace jucyaudio
             }
             else
             {
-                spdlog::info("[AUDIO DEBUG] Track {} no resampling needed (rate={})",
+                spdlog::debug("Track {} no resampling needed (rate={})",
                             trackId, reader->sampleRate);
                 readerSource->prepareToPlay(blockSize, targetSampleRate);
             }
@@ -367,7 +367,7 @@ namespace jucyaudio
             // Log buffer info periodically
             static int audioBlockCount = 0;
             if (++audioBlockCount % 100 == 1) {
-                spdlog::info("[AUDIO DEBUG] getNextAudioBlock: buffer channels={}, startChannel={}, numSamples={}",
+                spdlog::debug("getNextAudioBlock: buffer channels={}, startChannel={}, numSamples={}",
                             bufferToFill.buffer->getNumChannels(),
                             bufferToFill.startSample, 
                             bufferToFill.numSamples);
@@ -460,7 +460,7 @@ namespace jucyaudio
             const bool shouldLogDetails = (++mixBlockCount % 100 == 1);
             
             if (shouldLogDetails) {
-                spdlog::info("[AUDIO DEBUG] mixActiveTracksForBlock: output buffer channels={}, numSamples={}", 
+                spdlog::debug("mixActiveTracksForBlock: output buffer channels={}, numSamples={}", 
                             numChannels, numSamples);
             }
 
@@ -511,7 +511,7 @@ namespace jucyaudio
                 trackBuffer.clear();
 
                 if (shouldLogDetails && hasSpecialChars) {
-                    spdlog::info("[AUDIO DEBUG] Processing track {} with special chars, source channels={}, buffer channels={}",
+                    spdlog::debug("Processing track {} with special chars, source channels={}, buffer channels={}",
                                 source->trackId, sourceChannels, numChannels);
                 }
 
@@ -530,7 +530,7 @@ namespace jucyaudio
                         }
                         
                         if (shouldLogDetails && hasSpecialChars) {
-                            spdlog::info("[AUDIO DEBUG] Duplicated mono channel to stereo for track {}", source->trackId);
+                            spdlog::debug("Duplicated mono channel to stereo for track {}", source->trackId);
                         }
                     }
                     
@@ -544,7 +544,7 @@ namespace jucyaudio
                                 rightMax = std::max(rightMax, std::abs(trackBuffer.getSample(1, s)));
                             }
                         }
-                        spdlog::info("[AUDIO DEBUG] Track {} channel levels after conversion: L={:.4f}, R={:.4f}",
+                        spdlog::debug("Track {} channel levels after conversion: L={:.4f}, R={:.4f}",
                                     source->trackId, leftMax, rightMax);
                     }
                 }
@@ -571,7 +571,7 @@ namespace jucyaudio
             }
             
             if (shouldLogDetails) {
-                spdlog::info("[AUDIO DEBUG] mixActiveTracksForBlock: {} active tracks processed", activeTracksThisBlock);
+                spdlog::debug("mixActiveTracksForBlock: {} active tracks processed", activeTracksThisBlock);
             }
         }
 

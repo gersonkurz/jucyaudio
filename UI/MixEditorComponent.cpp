@@ -419,66 +419,87 @@ namespace jucyaudio
             const auto mixId = mixLoader.getMixId();
             spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Attempting to delete track {} from mix {}", trackIdToRemove, mixId);
 
-            // 2. Confirmation Dialog & Logic
-            // This logic is ported from the old TimelineComponent::deleteSelectedTrack
+            // 2. Quick settings check - no dialog if not configured to ask
             bool shouldRemoveFromWorkingSet = false;
             
             if (config::theSettings.mixEditingSettings.removeFromWorkingSetOnDelete.get())
             {
-                const auto& mixTracks = mixLoader.getMixTracks();
-                int trackOccurrences = 0;
-                for (const auto& mixTrack : mixTracks)
+                // Only check if we need to ask - avoid unnecessary work
+                if (config::theSettings.mixEditingSettings.askBeforeRemovingFromWorkingSet.get())
                 {
-                    if (mixTrack.trackId == trackIdToRemove)
+                    const auto& mixTracks = mixLoader.getMixTracks();
+                    int trackOccurrences = 0;
+                    for (const auto& mixTrack : mixTracks)
                     {
-                        trackOccurrences++;
-                    }
-                }
-                
-                if (trackOccurrences == 1)
-                {
-                    const auto& mixInfo = mixLoader.getMixInfo();
-                    if (mixInfo.source_ws_id > 0)
-                    {
-                        if (config::theSettings.mixEditingSettings.askBeforeRemovingFromWorkingSet.get())
+                        if (mixTrack.trackId == trackIdToRemove)
                         {
-                            const auto result = juce::AlertWindow::showYesNoCancelBox(
-                                juce::AlertWindow::QuestionIcon,
-                                "Remove Track",
-                                "Remove this track from the mix?\n\nAlso remove from the source working set?",
-                                "Remove from Both",
+                            trackOccurrences++;
+                            if (trackOccurrences > 1) break; // No need to count more
+                        }
+                    }
+                    
+                    if (trackOccurrences == 1)
+                    {
+                        const auto& mixInfo = mixLoader.getMixInfo();
+                        if (mixInfo.source_ws_id > 0)
+                        {
+                            auto usersChoice{config::theSettings.mixEditingSettings.removeTrackOption.get().value};
+                            if(usersChoice == config::RemoveTrackOption::AskUser)
+                            {
+                                const auto result = juce::AlertWindow::showYesNoCancelBox(
+                                    juce::AlertWindow::QuestionIcon,
+                                    "Remove Track",
+                                    "Remove this track from the mix?\n\nAlso remove from the source working set?",
+                                    "Remove from Both",
                                 "Remove from Mix Only",
                                 "Cancel");
-                            
-                            if (result == 0) // Cancel
+
+                                if(result == 0)
+                                {
+                                    usersChoice = config::RemoveTrackOption::CancelOperation;
+                                }
+                                else if(result == 1)
+                                {
+                                    usersChoice = config::RemoveTrackOption::RemoveFromMixOnly;
+                                }
+                                else
+                                {
+                                    usersChoice = config::RemoveTrackOption::RemoveFromBoth;
+                                }
+                            }
+                            if(usersChoice == config::RemoveTrackOption::CancelOperation)
                             {
                                 spdlog::info("User cancelled track removal.");
-                                spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> User cancelled.");
                                 return;
                             }
-                            else if (result == 1) // Yes - Remove from both
+                            else if(usersChoice == config::RemoveTrackOption::RemoveFromBoth)
                             {
                                 shouldRemoveFromWorkingSet = true;
                             }
                         }
-                        else
-                        {
-                            shouldRemoveFromWorkingSet = true;
-                        }
+                    }
+                }
+                else
+                {
+                    // Auto-remove from working set without asking
+                    const auto& mixInfo = mixLoader.getMixInfo();
+                    if (mixInfo.source_ws_id > 0)
+                    {
+                        shouldRemoveFromWorkingSet = true;
                     }
                 }
             }
-            else
+            // Skip confirmation dialog if not configured to ask
+            else if (config::theSettings.mixEditingSettings.askBeforeRemovingFromWorkingSet.get())
             {
-                // If not removing from working set, just show a simple confirmation
+                // Only show confirmation if configured to ask
                 const auto result = juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,
-                                                                             "Delete Track",
-                                                                             "Are you sure you want to remove this track from the mix?",
-                                                                             "Delete", "Cancel");
+                                                                       "Delete Track",
+                                                                       "Are you sure you want to remove this track from the mix?",
+                                                                       "Delete", "Cancel");
                 if (result == 0) // User cancelled
                 {
                     spdlog::info("User cancelled track removal.");
-                    spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> User cancelled.");
                     return;
                 }
             }
@@ -494,8 +515,8 @@ namespace jucyaudio
                 spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Was playing at position {}. Stopping playback.", playbackPosition);
                 m_playbackController->stop();
                 
-                // Give the audio thread a moment to fully stop
-                juce::Thread::sleep(50);
+                // Remove this sleep - not needed
+                // juce::Thread::sleep(50);
             }
             
             // 4. Perform DB Deletions
@@ -530,8 +551,15 @@ namespace jucyaudio
                 return;
             }
             
-            // 6. Re-load mix in playback controller with the new data
-            if (m_playbackController)
+            // 6. Refresh the timeline UI first (but only if not playing - otherwise do it after)
+            if (!wasPlaying)
+            {
+                spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Refreshing timeline UI.");
+                m_timeline.refreshAfterDeletion(trackIdToRemove);
+            }
+            
+            // 7. Re-load mix in playback controller only if needed
+            if (m_playbackController && wasPlaying)
             {
                 spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Reloading mix in playback controller.");
                 bool loadSuccess = m_playbackController->loadMix(&mixLoader);
@@ -545,32 +573,25 @@ namespace jucyaudio
                     return;
                 }
                 
-                // 7. Resume playback if we were playing before deletion
-                if (wasPlaying)
-                {
-                    // Small delay to ensure everything is set up
-                    juce::Thread::sleep(50);
-                    
-                    spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Resuming playback from position {}", playbackPosition);
-                    m_playbackController->playMixFrom(playbackPosition);
-                    
-                    // Force ensure it's really playing
-                    spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Final state check: isPlaying={}, isMixMode={}", 
-                        m_playbackController->isPlaying(),
-                        m_playbackController->isMixMode());
-                }
+                // Resume playback immediately
+                spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Resuming playback from position {}", playbackPosition);
+                m_playbackController->playMixFrom(playbackPosition);
+                
+                // Now refresh the UI after playback has resumed
+                spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Refreshing timeline UI after playback resume.");
+                m_timeline.refreshAfterDeletion(trackIdToRemove);
             }
             
-            // 8. Refresh the entire timeline UI
-            spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Refreshing timeline UI.");
-            m_timeline.refreshAfterDeletion(trackIdToRemove);
-            
-            // 9. Ready for playback
+            // 8. Ready for playback
             spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Exit");
         }
         
         void MixEditorComponent::timerCallback()
         {
+            // EXPERIMENT: Disable red playback bar updates to improve performance
+            return;
+            
+            /* DISABLED FOR PERFORMANCE TESTING
             if (m_playbackController && m_playbackController->isMixMode())
             {
                 if (m_playbackController->isPlaying())
@@ -602,6 +623,7 @@ namespace jucyaudio
                 stopTimer();
                 m_timeline.setMixPlaybackPosition(-1.0);
             }
+            */
         }
         
         void MixEditorComponent::loadMixMarkers()

@@ -158,7 +158,7 @@ namespace jucyaudio
                                         filepath.find('}') != std::string::npos;
             
             if (hasSpecialChars) {
-                spdlog::info("[AUDIO DEBUG] Loading file with special chars: {}", filepath);
+                spdlog::debug("Loading file with special chars: {}", filepath);
             }
             
             // Try to create a reader for the new file
@@ -168,7 +168,7 @@ namespace jucyaudio
             {
                 // Log audio format details for files with special chars
                 if (hasSpecialChars) {
-                    spdlog::info("[AUDIO DEBUG] Single track reader: channels={}, sampleRate={}, bitsPerSample={}, formatName={}",
+                    spdlog::debug("Single track reader: channels={}, sampleRate={}, bitsPerSample={}, formatName={}",
                                 reader->numChannels,
                                 reader->sampleRate,
                                 reader->bitsPerSample,

@@ -139,6 +139,10 @@ namespace jucyaudio
             // Handle track reordering from drag & drop
             void handleTrackReorder(int sourceRow, int targetRow);
             void handleTracksReorder(const std::vector<int>& sourceRows, int targetRow);
+            
+            // Public access methods for media key support
+            int getTotalRowCount() { return getNumRows(); }
+            void selectSingleRow(int rowIndex) { m_tableListBox.selectRow(rowIndex); }
 
         private:
             // --- juce::Timer overrides ---

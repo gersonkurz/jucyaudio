@@ -39,8 +39,11 @@ namespace jucyaudio
             }
             //int index = 0;
             
+            // Only dump context in debug builds or when explicitly debugging
+            #ifdef DEBUG_MIX_LOADING
             dumpContext(__FILE__, __LINE__);
-            spdlog::info("MixProjectLoader: Indexed {} track infos for mix ID {}", m_trackInfosMap.size(), m_mixId);
+            #endif
+            spdlog::debug("MixProjectLoader: Indexed {} track infos for mix ID {}", m_trackInfosMap.size(), m_mixId);
             return true;
         }
 

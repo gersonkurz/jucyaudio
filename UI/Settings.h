@@ -10,7 +10,64 @@ namespace jucyaudio
     namespace config
     {
         extern std::shared_ptr<spdlog::logger> logger;
-        
+
+        enum class RemoveTrackOption
+        {
+            RemoveFromBoth = 0,
+            RemoveFromMixOnly = 1,
+            CancelOperation = 2,
+            AskUser = 3
+        };
+
+        inline std::string enumAsString(RemoveTrackOption option)
+        {
+            switch (option)
+            {
+            case RemoveTrackOption::RemoveFromBoth:
+                return "RemoveFromBoth";
+            case RemoveTrackOption::RemoveFromMixOnly:
+                return "RemoveFromMixOnly";
+            case RemoveTrackOption::CancelOperation:
+                return "CancelOperation";
+            case RemoveTrackOption::AskUser:
+                return "AskUser";
+            default:
+                return "Unknown";
+            }
+        }
+
+        inline bool enumFromString(std::string_view str, RemoveTrackOption &value)
+        {
+            if (str == "RemoveFromBoth")
+                value = RemoveTrackOption::RemoveFromBoth;
+            else if (str == "RemoveFromMixOnly")
+                value = RemoveTrackOption::RemoveFromMixOnly;
+            else if (str == "CancelOperation")
+                value = RemoveTrackOption::CancelOperation;
+            else if (str == "AskUser")
+                value = RemoveTrackOption::AskUser;
+            else
+                return false;
+            return true;
+        }
+
+        template <typename T> struct EnumConfigValue : public IEnumConfigValue
+        {
+            T value;
+
+            EnumConfigValue(T initialValue) : value(initialValue) {}
+
+            std::string toString() const
+            {
+                return enumAsString(value);
+            }
+
+            bool fromString(std::string_view str)
+            {
+                return enumFromString(str, value);
+            }
+        };
+
         struct DataViewColumn
         {
             DataViewColumn() = default;
@@ -24,7 +81,7 @@ namespace jucyaudio
             DataViewColumnSection(Section *parent, const std::string &name)
                 : Section{parent, name}
             {
-                logger->info("{}: creating DataViewColumnSection with name '{}' at {}", __func__, name, (const void *) this);
+                logger->info("{}: creating DataViewColumnSection with name '{}' at {}", __func__, name, (const void *)this);
             }
             TypedValue<std::string> columnName{this, "ColumnName", ""};
             TypedValue<int> columnWidth{this, "ColumnWidth", 100};
@@ -69,26 +126,27 @@ namespace jucyaudio
                     : Section{parent, "Export"}
                 {
                 }
-                
+
                 TypedValue<std::string> defaultArtist{this, "DefaultArtist", "Unknown Artist"};
                 TypedValue<std::string> defaultAlbum{this, "DefaultAlbum", "Unknown Album"};
                 TypedValue<std::string> defaultYear{this, "DefaultYear", "2025"};
                 TypedValue<std::string> defaultGenre{this, "DefaultGenre", "Electronic"};
                 TypedValue<std::string> defaultComment{this, "DefaultComment", ""};
-                
+
             } exportSettings{this};
-            
+
             struct MixEditingSettings : public Section
             {
                 MixEditingSettings(Section *parent)
                     : Section{parent, "MixEditing"}
                 {
                 }
-                
+
                 TypedValue<bool> removeFromWorkingSetOnDelete{this, "RemoveFromWorkingSetOnDelete", true};
                 TypedValue<bool> askBeforeRemovingFromWorkingSet{this, "AskBeforeRemovingFromWorkingSet", true};
                 TypedValue<bool> clearWorkingSetAfterExport{this, "ClearWorkingSetAfterExport", true};
-                
+                TypedValue<EnumConfigValue<RemoveTrackOption>> removeTrackOption{this, "RemoveTrackOption", RemoveTrackOption::RemoveFromBoth};
+
             } mixEditingSettings{this};
 
             struct LoggingSettings : public Section
@@ -97,7 +155,7 @@ namespace jucyaudio
                     : Section{parent, "Logging"}
                 {
                 }
-                
+
                 TypedValue<std::string> logLevel{this, "log_level", "info"};
 
             } loggingSettings{this};
@@ -108,7 +166,7 @@ namespace jucyaudio
                     : Section{parent, "Undo"}
                 {
                 }
-                
+
                 TypedValue<int> maxOperations{this, "MaxOperations", 100};
 
             } undoSettings{this};
@@ -116,7 +174,7 @@ namespace jucyaudio
 
         extern RootSettings theSettings;
 
-         TypedValueVector<DataViewColumnSection> *getSectionFor(database::INavigationNode *node);
+        TypedValueVector<DataViewColumnSection> *getSectionFor(database::INavigationNode *node);
     } // namespace config
 
 } // namespace jucyaudio

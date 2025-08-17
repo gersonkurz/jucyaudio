@@ -168,6 +168,9 @@ namespace jucyaudio
             // PlaybackToolbarComponent fetches it on init) For now, let
             // PlaybackController::syncUIToPlaybackControllerState handle this
             // via toolbar reference.
+            
+            // Enable keyboard focus for media keys
+            setWantsKeyboardFocus(true);
 
             // --- Application Commands and Menu ---
             m_commandManager.registerAllCommandsForTarget(this); // Register commands defined in this class
@@ -309,6 +312,279 @@ namespace jucyaudio
                 m_currentNode->dataNoLongerShowing(); // Good practice
                 m_currentNode->release(REFCOUNT_DEBUG_ARGS);
                 m_currentNode = nullptr;
+            }
+        }
+
+        bool MainComponent::keyPressed(const juce::KeyPress &key)
+        {
+            const auto keyCode = key.getKeyCode();
+            
+            // Mac media keys (F7-F9 are typically prev/play-pause/next)
+            // Also check for special media key codes
+            if (keyCode == juce::KeyPress::playKey || keyCode == juce::KeyPress::F8Key)
+            {
+                // Toggle play/pause
+                if (m_playbackController.isPlaying())
+                {
+                    m_playbackController.pause();
+                }
+                else
+                {
+                    m_playbackController.play();
+                }
+                spdlog::info("[MainComponent] Media key: play/pause toggled");
+                return true;
+            }
+            else if (keyCode == juce::KeyPress::stopKey)
+            {
+                // Stop playback
+                m_playbackController.stop();
+                spdlog::info("[MainComponent] Media key: stop");
+                return true;
+            }
+            else if (keyCode == juce::KeyPress::fastForwardKey || keyCode == juce::KeyPress::F9Key)
+            {
+                // Next track
+                playNextTrack();
+                spdlog::info("[MainComponent] Media key: next track");
+                return true;
+            }
+            else if (keyCode == juce::KeyPress::rewindKey || keyCode == juce::KeyPress::F7Key)
+            {
+                // Previous track
+                playPreviousTrack();
+                spdlog::info("[MainComponent] Media key: previous track");
+                return true;
+            }
+            
+            // Space bar for play/pause (common convention)
+            if (keyCode == juce::KeyPress::spaceKey && !key.getModifiers().isAnyModifierKeyDown())
+            {
+                if (m_playbackController.isPlaying())
+                {
+                    m_playbackController.pause();
+                }
+                else
+                {
+                    m_playbackController.play();
+                }
+                spdlog::info("[MainComponent] Space key: play/pause toggled");
+                return true;
+            }
+            
+            return false; // Key not handled
+        }
+        
+        void MainComponent::playNextTrack()
+        {
+            if (m_currentMainView == MainViewType::DataView)
+            {
+                // In DataView mode - play next track in the current view (respects filters, sort order, etc.)
+                const auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
+                const auto totalRows = m_dataViewComponent.getTotalRowCount();
+                
+                if (totalRows > 0)
+                {
+                    // Get the first selected row or default to -1 to start from beginning
+                    const auto currentRow = selectedRows.empty() ? -1 : selectedRows.front();
+                    
+                    // Calculate next row (wrap around if at end)
+                    const auto nextRow = (currentRow + 1) % totalRows;
+                    
+                    // Select and play the next row
+                    m_dataViewComponent.selectSingleRow(nextRow);
+                    playDataRow(nextRow);
+                    
+                    spdlog::info("[MainComponent] Playing next track in DataView: row {}", nextRow);
+                }
+            }
+            else if (m_currentMainView == MainViewType::MixEditor)
+            {
+                // In MixEditor mode - play next track in the mix
+                if (m_playbackController.isMixMode())
+                {
+                    // Get current position and find which track is playing
+                    const auto currentPos = m_playbackController.getCurrentPositionSeconds();
+                    
+                    if (auto* mixNode = m_mixEditorComponent.getCurrentMixNode())
+                    {
+                        auto& mixLoader = mixNode->getMixProjectLoader();
+                        const auto& mixTracks = mixLoader.getMixTracks();
+                        if (!mixTracks.empty())
+                        {
+                            // Calculate track start times using the same algorithm as MixPlaybackEngine
+                            std::vector<double> trackStartTimes;
+                            trackStartTimes.reserve(mixTracks.size());
+                            
+                            double previousAudioStartTime = 0.0;
+                            for (size_t i = 0; i < mixTracks.size(); ++i)
+                            {
+                                const auto& mixTrack = mixTracks[i];
+                                double audioStartTime;
+                                
+                                if (i == 0)
+                                {
+                                    audioStartTime = 0.0;
+                                }
+                                else
+                                {
+                                    const auto& prevTrack = mixTracks[i - 1];
+                                    audioStartTime = previousAudioStartTime + 
+                                                   (prevTrack.attachTo.count() - mixTrack.attachFrom.count()) / 1000.0;
+                                }
+                                
+                                trackStartTimes.push_back(audioStartTime);
+                                previousAudioStartTime = audioStartTime;
+                            }
+                            
+                            // Find the next track start time after current position
+                            double nextTrackTime = -1.0;
+                            bool foundNext = false;
+                            
+                            for (const auto& startTime : trackStartTimes)
+                            {
+                                if (startTime > currentPos + 0.5) // Add small tolerance
+                                {
+                                    nextTrackTime = startTime;
+                                    foundNext = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (foundNext && nextTrackTime >= 0)
+                            {
+                                // Seek to the next track's start position
+                                m_playbackController.seek(nextTrackTime);
+                                spdlog::info("[MainComponent] Skipping to next track in mix at {}s", nextTrackTime);
+                            }
+                            else
+                            {
+                                // We're at the last track - wrap to beginning
+                                m_playbackController.seek(0.0);
+                                spdlog::info("[MainComponent] Wrapping to beginning of mix");
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    spdlog::info("[MainComponent] No mix loaded in MixEditor mode");
+                }
+            }
+        }
+        
+        void MainComponent::playPreviousTrack()
+        {
+            if (m_currentMainView == MainViewType::DataView)
+            {
+                // In DataView mode - play previous track in the current view (respects filters, sort order, etc.)
+                const auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
+                const auto totalRows = m_dataViewComponent.getTotalRowCount();
+                
+                if (totalRows > 0)
+                {
+                    // Get the first selected row or default to 0
+                    const auto currentRow = selectedRows.empty() ? 0 : selectedRows.front();
+                    
+                    // Calculate previous row (wrap around if at beginning)
+                    const auto prevRow = (currentRow > 0) ? (currentRow - 1) : (totalRows - 1);
+                    
+                    // Select and play the previous row
+                    m_dataViewComponent.selectSingleRow(prevRow);
+                    playDataRow(prevRow);
+                    
+                    spdlog::info("[MainComponent] Playing previous track in DataView: row {}", prevRow);
+                }
+            }
+            else if (m_currentMainView == MainViewType::MixEditor)
+            {
+                // In MixEditor mode - play previous track in the mix
+                if (m_playbackController.isMixMode())
+                {
+                    // Get current position and find which track is playing
+                    const auto currentPos = m_playbackController.getCurrentPositionSeconds();
+                    
+                    if (auto* mixNode = m_mixEditorComponent.getCurrentMixNode())
+                    {
+                        auto& mixLoader = mixNode->getMixProjectLoader();
+                        const auto& mixTracks = mixLoader.getMixTracks();
+                        if (!mixTracks.empty())
+                        {
+                            // Calculate track start times using the same algorithm as MixPlaybackEngine
+                            std::vector<double> trackStartTimes;
+                            trackStartTimes.reserve(mixTracks.size());
+                            
+                            double previousAudioStartTime = 0.0;
+                            for (size_t i = 0; i < mixTracks.size(); ++i)
+                            {
+                                const auto& mixTrack = mixTracks[i];
+                                double audioStartTime;
+                                
+                                if (i == 0)
+                                {
+                                    audioStartTime = 0.0;
+                                }
+                                else
+                                {
+                                    const auto& prevTrack = mixTracks[i - 1];
+                                    audioStartTime = previousAudioStartTime + 
+                                                   (prevTrack.attachTo.count() - mixTrack.attachFrom.count()) / 1000.0;
+                                }
+                                
+                                trackStartTimes.push_back(audioStartTime);
+                                previousAudioStartTime = audioStartTime;
+                            }
+                            
+                            // Find the previous track start time before current position
+                            double prevTrackTime = 0.0;
+                            
+                            for (auto it = trackStartTimes.rbegin(); it != trackStartTimes.rend(); ++it)
+                            {
+                                if (*it < currentPos - 1.0) // Subtract tolerance to avoid getting stuck
+                                {
+                                    prevTrackTime = *it;
+                                    break;
+                                }
+                            }
+                            
+                            // If we're very close to the start of current track, go to previous track
+                            // Otherwise, restart current track
+                            bool shouldGoToPrevious = false;
+                            for (const auto& startTime : trackStartTimes)
+                            {
+                                if (std::abs(startTime - currentPos) < 3.0) // Within 3 seconds of track start
+                                {
+                                    shouldGoToPrevious = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (shouldGoToPrevious || currentPos < 3.0)
+                            {
+                                // Go to actual previous track
+                                m_playbackController.seek(prevTrackTime);
+                                spdlog::info("[MainComponent] Going to previous track in mix at {}s", prevTrackTime);
+                            }
+                            else
+                            {
+                                // Restart current track - find the most recent track start
+                                for (auto it = trackStartTimes.rbegin(); it != trackStartTimes.rend(); ++it)
+                                {
+                                    if (*it <= currentPos)
+                                    {
+                                        m_playbackController.seek(*it);
+                                        spdlog::info("[MainComponent] Restarting current track in mix at {}s", *it);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    spdlog::info("[MainComponent] No mix loaded in MixEditor mode");
+                }
             }
         }
 

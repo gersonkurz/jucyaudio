@@ -37,6 +37,9 @@ namespace jucyaudio
             // Set the playback controller for unified playback
             void setPlaybackController(PlaybackController* controller);
         PlaybackController* getPlaybackController() { return m_playbackController; }
+        
+            // Get the current mix node
+            database::MixNode* getCurrentMixNode() const { return m_node; }
 
             auto &getTimeline()
             {
