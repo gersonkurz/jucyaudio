@@ -974,9 +974,11 @@ namespace jucyaudio
                 std::string statusMessage;
 
                 // Use the new locking mechanism in the playback controller
+                bool removalSuccess = false;
                 m_playbackController.withMixEngineLock([&]()
                 {
-                    if (m_navigationTree.removeObjectsForRows(dc->node, dc->selectedRows))
+                    removalSuccess = m_navigationTree.removeObjectsForRows(dc->node, dc->selectedRows);
+                    if (removalSuccess)
                     {
                         statusMessage = std::format("Removed tracks from {} {}", dc->node->m_refTypeNameForSingleObject, dc->node->getName());
                     }
@@ -985,6 +987,33 @@ namespace jucyaudio
                         statusMessage = std::format("Failed to remove tracks from {} {}", dc->node->m_refTypeNameForSingleObject, dc->node->getName());
                     }
                 });
+
+                // If deletion was successful, refresh all views to avoid stale data
+                if (removalSuccess)
+                {
+                    // The node needs to reload its data from the database
+                    // This will also clear the cached row count
+                    dc->node->refreshCache(true);
+                    
+                    // If we're in mix editor view and this is a mix node, reload the mix editor FIRST
+                    // This ensures the timeline doesn't have stale references when the data view refreshes
+                    if (m_currentMainView == MainViewType::MixEditor)
+                    {
+                        // Try to cast to MixNode to see if this is a mix
+                        if (auto* mixNode = dynamic_cast<database::MixNode*>(dc->node))
+                        {
+                            // Stop any playback to avoid accessing deleted tracks
+                            stopMixPlayback();
+                            
+                            // Reload the mix in the editor to sync both views
+                            m_mixEditorComponent.loadMix(mixNode);
+                        }
+                    }
+                    
+                    // Now refresh the data view to show the updated list
+                    // This must happen after the mix editor is updated to avoid race conditions
+                    m_dataViewComponent.refreshView();
+                }
 
                 m_statusPanel.getStatusBar().postMessage(statusMessage, false);
                 updateTrackCountStatus();

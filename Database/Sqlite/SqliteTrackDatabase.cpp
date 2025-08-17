@@ -1151,7 +1151,7 @@ CREATE TABLE MixUndoHistory (
                 if (SqliteTransaction transaction{m_db})
                 {
                     const char* createWaveformCacheTable = R"SQL(
-                        CREATE TABLE WaveformCache (
+                        CREATE TABLE IF NOT EXISTS WaveformCache (
                             track_id INTEGER PRIMARY KEY NOT NULL,
                             waveform_blob BLOB NOT NULL,
                             FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE

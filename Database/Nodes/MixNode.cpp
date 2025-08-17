@@ -63,6 +63,8 @@ namespace jucyaudio
             {
                 m_mixProjectLoader.loadMix(m_mixInfo.mixId);
                 m_bCacheInitialized = true;
+                // Clear the cached row count so it gets recalculated
+                m_cachedRowCount = -1;
             }
         }
     } // namespace database
