@@ -352,7 +352,7 @@ The library management and scanning systems are now feature-complete, performant
 
 ## Important Implementation Notes
 
-**Database Schema:** Currently at version 14. Albums table fully implemented with bitrate column.
+**Database Schema:** Currently at version 16. MixMarkers table added for mix-wide comment markers.
 
 **Refcounting:** The navigation system uses manual retain/release. Always match retains with releases!
 

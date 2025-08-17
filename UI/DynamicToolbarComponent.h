@@ -24,7 +24,7 @@ namespace jucyaudio
                                         private juce::TextEditor::Listener // To listen for filter text changes
         {
         public:
-            explicit DynamicToolbarComponent(MainComponent &owner);
+            explicit DynamicToolbarComponent();
             ~DynamicToolbarComponent() override;
 
             void resized() override;
@@ -52,8 +52,6 @@ namespace jucyaudio
             void updateActionButtons();
             // Helper to handle when an action button is clicked
             void handleActionButtonClicked(DataAction action);
-
-            MainComponent &m_ownerMainComponent;
 
             // Non-owning pointer to the INavigationNode currently providing actions.
             INavigationNode *m_currentNode{nullptr};

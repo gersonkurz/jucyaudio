@@ -1,0 +1,55 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "RelWithDebInfo",
+            "displayName": "Release with Debug Info",
+            "description": "Optimized build with minimal debug information",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
+            "name": "Debug",
+            "displayName": "Debug",
+            "description": "Debug build with full debug information",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
+            "name": "Release",
+            "displayName": "Release",
+            "description": "Fully optimized release build",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "RelWithDebInfo",
+            "displayName": "Build RelWithDebInfo",
+            "configurePreset": "RelWithDebInfo",
+            "jobs": 8
+        },
+        {
+            "name": "Debug",
+            "displayName": "Build Debug",
+            "configurePreset": "Debug",
+            "jobs": 8
+        },
+        {
+            "name": "Release",
+            "displayName": "Build Release",
+            "configurePreset": "Release",
+            "jobs": 8
+        }
+    ]
+}

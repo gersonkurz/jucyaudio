@@ -25,7 +25,7 @@ namespace jucyaudio
         public:
             using OnMixCreatedAndExportedCallback = std::function<void(bool /*success*/, const database::MixInfo & /*newMixInfo */)>;
 
-            CreateMixDialogComponent(audio::AudioLibrary &audioLibrary,
+            CreateMixDialogComponent(
                 const std::vector<database::TrackInfo> &tracksForMix,
                 WorkingSetId source_ws_id,
                 OnMixCreatedAndExportedCallback onOkCallback);
@@ -52,7 +52,6 @@ namespace jucyaudio
             void handleCancel();
             juce::String generateDefaultMixName();
 
-            audio::AudioLibrary &m_audioLibrary;
             std::vector<database::TrackInfo> m_tracksForMix; // Store as reference
             WorkingSetId m_source_ws_id;
             OnMixCreatedAndExportedCallback m_onOkCallback;

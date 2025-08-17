@@ -1,9 +1,31 @@
 {
     "cmake.configureArgs": [
-        "-DCMAKE_BUILD_TYPE=Debug",
+        "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
     ],
     "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.defaultVariants": {
+        "buildType": {
+            "default": "RelWithDebInfo",
+            "choices": {
+                "Debug": {
+                    "short": "Debug",
+                    "long": "Debug build with full debug information",
+                    "buildType": "Debug"
+                },
+                "RelWithDebInfo": {
+                    "short": "RelWithDebInfo",
+                    "long": "Optimized build with minimal debug information",
+                    "buildType": "RelWithDebInfo"
+                },
+                "Release": {
+                    "short": "Release",
+                    "long": "Fully optimized release build",
+                    "buildType": "Release"
+                }
+            }
+        }
+    },
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
     "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
     "C_Cpp.intelliSenseEngine": "default",

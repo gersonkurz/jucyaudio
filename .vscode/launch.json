@@ -2,7 +2,20 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug jucyaudio",
+            "name": "Debug jucyaudio (RelWithDebInfo)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/jucyaudio_artefacts/RelWithDebInfo/jucyaudio.app/Contents/MacOS/jucyaudio",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "CMake: Build (RelWithDebInfo)"
+        },
+        {
+            "name": "Debug jucyaudio (Debug)",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/jucyaudio_artefacts/Debug/jucyaudio.app/Contents/MacOS/jucyaudio",
@@ -12,7 +25,7 @@
             "environment": [],
             "externalConsole": false,
             "MIMode": "lldb",
-            "preLaunchTask": "CMake: Build"
+            "preLaunchTask": "CMake: Build (Debug)"
         }
     ]
 }

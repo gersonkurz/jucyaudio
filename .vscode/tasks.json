@@ -2,7 +2,24 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "CMake: Configure",
+            "label": "CMake: Configure (RelWithDebInfo)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B", "build",
+                "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "CMake: Configure (Debug)",
             "type": "shell",
             "command": "cmake",
             "args": [
@@ -19,12 +36,12 @@
             }
         },
         {
-            "label": "CMake: Build",
+            "label": "CMake: Build (RelWithDebInfo)",
             "type": "shell",
             "command": "cmake",
             "args": [
                 "--build", "build",
-                "--config", "Debug",
+                "--config", "RelWithDebInfo",
                 "-j", "8"
             ],
             "group": {
@@ -37,15 +54,41 @@
                 "focus": false,
                 "panel": "shared"
             },
-            "dependsOn": "CMake: Configure"
+            "dependsOn": "CMake: Configure (RelWithDebInfo)"
         },
         {
-            "label": "Run App",
+            "label": "CMake: Build (Debug)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build", "build",
+                "--config", "Debug",
+                "-j", "8"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "dependsOn": "CMake: Configure (Debug)"
+        },
+        {
+            "label": "Run App (RelWithDebInfo)",
+            "type": "shell",
+            "command": "open",
+            "args": ["${workspaceFolder}/build/jucyaudio_artefacts/RelWithDebInfo/jucyaudio.app"],
+            "group": "test",
+            "dependsOn": "CMake: Build (RelWithDebInfo)"
+        },
+        {
+            "label": "Run App (Debug)",
             "type": "shell",
             "command": "open",
             "args": ["${workspaceFolder}/build/jucyaudio_artefacts/Debug/jucyaudio.app"],
             "group": "test",
-            "dependsOn": "CMake: Build"
+            "dependsOn": "CMake: Build (Debug)"
         }
     ]
 }

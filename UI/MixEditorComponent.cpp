@@ -1,4 +1,5 @@
 #include <Database/Includes/INavigationNode.h>
+#include <Database/Includes/IMixMarkerManager.h>
 #include <UI/MainComponent.h>
 #include <UI/MixEditorComponent.h>
 #include <UI/PlaybackController.h>
@@ -16,6 +17,20 @@ namespace jucyaudio
         {
             m_formatManager.registerBasicFormats();
             setWantsKeyboardFocus(true);
+
+            // Add the marker ruler at the top
+            addAndMakeVisible(m_markerRuler);
+            
+            // Set up marker callbacks
+            m_markerRuler.onMarkerAdded = [this](std::chrono::milliseconds position)
+            {
+                handleMarkerAdd(position);
+            };
+            
+            m_markerRuler.onMarkerClicked = [this](MarkerId markerId)
+            {
+                handleMarkerClick(markerId);
+            };
 
             // Set the timeline as the component to be viewed by the viewport.
             m_viewport.setViewedComponent(&m_timeline, false); // false = don't delete when replaced
@@ -188,6 +203,13 @@ namespace jucyaudio
             
             m_timeline.populateFrom(&loader);
             
+            // Calculate mix duration and set it on the ruler
+            const auto mixDuration = loader.calculateMixDuration();
+            m_markerRuler.setMixDuration(mixDuration);
+            
+            // Load markers for this mix
+            loadMixMarkers();
+            
             // Start timer to monitor playback state
             startTimer(50); // 20Hz update rate
             
@@ -197,8 +219,13 @@ namespace jucyaudio
 
         void MixEditorComponent::resized()
         {
-            // The viewport now fills the entire editor area.
-            m_viewport.setBounds(getLocalBounds());
+            auto bounds = getLocalBounds();
+            
+            // Place the marker ruler at the top
+            m_markerRuler.setBounds(bounds.removeFromTop(MarkerRulerComponent::RULER_HEIGHT));
+            
+            // The viewport fills the remaining area below the ruler
+            m_viewport.setBounds(bounds);
             
             // Notify the timeline that the viewport has resized
             m_timeline.viewportResized();
@@ -551,6 +578,7 @@ namespace jucyaudio
                     // Update timeline playback position
                     const double positionSeconds = m_playbackController->getCurrentPositionSeconds();
                     m_timeline.setMixPlaybackPosition(positionSeconds);
+                    m_markerRuler.setPlaybackPosition(positionSeconds * 1000.0); // Convert to milliseconds
                     
                     // Check if we've reached the end
                     const double totalSeconds = m_playbackController->getLengthInSeconds();
@@ -574,6 +602,120 @@ namespace jucyaudio
                 stopTimer();
                 m_timeline.setMixPlaybackPosition(-1.0);
             }
+        }
+        
+        void MixEditorComponent::loadMixMarkers()
+        {
+            if (!m_node)
+                return;
+                
+            const auto mixId = m_node->getMixProjectLoader().getMixId();
+            const auto& mixMarkerManager = database::theTrackLibrary.getTrackDatabase()->getMixMarkerManager();
+            const auto markers = mixMarkerManager.getMarkersForMix(mixId);
+            
+            m_markerRuler.setMarkers(markers);
+            spdlog::info("Loaded {} markers for mix {}", markers.size(), mixId);
+        }
+        
+        void MixEditorComponent::saveMixMarker(const database::MixMarker& marker)
+        {
+            auto& mixMarkerManager = database::theTrackLibrary.getTrackDatabase()->getMixMarkerManager();
+            const auto result = marker.marker_id == 0 ? 
+                mixMarkerManager.addMarker(marker) : 
+                mixMarkerManager.updateMarker(marker);
+                
+            if (result.isOk())
+            {
+                loadMixMarkers(); // Reload to refresh display
+            }
+            else
+            {
+                spdlog::error("Failed to save mix marker: {}", result.errorMessage);
+            }
+        }
+        
+        void MixEditorComponent::handleMarkerClick(MarkerId markerId)
+        {
+            const auto& mixMarkerManager = database::theTrackLibrary.getTrackDatabase()->getMixMarkerManager();
+            const auto marker = mixMarkerManager.getMarker(markerId);
+            
+            if (!marker.has_value())
+            {
+                spdlog::error("Marker {} not found", markerId);
+                return;
+            }
+            
+            // Show dialog to edit or delete marker
+            auto* dialog = new juce::AlertWindow("Edit Marker", 
+                                                 "Edit or delete this marker", 
+                                                 juce::AlertWindow::NoIcon);
+            
+            dialog->addTextEditor("comment", marker->comment, "Comment:");
+            dialog->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+            dialog->addButton("Delete", 2);
+            dialog->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+            
+            dialog->enterModalState(true, juce::ModalCallbackFunction::create(
+                [this, dialog, markerId](int result)
+                {
+                    if (result == 1) // Save
+                    {
+                        const auto& mixMarkerManager = database::theTrackLibrary.getTrackDatabase()->getMixMarkerManager();
+                        auto marker = mixMarkerManager.getMarker(markerId);
+                        if (marker.has_value())
+                        {
+                            marker->comment = dialog->getTextEditorContents("comment").toStdString();
+                            saveMixMarker(marker.value());
+                        }
+                    }
+                    else if (result == 2) // Delete
+                    {
+                        auto& mixMarkerManager = database::theTrackLibrary.getTrackDatabase()->getMixMarkerManager();
+                        const auto deleteResult = mixMarkerManager.deleteMarker(markerId);
+                        if (deleteResult.isOk())
+                        {
+                            loadMixMarkers(); // Reload to refresh display
+                        }
+                    }
+                    delete dialog;
+                }));
+        }
+        
+        void MixEditorComponent::handleMarkerAdd(std::chrono::milliseconds position)
+        {
+            if (!m_node)
+                return;
+                
+            // Show dialog to get marker comment
+            auto* dialog = new juce::AlertWindow("Add Marker", 
+                                                 juce::String::formatted("Add marker at %d:%02d.%03d", 
+                                                                        position.count() / 60000,
+                                                                        (position.count() % 60000) / 1000,
+                                                                        position.count() % 1000),
+                                                 juce::AlertWindow::NoIcon);
+            
+            dialog->addTextEditor("comment", "", "Comment:");
+            dialog->addButton("Add", 1, juce::KeyPress(juce::KeyPress::returnKey));
+            dialog->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+            
+            dialog->enterModalState(true, juce::ModalCallbackFunction::create(
+                [this, dialog, position](int result)
+                {
+                    if (result == 1) // Add
+                    {
+                        const auto comment = dialog->getTextEditorContents("comment").toStdString();
+                        if (!comment.empty())
+                        {
+                            database::MixMarker marker;
+                            marker.marker_id = 0; // New marker
+                            marker.mix_id = m_node->getMixProjectLoader().getMixId();
+                            marker.position = position;
+                            marker.comment = comment;
+                            saveMixMarker(marker);
+                        }
+                    }
+                    delete dialog;
+                }));
         }
     } // namespace ui
 } // namespace jucyaudio

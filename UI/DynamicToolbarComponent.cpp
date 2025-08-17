@@ -7,8 +7,7 @@ namespace jucyaudio
     namespace ui
     {
 
-        DynamicToolbarComponent::DynamicToolbarComponent(MainComponent &owner)
-            : m_ownerMainComponent{owner}
+        DynamicToolbarComponent::DynamicToolbarComponent()
         {
             // Configure Filter Label
             m_filterLabel.setText("Filter:", juce::dontSendNotification);

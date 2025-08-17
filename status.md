@@ -342,21 +342,35 @@ The application now operates on the following principles:
     *   **Root Cause:** Original PNG lacks proper alpha channel or needs specific format
     *   **Status:** Postponed - requires properly formatted square PNG (1024x1024) with transparent background
     
-## 19. Next Session TODO:
+## 20. Session Accomplishments: Mix Markers Implementation (2025-08-16)
+
+*   **Mix Markers Feature Implementation:**
+    *   Created comprehensive marker system for mixes (similar to SoundCloud comments)
+    *   Database migration to v16: Added MixMarkers table with position, comment, color, emoji support
+    *   Implemented `IMixMarkerManager` interface and `SqliteMixMarkerManager` backend
+    *   Created `MarkerRulerComponent` - horizontal ruler above timeline for marker display
+    *   UI Features:
+        - Alt+Click to add markers at any position
+        - Click existing markers to edit/delete
+        - Hover tooltips showing position and comment
+        - Visual feedback with color changes on hover
+        - Time graduations every second/10 seconds
+    *   Integrated with MixEditorComponent for seamless workflow
+    *   Markers persist across sessions and follow mix playback
+
+*   **Technical Implementation:**
+    *   Clean separation between database layer and UI
+    *   Thread-safe database operations
+    *   Efficient position-based queries with indices
+    *   Reusable dialog system for marker editing
+
+## 21. Next Session TODO:
+
+### Completed:
+1.  ✅ **FLAC Support** - Already implemented (per user confirmation)
+2.  ✅ **WAV Support** - Already implemented (per user confirmation)
 
 ### High Priority:
-1.  **FLAC Support:** 
-    *   Add FLAC file scanning and playback support (JUCE already supports FLAC)
-    *   Extract and store FLAC metadata tags in database
-    *   Should be straightforward - similar to MP3 handling
-    *   See enrich.md Part 1.6 for implementation details
-    
-2.  **WAV Support with Basic Import:**
-    *   Add WAV file scanning and playback support
-    *   Initial import with minimal metadata (filename → title, folder → album)
-    *   Mark WAV files with `needs_enrichment = true` flag
-    *   Store full path for later AI parsing
-    *   See enrich.md Part 1.6 for implementation strategy
     
 3.  **Unified AI Enrichment Script:** 
     *   Single Python tool for ALL metadata enrichment (see enrich.md Part 2)

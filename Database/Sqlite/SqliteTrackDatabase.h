@@ -11,6 +11,7 @@
 #include <Database/Sqlite/SqliteFolderDatabase.h>
 #include <Database/Sqlite/SqliteWorkingSetManager.h>
 #include <Database/Sqlite/SqliteMarkerManager.h>
+#include <Database/Sqlite/SqliteMixMarkerManager.h>
 #include <Database/Sqlite/SqliteUndoManager.h>
 #include <Database/Sqlite/sqlite3.h>
 #include <filesystem>
@@ -99,6 +100,9 @@ namespace jucyaudio
             IMarkerManager &getMarkerManager() override;
             const IMarkerManager &getMarkerManager() const override;
             
+            IMixMarkerManager &getMixMarkerManager() override;
+            const IMixMarkerManager &getMixMarkerManager() const override;
+            
             ILibraryRootManager &getLibraryRootManager() override;
             const ILibraryRootManager &getLibraryRootManager() const override;
 
@@ -129,6 +133,7 @@ namespace jucyaudio
             mutable SqliteWorkingSetManager m_workingSetManager; // Working set manager instance
             mutable SqliteFolderDatabase m_folderDatabase; // Folder database instance
             mutable SqliteMarkerManager m_markerManager; // Marker manager instance
+            mutable SqliteMixMarkerManager m_mixMarkerManager; // Mix marker manager instance
             mutable SqliteUndoManager m_undoManager; // Undo manager instance
             mutable SqliteMixManagerWithUndo m_mixManagerWithUndo;
             mutable SqliteAlbumManager m_albumManager; // Album manager instance

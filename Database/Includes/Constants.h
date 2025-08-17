@@ -124,6 +124,12 @@ namespace jucyaudio
     typedef ObjectId AlbumId;
 
     /**
+     * @brief Unique identifier for markers (track or mix markers)
+     * @note Markers are user-defined annotations at specific time positions
+     */
+    typedef ObjectId MarkerId;
+
+    /**
      * @brief Volume level representation as integer to avoid floating-point issues
      * @note Stored as integer * VOLUME_NORMALIZATION for precision
      * @see VOLUME_NORMALIZATION
@@ -236,6 +242,45 @@ namespace jucyaudio
         {
             TagId id;         ///< Unique database identifier for the tag
             std::string name; ///< Human-readable tag name for display
+        };
+
+
+        // Simple status for operations, can be expanded
+        enum class DbResultStatus
+        {
+            Ok,
+            ErrorGeneric,
+            ErrorNotFound,
+            ErrorAlreadyExists, // e.g., for unique constraints
+            ErrorConstraintFailed,
+            ErrorIO,
+            ErrorConnection,
+            ErrorDB
+        };
+
+        struct DbResult
+        {
+            DbResultStatus status = DbResultStatus::Ok;
+            std::string errorMessage;
+
+            DbResult(DbResultStatus s = DbResultStatus::Ok, std::string msg = "")
+                : status{s},
+                  errorMessage{std::move(msg)}
+            {
+            }
+
+            bool isOk() const
+            {
+                return status == DbResultStatus::Ok;
+            }
+            static DbResult success()
+            {
+                return DbResult{};
+            }
+            static DbResult failure(DbResultStatus s, std::string msg)
+            {
+                return DbResult{s, std::move(msg)};
+            }
         };
 
     } // namespace database

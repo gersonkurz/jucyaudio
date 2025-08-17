@@ -23,6 +23,9 @@ namespace jucyaudio
 {
     namespace database
     {
+        // Forward declarations
+        class IMixMarkerManager;
+        
         struct AudioMetadata
         {
             float bpm = 0.0f;
@@ -32,44 +35,6 @@ namespace jucyaudio
             double outroEnd = 0.0;
             bool hasIntro = false;
             bool hasOutro = false;
-        };
-
-        // Simple status for operations, can be expanded
-        enum class DbResultStatus
-        {
-            Ok,
-            ErrorGeneric,
-            ErrorNotFound,
-            ErrorAlreadyExists, // e.g., for unique constraints
-            ErrorConstraintFailed,
-            ErrorIO,
-            ErrorConnection,
-            ErrorDB
-        };
-
-        struct DbResult
-        {
-            DbResultStatus status = DbResultStatus::Ok;
-            std::string errorMessage;
-
-            DbResult(DbResultStatus s = DbResultStatus::Ok, std::string msg = "")
-                : status{s},
-                  errorMessage{std::move(msg)}
-            {
-            }
-
-            bool isOk() const
-            {
-                return status == DbResultStatus::Ok;
-            }
-            static DbResult success()
-            {
-                return DbResult{};
-            }
-            static DbResult failure(DbResultStatus s, std::string msg)
-            {
-                return DbResult{s, std::move(msg)};
-            }
         };
 
         class ITrackDatabase
@@ -170,6 +135,9 @@ namespace jucyaudio
 
             virtual IMarkerManager &getMarkerManager() = 0;
             virtual const IMarkerManager &getMarkerManager() const = 0;
+            
+            virtual IMixMarkerManager &getMixMarkerManager() = 0;
+            virtual const IMixMarkerManager &getMixMarkerManager() const = 0;
             
             virtual IUndoManager &getUndoManager() = 0;
             virtual const IUndoManager &getUndoManager() const = 0;

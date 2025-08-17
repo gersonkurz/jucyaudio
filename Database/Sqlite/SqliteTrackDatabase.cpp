@@ -321,6 +321,7 @@ namespace jucyaudio
               m_workingSetManager{m_db},
               m_folderDatabase{m_db},
               m_markerManager{m_db},
+              m_mixMarkerManager{m_db},
               m_undoManager{m_db},
               m_mixManagerWithUndo{m_mixManager, m_undoManager},
               m_albumManager{m_db},
@@ -404,6 +405,18 @@ namespace jucyaudio
         {
             assert(isOpen() && "Cannot get marker manager when database is not open");
             return m_markerManager;
+        }
+
+        IMixMarkerManager &SqliteTrackDatabase::getMixMarkerManager()
+        {
+            assert(isOpen() && "Cannot get mix marker manager when database is not open");
+            return m_mixMarkerManager;
+        }
+
+        const IMixMarkerManager &SqliteTrackDatabase::getMixMarkerManager() const
+        {
+            assert(isOpen() && "Cannot get mix marker manager when database is not open");
+            return m_mixMarkerManager;
         }
 
         IUndoManager &SqliteTrackDatabase::getUndoManager()
@@ -1691,6 +1704,71 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 15;
+            }
+
+            if (currentVersion < 16)
+            {
+                spdlog::info("Migrating database from version 15 to 16 - Adding MixMarkers table...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Create MixMarkers table for mix-wide markers
+                    const char* createMixMarkersTable = R"SQL(
+                        CREATE TABLE IF NOT EXISTS MixMarkers (
+                            marker_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            mix_id INTEGER NOT NULL,
+                            position_ms INTEGER NOT NULL,
+                            comment TEXT NOT NULL,
+                            color TEXT,
+                            emoji TEXT,
+                            created_at INTEGER NOT NULL,
+                            updated_at INTEGER NOT NULL,
+                            FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
+                        );
+                    )SQL";
+                    
+                    if (!m_db.execute(createMixMarkersTable))
+                    {
+                        const auto error{m_db.getLastError()};
+                        spdlog::error("Failed to create MixMarkers table: {}", error);
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create MixMarkers table: " + error);
+                    }
+                    
+                    // Create indices for efficient queries
+                    const char* createMixMarkersIndices = R"SQL(
+                        CREATE INDEX IF NOT EXISTS idx_mix_markers_mix_id ON MixMarkers(mix_id);
+                        CREATE INDEX IF NOT EXISTS idx_mix_markers_position ON MixMarkers(mix_id, position_ms);
+                    )SQL";
+                    
+                    if (!m_db.execute(createMixMarkersIndices))
+                    {
+                        const auto error{m_db.getLastError()};
+                        spdlog::error("Failed to create MixMarkers indices: {}", error);
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create MixMarkers indices: " + error);
+                    }
+                    
+                    // Update schema version
+                    if (auto result = setDBSchemaVersion(16); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 16.");
+                    }
+                    
+                    if (transaction.commit())
+                    {
+                        spdlog::info("Migration to version 16 completed successfully. MixMarkers table created.");
+                    }
+                    else
+                    {
+                        const auto error{m_db.getLastError()};
+                        spdlog::error("Failed to commit migration transaction: {}", error);
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration: " + error);
+                    }
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 16;
             }
 
             return DbResult::success();

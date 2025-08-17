@@ -7,6 +7,7 @@
 #include <Database/Nodes/MixNode.h>
 #include <UI/DynamicColumnManager.h>
 #include <UI/TimelineComponent.h>
+#include <UI/MarkerRulerComponent.h>
 #include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <Audio/MixProjectLoader.h>
@@ -52,10 +53,15 @@ namespace jucyaudio
             void saveMixChanges();
             void handleMixPlayback(double startTime, bool alwaysPlay = false);
             void timerCallback() override;
+            void loadMixMarkers();
+            void saveMixMarker(const database::MixMarker& marker);
+            void handleMarkerClick(MarkerId markerId);
+            void handleMarkerAdd(std::chrono::milliseconds position);
 
             juce::AudioFormatManager m_formatManager;
             juce::AudioThumbnailCache m_thumbnailCache{200}; // 200 items in the cache - enough for large mixes
 
+            MarkerRulerComponent m_markerRuler;
             TimelineComponent m_timeline;
             juce::Viewport m_viewport;
             database::MixNode *m_node{nullptr};

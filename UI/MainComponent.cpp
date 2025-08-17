@@ -72,7 +72,6 @@ namespace jucyaudio
         MainComponent::MainComponent(juce::ApplicationCommandManager &commandManager)
             : MenuPresenter{commandManager},
               m_commandManager{commandManager},
-              m_dynamicToolbar{*this}, // Pass *this as MainComponent& owner
               m_navigationPanel{*this},
               m_navigationTree{m_navigationPanel, m_dataViewComponent},
               m_currentMainView{MainViewType::DataView},
@@ -1679,7 +1678,7 @@ namespace jucyaudio
                 m_statusPanel.getStatusBar().postMessage("Not enough tracks selected to create a mix.", true);
                 return;
             }
-            auto *dialog = new ui::CreateMixDialogComponent(m_audioLibrary,
+            auto *dialog = new ui::CreateMixDialogComponent(
                 selectedTracks,
                 source_ws_id,
                 [this](bool success, const MixInfo &mixInfo)

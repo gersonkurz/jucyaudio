@@ -15,12 +15,11 @@ namespace jucyaudio
 {
     namespace ui
     {
-        CreateMixDialogComponent::CreateMixDialogComponent(audio::AudioLibrary &audioLibrary,
+        CreateMixDialogComponent::CreateMixDialogComponent(
                                                            const std::vector<database::TrackInfo> &tracksForMix,
                                                            WorkingSetId source_ws_id,
                                                            OnMixCreatedAndExportedCallback onOkCallback)
-            : m_audioLibrary{audioLibrary},
-              m_tracksForMix{tracksForMix}, // Store reference
+            : m_tracksForMix{tracksForMix}, // Store reference
               m_source_ws_id{source_ws_id},
               m_onOkCallback{std::move(onOkCallback)},
               m_titleLabel{"titleLabel", "Create Mix"},

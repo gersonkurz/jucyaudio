@@ -1,11 +1,22 @@
 cmake_minimum_required(VERSION 3.22)
-project(jucyaudio VERSION 0.4.0)
+project(jucyaudio VERSION 0.5.0)
 
-# Enable debug info in Release builds for MSVC (Visual Studio)
-# This allows for meaningful call stacks in release builds without sacrificing performance.
+# Enable debug info in Release builds for better debugging while maintaining performance
 if(MSVC)
+  # Visual Studio: Add debug info to Release builds
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi")
   set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /DEBUG")
+else()
+  # macOS/Linux: Enable RelWithDebInfo-like flags for Release builds
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2 -g1 -DNDEBUG")
+endif()
+
+# Set default build type to RelWithDebInfo if not specified
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  message(STATUS "Setting build type to 'RelWithDebInfo' as none was specified.")
+  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Choose the type of build." FORCE)
+  # Set the possible values of build type for cmake-gui
+  set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
 
 # C++20 requirement
@@ -232,6 +243,7 @@ target_sources(jucyaudio PRIVATE
     Database/Includes/IFolderDatabase.h
     Database/Includes/IMixManager.h
     Database/Includes/IMarkerManager.h
+    Database/Includes/IMixMarkerManager.h
     Database/Includes/INavigationNode.h
     Database/Includes/IUndoManager.h
     Database/Includes/IRefCounted.h
@@ -242,6 +254,7 @@ target_sources(jucyaudio PRIVATE
     Database/Includes/MixInfo.h
     Database/Includes/TrackInfo.h
     Database/Includes/TrackMarker.h
+    Database/Includes/MixMarker.h
     Database/Includes/TrackQueryArgs.h
     
     # SQLite files
@@ -258,6 +271,8 @@ target_sources(jucyaudio PRIVATE
     Database/Sqlite/SqliteMixManagerWithUndo.h
     Database/Sqlite/SqliteMarkerManager.cpp
     Database/Sqlite/SqliteMarkerManager.h
+    Database/Sqlite/SqliteMixMarkerManager.cpp
+    Database/Sqlite/SqliteMixMarkerManager.h
     Database/Sqlite/SqliteUndoManager.cpp
     Database/Sqlite/SqliteUndoManager.h
     Database/Sqlite/SqliteStatement.cpp
@@ -352,6 +367,8 @@ target_sources(jucyaudio PRIVATE
     UI/MenuPresenter.h
     UI/MixEditorComponent.cpp
     UI/MixEditorComponent.h
+    UI/MarkerRulerComponent.cpp
+    UI/MarkerRulerComponent.h
     UI/MixTrackComponent.cpp
     UI/MixTrackComponent.h
     UI/TimelineComponent.cpp
