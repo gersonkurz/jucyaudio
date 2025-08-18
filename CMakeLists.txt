@@ -413,6 +413,9 @@ juce_add_binary_data(jucyaudio_assets
         Assets/next.svg
         Assets/orange-jucyaudio-logo.png
         Assets/orange-jucyaudio-small.png
+        Assets/mute.svg
+        Assets/high-audio.svg
+        Assets/low-audio.svg
 )
 
 # Platform-specific library linking

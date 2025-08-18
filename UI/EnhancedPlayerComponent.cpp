@@ -1,28 +1,29 @@
-#include <UI/EnhancedPlayerComponent.h>
-#include <UI/CustomColourIds.h>
-#include <Utils/UiUtils.h>
 #include <BinaryData.h>
-#include <spdlog/spdlog.h>
+#include <UI/CustomColourIds.h>
+#include <UI/EnhancedPlayerComponent.h>
+#include <Utils/UiUtils.h>
 #include <algorithm>
+#include <spdlog/spdlog.h>
 
 namespace jucyaudio
 {
     namespace ui
     {
-        EnhancedPlayerComponent::EnhancedPlayerComponent(PlaybackController& controller,
-                                                       juce::AudioFormatManager& formatManager,
-                                                       juce::AudioThumbnailCache& thumbnailCache)
+        EnhancedPlayerComponent::EnhancedPlayerComponent(
+            PlaybackController &controller, juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache)
             : m_waveformDisplay{formatManager, thumbnailCache},
               m_playbackController{controller},
               m_formatManager{formatManager},
               m_thumbnailCache{thumbnailCache}
         {
             loadButtonIcons();
+            loadVolumeIcons();
             setupButtons();
             setupVolumeControl();
-            
+
             // Set up waveform seek callback
-            m_waveformDisplay.onSeek = [this](double normalizedPosition) {
+            m_waveformDisplay.onSeek = [this](double normalizedPosition)
+            {
                 const auto length = m_playbackController.getLengthInSeconds();
                 if (length > 0.0)
                 {
@@ -30,29 +31,29 @@ namespace jucyaudio
                     m_playbackController.seek(seekTime);
                 }
             };
-            
+
             // Set up marker callback
-            m_waveformDisplay.onMarkerClicked = [this](std::chrono::milliseconds position) {
+            m_waveformDisplay.onMarkerClicked = [this](std::chrono::milliseconds position)
+            {
                 if (m_currentTrackId && onMarkerAction)
                 {
                     // Check if this is a new marker position or existing marker
-                    const auto& markers = m_waveformDisplay.getMarkers();
-                    const auto isNewMarker = std::none_of(markers.begin(), 
-                                                         markers.end(),
-                                                         [position](const auto& marker) {
-                                                             return marker.position == position;
-                                                         });
-                    spdlog::info("Marker action: trackId={}, position={}ms, isNew={}", 
-                        *m_currentTrackId, position.count(), isNewMarker);
+                    const auto &markers = m_waveformDisplay.getMarkers();
+                    const auto isNewMarker = std::none_of(markers.begin(),
+                        markers.end(),
+                        [position](const auto &marker)
+                        {
+                            return marker.position == position;
+                        });
+                    spdlog::info("Marker action: trackId={}, position={}ms, isNew={}", *m_currentTrackId, position.count(), isNewMarker);
                     onMarkerAction(*m_currentTrackId, position, isNewMarker);
                 }
                 else
                 {
-                    spdlog::warn("Cannot handle marker action: trackId={}, callback set={}", 
-                        m_currentTrackId.has_value(), onMarkerAction != nullptr);
+                    spdlog::warn("Cannot handle marker action: trackId={}, callback set={}", m_currentTrackId.has_value(), onMarkerAction != nullptr);
                 }
             };
-            
+
             // Add all components (transport buttons)
             addAndMakeVisible(m_prevButton);
             addAndMakeVisible(m_stopButton);
@@ -60,34 +61,22 @@ namespace jucyaudio
             addAndMakeVisible(m_pauseButton);
             addAndMakeVisible(m_nextButton);
             addAndMakeVisible(m_waveformDisplay);
-            
-            addAndMakeVisible(m_speakerIcon);
+
+            addAndMakeVisible(m_volumeButton);
             addAndMakeVisible(m_volumeSlider);
             addAndMakeVisible(m_currentTimeLabel);
             addAndMakeVisible(m_totalTimeLabel);
-            
-            // Timer removed - now handled by TimerMultiplexer
         }
-        
+
         EnhancedPlayerComponent::~EnhancedPlayerComponent()
         {
-            // No timer to stop
         }
-        
-        void EnhancedPlayerComponent::paint(juce::Graphics& g)
+
+        void EnhancedPlayerComponent::paint(juce::Graphics &g)
         {
             g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
-            
-            // Draw separator between rows
-            const auto bounds = getLocalBounds();
-            const int topRowHeight = static_cast<int>(bounds.getHeight() * 0.7f);
-            
-            g.setColour(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
-            g.drawHorizontalLine(topRowHeight, 0.0f, static_cast<float>(bounds.getWidth()));
-            
-            // Waveform is painted by the WaveformDisplay component itself
         }
-        
+
         void EnhancedPlayerComponent::resized()
         {
             auto bounds = getLocalBounds();
@@ -100,53 +89,47 @@ namespace jucyaudio
             const int buttonSize = topRowHeight - 8;
             const int iconInset = buttonSize / 4;
 
-            // 1. Allocate the exact space needed for the 5 buttons.
             auto transportArea = topRow.removeFromLeft(buttonSize * 5);
+            topRow.removeFromLeft(8); // Padding between buttons and waveform
 
-            // 2. Add padding between the button group and the waveform.
-            topRow.removeFromLeft(8); // This creates a visual gap.
-
-            // 3. REMOVED: The problematic line `transportArea = transportArea.reduced(4);`
-
-            // Now transportArea has a width of exactly `buttonSize * 5`, so the math works.
             m_prevButton.setBounds(transportArea.removeFromLeft(buttonSize));
             m_stopButton.setBounds(transportArea.removeFromLeft(buttonSize));
             m_playButton.setBounds(transportArea.removeFromLeft(buttonSize));
             m_pauseButton.setBounds(transportArea.removeFromLeft(buttonSize));
-            m_nextButton.setBounds(transportArea.removeFromLeft(buttonSize)); // Will now get the full width.
+            m_nextButton.setBounds(transportArea.removeFromLeft(buttonSize));
 
-            // Set icon edge insets
             m_prevButton.setEdgeIndent(iconInset);
             m_stopButton.setEdgeIndent(iconInset);
             m_playButton.setEdgeIndent(iconInset);
             m_pauseButton.setEdgeIndent(iconInset);
             m_nextButton.setEdgeIndent(iconInset);
 
-            // Waveform takes the rest of topRow.
             m_waveformDisplay.setBounds(topRow);
 
-            // Bottom row layout (your existing code for this part is fine)
+            // Bottom row layout
             bottomRow = bottomRow.reduced(4, 2);
+
             const int bottomButtonSize = bottomRow.getHeight() - 4;
             const int buttonPadding = 4;
 
-            m_speakerIcon.setBounds(bottomRow.removeFromLeft(bottomButtonSize));
+            m_volumeButton.setBounds(bottomRow.removeFromLeft(bottomButtonSize));
+            m_volumeButton.setEdgeIndent(bottomButtonSize / 5);
             bottomRow.removeFromLeft(buttonPadding);
+
             m_volumeSlider.setBounds(bottomRow.removeFromLeft(100));
             bottomRow.removeFromLeft(buttonPadding * 2);
 
             const int timeWidth = 60;
             m_currentTimeLabel.setBounds(bottomRow.removeFromLeft(timeWidth));
-            bottomRow.removeFromLeft(buttonPadding);
-            bottomRow.removeFromLeft(20);
+            bottomRow.removeFromLeft(buttonPadding * 2);
             m_totalTimeLabel.setBounds(bottomRow.removeFromLeft(timeWidth));
         }
-        
+
         void EnhancedPlayerComponent::updatePlaybackPosition()
         {
             updateTransportButtons();
             updateTimeDisplays();
-            
+
             // Update waveform playback position
             const auto length = m_playbackController.getLengthInSeconds();
             if (length > 0.0)
@@ -155,11 +138,11 @@ namespace jucyaudio
                 m_waveformDisplay.setPlaybackPosition(position / length);
             }
         }
-        
+
         void EnhancedPlayerComponent::loadButtonIcons()
         {
             // Load and set button icons
-            auto setButtonImage = [](juce::DrawableButton& button, const char* svgData, size_t svgSize)
+            auto setButtonImage = [](juce::DrawableButton &button, const char *svgData, size_t svgSize)
             {
                 std::unique_ptr<juce::Drawable> normal;
                 if (auto svg = juce::Drawable::createFromImageData(svgData, svgSize))
@@ -168,7 +151,7 @@ namespace jucyaudio
                     button.setImages(normal.get(), nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
                 }
             };
-            
+
             // Set all transport button icons
             setButtonImage(m_prevButton, BinaryData::prev_svg, BinaryData::prev_svgSize);
             setButtonImage(m_playButton, BinaryData::play_arrow_svg, BinaryData::play_arrow_svgSize);
@@ -176,111 +159,131 @@ namespace jucyaudio
             setButtonImage(m_stopButton, BinaryData::stop_svg, BinaryData::stop_svgSize);
             setButtonImage(m_nextButton, BinaryData::next_svg, BinaryData::next_svgSize);
         }
-        
+
+        void EnhancedPlayerComponent::loadVolumeIcons()
+        {
+            auto loadSvg = [](const char *data, size_t size)
+            {
+                return juce::Drawable::createFromImageData(data, size);
+            };
+
+            m_iconVolumeHigh = loadSvg(BinaryData::highaudio_svg, BinaryData::highaudio_svgSize);
+            m_iconVolumeLow = loadSvg(BinaryData::lowaudio_svg, BinaryData::lowaudio_svgSize);
+            m_iconVolumeMute = loadSvg(BinaryData::mute_svg, BinaryData::mute_svgSize);
+        }
+
         void EnhancedPlayerComponent::setupButtons()
         {
-            // Transport buttons
-            m_prevButton.onClick = [this] { 
-                if (onPreviousTrack) 
-                    onPreviousTrack(); 
+            m_prevButton.onClick = [this]
+            {
+                if (onPreviousTrack)
+                    onPreviousTrack();
             };
-            m_playButton.onClick = [this] { playButtonClicked(); };
-            m_pauseButton.onClick = [this] { pauseButtonClicked(); };
-            m_stopButton.onClick = [this] { stopButtonClicked(); };
-            m_nextButton.onClick = [this] { 
-                if (onNextTrack) 
-                    onNextTrack(); 
+            m_playButton.onClick = [this]
+            {
+                playButtonClicked();
             };
-            
+            m_pauseButton.onClick = [this]
+            {
+                pauseButtonClicked();
+            };
+            m_stopButton.onClick = [this]
+            {
+                stopButtonClicked();
+            };
+            m_nextButton.onClick = [this]
+            {
+                if (onNextTrack)
+                    onNextTrack();
+            };
+            m_volumeButton.onClick = [this]
+            {
+                volumeButtonClicked();
+            };
         }
-        
+
         void EnhancedPlayerComponent::setupVolumeControl()
         {
-            // Volume icon
-            updateVolumeIcon(m_playbackController.getTransportSource().getGain());
-            m_speakerIcon.setJustificationType(juce::Justification::centred);
-            
-            // Volume slider
             m_volumeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
             m_volumeSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
             m_volumeSlider.setRange(0.0, 1.0, 0.01);
             m_volumeSlider.setValue(m_playbackController.getTransportSource().getGain());
-            
+
             m_volumeSlider.onValueChange = [this]
             {
                 const float gain = static_cast<float>(m_volumeSlider.getValue());
                 m_playbackController.setGain(gain);
                 updateVolumeIcon(gain);
             };
-            
-            // Time labels
+
             m_currentTimeLabel.setText("0:00", juce::dontSendNotification);
             m_currentTimeLabel.setJustificationType(juce::Justification::centred);
-            
+
             m_totalTimeLabel.setText("0:00", juce::dontSendNotification);
             m_totalTimeLabel.setJustificationType(juce::Justification::centred);
+
+            updateVolumeIcon(m_playbackController.getTransportSource().getGain());
         }
-        
+
         void EnhancedPlayerComponent::updateTransportButtons()
         {
             using PlayerState = PlaybackController::PlayerState;
             const auto state = m_playbackController.getState();
-            
+
             // Update buttons based on the 7-state system
             switch (state)
             {
-                case PlayerState::Silence:
-                    // All buttons disabled
-                    m_playButton.setEnabled(false);
-                    m_pauseButton.setEnabled(false);
-                    m_stopButton.setEnabled(false);
-                    break;
-                    
-                case PlayerState::SilenceTrackLoaded:
-                    // Only PLAY enabled
-                    m_playButton.setEnabled(true);
-                    m_pauseButton.setEnabled(false);
-                    m_stopButton.setEnabled(false);
-                    break;
-                    
-                case PlayerState::TrackPlaying:
-                    // PAUSE and STOP enabled, PLAY disabled
-                    m_playButton.setEnabled(false);
-                    m_pauseButton.setEnabled(true);
-                    m_stopButton.setEnabled(true);
-                    break;
-                    
-                case PlayerState::TrackPaused:
-                    // PLAY and STOP enabled, PAUSE disabled
-                    m_playButton.setEnabled(true);
-                    m_pauseButton.setEnabled(false);
-                    m_stopButton.setEnabled(true);
-                    break;
-                    
-                case PlayerState::SilenceMixLoaded:
-                    // Only PLAY enabled
-                    m_playButton.setEnabled(true);
-                    m_pauseButton.setEnabled(false);
-                    m_stopButton.setEnabled(false);
-                    break;
-                    
-                case PlayerState::MixPlaying:
-                    // PAUSE and STOP enabled, PLAY disabled
-                    m_playButton.setEnabled(false);
-                    m_pauseButton.setEnabled(true);
-                    m_stopButton.setEnabled(true);
-                    break;
-                    
-                case PlayerState::MixPaused:
-                    // PLAY and STOP enabled, PAUSE disabled
-                    m_playButton.setEnabled(true);
-                    m_pauseButton.setEnabled(false);
-                    m_stopButton.setEnabled(true);
-                    break;
+            case PlayerState::Silence:
+                // All buttons disabled
+                m_playButton.setEnabled(false);
+                m_pauseButton.setEnabled(false);
+                m_stopButton.setEnabled(false);
+                break;
+
+            case PlayerState::SilenceTrackLoaded:
+                // Only PLAY enabled
+                m_playButton.setEnabled(true);
+                m_pauseButton.setEnabled(false);
+                m_stopButton.setEnabled(false);
+                break;
+
+            case PlayerState::TrackPlaying:
+                // PAUSE and STOP enabled, PLAY disabled
+                m_playButton.setEnabled(false);
+                m_pauseButton.setEnabled(true);
+                m_stopButton.setEnabled(true);
+                break;
+
+            case PlayerState::TrackPaused:
+                // PLAY and STOP enabled, PAUSE disabled
+                m_playButton.setEnabled(true);
+                m_pauseButton.setEnabled(false);
+                m_stopButton.setEnabled(true);
+                break;
+
+            case PlayerState::SilenceMixLoaded:
+                // Only PLAY enabled
+                m_playButton.setEnabled(true);
+                m_pauseButton.setEnabled(false);
+                m_stopButton.setEnabled(false);
+                break;
+
+            case PlayerState::MixPlaying:
+                // PAUSE and STOP enabled, PLAY disabled
+                m_playButton.setEnabled(false);
+                m_pauseButton.setEnabled(true);
+                m_stopButton.setEnabled(true);
+                break;
+
+            case PlayerState::MixPaused:
+                // PLAY and STOP enabled, PAUSE disabled
+                m_playButton.setEnabled(true);
+                m_pauseButton.setEnabled(false);
+                m_stopButton.setEnabled(true);
+                break;
             }
-            
         }
-        
+
         void EnhancedPlayerComponent::updateTimeDisplays()
         {
             if (m_playbackController.getCurrentFilepath().isEmpty())
@@ -289,16 +292,16 @@ namespace jucyaudio
                 m_totalTimeLabel.setText("0:00", juce::dontSendNotification);
                 return;
             }
-            
+
             const auto position = m_playbackController.getCurrentPositionSeconds();
             const auto length = m_playbackController.getLengthInSeconds();
-            
+
             auto formatTime = [](double seconds) -> juce::String
             {
                 const int hours = static_cast<int>(seconds) / 3600;
                 const int minutes = (static_cast<int>(seconds) % 3600) / 60;
                 const int secs = static_cast<int>(seconds) % 60;
-                
+
                 if (hours > 0)
                 {
                     return juce::String::formatted("%d:%02d:%02d", hours, minutes, secs);
@@ -308,57 +311,70 @@ namespace jucyaudio
                     return juce::String::formatted("%d:%02d", minutes, secs);
                 }
             };
-            
+
             m_currentTimeLabel.setText(formatTime(position), juce::dontSendNotification);
             m_totalTimeLabel.setText(formatTime(length), juce::dontSendNotification);
         }
-        
-        
+
+
+
         void EnhancedPlayerComponent::playButtonClicked()
         {
             m_playbackController.play();
         }
-        
+
         void EnhancedPlayerComponent::pauseButtonClicked()
         {
             // Pause button only pauses, doesn't resume
             m_playbackController.pause();
         }
-        
+
         void EnhancedPlayerComponent::stopButtonClicked()
         {
             m_playbackController.stop();
         }
-        
-        
-        
+
+        void EnhancedPlayerComponent::volumeButtonClicked()
+        {
+            const float currentGain = static_cast<float>(m_volumeSlider.getValue());
+            if (currentGain > 0.0f)
+            {
+                m_lastVolumeBeforeMute = currentGain;
+                m_volumeSlider.setValue(0.0, juce::sendNotification);
+            }
+            else
+            {
+                m_volumeSlider.setValue(m_lastVolumeBeforeMute, juce::sendNotification);
+            }
+        }
+
         void EnhancedPlayerComponent::updateVolumeIcon(float gain)
         {
             if (gain <= 0.0f)
             {
-                m_speakerIcon.setText("Mute", juce::dontSendNotification);
+                m_volumeButton.setImages(m_iconVolumeMute.get());
             }
             else if (gain < 0.5f)
             {
-                m_speakerIcon.setText("Vol-", juce::dontSendNotification);
+                m_volumeButton.setImages(m_iconVolumeLow.get());
             }
             else
             {
-                m_speakerIcon.setText("Vol+", juce::dontSendNotification);
+                m_volumeButton.setImages(m_iconVolumeHigh.get());
             }
         }
-        
-        void EnhancedPlayerComponent::changeListenerCallback(juce::ChangeBroadcaster* source)
+
+        void EnhancedPlayerComponent::changeListenerCallback(juce::ChangeBroadcaster *source)
         {
             // Handle thumbnail changes if needed
             repaint();
         }
-        
-        void EnhancedPlayerComponent::loadFile(const juce::File& file, std::optional<TrackId> trackId)
+
+        void EnhancedPlayerComponent::loadFile(const juce::File &file, std::optional<TrackId> trackId)
         {
             m_waveformDisplay.loadFile(file);
             m_currentTrackId = trackId;
-            
+
             // Clear markers if no track ID provided
             if (!trackId)
             {
@@ -366,78 +382,73 @@ namespace jucyaudio
             }
             // We'll load markers from the database when we connect it to MainComponent
         }
-        
-        void EnhancedPlayerComponent::setMarkers(const std::vector<database::TrackMarker>& markers)
+
+        void EnhancedPlayerComponent::setMarkers(const std::vector<database::TrackMarker> &markers)
         {
             m_waveformDisplay.setMarkers(markers);
         }
-        
+
         float EnhancedPlayerComponent::getVolumeSliderValue() const
         {
             return static_cast<float>(m_volumeSlider.getValue());
         }
-        
+
         void EnhancedPlayerComponent::setVolumeSliderValue(float value)
         {
             m_volumeSlider.setValue(value, juce::sendNotification);
         }
-        
+
         // WaveformDisplay implementation
-        EnhancedPlayerComponent::WaveformDisplay::WaveformDisplay(juce::AudioFormatManager& formatManager,
-                                                                 juce::AudioThumbnailCache& thumbnailCache)
+        EnhancedPlayerComponent::WaveformDisplay::WaveformDisplay(juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache)
             : m_thumbnail(512, formatManager, thumbnailCache)
         {
             m_thumbnail.addChangeListener(this);
         }
-        
+
         EnhancedPlayerComponent::WaveformDisplay::~WaveformDisplay()
         {
             m_thumbnail.removeChangeListener(this);
         }
-        
-        void EnhancedPlayerComponent::WaveformDisplay::paint(juce::Graphics& g)
+
+        void EnhancedPlayerComponent::WaveformDisplay::paint(juce::Graphics &g)
         {
             auto bounds = getLocalBounds();
-            auto& lf = getLookAndFeel();
-            
+            auto &lf = getLookAndFeel();
+
             // Background
             g.setColour(lf.findColour(juce::TextEditor::backgroundColourId));
             g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
-            
+
             if (!m_fileLoaded)
             {
                 g.setColour(lf.findColour(juce::Label::textColourId).withAlpha(0.5f));
                 g.drawText("No track loaded", bounds, juce::Justification::centred, false);
                 return;
             }
-            
+
             // Draw waveform in two colors - played portion and unplayed portion
             const double totalLength = m_thumbnail.getTotalLength();
             if (totalLength > 0)
             {
                 auto waveformBounds = bounds.reduced(2);
-                
+
                 // Draw unplayed portion first (full waveform)
                 g.setColour(lf.findColour(jucyaudio::ui::waveformColourId).withAlpha(0.5f));
-                m_thumbnail.drawChannel(g, waveformBounds,
-                                      0.0, totalLength,
-                                      0, 1.0f);
-                
+                m_thumbnail.drawChannel(g, waveformBounds, 0.0, totalLength, 0, 1.0f);
+
                 // Draw played portion on top
                 if (m_playbackPosition > 0.0)
                 {
                     const int playedWidth = static_cast<int>(waveformBounds.getWidth() * m_playbackPosition);
                     auto playedBounds = waveformBounds.withWidth(playedWidth);
-                    
+
                     g.saveState();
                     g.reduceClipRegion(playedBounds);
                     g.setColour(lf.findColour(jucyaudio::ui::waveformColourId));
-                    m_thumbnail.drawChannel(g, waveformBounds,
-                                          0.0, totalLength,
-                                          0, 1.0f);
+                    m_thumbnail.drawChannel(g, waveformBounds, 0.0, totalLength, 0, 1.0f);
                     g.restoreState();
                 }
-                
+
                 // Draw playhead line
                 if (m_playbackPosition > 0.0 && m_playbackPosition < 1.0)
                 {
@@ -445,68 +456,69 @@ namespace jucyaudio
                     g.setColour(juce::Colours::white);
                     g.drawVerticalLine(playheadX, waveformBounds.getY(), waveformBounds.getBottom());
                 }
-                
+
                 // Draw markers
                 for (size_t i = 0; i < m_markers.size(); ++i)
                 {
-                    const auto& marker = m_markers[i];
+                    const auto &marker = m_markers[i];
                     const auto markerX = markerPositionToScreenX(marker);
-                    
+
                     // Draw marker line
                     const auto isHovered = m_hoveredMarkerIndex && *m_hoveredMarkerIndex == i;
                     g.setColour(isHovered ? juce::Colours::yellow : juce::Colours::orange);
                     g.drawVerticalLine(markerX, waveformBounds.getY(), waveformBounds.getBottom());
-                    
+
                     // Draw marker triangle at top
                     juce::Path triangle;
                     const auto triangleSize = isHovered ? 8.0f : 6.0f;
-                    triangle.addTriangle(markerX - triangleSize/2, waveformBounds.getY(),
-                                       markerX + triangleSize/2, waveformBounds.getY(),
-                                       markerX, waveformBounds.getY() + triangleSize);
+                    triangle.addTriangle(markerX - triangleSize / 2,
+                        waveformBounds.getY(),
+                        markerX + triangleSize / 2,
+                        waveformBounds.getY(),
+                        markerX,
+                        waveformBounds.getY() + triangleSize);
                     g.fillPath(triangle);
                 }
             }
-            
+
             // Border
             g.setColour(lf.findColour(juce::ComboBox::outlineColourId));
             g.drawRoundedRectangle(bounds.toFloat().reduced(1), 4.0f, 1.0f);
         }
-        
-        void EnhancedPlayerComponent::WaveformDisplay::mouseDown(const juce::MouseEvent& event)
+
+        void EnhancedPlayerComponent::WaveformDisplay::mouseDown(const juce::MouseEvent &event)
         {
             if (!m_fileLoaded)
             {
                 spdlog::debug("WaveformDisplay::mouseDown - no file loaded");
                 return;
             }
-            
-            spdlog::debug("WaveformDisplay::mouseDown - mods: Ctrl={}, Shift={}, Alt={}, Cmd={}", 
-                event.mods.isCtrlDown(), 
-                event.mods.isShiftDown(), 
+
+            spdlog::debug("WaveformDisplay::mouseDown - mods: Ctrl={}, Shift={}, Alt={}, Cmd={}",
+                event.mods.isCtrlDown(),
+                event.mods.isShiftDown(),
                 event.mods.isAltDown(),
                 event.mods.isCommandDown());
-                
+
             // Check if clicking on a marker
             const auto markerHit = hitTestMarker(event.position.toInt());
             if (markerHit)
             {
-                spdlog::info("Clicked on marker {} at position {}ms", 
-                    *markerHit, m_markers[*markerHit].position.count());
+                spdlog::info("Clicked on marker {} at position {}ms", *markerHit, m_markers[*markerHit].position.count());
                 if (onMarkerClicked)
                 {
                     onMarkerClicked(m_markers[*markerHit].position);
                 }
                 return;
             }
-            
+
             // Check for Ctrl+Click to create marker (use isCtrlDown for Windows/Linux)
             if (event.mods.isCtrlDown())
             {
                 const double clickPosition = event.position.x / static_cast<double>(getWidth());
-                const auto positionMs = std::chrono::milliseconds(
-                    static_cast<int64_t>(clickPosition * m_thumbnail.getTotalLength() * 1000));
+                const auto positionMs = std::chrono::milliseconds(static_cast<int64_t>(clickPosition * m_thumbnail.getTotalLength() * 1000));
                 spdlog::info("Ctrl+Click detected at {}ms - creating marker", positionMs.count());
-                
+
                 if (onMarkerClicked)
                 {
                     onMarkerClicked(positionMs);
@@ -517,7 +529,7 @@ namespace jucyaudio
                 }
                 return;
             }
-            
+
             // Normal click - seek
             if (onSeek)
             {
@@ -527,8 +539,8 @@ namespace jucyaudio
                 onSeek(seekTime);
             }
         }
-        
-        void EnhancedPlayerComponent::WaveformDisplay::loadFile(const juce::File& file)
+
+        void EnhancedPlayerComponent::WaveformDisplay::loadFile(const juce::File &file)
         {
             if (file.existsAsFile())
             {
@@ -543,7 +555,7 @@ namespace jucyaudio
             }
             repaint();
         }
-        
+
         void EnhancedPlayerComponent::WaveformDisplay::setPlaybackPosition(double position)
         {
             if (m_playbackPosition != position)
@@ -552,37 +564,37 @@ namespace jucyaudio
                 repaint();
             }
         }
-        
-        void EnhancedPlayerComponent::WaveformDisplay::changeListenerCallback(juce::ChangeBroadcaster* source)
+
+        void EnhancedPlayerComponent::WaveformDisplay::changeListenerCallback(juce::ChangeBroadcaster *source)
         {
             if (source == &m_thumbnail)
             {
                 repaint();
             }
         }
-        
-        void EnhancedPlayerComponent::WaveformDisplay::setMarkers(const std::vector<database::TrackMarker>& markers)
+
+        void EnhancedPlayerComponent::WaveformDisplay::setMarkers(const std::vector<database::TrackMarker> &markers)
         {
             m_markers = markers;
             m_hoveredMarkerIndex.reset();
             repaint();
         }
-        
-        void EnhancedPlayerComponent::WaveformDisplay::mouseMove(const juce::MouseEvent& event)
+
+        void EnhancedPlayerComponent::WaveformDisplay::mouseMove(const juce::MouseEvent &event)
         {
             const auto newHoveredIndex = hitTestMarker(event.position.toInt());
             if (newHoveredIndex != m_hoveredMarkerIndex)
             {
                 m_hoveredMarkerIndex = newHoveredIndex;
                 repaint();
-                
+
                 // Update cursor and tooltip
                 if (newHoveredIndex.has_value())
                 {
                     setMouseCursor(juce::MouseCursor::PointingHandCursor);
-                    
+
                     // Format tooltip with marker information
-                    const auto& marker = m_markers[*newHoveredIndex];
+                    const auto &marker = m_markers[*newHoveredIndex];
                     const auto positionStr = formatMarkerPosition(marker.position);
                     m_currentTooltip = positionStr + "\n" + marker.comment;
                 }
@@ -593,30 +605,30 @@ namespace jucyaudio
                 }
             }
         }
-        
-        void EnhancedPlayerComponent::WaveformDisplay::mouseExit(const juce::MouseEvent& event)
+
+        void EnhancedPlayerComponent::WaveformDisplay::mouseExit(const juce::MouseEvent &event)
         {
             m_hoveredMarkerIndex.reset();
             m_currentTooltip.clear();
             setMouseCursor(juce::MouseCursor::NormalCursor);
             repaint();
         }
-        
-        int EnhancedPlayerComponent::WaveformDisplay::markerPositionToScreenX(const database::TrackMarker& marker) const
+
+        int EnhancedPlayerComponent::WaveformDisplay::markerPositionToScreenX(const database::TrackMarker &marker) const
         {
             const auto totalLength = m_thumbnail.getTotalLength();
             if (totalLength <= 0.0)
                 return 0;
-                
+
             const auto markerSeconds = std::chrono::duration<double>(marker.position).count();
             const auto normalizedPosition = markerSeconds / totalLength;
             return static_cast<int>(getWidth() * normalizedPosition);
         }
-        
+
         std::optional<size_t> EnhancedPlayerComponent::WaveformDisplay::hitTestMarker(juce::Point<int> pos) const
         {
             constexpr auto hitRadius = 5;
-            
+
             for (size_t i = 0; i < m_markers.size(); ++i)
             {
                 const auto markerX = markerPositionToScreenX(m_markers[i]);
@@ -625,19 +637,17 @@ namespace jucyaudio
                     return i;
                 }
             }
-            
+
             return std::nullopt;
         }
-        
+
         juce::String EnhancedPlayerComponent::WaveformDisplay::formatMarkerPosition(std::chrono::milliseconds position) const
         {
             const auto totalSeconds = position.count() / 1000;
             const auto minutes = totalSeconds / 60;
             const auto seconds = totalSeconds % 60;
-            
-            return juce::String::formatted("%d:%02d", 
-                static_cast<int>(minutes), 
-                static_cast<int>(seconds));
+
+            return juce::String::formatted("%d:%02d", static_cast<int>(minutes), static_cast<int>(seconds));
         }
-    }
-}
+    } // namespace ui
+} // namespace jucyaudio
