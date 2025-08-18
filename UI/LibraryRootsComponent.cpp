@@ -1,5 +1,6 @@
 #include <Database/BackgroundService.h>
 #include <Database/Includes/IAlbumManager.h>
+#include <Database/Sqlite/SqliteFolderDatabase.h>
 #include <UI/CustomColourIds.h>
 #include <UI/LibraryRootsComponent.h>
 #include <UI/TaskDialog.h>
@@ -218,6 +219,11 @@ namespace jucyaudio
             {
                 // Refresh the online/offline status of all roots
                 m_rootManager.refreshRootStatuses();
+                
+                // Rebuild the offline folders table
+                auto& folderDb = theTrackLibrary.getTrackDatabase()->getFolderDatabase();
+                dynamic_cast<database::SqliteFolderDatabase&>(folderDb).rebuildOfflineFoldersTable(m_rootManager);
+                
                 loadRoots();  // Reload the display to show updated status
             }
         }

@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include <Database/Nodes/RootNode.h>
+#include <Database/Sqlite/SqliteFolderDatabase.h>
 #include <Database/Sqlite/SqliteTrackDatabase.h>
 #include <Database/TrackLibrary.h>
 #include <Database/TrackScanner.h>
@@ -59,6 +60,17 @@ namespace jucyaudio
                 return false;
             }
             m_scanner = new TrackScanner{*m_database}; // Scanner needs the DB
+
+            // First, initialize the folder database cache
+            auto& folderDb = m_database->getFolderDatabase();
+            dynamic_cast<SqliteFolderDatabase&>(folderDb).initialize();
+            
+            // Then refresh root statuses
+            auto& rootManager = m_database->getLibraryRootManager();
+            rootManager.refreshRootStatuses();
+            
+            // Finally, build the offline folders table
+            dynamic_cast<SqliteFolderDatabase&>(folderDb).rebuildOfflineFoldersTable(rootManager);
 
             m_isInitialised = true;
             spdlog::info("TrackLibrary initialised successfully.");

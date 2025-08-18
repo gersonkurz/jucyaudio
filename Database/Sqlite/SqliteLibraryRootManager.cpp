@@ -1,4 +1,5 @@
 #include <Database/Sqlite/SqliteLibraryRootManager.h>
+#include <Database/Sqlite/SqliteFolderDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/TrackLibrary.h>
@@ -39,12 +40,8 @@ namespace jucyaudio
         {
             spdlog::info("=== getAllRoots called ===");
             
-            // Make sure cache is populated
-            if (m_onlineStatusCache.empty())
-            {
-                spdlog::info("  Cache is empty, refreshing root statuses...");
-                const_cast<SqliteLibraryRootManager*>(this)->refreshRootStatuses();
-            }
+            // Don't auto-refresh during initialization - let the caller handle it
+            // This avoids circular dependencies during TrackLibrary initialization
             
             std::vector<LibraryRootInfo> roots;
             SqliteStatement stmt{m_db};
@@ -56,11 +53,10 @@ namespace jucyaudio
                 },
                 "SELECT root_id, path, last_scanned FROM LibraryRoots ORDER BY path;");
 
-            auto &folderDb{theTrackLibrary.getTrackDatabase()->getFolderDatabase()};
+            // Don't try to get folder info here - it causes circular dependency during initialization
             for (auto& root: roots)
             {
-                const auto folderId = folderDb.findOrCreateFolderByPath(root.path);
-                root.folderInfo = folderDb.getFolderById(folderId).value_or(database::FolderInfo{});
+                // folderInfo will be populated later when needed
                 
                 // Set the online status from cache
                 auto statusIt = m_onlineStatusCache.find(root.id);
@@ -160,7 +156,11 @@ namespace jucyaudio
             m_onlineStatusCache.clear();
             
             // Also clear the track online cache since root statuses have changed
-            theTrackLibrary.clearTrackOnlineCache();
+            // But only if the TrackLibrary is initialized
+            if (theTrackLibrary.isInitialised())
+            {
+                theTrackLibrary.clearTrackOnlineCache();
+            }
             
             // Load all roots from database
             SqliteStatement stmt{m_db};
@@ -202,6 +202,9 @@ namespace jucyaudio
             {
                 spdlog::info("  Cache: Root ID {} -> {}", id, online ? "ONLINE" : "OFFLINE");
             }
+            
+            // Don't call rebuildOfflineFoldersTable here - it creates a circular dependency
+            // It will be called separately after initialization
         }
 
         bool SqliteLibraryRootManager::isRootOnline(LibraryRootId rootId) const

@@ -1,4 +1,5 @@
 #include <Database/Includes/AlbumInfo.h>
+#include <Database/Includes/ILibraryRootManager.h>
 #include <Database/Sqlite/SqliteFolderDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteTransaction.h>
@@ -637,6 +638,70 @@ namespace jucyaudio
                 return newFolder.folderId;
             }
             return -1; // Indicate failure to create folder
+        }
+
+        void SqliteFolderDatabase::rebuildOfflineFoldersTable(ILibraryRootManager& rootManager)
+        {
+            spdlog::info("Rebuilding offline folders table...");
+            
+            // Create the temp table (don't drop it first to avoid race conditions)
+            SqliteStatement createStmt{m_db};
+            createStmt.bindStatement("CREATE TEMP TABLE IF NOT EXISTS OfflineFolders (folder_id INTEGER PRIMARY KEY);");
+            if (!createStmt.execute())
+            {
+                spdlog::error("Failed to create OfflineFolders temp table");
+                return;
+            }
+            
+            // Clear existing contents
+            SqliteStatement clearStmt{m_db};
+            clearStmt.bindStatement("DELETE FROM temp.OfflineFolders;");
+            clearStmt.execute();
+            
+            // Get all library roots and their status
+            const auto roots = rootManager.getAllRoots();
+            
+            // Collect all offline folder IDs
+            std::unordered_set<FolderId> offlineFolderIds;
+            
+            for (const auto &root : roots)
+            {
+                if (!root.isOnline)
+                {
+                    // This root is offline - find its folder ID and all children
+                    const auto rootFolderId = findOrCreateFolderByPath(root.path);
+                    if (rootFolderId > 0)
+                    {
+                        // Add the root folder itself
+                        offlineFolderIds.insert(rootFolderId);
+                        
+                        // Add all child folders recursively
+                        getChildFoldersRecursive(const_cast<std::unordered_set<FolderId>&>(offlineFolderIds), rootFolderId);
+                    }
+                }
+            }
+            
+            // Insert all offline folder IDs into the temp table
+            if (!offlineFolderIds.empty())
+            {
+                SqliteTransaction transaction{m_db};
+                SqliteStatement insertStmt{m_db};
+                
+                for (const auto folderId : offlineFolderIds)
+                {
+                    insertStmt.reset();
+                    insertStmt.bindStatement("INSERT INTO temp.OfflineFolders (folder_id) VALUES (?);");
+                    insertStmt.addParam(folderId);
+                    insertStmt.execute();
+                }
+                
+                transaction.commit();
+                spdlog::info("Added {} offline folders to temp table", offlineFolderIds.size());
+            }
+            else
+            {
+                spdlog::info("No offline folders found");
+            }
         }
 
     } // namespace database

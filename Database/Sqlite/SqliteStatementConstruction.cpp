@@ -3,6 +3,7 @@
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/TrackLibrary.h>
+#include <UI/Settings.h>
 #include <Utils/AssortedUtils.h>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -38,6 +39,13 @@ namespace jucyaudio
 
             // Note: Search terms are now handled via FTS5 in createSelectStatement/createCountStatement
             // so we don't add them to the WHERE clause here
+            
+            // Add offline filtering if enabled in settings
+            if (!config::theSettings.uiSettings.showOfflineTracks)
+            {
+                // Filter out tracks from offline folders
+                addCondition("folder_id NOT IN (SELECT folder_id FROM temp.OfflineFolders)");
+            }
 
             if (args.workingSetId > 0)
             {

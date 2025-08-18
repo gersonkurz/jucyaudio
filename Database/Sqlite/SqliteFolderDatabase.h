@@ -10,6 +10,8 @@ namespace jucyaudio
 {
     namespace database
     {
+        // Forward declaration
+        class ILibraryRootManager;
 
         class SqliteFolderDatabase : public IFolderDatabase
         {
@@ -42,6 +44,13 @@ namespace jucyaudio
             {
                 buildCacheIfNeeded();
             }
+
+            /**
+             * @brief Rebuilds the temp table of offline folders based on current library root status.
+             * This creates/updates a temp table that can be used in SQL queries to filter offline tracks.
+             * @param rootManager The library root manager to use for getting root statuses
+             */
+            void rebuildOfflineFoldersTable(ILibraryRootManager& rootManager);
 
         private:
             bool addFolder(FolderInfo &folder) override;

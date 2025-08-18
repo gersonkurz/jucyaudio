@@ -113,6 +113,7 @@ namespace jucyaudio
                 {
                 }
                 TypedValue<std::string> theme{this, "Theme", "light"};
+                TypedValue<bool> showOfflineTracks{this, "ShowOfflineTracks", false};  // Default to hiding offline tracks
                 TypedValueVector<DataViewColumnSection> libraryViewColumns{this, "LibraryViewColumns"};
                 TypedValueVector<DataViewColumnSection> workingSetsViewColumns{this, "WorkingSetsViewColumns"};
                 TypedValueVector<DataViewColumnSection> mixesViewColumns{this, "MixesViewColumns"};
