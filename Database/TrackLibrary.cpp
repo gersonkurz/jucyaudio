@@ -1,5 +1,7 @@
 #include <chrono> // For filesystem last_modified_time
 #include <format>
+#include <algorithm>
+#include <cctype>
 
 #include <spdlog/spdlog.h>
 
@@ -134,8 +136,12 @@ namespace jucyaudio
             auto cacheIt = m_trackOnlineCache.find(trackId);
             if (cacheIt != m_trackOnlineCache.end())
             {
+                spdlog::debug("TrackLibrary::isTrackOnline({}): cache hit -> {}", 
+                             trackId, cacheIt->second);
                 return cacheIt->second;
             }
+
+            spdlog::info("TrackLibrary::isTrackOnline({}): cache miss, checking...", trackId);
 
             // Not in cache, need to determine the track's root
             // Get track info to get its folder
@@ -143,6 +149,7 @@ namespace jucyaudio
             if (!trackInfo.has_value())
             {
                 // Track doesn't exist
+                spdlog::warn("  Track {} doesn't exist", trackId);
                 m_trackOnlineCache[trackId] = false;
                 return false;
             }
@@ -153,27 +160,47 @@ namespace jucyaudio
             if (!folderInfo.has_value())
             {
                 // Folder doesn't exist
+                spdlog::warn("  Folder {} doesn't exist", trackInfo->folderId);
                 m_trackOnlineCache[trackId] = false;
                 return false;
             }
 
             // Get the full path of the folder
             const std::string folderPath = folderInfo->path;
+            spdlog::info("  Track folder: '{}'", folderPath);
 
             // Check which library root this folder belongs to
             auto &rootManager = m_database->getLibraryRootManager();
             const auto roots = rootManager.getAllRoots();
             
+            spdlog::info("  Checking against {} roots", roots.size());
+            
             bool isOnline = false;
             for (const auto &root : roots)
             {
+                spdlog::debug("    Comparing folder '{}' with root '{}' (ID {}, online: {})", 
+                             folderPath, root.path, root.id, root.isOnline);
+                
+                // Case-insensitive comparison for macOS/Windows
+                std::string folderLower = folderPath;
+                std::string rootLower = root.path;
+                std::transform(folderLower.begin(), folderLower.end(), folderLower.begin(), ::tolower);
+                std::transform(rootLower.begin(), rootLower.end(), rootLower.begin(), ::tolower);
+                
                 // Check if the folder path starts with this root path
-                if (folderPath.find(root.path) == 0)
+                if (folderLower.find(rootLower) == 0)
                 {
                     // This track belongs to this root
                     isOnline = rootManager.isRootOnline(root.id);
+                    spdlog::info("  -> Track belongs to root {} ({}), isOnline = {}", 
+                                root.id, root.path, isOnline);
                     break;
                 }
+            }
+
+            if (!isOnline)
+            {
+                spdlog::info("  -> Track doesn't belong to any online root");
             }
 
             // Cache the result

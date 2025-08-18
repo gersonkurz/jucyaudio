@@ -1,5 +1,6 @@
 #include <Database/BackgroundService.h>
 #include <Database/Includes/IAlbumManager.h>
+#include <UI/CustomColourIds.h>
 #include <UI/LibraryRootsComponent.h>
 #include <UI/TaskDialog.h>
 #include <UI/ThemeManager.h>
@@ -18,9 +19,10 @@ namespace jucyaudio
         {
             enum
             {
-                Path = 1,
-                FileCount = 2,
-                LastScanned = 3
+                Status = 1,
+                Path = 2,
+                FileCount = 3,
+                LastScanned = 4
             };
         } // namespace RootFolderTableColumns
 
@@ -131,7 +133,8 @@ namespace jucyaudio
             addAndMakeVisible(m_rootFoldersTable);
             m_rootFoldersTable.setHeaderHeight(25);
             m_rootFoldersTable.getHeader().setSortColumnId(RootFolderTableColumns::Path, true);
-            m_rootFoldersTable.getHeader().addColumn("Library Root Path", RootFolderTableColumns::Path, 400, 50, 2000);
+            m_rootFoldersTable.getHeader().addColumn("Status", RootFolderTableColumns::Status, 60, 50, 80);
+            m_rootFoldersTable.getHeader().addColumn("Library Root Path", RootFolderTableColumns::Path, 340, 50, 2000);
             m_rootFoldersTable.getHeader().addColumn("Files", RootFolderTableColumns::FileCount, 80, 50, 120);
             m_rootFoldersTable.getHeader().addColumn("Last Scanned", RootFolderTableColumns::LastScanned, 150, 100, 200);
             m_rootFoldersTable.setMultipleSelectionEnabled(true);
@@ -140,6 +143,11 @@ namespace jucyaudio
             m_scanButton.addListener(this);
             m_scanButton.setButtonText("Scan Selected Roots");
             m_scanButton.setEnabled(false);
+
+            addAndMakeVisible(m_refreshStatusButton);
+            m_refreshStatusButton.addListener(this);
+            m_refreshStatusButton.setButtonText("Refresh Status");
+            m_refreshStatusButton.setTooltip("Check which library roots are currently online/offline");
 
             addAndMakeVisible(m_titleLabel);
             m_titleLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(24.0f)}.boldened());
@@ -192,6 +200,8 @@ namespace jucyaudio
             // --- END MODIFIED SECTION ---
 
             m_scanButton.setBounds(bottomPanel.removeFromRight(150).reduced(0, 5));
+            bottomPanel.removeFromRight(5);
+            m_refreshStatusButton.setBounds(bottomPanel.removeFromRight(120).reduced(0, 5));
         }
 
         void LibraryRootsComponent::buttonClicked(juce::Button *button)
@@ -204,6 +214,12 @@ namespace jucyaudio
                 removeSelectedRoots();
             else if (button == &m_scanButton)
                 scanSelectedRoots();
+            else if (button == &m_refreshStatusButton)
+            {
+                // Refresh the online/offline status of all roots
+                m_rootManager.refreshRootStatuses();
+                loadRoots();  // Reload the display to show updated status
+            }
         }
 
         bool LibraryRootsComponent::keyPressed(const juce::KeyPress &key)
@@ -221,7 +237,16 @@ namespace jucyaudio
 
         void LibraryRootsComponent::loadRoots()
         {
+            spdlog::info("LibraryRootsComponent::loadRoots called");
             m_displayedRoots = m_rootManager.getAllRoots();
+            
+            spdlog::info("  Loaded {} roots:", m_displayedRoots.size());
+            for (const auto& root : m_displayedRoots)
+            {
+                spdlog::info("    Root ID {} ({}): isOnline = {}", 
+                            root.id, root.path, root.isOnline);
+            }
+            
             sortOrderChanged(m_rootFoldersTable.getHeader().getSortColumnId(), m_rootFoldersTable.getHeader().isSortedForwards());
             m_rootFoldersTable.updateContent();
             m_rootFoldersTable.repaint();
@@ -292,9 +317,43 @@ namespace jucyaudio
                 return;
 
             const auto &rootInfo = m_displayedRoots[rowNumber];
-            g.setColour(getLookAndFeel().findColour(juce::ListBox::textColourId));
             
-            if (columnId == RootFolderTableColumns::Path)
+            // Use different text color based on online/offline status
+            const auto textColour = rootInfo.isOnline 
+                ? getLookAndFeel().findColour(ui::folderOnlineTextColourId)
+                : getLookAndFeel().findColour(ui::folderOfflineTextColourId);
+            g.setColour(textColour);
+            
+            // Log what we're painting
+            if (columnId == RootFolderTableColumns::Status)
+            {
+                spdlog::debug("LibraryRootsComponent painting row {}: {} (ID {}) -> isOnline = {}", 
+                             rowNumber, rootInfo.path, rootInfo.id, rootInfo.isOnline);
+            }
+            
+            if (columnId == RootFolderTableColumns::Status)
+            {
+                // Draw a status indicator
+                const auto indicatorSize = juce::jmin(width, height) * 0.4f;
+                const auto x = (width - indicatorSize) * 0.5f;
+                const auto y = (height - indicatorSize) * 0.5f;
+                
+                if (rootInfo.isOnline)
+                {
+                    // Green circle for online
+                    g.setColour(juce::Colours::limegreen);
+                    g.fillEllipse(x, y, indicatorSize, indicatorSize);
+                }
+                else
+                {
+                    // Gray circle for offline
+                    g.setColour(juce::Colours::grey);
+                    g.fillEllipse(x, y, indicatorSize, indicatorSize);
+                }
+                // Restore text color for other columns
+                g.setColour(textColour);
+            }
+            else if (columnId == RootFolderTableColumns::Path)
             {
                 g.drawText(jucePathFromFs(rootInfo.path), 2, 0, width - 4, height, juce::Justification::centredLeft, true);
             }

@@ -50,6 +50,7 @@ namespace jucyaudio
             juce::ToggleButton m_removeMissingFilesToggle;
             juce::TableListBox m_rootFoldersTable;
             juce::TextButton m_scanButton;
+            juce::TextButton m_refreshStatusButton;
             juce::Label m_titleLabel;
 
             // CORRECTED: The data source is simply a vector of the root info objects.
