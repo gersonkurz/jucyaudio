@@ -167,16 +167,8 @@ endif()
 juce_add_gui_app(jucyaudio
     PRODUCT_NAME "jucyaudio"
     BUNDLE_ID "com.p-nand-q.jucyaudio"
-    VERSION 0.4.0
-    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Assets/JucyAudio.icns"
+    VERSION ${PROJECT_VERSION}
 )
-
-# Platform-specific deployment target
-if(APPLE)
-    set_target_properties(jucyaudio PROPERTIES
-        MACOS_DEPLOYMENT_TARGET 15.0
-    )
-endif()
 
 # Add all source files
 target_sources(jucyaudio PRIVATE
@@ -494,6 +486,31 @@ else()
 
         ICU::uc
         ICU::i18n
+    )
+endif()
+
+# --- Post-Build Step: Force-inject the macOS Icon (Manual Override) ---
+if(APPLE)
+    # Define paths using CMake generator expressions to get the final build locations
+    set(APP_BUNDLE_PATH "$<TARGET_BUNDLE_DIR:jucyaudio>")
+    set(PLIST_PATH "${APP_BUNDLE_PATH}/Contents/Info.plist")
+    set(RESOURCES_PATH "${APP_BUNDLE_PATH}/Contents/Resources")
+    set(SOURCE_ICON_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Assets/JucyAudio.icns")
+
+    add_custom_command(
+        TARGET jucyaudio POST_BUILD
+        
+        # COMMAND 1: Forcibly copy our correct icon into the app bundle's Resources folder.
+        # This will overwrite any garbage file JUCE may have created.
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${SOURCE_ICON_PATH}"
+                "${RESOURCES_PATH}/JucyAudio.icns"
+        
+        # COMMAND 2: Use Apple's 'plutil' tool to directly modify the Info.plist file.
+        # This will set the icon file key to the correct name.
+        COMMAND /usr/bin/plutil -replace CFBundleIconFile -string "JucyAudio.icns" "${PLIST_PATH}"
+        
+        COMMENT "Manually fixing macOS application icon..."
     )
 endif()
 
