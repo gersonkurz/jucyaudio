@@ -43,6 +43,10 @@ namespace jucyaudio
             // Marker management
             void setMarkers(const std::vector<database::TrackMarker>& markers);
             
+            // Volume control for media keys
+            float getVolumeSliderValue() const;
+            void setVolumeSliderValue(float value);
+            
             // Callbacks for external control
             std::function<void(TrackId, std::chrono::milliseconds, bool isNewMarker)> onMarkerAction;
 

@@ -353,9 +353,24 @@ namespace jucyaudio
         {
             const auto keyCode = key.getKeyCode();
             
-            // Mac media keys (F7-F9 are typically prev/play-pause/next)
-            // Also check for special media key codes
-            if (keyCode == juce::KeyPress::playKey || keyCode == juce::KeyPress::F8Key)
+            // Windows media key virtual codes
+            #ifdef _WIN32
+                constexpr int VK_MEDIA_PLAY_PAUSE = 0xB3;
+                constexpr int VK_MEDIA_STOP = 0xB2;
+                constexpr int VK_MEDIA_PREV_TRACK = 0xB1;
+                constexpr int VK_MEDIA_NEXT_TRACK = 0xB0;
+                constexpr int VK_VOLUME_MUTE = 0xAD;
+                constexpr int VK_VOLUME_DOWN = 0xAE;
+                constexpr int VK_VOLUME_UP = 0xAF;
+            #endif
+            
+            // Media keys (cross-platform)
+            // Check both JUCE's cross-platform codes and Windows-specific virtual keys
+            if (keyCode == juce::KeyPress::playKey || keyCode == juce::KeyPress::F8Key
+                #ifdef _WIN32
+                || keyCode == VK_MEDIA_PLAY_PAUSE
+                #endif
+                )
             {
                 // Toggle play/pause
                 if (m_playbackController.isPlaying())
@@ -369,27 +384,83 @@ namespace jucyaudio
                 spdlog::info("[MainComponent] Media key: play/pause toggled");
                 return true;
             }
-            else if (keyCode == juce::KeyPress::stopKey)
+            else if (keyCode == juce::KeyPress::stopKey
+                #ifdef _WIN32
+                || keyCode == VK_MEDIA_STOP
+                #endif
+                )
             {
                 // Stop playback
                 m_playbackController.stop();
                 spdlog::info("[MainComponent] Media key: stop");
                 return true;
             }
-            else if (keyCode == juce::KeyPress::fastForwardKey || keyCode == juce::KeyPress::F9Key)
+            else if (keyCode == juce::KeyPress::fastForwardKey || keyCode == juce::KeyPress::F9Key
+                #ifdef _WIN32
+                || keyCode == VK_MEDIA_NEXT_TRACK
+                #endif
+                )
             {
                 // Next track
                 playNextTrack();
                 spdlog::info("[MainComponent] Media key: next track");
                 return true;
             }
-            else if (keyCode == juce::KeyPress::rewindKey || keyCode == juce::KeyPress::F7Key)
+            else if (keyCode == juce::KeyPress::rewindKey || keyCode == juce::KeyPress::F7Key
+                #ifdef _WIN32
+                || keyCode == VK_MEDIA_PREV_TRACK
+                #endif
+                )
             {
                 // Previous track
                 playPreviousTrack();
                 spdlog::info("[MainComponent] Media key: previous track");
                 return true;
             }
+            #ifdef _WIN32
+            // Windows volume control keys
+            else if (keyCode == VK_VOLUME_MUTE)
+            {
+                // Toggle mute (set gain to 0 or restore)
+                static float previousGain = 1.0f;
+                static bool isMuted = false;
+                
+                if (isMuted)
+                {
+                    m_playbackController.setGain(previousGain);
+                    isMuted = false;
+                    spdlog::info("[MainComponent] Volume unmuted (gain: {})", previousGain);
+                }
+                else
+                {
+                    previousGain = m_enhancedPlayer.getVolumeSliderValue();
+                    m_playbackController.setGain(0.0f);
+                    isMuted = true;
+                    spdlog::info("[MainComponent] Volume muted");
+                }
+                return true;
+            }
+            else if (keyCode == VK_VOLUME_DOWN)
+            {
+                // Decrease volume by 10%
+                const float currentGain = m_enhancedPlayer.getVolumeSliderValue();
+                const float newGain = std::max(0.0f, currentGain - 0.1f);
+                m_playbackController.setGain(newGain);
+                m_enhancedPlayer.setVolumeSliderValue(newGain);
+                spdlog::info("[MainComponent] Volume down: {}", newGain);
+                return true;
+            }
+            else if (keyCode == VK_VOLUME_UP)
+            {
+                // Increase volume by 10%
+                const float currentGain = m_enhancedPlayer.getVolumeSliderValue();
+                const float newGain = std::min(1.0f, currentGain + 0.1f);
+                m_playbackController.setGain(newGain);
+                m_enhancedPlayer.setVolumeSliderValue(newGain);
+                spdlog::info("[MainComponent] Volume up: {}", newGain);
+                return true;
+            }
+            #endif
             
             // Space bar for play/pause (common convention)
             if (keyCode == juce::KeyPress::spaceKey && !key.getModifiers().isAnyModifierKeyDown())

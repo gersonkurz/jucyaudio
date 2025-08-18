@@ -360,6 +360,16 @@ namespace jucyaudio
             m_waveformDisplay.setMarkers(markers);
         }
         
+        float EnhancedPlayerComponent::getVolumeSliderValue() const
+        {
+            return static_cast<float>(m_volumeSlider.getValue());
+        }
+        
+        void EnhancedPlayerComponent::setVolumeSliderValue(float value)
+        {
+            m_volumeSlider.setValue(value, juce::sendNotification);
+        }
+        
         // WaveformDisplay implementation
         EnhancedPlayerComponent::WaveformDisplay::WaveformDisplay(juce::AudioFormatManager& formatManager,
                                                                  juce::AudioThumbnailCache& thumbnailCache)
