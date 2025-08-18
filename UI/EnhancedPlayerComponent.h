@@ -49,6 +49,8 @@ namespace jucyaudio
             
             // Callbacks for external control
             std::function<void(TrackId, std::chrono::milliseconds, bool isNewMarker)> onMarkerAction;
+            std::function<void()> onNextTrack;
+            std::function<void()> onPreviousTrack;
 
         private:
             // Waveform Display Component
@@ -92,10 +94,12 @@ namespace jucyaudio
                 juce::String formatMarkerPosition(std::chrono::milliseconds position) const;
             };
             
-            // Top row components
+            // Top row components (transport buttons)
+            juce::DrawableButton m_prevButton{"Previous", juce::DrawableButton::ImageFitted};
             juce::DrawableButton m_stopButton{"Stop", juce::DrawableButton::ImageFitted};
             juce::DrawableButton m_playButton{"Play", juce::DrawableButton::ImageFitted};
             juce::DrawableButton m_pauseButton{"Pause", juce::DrawableButton::ImageFitted};
+            juce::DrawableButton m_nextButton{"Next", juce::DrawableButton::ImageFitted};
 
             // Waveform display
             WaveformDisplay m_waveformDisplay;

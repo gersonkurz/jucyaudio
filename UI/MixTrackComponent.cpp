@@ -18,7 +18,7 @@ namespace jucyaudio
             MixTrack &mixTrack, const TrackInfo &trackInfo, juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache)
             : m_mixTrack{mixTrack},
               m_trackInfo{trackInfo},
-              m_thumbnail(512, formatManager, thumbnailCache)
+              m_thumbnail{512, formatManager, thumbnailCache}
         {
             m_thumbnail.addChangeListener(this);
 
@@ -28,8 +28,8 @@ namespace jucyaudio
             if (db.loadWaveform(m_trackInfo.trackId, cachedWaveformVec).isOk() && !cachedWaveformVec.empty())
             {
                 // Cache hit: Load from blob
-                juce::MemoryBlock mb(cachedWaveformVec.data(), cachedWaveformVec.size());
-                juce::MemoryInputStream stream(mb, false);
+                juce::MemoryBlock mb{cachedWaveformVec.data(), cachedWaveformVec.size()};
+                juce::MemoryInputStream stream{mb, false};
                 if (m_thumbnail.loadFrom(stream))
                 {
                     spdlog::info("Loaded waveform for track {} from cache.", m_trackInfo.trackId);
@@ -56,7 +56,7 @@ namespace jucyaudio
             // Initialize m_gainSlider
             m_gainSlider.setSliderStyle(juce::Slider::LinearHorizontal);
             m_gainSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 50, 20);
-            m_gainSlider.setRange(0.0, 2.0, 0.01); // Range from 0.0 to 2.0, with 0.01 step
+            m_gainSlider.setRange(0.0, 4.0, 0.01); // Range from 0.0 to 2.0, with 0.01 step
             m_gainSlider.setDoubleClickReturnValue(true, 1.0); // Allow double-click to reset to 1.0
             
             // Temporarily remove listener to prevent callback during initialization
@@ -540,18 +540,6 @@ namespace jucyaudio
                 // Calculate the new time for the attach point
                 auto previewTime = xToTime(event.position.x, false /* clampToComponentBounds */);
                 
-                // Debug logging for track 22650
-                if (m_trackInfo.trackId == 22650)
-                {
-                    spdlog::info("[Track 22650 Debug] AttachTo drag:");
-                    spdlog::info("  - Mouse X: {}", event.position.x);
-                    spdlog::info("  - Component width: {}", getWidth());
-                    spdlog::info("  - Preview time from xToTime: {} ms", previewTime.count());
-                    spdlog::info("  - Current cueStart: {} ms", m_mixTrack.cueStart.count());
-                    spdlog::info("  - Current attachTo: {} ms", m_mixTrack.attachTo.count());
-                    spdlog::info("  - Track duration: {} ms", m_trackInfo.duration.count());
-                }
-
                 // Constrain attach points to valid range
                 const auto effectiveStart = m_mixTrack.cueStart;
                 const auto effectiveEnd = m_mixTrack.getCueEndActual(m_trackInfo.duration);
@@ -561,11 +549,6 @@ namespace jucyaudio
                 // Show preview line for attach points too
                 if (onCueDragInProgress)
                 {
-                    if (m_trackInfo.trackId == 22650)
-                    {
-                        spdlog::info("  - Calling onCueDragInProgress with orderInMix={}, isAttach=true, previewTime={} ms",
-                            m_mixTrack.orderInMix, previewTime.count());
-                    }
                     onCueDragInProgress(m_mixTrack.orderInMix, true /* is attach point */, previewTime);
                 }
             }
@@ -653,19 +636,6 @@ namespace jucyaudio
                 // 1. Calculate the new absolute time based on the mouse release position.
                 const auto newAbsoluteTime = xToTime(event.position.x, false /* clampToComponentBounds */);
 
-                // Debug logging for track 22650
-                if (m_trackInfo.trackId == 22650)
-                {
-                    spdlog::info("[Track 22650 Debug] CueEnd drag:");
-                    spdlog::info("  - Mouse X: {}", event.position.x);
-                    spdlog::info("  - Component width: {}", getWidth());
-                    spdlog::info("  - New absolute time: {} ms", newAbsoluteTime.count());
-                    spdlog::info("  - Current cueStart: {} ms", m_mixTrack.cueStart.count());
-                    spdlog::info("  - Track duration: {} ms", m_trackInfo.duration.count());
-                    spdlog::info("  - Current cueEnd: {} ms", m_mixTrack.cueEnd.count());
-                    spdlog::info("  - Effective duration: {} ms", m_mixTrack.getEffectiveDuration(m_trackInfo.duration).count());
-                }
-
                 // 2. Convert this absolute time to our storage format (offset from track end).
                 // cueEnd is the offset from the END of the track
                 // newAbsoluteTime is where we want the cue-end marker to be
@@ -674,11 +644,6 @@ namespace jucyaudio
                 MixTrack updatedTrack = m_mixTrack;
                 updatedTrack.cueEnd = newAbsoluteTime - (m_mixTrack.cueStart + m_trackInfo.duration);
                 
-                if (m_trackInfo.trackId == 22650)
-                {
-                    spdlog::info("  - Calculated new cueEnd: {} ms", updatedTrack.cueEnd.count());
-                }
-
                 // 3. Fire the callback to update the data model and trigger a layout refresh.
                 if (onCueAttachChanged)
                 {

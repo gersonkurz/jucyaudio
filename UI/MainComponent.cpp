@@ -142,6 +142,16 @@ namespace jucyaudio
 
                 showMarkerDialog(trackId, position, isNewMarker);
             };
+            
+            m_enhancedPlayer.onNextTrack = [this]()
+            {
+                playNextTrack();
+            };
+            
+            m_enhancedPlayer.onPreviousTrack = [this]()
+            {
+                playPreviousTrack();
+            };
 
             if (!m_navigationTree.initialize())
             {

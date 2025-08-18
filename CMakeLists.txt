@@ -408,17 +408,9 @@ juce_add_binary_data(jucyaudio_assets
     SOURCES
         Assets/pause.svg
         Assets/play_arrow.svg
-        Assets/repeat.svg
-        Assets/repeat_all.svg
-        Assets/repeat_one.svg
-        Assets/shuffle.svg
-        Assets/shuffle_on.svg
         Assets/stop.svg
-        Assets/volume_down.svg
-        Assets/volume_off.svg
-        Assets/volume_up.svg
-        Assets/icons/skip_previous.svg
-        Assets/icons/skip_next.svg
+        Assets/prev.svg
+        Assets/next.svg
         Assets/orange-jucyaudio-logo.png
         Assets/orange-jucyaudio-small.png
 )

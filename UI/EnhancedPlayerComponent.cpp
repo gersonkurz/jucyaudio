@@ -53,10 +53,12 @@ namespace jucyaudio
                 }
             };
             
-            // Add all components
+            // Add all components (transport buttons)
+            addAndMakeVisible(m_prevButton);
             addAndMakeVisible(m_stopButton);
             addAndMakeVisible(m_playButton);
             addAndMakeVisible(m_pauseButton);
+            addAndMakeVisible(m_nextButton);
             addAndMakeVisible(m_waveformDisplay);
             
             addAndMakeVisible(m_speakerIcon);
@@ -95,25 +97,27 @@ namespace jucyaudio
             auto topRow = bounds.removeFromTop(topRowHeight);
             auto bottomRow = bounds;
             
-            // Top row layout
-            const int buttonSize = topRowHeight - 8; // Some padding
-            const int buttonPadding = 4;
+            // Top row layout - now with 5 buttons
+            const int buttonSize = topRowHeight - 8; // Back to square buttons for proper icon size
+            const int buttonPadding = 4; // No padding - buttons will be right next to each other
             const int iconInset = buttonSize / 4; // Make icons 50% of button size
             
-            auto transportArea = topRow.removeFromLeft((buttonSize + buttonPadding) * 3);
+            auto transportArea = topRow.removeFromLeft(buttonSize * 5); // 5 buttons, no gaps
             transportArea = transportArea.reduced(4);
             
-            // Set button bounds with proper sizing
+            // Set button bounds with proper sizing (prev, stop, play, pause, next)
+            m_prevButton.setBounds(transportArea.removeFromLeft(buttonSize));
             m_stopButton.setBounds(transportArea.removeFromLeft(buttonSize));
-            transportArea.removeFromLeft(buttonPadding);
             m_playButton.setBounds(transportArea.removeFromLeft(buttonSize));
-            transportArea.removeFromLeft(buttonPadding);
             m_pauseButton.setBounds(transportArea.removeFromLeft(buttonSize));
+            m_nextButton.setBounds(transportArea.removeFromLeft(buttonSize));
             
             // Set icon edge insets to make icons smaller within buttons
+            m_prevButton.setEdgeIndent(iconInset);
             m_stopButton.setEdgeIndent(iconInset);
             m_playButton.setEdgeIndent(iconInset);
             m_pauseButton.setEdgeIndent(iconInset);
+            m_nextButton.setEdgeIndent(iconInset);
             
             // Waveform takes remaining space
             m_waveformDisplay.setBounds(topRow.reduced(4));
@@ -168,17 +172,27 @@ namespace jucyaudio
             };
             
             // Set all transport button icons
+            setButtonImage(m_prevButton, BinaryData::prev_svg, BinaryData::prev_svgSize);
             setButtonImage(m_playButton, BinaryData::play_arrow_svg, BinaryData::play_arrow_svgSize);
             setButtonImage(m_pauseButton, BinaryData::pause_svg, BinaryData::pause_svgSize);
             setButtonImage(m_stopButton, BinaryData::stop_svg, BinaryData::stop_svgSize);
+            setButtonImage(m_nextButton, BinaryData::next_svg, BinaryData::next_svgSize);
         }
         
         void EnhancedPlayerComponent::setupButtons()
         {
             // Transport buttons
+            m_prevButton.onClick = [this] { 
+                if (onPreviousTrack) 
+                    onPreviousTrack(); 
+            };
             m_playButton.onClick = [this] { playButtonClicked(); };
             m_pauseButton.onClick = [this] { pauseButtonClicked(); };
             m_stopButton.onClick = [this] { stopButtonClicked(); };
+            m_nextButton.onClick = [this] { 
+                if (onNextTrack) 
+                    onNextTrack(); 
+            };
             
         }
         
