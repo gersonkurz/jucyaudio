@@ -3,6 +3,7 @@
 #include <Database/Sqlite/SqliteMixManager.h>
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteTransaction.h>
+#include <UI/Settings.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/StringWriter.h>
 #include <nlohmann/json.hpp>
@@ -124,7 +125,37 @@ namespace jucyaudio
     {
         std::vector<MixInfo> SqliteMixManager::getMixes(const TrackQueryArgs &args) const
         {
-            const std::string BASE_STMT = R"SQL(SELECT 
+            // Check if we need to filter offline mixes
+            const bool filterOffline = !config::theSettings.uiSettings.showOfflineTracks;
+            
+            // Check if the temp table exists (only created when there are offline folders)
+            bool tempTableExists = false;
+            if (filterOffline)
+            {
+                SqliteStatement checkStmt{m_db, "SELECT name FROM sqlite_temp_master WHERE type='table' AND name='OfflineMixes';"};
+                tempTableExists = checkStmt.getNextResult();
+            }
+            
+            std::string BASE_STMT;
+            if (filterOffline && tempTableExists)
+            {
+                // Filter out offline mixes
+                BASE_STMT = R"SQL(SELECT 
+    m.mix_id,
+    m.name,
+    m.timestamp as created,
+    m.track_count,
+    m.total_length,
+    m.source_ws_id,
+    m.status
+FROM Mixes m
+WHERE m.mix_id NOT IN (SELECT mix_id FROM temp.OfflineMixes)
+)SQL";
+            }
+            else
+            {
+                // Show all mixes
+                BASE_STMT = R"SQL(SELECT 
     m.mix_id,
     m.name,
     m.timestamp as created,
@@ -134,13 +165,22 @@ namespace jucyaudio
     m.status
 FROM Mixes m
 )SQL";
+            }
 
             StringWriter output;
             output.append(BASE_STMT);
             bool first = true;
             if (!args.searchTerms.empty())
             {
-                output.append(" WHERE ");
+                // Check if we already have a WHERE clause (from offline filtering)
+                if (filterOffline && tempTableExists)
+                {
+                    output.append(" AND ");
+                }
+                else
+                {
+                    output.append(" WHERE ");
+                }
                 for (const auto &searchTerm : args.searchTerms)
                 {
                     if (first)
@@ -151,14 +191,14 @@ FROM Mixes m
                     {
                         output.append(" AND ");
                     }
-                    output.append("m.name LIKE '%'");
+                    output.append("m.name LIKE '%");
                     output.append(searchTerm);
                     output.append("%'");
                 }
             }
             if (args.mixId)
             {
-                if (first)
+                if (first && !(filterOffline && tempTableExists))
                 {
                     output.append(" WHERE ");
                     first = false;

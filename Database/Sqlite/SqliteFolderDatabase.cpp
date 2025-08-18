@@ -697,10 +697,87 @@ namespace jucyaudio
                 
                 transaction.commit();
                 spdlog::info("Added {} offline folders to temp table", offlineFolderIds.size());
+                
+                // Now create and populate OfflineWorkingSets table
+                // This contains working sets that have at least one track from an offline folder
+                spdlog::info("Building offline working sets table...");
+                
+                SqliteStatement createWsStmt{m_db};
+                createWsStmt.bindStatement("CREATE TEMP TABLE IF NOT EXISTS OfflineWorkingSets (ws_id INTEGER PRIMARY KEY);");
+                if (!createWsStmt.execute())
+                {
+                    spdlog::error("Failed to create OfflineWorkingSets temp table");
+                }
+                else
+                {
+                    // Clear and populate
+                    SqliteStatement clearWsStmt{m_db};
+                    clearWsStmt.bindStatement("DELETE FROM temp.OfflineWorkingSets;");
+                    clearWsStmt.execute();
+                    
+                    // Find working sets with offline tracks
+                    SqliteStatement findOfflineWs{m_db};
+                    findOfflineWs.bindStatement(R"SQL(
+                        INSERT INTO temp.OfflineWorkingSets (ws_id)
+                        SELECT DISTINCT wst.ws_id 
+                        FROM WorkingSetTracks wst
+                        JOIN Tracks t ON wst.track_id = t.track_id
+                        WHERE t.folder_id IN (SELECT folder_id FROM temp.OfflineFolders);
+                    )SQL");
+                    
+                    if (findOfflineWs.execute())
+                    {
+                        const auto affectedRows = m_db.getChangesCount();
+                        spdlog::info("Marked {} working sets as offline", affectedRows);
+                    }
+                }
+                
+                // Now create and populate OfflineMixes table
+                // This contains mixes that have at least one track from an offline folder
+                spdlog::info("Building offline mixes table...");
+                
+                SqliteStatement createMixStmt{m_db};
+                createMixStmt.bindStatement("CREATE TEMP TABLE IF NOT EXISTS OfflineMixes (mix_id INTEGER PRIMARY KEY);");
+                if (!createMixStmt.execute())
+                {
+                    spdlog::error("Failed to create OfflineMixes temp table");
+                }
+                else
+                {
+                    // Clear and populate
+                    SqliteStatement clearMixStmt{m_db};
+                    clearMixStmt.bindStatement("DELETE FROM temp.OfflineMixes;");
+                    clearMixStmt.execute();
+                    
+                    // Find mixes with offline tracks
+                    SqliteStatement findOfflineMix{m_db};
+                    findOfflineMix.bindStatement(R"SQL(
+                        INSERT INTO temp.OfflineMixes (mix_id)
+                        SELECT DISTINCT mt.mix_id 
+                        FROM MixTracks mt
+                        JOIN Tracks t ON mt.track_id = t.track_id
+                        WHERE t.folder_id IN (SELECT folder_id FROM temp.OfflineFolders);
+                    )SQL");
+                    
+                    if (findOfflineMix.execute())
+                    {
+                        const auto affectedRows = m_db.getChangesCount();
+                        spdlog::info("Marked {} mixes as offline", affectedRows);
+                    }
+                }
             }
             else
             {
                 spdlog::info("No offline folders found");
+                
+                // Drop the temp tables if they exist (all roots are online)
+                SqliteStatement dropWsTable{m_db};
+                dropWsTable.bindStatement("DROP TABLE IF EXISTS temp.OfflineWorkingSets;");
+                dropWsTable.execute();
+                
+                SqliteStatement dropMixTable{m_db};
+                dropMixTable.bindStatement("DROP TABLE IF EXISTS temp.OfflineMixes;");
+                dropMixTable.execute();
             }
         }
 

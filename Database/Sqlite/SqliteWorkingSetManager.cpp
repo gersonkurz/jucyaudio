@@ -5,6 +5,7 @@
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/Sqlite/SqliteWorkingSetManager.h>
 #include <Database/TrackLibrary.h>
+#include <UI/Settings.h>
 #include <Utils/AssortedUtils.h>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -60,7 +61,38 @@ namespace jucyaudio
 
         std::vector<WorkingSetInfo> SqliteWorkingSetManager::getWorkingSets(const TrackQueryArgs &args) const
         {
-            const std::string BASE_STMT = R"SQL(SELECT 
+            // Check if we need to filter offline working sets
+            const bool filterOffline = !config::theSettings.uiSettings.showOfflineTracks;
+            
+            // Check if the temp table exists (only created when there are offline folders)
+            bool tempTableExists = false;
+            if (filterOffline)
+            {
+                SqliteStatement checkStmt{m_db, "SELECT name FROM sqlite_temp_master WHERE type='table' AND name='OfflineWorkingSets';"};
+                tempTableExists = checkStmt.getNextResult();
+            }
+            
+            std::string BASE_STMT;
+            if (filterOffline && tempTableExists)
+            {
+                // Filter out offline working sets
+                BASE_STMT = R"SQL(SELECT 
+    ws.ws_id,
+    ws.name,
+    ws.timestamp,
+    ws.sort_order,
+    COUNT(wst.track_id) as track_count,
+    SUM(t.duration) as total_duration
+FROM WorkingSets ws
+LEFT JOIN WorkingSetTracks wst ON ws.ws_id = wst.ws_id
+LEFT JOIN Tracks t ON wst.track_id = t.track_id
+WHERE ws.ws_id NOT IN (SELECT ws_id FROM temp.OfflineWorkingSets)
+GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
+            }
+            else
+            {
+                // Show all working sets
+                BASE_STMT = R"SQL(SELECT 
     ws.ws_id,
     ws.name,
     ws.timestamp,
@@ -71,12 +103,21 @@ FROM WorkingSets ws
 LEFT JOIN WorkingSetTracks wst ON ws.ws_id = wst.ws_id
 LEFT JOIN Tracks t ON wst.track_id = t.track_id
 GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
+            }
 
             StringWriter output;
             output.append(BASE_STMT);
             if (!args.searchTerms.empty())
             {
-                output.append(" WHERE ");
+                // Check if we already have a WHERE clause (from offline filtering)
+                if (filterOffline && tempTableExists)
+                {
+                    output.append(" AND ");
+                }
+                else
+                {
+                    output.append(" WHERE ");
+                }
                 bool first = true;
                 for (const auto &searchTerm : args.searchTerms)
                 {
@@ -88,7 +129,7 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
                     {
                         output.append(" AND ");
                     }
-                    output.append("m.name LIKE '%");
+                    output.append("ws.name LIKE '%");
                     output.append(searchTerm);
                     output.append("%'");
                 }
