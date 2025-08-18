@@ -1,5 +1,6 @@
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Nodes/RootNode.h>
+#include <UI/CustomColourIds.h>
 #include <UI/MainComponent.h>
 #include <UI/NavigationPanelComponent.h>
 #include <Utils/AssortedUtils.h>
@@ -50,6 +51,13 @@ namespace jucyaudio
             const auto textBounds = localBounds.reduced(4, 2);
             auto &lf = getOwnerView()->getLookAndFeel();
 
+            // Check if this node represents an offline folder
+            bool isNodeOnline = true;
+            if (m_node)
+            {
+                isNodeOnline = m_node->isOnline();
+            }
+
             if (isSelected())
             {
                 const bool treeHasFocus = getOwnerView()->hasKeyboardFocus(true);
@@ -71,7 +79,10 @@ namespace jucyaudio
                 g.setColour(backgroundColour);
                 g.fillRect(localBounds);
 
-                const auto foregroundColour = lf.findColour(juce::Label::textColourId);
+                // Use different text color based on online/offline status
+                const auto foregroundColour = isNodeOnline 
+                    ? lf.findColour(ui::folderOnlineTextColourId)
+                    : lf.findColour(ui::folderOfflineTextColourId);
                 g.setColour(foregroundColour);
                 //spdlog::debug("NavTreeViewItem::paintItem - Non-selected text color: #{}", foregroundColour.toDisplayString(true).toStdString());
             }

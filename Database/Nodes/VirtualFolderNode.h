@@ -25,8 +25,13 @@ namespace jucyaudio
                 return m_folderId;
             }
 
+            // Override to check if this folder is online
+            bool isOnline() const override;
+
         private:
             FolderId m_folderId;
+            mutable bool m_onlineStatusCached{false};
+            mutable bool m_isOnline{true};
         };
 
     } // namespace database

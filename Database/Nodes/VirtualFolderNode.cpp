@@ -60,5 +60,47 @@ namespace jucyaudio
             return !folderChildren.empty();
         }
 
+        bool VirtualFolderNode::isOnline() const
+        {
+            // Use cached value if available
+            if (m_onlineStatusCached)
+            {
+                return m_isOnline;
+            }
+
+            // Get the folder's full path
+            auto &folderDb = theTrackLibrary.getFolderDatabase();
+            auto folderInfo = folderDb.getFolderById(m_folderId);
+            if (!folderInfo)
+            {
+                m_isOnline = false;
+                m_onlineStatusCached = true;
+                return false;
+            }
+
+            const std::string folderPath = folderInfo->path;
+
+            // Check which library root this folder belongs to
+            auto &rootManager = theTrackLibrary.getLibraryRootManager();
+            const auto roots = rootManager.getAllRoots();
+            
+            for (const auto &root : roots)
+            {
+                // Check if the folder path starts with this root path
+                if (folderPath.find(root.path) == 0)
+                {
+                    // This folder belongs to this root - check if root is online
+                    m_isOnline = root.isOnline;
+                    m_onlineStatusCached = true;
+                    return m_isOnline;
+                }
+            }
+
+            // Folder doesn't belong to any root - consider it offline
+            m_isOnline = false;
+            m_onlineStatusCached = true;
+            return false;
+        }
+
     } // namespace database
 } // namespace jucyaudio

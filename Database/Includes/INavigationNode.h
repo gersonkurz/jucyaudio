@@ -176,6 +176,13 @@ namespace jucyaudio
 
             /// @brief Get the working set ID associated with this node. Will be 0 for all non-working-sets
             virtual WorkingSetId getWorkingSetId() const = 0;
+
+            /// @brief Check if this node represents online/available content.
+            /// This is used to visually distinguish between online and offline folders in the navigation tree.
+            /// By default, returns true (online). Nodes representing folders or library roots should override
+            /// this to check actual availability.
+            /// @return true if the content is available/online, false if offline/unavailable
+            virtual bool isOnline() const { return true; }
         };
 
         class EnsureNodeIsReleased final

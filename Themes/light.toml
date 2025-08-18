@@ -31,3 +31,5 @@ name = "Jucy Light"
 "TreeView::oddItemsColourId"               = "#00000000"
 "TreeView::selectedItemBackgroundColourId" = "#FFF96E00"
 "waveformColourId"                         = "#FF404040"  # Dark gray waveform for light theme
+"folderOnlineTextColourId"                 = "#FF212121"  # Normal dark text for online folders
+"folderOfflineTextColourId"                = "#FFB0B0B0"  # Light gray for offline folders

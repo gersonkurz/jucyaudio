@@ -31,3 +31,5 @@ name = "Jucy Dark"
 "TreeView::oddItemsColourId"               = "#00000000"  # Transparent - use main background
 "TreeView::selectedItemBackgroundColourId" = "#FFF96E00"  # Orange accent for selection
 "waveformColourId"                         = "#FFE0E0E0"  # Light gray/white waveform for dark theme
+"folderOnlineTextColourId"                 = "#FFabb2bf"  # Normal text color for online folders
+"folderOfflineTextColourId"                = "#FF5C5E66"  # Dimmed gray for offline folders
