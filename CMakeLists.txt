@@ -416,6 +416,8 @@ juce_add_binary_data(jucyaudio_assets
         Assets/mute.svg
         Assets/high-audio.svg
         Assets/low-audio.svg
+        Assets/shuffle.svg
+        Assets/repeat.svg
 )
 
 # Platform-specific library linking

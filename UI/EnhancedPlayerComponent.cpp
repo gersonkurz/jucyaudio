@@ -57,15 +57,26 @@ namespace jucyaudio
             // Add all components (transport buttons)
             addAndMakeVisible(m_prevButton);
             addAndMakeVisible(m_stopButton);
-            addAndMakeVisible(m_playButton);
-            addAndMakeVisible(m_pauseButton);
+            addAndMakeVisible(m_playPauseButton);
             addAndMakeVisible(m_nextButton);
             addAndMakeVisible(m_waveformDisplay);
 
             addAndMakeVisible(m_volumeButton);
             addAndMakeVisible(m_volumeSlider);
+            addAndMakeVisible(m_trackInfoLabel);
             addAndMakeVisible(m_currentTimeLabel);
             addAndMakeVisible(m_totalTimeLabel);
+            addAndMakeVisible(m_repeatButton);
+            addAndMakeVisible(m_shuffleButton);
+
+            m_trackInfoLabel.setText("No track loaded", juce::dontSendNotification);
+            m_trackInfoLabel.setJustificationType(juce::Justification::centredLeft);
+            m_trackInfoLabel.setColour(juce::Label::textColourId, findColour(juce::Label::textColourId).withAlpha(0.7f));
+
+            // Initialize button states from PlaybackController
+            m_isRepeatOn = m_playbackController.getRepeatMode();
+            m_isShuffleOn = m_playbackController.getShuffleMode();
+            updateToggleButtons();
         }
 
         EnhancedPlayerComponent::~EnhancedPlayerComponent()
@@ -77,52 +88,69 @@ namespace jucyaudio
             g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
         }
 
+        void EnhancedPlayerComponent::setRightHandPadding(int padding)
+        {
+            if (m_rightHandPadding != padding)
+            {
+                m_rightHandPadding = padding;
+                resized(); // Trigger a layout update
+            }
+        }
+
         void EnhancedPlayerComponent::resized()
         {
             auto bounds = getLocalBounds();
+            bounds.removeFromRight(m_rightHandPadding);
+
             const int topRowHeight = static_cast<int>(bounds.getHeight() * 0.7f);
 
             auto topRow = bounds.removeFromTop(topRowHeight);
             auto bottomRow = bounds;
 
-            // Top row layout
+            // --- Top row layout (correct and unchanged) ---
             const int buttonSize = topRowHeight - 8;
             const int iconInset = buttonSize / 4;
-
-            auto transportArea = topRow.removeFromLeft(buttonSize * 5);
-            topRow.removeFromLeft(8); // Padding between buttons and waveform
-
+            auto transportArea = topRow.removeFromLeft(buttonSize * 4);
+            topRow.removeFromLeft(8);
             m_prevButton.setBounds(transportArea.removeFromLeft(buttonSize));
             m_stopButton.setBounds(transportArea.removeFromLeft(buttonSize));
-            m_playButton.setBounds(transportArea.removeFromLeft(buttonSize));
-            m_pauseButton.setBounds(transportArea.removeFromLeft(buttonSize));
+            m_playPauseButton.setBounds(transportArea.removeFromLeft(buttonSize));
             m_nextButton.setBounds(transportArea.removeFromLeft(buttonSize));
-
             m_prevButton.setEdgeIndent(iconInset);
             m_stopButton.setEdgeIndent(iconInset);
-            m_playButton.setEdgeIndent(iconInset);
-            m_pauseButton.setEdgeIndent(iconInset);
+            m_playPauseButton.setEdgeIndent(iconInset);
             m_nextButton.setEdgeIndent(iconInset);
-
             m_waveformDisplay.setBounds(topRow);
 
-            // Bottom row layout
-            bottomRow = bottomRow.reduced(4, 2);
+            // --- Bottom row layout (New, simple, and robust design) ---
+            auto bottomArea = bottomRow.reduced(4, 2);
 
-            const int bottomButtonSize = bottomRow.getHeight() - 4;
+            const int itemHeight = bottomArea.getHeight();
             const int buttonPadding = 4;
+            const int timeWidth = 55;
+            const int sliderWidth = 100; // Fixed slider width as you suggested
 
-            m_volumeButton.setBounds(bottomRow.removeFromLeft(bottomButtonSize));
-            m_volumeButton.setEdgeIndent(bottomButtonSize / 5);
-            bottomRow.removeFromLeft(buttonPadding);
+            // 1. Layout fixed-width components from the right.
+            m_shuffleButton.setBounds(bottomArea.removeFromRight(itemHeight));
+            m_shuffleButton.setEdgeIndent(itemHeight / 5);
+            bottomArea.removeFromRight(buttonPadding);
+            m_repeatButton.setBounds(bottomArea.removeFromRight(itemHeight));
+            m_repeatButton.setEdgeIndent(itemHeight / 5);
+            bottomArea.removeFromRight(buttonPadding * 2);
+            m_totalTimeLabel.setBounds(bottomArea.removeFromRight(timeWidth));
+            bottomArea.removeFromRight(buttonPadding);
+            m_currentTimeLabel.setBounds(bottomArea.removeFromRight(timeWidth));
 
-            m_volumeSlider.setBounds(bottomRow.removeFromLeft(100));
-            bottomRow.removeFromLeft(buttonPadding * 2);
+            // 2. Layout fixed-width components from the left.
+            m_volumeButton.setBounds(bottomArea.removeFromLeft(itemHeight));
+            m_volumeButton.setEdgeIndent(itemHeight / 5);
+            bottomArea.removeFromLeft(buttonPadding);
+            m_volumeSlider.setBounds(bottomArea.removeFromLeft(sliderWidth));
 
-            const int timeWidth = 60;
-            m_currentTimeLabel.setBounds(bottomRow.removeFromLeft(timeWidth));
-            bottomRow.removeFromLeft(buttonPadding * 2);
-            m_totalTimeLabel.setBounds(bottomRow.removeFromLeft(timeWidth));
+            // 3. The new label takes all remaining space.
+            bottomArea.removeFromLeft(buttonPadding * 2);
+            bottomArea.removeFromRight(buttonPadding * 2);
+            m_trackInfoLabel.setBounds(bottomArea);
         }
 
         void EnhancedPlayerComponent::updatePlaybackPosition()
@@ -141,25 +169,57 @@ namespace jucyaudio
 
         void EnhancedPlayerComponent::loadButtonIcons()
         {
-            // Load and set button icons
-            auto setButtonImage = [](juce::DrawableButton &button, const char *svgData, size_t svgSize)
+            auto loadSvg = [](const char *data, size_t size)
             {
-                std::unique_ptr<juce::Drawable> normal;
-                if (auto svg = juce::Drawable::createFromImageData(svgData, svgSize))
-                {
-                    normal = std::unique_ptr<juce::Drawable>(svg->createCopy());
-                    button.setImages(normal.get(), nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
-                }
+                return juce::Drawable::createFromImageData(data, size);
             };
 
-            // Set all transport button icons
-            setButtonImage(m_prevButton, BinaryData::prev_svg, BinaryData::prev_svgSize);
-            setButtonImage(m_playButton, BinaryData::play_arrow_svg, BinaryData::play_arrow_svgSize);
-            setButtonImage(m_pauseButton, BinaryData::pause_svg, BinaryData::pause_svgSize);
-            setButtonImage(m_stopButton, BinaryData::stop_svg, BinaryData::stop_svgSize);
-            setButtonImage(m_nextButton, BinaryData::next_svg, BinaryData::next_svgSize);
-        }
+            // --- Play/Pause Button (no color change needed) ---
+            m_iconPlay = loadSvg(BinaryData::play_arrow_svg, BinaryData::play_arrow_svgSize);
+            m_iconPause = loadSvg(BinaryData::pause_svg, BinaryData::pause_svgSize);
+            m_playPauseButton.setImages(m_iconPlay.get(), nullptr, nullptr, nullptr, m_iconPause.get());
 
+            // --- Simple Transport Buttons (no color change needed) ---
+            auto setSimpleButtonImage = [&](juce::DrawableButton &button, const char *data, size_t size)
+            {
+                button.setImages(loadSvg(data, size).get());
+            };
+            setSimpleButtonImage(m_prevButton, BinaryData::prev_svg, BinaryData::prev_svgSize);
+            setSimpleButtonImage(m_stopButton, BinaryData::stop_svg, BinaryData::stop_svgSize);
+            setSimpleButtonImage(m_nextButton, BinaryData::next_svg, BinaryData::next_svgSize);
+
+            // --- Repeat and Shuffle Buttons with On/Off Colors ---
+            const auto accentColour = juce::Colour(0xFFF96F00);  // Orange color matching other icons
+            const auto offColour = findColour(juce::Label::textColourId).withAlpha(0.7f);
+
+            // =================================================================================
+            // CRITICAL ASSUMPTION:
+            // The following code assumes that the source SVG files (repeat.svg, shuffle.svg)
+            // are designed with a single, consistent color that we can target for replacement.
+            // The SVGs currently use orange (#ff8e31), so we need to replace that color.
+            // =================================================================================
+            const auto originalSvgColour = juce::Colour(0xffff8e31);
+
+            auto createColouredIcon = [&](const char *data, size_t size, juce::Colour newColour)
+            {
+                auto icon = loadSvg(data, size);
+                if (icon)
+                    icon->replaceColour(originalSvgColour, newColour);
+                return icon;
+            };
+
+            // Create the 'off' and 'on' versions of the repeat icon
+            m_iconRepeatOff = createColouredIcon(BinaryData::repeat_svg, BinaryData::repeat_svgSize, offColour);
+            m_iconRepeatOn = createColouredIcon(BinaryData::repeat_svg, BinaryData::repeat_svgSize, accentColour);
+
+            // Create the 'off' and 'on' versions of the shuffle icon
+            m_iconShuffleOff = createColouredIcon(BinaryData::shuffle_svg, BinaryData::shuffle_svgSize, offColour);
+            m_iconShuffleOn = createColouredIcon(BinaryData::shuffle_svg, BinaryData::shuffle_svgSize, accentColour);
+
+            // Set the button images: 'off' for normal, 'on' for toggled
+            m_repeatButton.setImages(m_iconRepeatOff.get(), nullptr, nullptr, nullptr, m_iconRepeatOn.get());
+            m_shuffleButton.setImages(m_iconShuffleOff.get(), nullptr, nullptr, nullptr, m_iconShuffleOn.get());
+        }
         void EnhancedPlayerComponent::loadVolumeIcons()
         {
             auto loadSvg = [](const char *data, size_t size)
@@ -179,14 +239,6 @@ namespace jucyaudio
                 if (onPreviousTrack)
                     onPreviousTrack();
             };
-            m_playButton.onClick = [this]
-            {
-                playButtonClicked();
-            };
-            m_pauseButton.onClick = [this]
-            {
-                pauseButtonClicked();
-            };
             m_stopButton.onClick = [this]
             {
                 stopButtonClicked();
@@ -200,6 +252,31 @@ namespace jucyaudio
             {
                 volumeButtonClicked();
             };
+
+            // Setup the combined play/pause button
+            m_playPauseButton.setClickingTogglesState(true);
+            m_playPauseButton.onClick = [this]
+            {
+                playPauseButtonClicked();
+            };
+
+            // Setup new toggle buttons
+            m_repeatButton.setClickingTogglesState(true);
+            m_repeatButton.onClick = [this]
+            {
+                repeatButtonClicked();
+            };
+
+            m_shuffleButton.setClickingTogglesState(true);
+            m_shuffleButton.onClick = [this]
+            {
+                shuffleButtonClicked();
+            };
+
+            // Set the on/off colors for the new buttons from the LookAndFeel
+            const auto accentColour = findColour(juce::Slider::thumbColourId);
+            const auto offColour = findColour(juce::Label::textColourId).withAlpha(0.7f);
+
         }
 
         void EnhancedPlayerComponent::setupVolumeControl()
@@ -225,63 +302,50 @@ namespace jucyaudio
             updateVolumeIcon(m_playbackController.getTransportSource().getGain());
         }
 
+        void EnhancedPlayerComponent::repeatButtonClicked()
+        {
+            m_isRepeatOn = !m_isRepeatOn;
+            m_playbackController.setRepeatMode(m_isRepeatOn);
+            updateToggleButtons();
+            spdlog::info("Repeat mode {}", m_isRepeatOn ? "enabled" : "disabled");
+        }
+
+        void EnhancedPlayerComponent::shuffleButtonClicked()
+        {
+            m_isShuffleOn = !m_isShuffleOn;
+            m_playbackController.setShuffleMode(m_isShuffleOn);
+            updateToggleButtons();
+            spdlog::info("Shuffle mode {}", m_isShuffleOn ? "enabled" : "disabled");
+        }
+
         void EnhancedPlayerComponent::updateTransportButtons()
         {
             using PlayerState = PlaybackController::PlayerState;
             const auto state = m_playbackController.getState();
 
-            // Update buttons based on the 7-state system
-            switch (state)
-            {
-            case PlayerState::Silence:
-                // All buttons disabled
-                m_playButton.setEnabled(false);
-                m_pauseButton.setEnabled(false);
-                m_stopButton.setEnabled(false);
-                break;
+            const bool isTrackLoaded = (state == PlayerState::SilenceTrackLoaded || state == PlayerState::TrackPlaying || state == PlayerState::TrackPaused);
 
-            case PlayerState::SilenceTrackLoaded:
-                // Only PLAY enabled
-                m_playButton.setEnabled(true);
-                m_pauseButton.setEnabled(false);
-                m_stopButton.setEnabled(false);
-                break;
+            const bool isMixLoaded = (state == PlayerState::SilenceMixLoaded || state == PlayerState::MixPlaying || state == PlayerState::MixPaused);
 
-            case PlayerState::TrackPlaying:
-                // PAUSE and STOP enabled, PLAY disabled
-                m_playButton.setEnabled(false);
-                m_pauseButton.setEnabled(true);
-                m_stopButton.setEnabled(true);
-                break;
+            const bool isPlaying = (state == PlayerState::TrackPlaying || state == PlayerState::MixPlaying);
+            const bool isPaused = (state == PlayerState::TrackPaused || state == PlayerState::MixPaused);
 
-            case PlayerState::TrackPaused:
-                // PLAY and STOP enabled, PAUSE disabled
-                m_playButton.setEnabled(true);
-                m_pauseButton.setEnabled(false);
-                m_stopButton.setEnabled(true);
-                break;
+            // The Play/Pause button is enabled whenever a track or mix is loaded.
+            m_playPauseButton.setEnabled(isTrackLoaded || isMixLoaded);
 
-            case PlayerState::SilenceMixLoaded:
-                // Only PLAY enabled
-                m_playButton.setEnabled(true);
-                m_pauseButton.setEnabled(false);
-                m_stopButton.setEnabled(false);
-                break;
+            // The button's visual state (play or pause icon) depends on whether we are playing.
+            m_playPauseButton.setToggleState(isPlaying, juce::dontSendNotification);
 
-            case PlayerState::MixPlaying:
-                // PAUSE and STOP enabled, PLAY disabled
-                m_playButton.setEnabled(false);
-                m_pauseButton.setEnabled(true);
-                m_stopButton.setEnabled(true);
-                break;
+            // Stop button is enabled if we are playing or paused.
+            m_stopButton.setEnabled(isPlaying || isPaused);
+        }
 
-            case PlayerState::MixPaused:
-                // PLAY and STOP enabled, PAUSE disabled
-                m_playButton.setEnabled(true);
-                m_pauseButton.setEnabled(false);
-                m_stopButton.setEnabled(true);
-                break;
-            }
+        void EnhancedPlayerComponent::updateToggleButtons()
+        {
+            m_repeatButton.setEnabled(true);
+            m_repeatButton.setToggleState(m_isRepeatOn, juce::dontSendNotification);
+            m_shuffleButton.setEnabled(true);
+            m_shuffleButton.setToggleState(m_isShuffleOn, juce::dontSendNotification);
         }
 
         void EnhancedPlayerComponent::updateTimeDisplays()
@@ -316,17 +380,17 @@ namespace jucyaudio
             m_totalTimeLabel.setText(formatTime(length), juce::dontSendNotification);
         }
 
-
-
-        void EnhancedPlayerComponent::playButtonClicked()
+        void EnhancedPlayerComponent::playPauseButtonClicked()
         {
-            m_playbackController.play();
-        }
-
-        void EnhancedPlayerComponent::pauseButtonClicked()
-        {
-            // Pause button only pauses, doesn't resume
-            m_playbackController.pause();
+            if (m_playbackController.getState() == PlaybackController::PlayerState::TrackPlaying ||
+                m_playbackController.getState() == PlaybackController::PlayerState::MixPlaying)
+            {
+                m_playbackController.pause();
+            }
+            else
+            {
+                m_playbackController.play();
+            }
         }
 
         void EnhancedPlayerComponent::stopButtonClicked()
@@ -370,7 +434,7 @@ namespace jucyaudio
             repaint();
         }
 
-        void EnhancedPlayerComponent::loadFile(const juce::File &file, std::optional<TrackId> trackId)
+        void EnhancedPlayerComponent::loadFile(const juce::File &file, std::string_view text, std::optional<TrackId> trackId)
         {
             m_waveformDisplay.loadFile(file);
             m_currentTrackId = trackId;
@@ -379,10 +443,26 @@ namespace jucyaudio
             if (!trackId)
             {
                 m_waveformDisplay.setMarkers({});
+                setTrackInfo({});
+            }
+            else
+            {
+                setTrackInfo(std::string{text});
             }
             // We'll load markers from the database when we connect it to MainComponent
         }
 
+        void EnhancedPlayerComponent::setTrackInfo(const juce::String &info)
+        {
+            if (info.isNotEmpty())
+            {
+                m_trackInfoLabel.setText(info, juce::dontSendNotification);
+            }
+            else
+            {
+                m_trackInfoLabel.setText("No track loaded", juce::dontSendNotification);
+            }
+        }
         void EnhancedPlayerComponent::setMarkers(const std::vector<database::TrackMarker> &markers)
         {
             m_waveformDisplay.setMarkers(markers);

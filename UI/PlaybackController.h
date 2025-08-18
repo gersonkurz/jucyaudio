@@ -60,6 +60,12 @@ namespace jucyaudio
 
             void seek(double positionSeconds);  // Seek within current track/mix
             void setGain(float newGain);
+            
+            // Playback modes
+            void setRepeatMode(bool enabled);
+            bool getRepeatMode() const { return m_repeatMode; }
+            void setShuffleMode(bool enabled);
+            bool getShuffleMode() const { return m_shuffleMode; }
 
             // --- State Query Methods ---
             bool isPlaying() const;
@@ -125,6 +131,10 @@ namespace jucyaudio
 
             // To prevent re-entrancy or rapid state changes from UI/callbacks
             std::atomic<bool> m_isCurrentlyChangingState{false};
+            
+            // Playback modes
+            bool m_repeatMode{false};
+            bool m_shuffleMode{false};
         };
     } // namespace ui
 } // namespace jucyaudio

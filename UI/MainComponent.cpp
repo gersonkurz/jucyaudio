@@ -27,6 +27,7 @@
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
 #include <algorithm>
+#include <random>
 #include <format>
 #include <spdlog/spdlog.h>
 #ifndef JUCE_WINDOWS
@@ -503,8 +504,39 @@ namespace jucyaudio
                     // Get the first selected row or default to -1 to start from beginning
                     const auto currentRow = selectedRows.empty() ? -1 : selectedRows.front();
                     
-                    // Calculate next row (wrap around if at end)
-                    const auto nextRow = (currentRow + 1) % totalRows;
+                    int nextRow;
+                    if (m_playbackController.getShuffleMode())
+                    {
+                        // Shuffle mode - pick a random track
+                        std::random_device rd;
+                        std::mt19937 gen(rd());
+                        std::uniform_int_distribution<> dis(0, totalRows - 1);
+                        nextRow = dis(gen);
+                        spdlog::info("[MainComponent] Shuffle mode: picking random track {}", nextRow);
+                    }
+                    else
+                    {
+                        // Sequential mode
+                        nextRow = currentRow + 1;
+                        
+                        // Check if we're at the end of the playlist
+                        if (nextRow >= totalRows)
+                        {
+                            if (m_playbackController.getRepeatMode())
+                            {
+                                // Repeat mode - wrap around to beginning
+                                nextRow = 0;
+                                spdlog::info("[MainComponent] Repeat mode: wrapping to beginning");
+                            }
+                            else
+                            {
+                                // No repeat - stop playback
+                                spdlog::info("[MainComponent] End of playlist, stopping");
+                                m_playbackController.stop();
+                                return;
+                            }
+                        }
+                    }
                     
                     // Select and play the next row
                     m_dataViewComponent.selectSingleRow(nextRow);
@@ -598,11 +630,38 @@ namespace jucyaudio
                 
                 if (totalRows > 0)
                 {
-                    // Get the first selected row or default to 0
-                    const auto currentRow = selectedRows.empty() ? 0 : selectedRows.front();
-                    
-                    // Calculate previous row (wrap around if at beginning)
-                    const auto prevRow = (currentRow > 0) ? (currentRow - 1) : (totalRows - 1);
+                    int prevRow;
+                    if (m_playbackController.getShuffleMode())
+                    {
+                        // Shuffle mode - pick a random track (going "back" in shuffle just picks another random)
+                        std::random_device rd;
+                        std::mt19937 gen(rd());
+                        std::uniform_int_distribution<> dis(0, totalRows - 1);
+                        prevRow = dis(gen);
+                        spdlog::info("[MainComponent] Shuffle mode: picking random track {}", prevRow);
+                    }
+                    else
+                    {
+                        // Get the first selected row or default to 0
+                        const auto currentRow = selectedRows.empty() ? 0 : selectedRows.front();
+                        
+                        // Calculate previous row 
+                        if (currentRow > 0)
+                        {
+                            prevRow = currentRow - 1;
+                        }
+                        else if (m_playbackController.getRepeatMode())
+                        {
+                            // At beginning with repeat mode - wrap to end
+                            prevRow = totalRows - 1;
+                            spdlog::info("[MainComponent] Repeat mode: wrapping to end");
+                        }
+                        else
+                        {
+                            // At beginning without repeat - stay at beginning
+                            prevRow = 0;
+                        }
+                    }
                     
                     // Select and play the previous row
                     m_dataViewComponent.selectSingleRow(prevRow);
@@ -874,10 +933,14 @@ namespace jucyaudio
         {
             if (source == &m_playbackController.getTransportSource())
             {
-                // This typically means the track ended, or playback state
-                // changed significantly from the transport source itself (e.g.
-                // stopped due to error).
-                // UI will update via timer in EnhancedPlayerComponent
+                // Check if the track has finished playing
+                if (!m_playbackController.getTransportSource().isPlaying() && 
+                    m_playbackController.getState() == PlaybackController::PlayerState::TrackPlaying)
+                {
+                    // Track just ended - auto-advance to next track
+                    spdlog::info("[MainComponent] Track ended, auto-advancing to next");
+                    playNextTrack();
+                }
             }
             // else if (source == &m_playbackController) { /* Handle other
             // general PlaybackController changes */ }
@@ -1027,32 +1090,6 @@ namespace jucyaudio
                 // Just update the visual position - no playback starts
                 m_statusPanel.getStatusBar().postMessage("Position set to " + juce::String(timePosition, 1) + "s", false);
             }
-        }
-
-        void MainComponent::playFileFromPosition(const juce::File &audioFile, double startPosition)
-        {
-            if (audioFile.existsAsFile())
-            {
-                // Stop any mix playback before starting single track
-                if (m_playbackController.isPlaying())
-                {
-                    m_playbackController.stop();
-                }
-
-                m_statusPanel.getStatusBar().postMessage(
-                    getSafeDisplayText("Playing: " + audioFile.getFileName() + " from " + juce::String(startPosition, 1) + "s"), false);
-
-                if (!m_playbackController.loadAndPlayFileFromPosition(audioFile, startPosition))
-                {
-                    m_statusPanel.getStatusBar().postMessage(getSafeDisplayText("Error playing: " + audioFile.getFileName()), true);
-                }
-                else
-                {
-                    // Load waveform when playback starts successfully
-                    m_enhancedPlayer.loadFile(audioFile);
-                }
-            }
-            // UI will update via timer in EnhancedPlayerComponent
         }
 
         void MainComponent::handleFilterChange(const juce::String &newFilterText)
@@ -1431,7 +1468,7 @@ namespace jucyaudio
                     }
 
                     // Load waveform when playback starts successfully
-                    m_enhancedPlayer.loadFile(audioFile, track->trackId);
+                    m_enhancedPlayer.loadFile(audioFile, std::format("{} / {} / {}", track->artist_name, track->album_title, track->title), track->trackId);
 
                     // Load markers for this track
                     const auto markers = theTrackLibrary.getMarkerManager().getMarkersForTrack(track->trackId);

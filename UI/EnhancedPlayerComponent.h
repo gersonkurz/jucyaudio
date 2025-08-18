@@ -35,7 +35,7 @@ namespace jucyaudio
             void changeListenerCallback(juce::ChangeBroadcaster *source) override;
 
             // File loading (with optional track ID for marker loading)
-            void loadFile(const juce::File &file, std::optional<TrackId> trackId = std::nullopt);
+            void loadFile(const juce::File &file, std::string_view text, std::optional<TrackId> trackId = std::nullopt);
 
             // Marker management
             void setMarkers(const std::vector<database::TrackMarker> &markers);
@@ -43,6 +43,8 @@ namespace jucyaudio
             // Volume control for media keys
             float getVolumeSliderValue() const;
             void setVolumeSliderValue(float value);
+
+            void setRightHandPadding(int padding);
 
             // Callbacks for external control
             std::function<void(TrackId, std::chrono::milliseconds, bool isNewMarker)> onMarkerAction;
@@ -80,6 +82,7 @@ namespace jucyaudio
                 std::function<void(double)> onSeek;
                 std::function<void(std::chrono::milliseconds)> onMarkerClicked;
 
+                
             private:
                 juce::AudioThumbnail m_thumbnail;
                 double m_playbackPosition{0.0};
@@ -97,8 +100,7 @@ namespace jucyaudio
             // Top row components (transport buttons)
             juce::DrawableButton m_prevButton{"Previous", juce::DrawableButton::ImageFitted};
             juce::DrawableButton m_stopButton{"Stop", juce::DrawableButton::ImageFitted};
-            juce::DrawableButton m_playButton{"Play", juce::DrawableButton::ImageFitted};
-            juce::DrawableButton m_pauseButton{"Pause", juce::DrawableButton::ImageFitted};
+            juce::DrawableButton m_playPauseButton{"PlayPause", juce::DrawableButton::ImageFitted};
             juce::DrawableButton m_nextButton{"Next", juce::DrawableButton::ImageFitted};
 
             // Waveform display
@@ -107,8 +109,11 @@ namespace jucyaudio
             // Bottom row components
             juce::DrawableButton m_volumeButton{"Volume", juce::DrawableButton::ImageFitted};
             juce::Slider m_volumeSlider;
+            juce::Label m_trackInfoLabel;
             juce::Label m_currentTimeLabel;
             juce::Label m_totalTimeLabel;
+            juce::DrawableButton m_repeatButton{"Repeat", juce::DrawableButton::ImageFitted};
+            juce::DrawableButton m_shuffleButton{"Shuffle", juce::DrawableButton::ImageFitted};
 
             // Internal state
             PlaybackController &m_playbackController;
@@ -116,12 +121,20 @@ namespace jucyaudio
             juce::AudioThumbnailCache &m_thumbnailCache;
             std::optional<TrackId> m_currentTrackId;
             float m_lastVolumeBeforeMute{1.0f};
+            bool m_isRepeatOn{false};
+            bool m_isShuffleOn{false};
+            int m_rightHandPadding{0};
 
             // Drawable assets for the volume button
+            std::unique_ptr<juce::Drawable> m_iconPlay;
+            std::unique_ptr<juce::Drawable> m_iconPause;
             std::unique_ptr<juce::Drawable> m_iconVolumeHigh;
             std::unique_ptr<juce::Drawable> m_iconVolumeLow;
             std::unique_ptr<juce::Drawable> m_iconVolumeMute;
-
+            std::unique_ptr<juce::Drawable> m_iconRepeatOff;
+            std::unique_ptr<juce::Drawable> m_iconRepeatOn;
+            std::unique_ptr<juce::Drawable> m_iconShuffleOff;
+            std::unique_ptr<juce::Drawable> m_iconShuffleOn;
             // Helper methods
             void updateTransportButtons();
             void updateTimeDisplays();
@@ -130,12 +143,15 @@ namespace jucyaudio
             void loadVolumeIcons();
             void setupButtons();
             void setupVolumeControl();
+            void volumeButtonClicked();
+            void updateToggleButtons();
+            void repeatButtonClicked();
+            void shuffleButtonClicked();
+            void setTrackInfo(const juce::String &info);
 
             // Button callbacks
-            void playButtonClicked();
-            void pauseButtonClicked();
+            void playPauseButtonClicked();
             void stopButtonClicked();
-            void volumeButtonClicked();
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EnhancedPlayerComponent)
         };

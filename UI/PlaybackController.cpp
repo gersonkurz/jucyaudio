@@ -180,6 +180,9 @@ namespace jucyaudio
                 m_audioTransportSource.setSource(m_currentAudioFileSource.get(), 0, nullptr, 
                                                 m_currentAudioFileSource->getAudioFormatReader()->sampleRate);
                 
+                // Don't loop individual tracks - repeat mode is for playlists/folders
+                m_audioTransportSource.setLooping(false);
+                
                 changeState(PlayerState::SilenceTrackLoaded);
                 spdlog::info("[PlaybackController] File loaded successfully");
             }
@@ -392,6 +395,20 @@ namespace jucyaudio
             {
                 m_mixPlaybackEngine->setGain(newGain);
             }
+        }
+        
+        void PlaybackController::setRepeatMode(bool enabled)
+        {
+            m_repeatMode = enabled;
+            spdlog::info("PlaybackController: Repeat mode {}", enabled ? "enabled" : "disabled");
+            // Repeat mode will be used by MainComponent for playlist/folder repeat
+        }
+        
+        void PlaybackController::setShuffleMode(bool enabled)
+        {
+            m_shuffleMode = enabled;
+            spdlog::info("PlaybackController: Shuffle mode {}", enabled ? "enabled" : "disabled");
+            // Shuffle mode will be used when selecting the next track
         }
 
         bool PlaybackController::isPlaying() const
