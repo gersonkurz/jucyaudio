@@ -2,6 +2,7 @@
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/TrackLibrary.h>
+#include <UI/Settings.h>
 #include <Utils/AssortedUtils.h>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -101,12 +102,29 @@ namespace jucyaudio
         {
             std::vector<AlbumInfo> albums;
             
-            std::string sql = R"SQL(
-                SELECT album_id, album_artist, title, year, folder_id, 
-                       genres, moods, tags, bandcamp_url, bitrate, created_at, updated_at
-                FROM Albums 
-                ORDER BY album_artist COLLATE NOCASE, title COLLATE NOCASE
-            )SQL";
+            // Check if we should filter offline albums
+            std::string sql;
+            if (!config::theSettings.uiSettings.showOfflineTracks)
+            {
+                // Filter out albums from offline folders
+                sql = R"SQL(
+                    SELECT album_id, album_artist, title, year, folder_id, 
+                           genres, moods, tags, bandcamp_url, bitrate, created_at, updated_at
+                    FROM Albums 
+                    WHERE folder_id NOT IN (SELECT folder_id FROM temp.OfflineFolders)
+                    ORDER BY album_artist COLLATE NOCASE, title COLLATE NOCASE
+                )SQL";
+            }
+            else
+            {
+                // Show all albums
+                sql = R"SQL(
+                    SELECT album_id, album_artist, title, year, folder_id, 
+                           genres, moods, tags, bandcamp_url, bitrate, created_at, updated_at
+                    FROM Albums 
+                    ORDER BY album_artist COLLATE NOCASE, title COLLATE NOCASE
+                )SQL";
+            }
             
             if (limit > 0)
             {

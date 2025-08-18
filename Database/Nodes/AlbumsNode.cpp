@@ -97,7 +97,7 @@ namespace jucyaudio
                 const auto &albumManager = trackLibrary.getAlbumManager();
                 //const auto &folderDb = trackLibrary.getFolderDatabase();
 
-                // Get all albums from the database
+                // Get all albums from the database (already filtered by offline status in SQL)
                 m_albums = albumManager.getAllAlbums();
 
                 // Apply search filter if we have search terms
