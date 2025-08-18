@@ -64,13 +64,12 @@ namespace jucyaudio
             addAndMakeVisible(m_currentTimeLabel);
             addAndMakeVisible(m_totalTimeLabel);
             
-            // Start timer for UI updates
-            startTimer(50); // 20 FPS update rate
+            // Timer removed - now handled by TimerMultiplexer
         }
         
         EnhancedPlayerComponent::~EnhancedPlayerComponent()
         {
-            stopTimer();
+            // No timer to stop
         }
         
         void EnhancedPlayerComponent::paint(juce::Graphics& g)
@@ -141,7 +140,7 @@ namespace jucyaudio
             m_totalTimeLabel.setBounds(bottomRow.removeFromLeft(timeWidth));
         }
         
-        void EnhancedPlayerComponent::timerCallback()
+        void EnhancedPlayerComponent::updatePlaybackPosition()
         {
             updateTransportButtons();
             updateTimeDisplays();

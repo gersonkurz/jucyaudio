@@ -20,7 +20,6 @@ namespace jucyaudio
          * Bottom row (30%): Repeat, shuffle, volume, and time displays
          */
         class EnhancedPlayerComponent : public juce::Component, 
-                                       public juce::Timer,
                                        public juce::ChangeListener
         {
         public:
@@ -32,8 +31,8 @@ namespace jucyaudio
             void paint(juce::Graphics &g) override;
             void resized() override;
 
-            // Timer callback for updating UI
-            void timerCallback() override;
+            // Called by TimerMultiplexer for updating UI
+            void updatePlaybackPosition();
             
             // ChangeListener callback for thumbnail loading
             void changeListenerCallback(juce::ChangeBroadcaster* source) override;
