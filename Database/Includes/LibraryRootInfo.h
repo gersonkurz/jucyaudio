@@ -24,6 +24,9 @@ namespace jucyaudio
 
             // output only
             FolderInfo folderInfo;
+            
+            // Transient state - not stored in database
+            bool isOnline{false}; // Runtime availability status
         };
 
     } // namespace database

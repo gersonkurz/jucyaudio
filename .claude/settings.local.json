@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xxd:*)",
+      "Bash(mkdir:*)",
+      "Bash(sips:*)",
+      "Bash(iconutil:*)",
+      "Bash(cat:*)",
+      "Bash(cp:*)",
+      "Bash(touch:*)",
+      "Bash(grep:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

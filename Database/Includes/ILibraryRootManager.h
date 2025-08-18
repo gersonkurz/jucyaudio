@@ -54,6 +54,19 @@ namespace jucyaudio
              */
             virtual bool updateScanStats(LibraryRootId rootId, 
                 std::optional<std::chrono::system_clock::time_point> scanTime = std::chrono::system_clock::now()) = 0;
+
+            /**
+             * @brief Refreshes the online/offline status for all library roots.
+             * Checks filesystem availability and updates the cached status.
+             */
+            virtual void refreshRootStatuses() = 0;
+
+            /**
+             * @brief Queries the online status of a specific library root.
+             * @param rootId The ID of the library root to check.
+             * @return true if the root is online/accessible, false otherwise.
+             */
+            virtual bool isRootOnline(LibraryRootId rootId) const = 0;
         };
 
     } // namespace database

@@ -16,6 +16,7 @@
 #include <spdlog/spdlog.h>
 #include <string>
 #include <vector>
+#include <map>
 
 
 // Forward declare Juce types if we use them for callbacks to UI,
@@ -169,6 +170,20 @@ namespace jucyaudio
                 return m_database->getTracks(args);
             }
 
+            /**
+             * @brief Checks if a track is available (its library root is online).
+             * Uses caching to avoid repeated database lookups.
+             * @param trackId The ID of the track to check.
+             * @return true if the track's library root is online, false otherwise.
+             */
+            bool isTrackOnline(TrackId trackId) const;
+
+            /**
+             * @brief Clears the track-to-root cache. Should be called when
+             * library roots are refreshed.
+             */
+            void clearTrackOnlineCache() const;
+
         private:
             bool setLastError(std::string_view errorMessage) const
             {
@@ -182,6 +197,9 @@ namespace jucyaudio
             TrackScanner *m_scanner{nullptr};
             bool m_isInitialised{false};
             mutable std::string m_lastErrorMessage; // For getLastError()
+            
+            // Cache for track online status (trackId -> isOnline)
+            mutable std::map<TrackId, bool> m_trackOnlineCache;
         };
 
         extern TrackLibrary theTrackLibrary;

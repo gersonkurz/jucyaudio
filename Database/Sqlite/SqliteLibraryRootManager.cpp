@@ -4,6 +4,7 @@
 #include <Database/TrackLibrary.h>
 #include <Utils/AssortedUtils.h>
 #include <spdlog/spdlog.h>
+#include <juce_core/juce_core.h>
 
 namespace
 {
@@ -30,6 +31,8 @@ namespace jucyaudio
         SqliteLibraryRootManager::SqliteLibraryRootManager(SqliteDatabase &db)
             : m_db{db}
         {
+            // Initialize the online status cache on startup
+            refreshRootStatuses();
         }
 
         std::vector<LibraryRootInfo> SqliteLibraryRootManager::getAllRoots() const
@@ -45,10 +48,17 @@ namespace jucyaudio
                 "SELECT root_id, path, last_scanned FROM LibraryRoots ORDER BY path;");
 
             auto &folderDb{theTrackLibrary.getTrackDatabase()->getFolderDatabase()};
-                        for (auto& root: roots)
+            for (auto& root: roots)
             {
                 const auto folderId = folderDb.findOrCreateFolderByPath(root.path);
                 root.folderInfo = folderDb.getFolderById(folderId).value_or(database::FolderInfo{});
+                
+                // Set the online status from cache
+                auto statusIt = m_onlineStatusCache.find(root.id);
+                if (statusIt != m_onlineStatusCache.end())
+                {
+                    root.isOnline = statusIt->second;
+                }
             }
 
             return roots;
@@ -122,6 +132,50 @@ namespace jucyaudio
                     return true;
                 }
             }
+            return false;
+        }
+
+        void SqliteLibraryRootManager::refreshRootStatuses()
+        {
+            // Clear the cache
+            m_onlineStatusCache.clear();
+            
+            // Also clear the track online cache since root statuses have changed
+            theTrackLibrary.clearTrackOnlineCache();
+            
+            // Load all roots from database
+            SqliteStatement stmt{m_db};
+            stmt.query(
+                [this, &stmt]() -> bool
+                {
+                    const auto rootId = stmt.getInt64(0);
+                    const auto path = stmt.getText(1);
+                    
+                    // Check if the path exists on the filesystem
+                    juce::File rootPath(path);
+                    const bool isOnline = rootPath.exists() && rootPath.isDirectory();
+                    
+                    // Cache the status
+                    m_onlineStatusCache[rootId] = isOnline;
+                    
+                    spdlog::debug("Library root '{}' (id: {}) is {}", 
+                                  path, rootId, isOnline ? "online" : "offline");
+                    
+                    return true;
+                },
+                "SELECT root_id, path FROM LibraryRoots;");
+            
+            spdlog::info("Refreshed status for {} library roots", m_onlineStatusCache.size());
+        }
+
+        bool SqliteLibraryRootManager::isRootOnline(LibraryRootId rootId) const
+        {
+            auto it = m_onlineStatusCache.find(rootId);
+            if (it != m_onlineStatusCache.end())
+            {
+                return it->second;
+            }
+            // Default to offline if not found
             return false;
         }
 

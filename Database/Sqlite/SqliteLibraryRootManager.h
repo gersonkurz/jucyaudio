@@ -2,6 +2,7 @@
 
 #include <Database/Includes/ILibraryRootManager.h>
 #include <Database/Sqlite/SqliteDatabase.h>
+#include <map>
 
 namespace jucyaudio
 {
@@ -19,9 +20,13 @@ namespace jucyaudio
             bool removeRoot(LibraryRootId rootId) override;
             bool updateScanStats(LibraryRootId rootId, 
                 std::optional<Timestamp_t> scanTime = std::chrono::system_clock::now()) override;
+            
+            void refreshRootStatuses() override;
+            bool isRootOnline(LibraryRootId rootId) const override;
 
         private:
             SqliteDatabase &m_db;
+            mutable std::map<LibraryRootId, bool> m_onlineStatusCache;
         };
 
     } // namespace database

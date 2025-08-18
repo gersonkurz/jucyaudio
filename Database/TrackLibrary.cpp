@@ -122,5 +122,70 @@ namespace jucyaudio
             return m_database->loadWaveform(trackId, blob);
         }
 
+        bool TrackLibrary::isTrackOnline(TrackId trackId) const
+        {
+            if (!m_isInitialised || !m_database)
+            {
+                setLastError("TrackLibrary not initialised.");
+                return false;
+            }
+
+            // Check cache first
+            auto cacheIt = m_trackOnlineCache.find(trackId);
+            if (cacheIt != m_trackOnlineCache.end())
+            {
+                return cacheIt->second;
+            }
+
+            // Not in cache, need to determine the track's root
+            // Get track info to get its folder
+            auto trackInfo = m_database->getTrackById(trackId);
+            if (!trackInfo.has_value())
+            {
+                // Track doesn't exist
+                m_trackOnlineCache[trackId] = false;
+                return false;
+            }
+
+            // Get the folder's full path
+            auto &folderDb = m_database->getFolderDatabase();
+            auto folderInfo = folderDb.getFolderById(trackInfo->folderId);
+            if (!folderInfo.has_value())
+            {
+                // Folder doesn't exist
+                m_trackOnlineCache[trackId] = false;
+                return false;
+            }
+
+            // Get the full path of the folder
+            const std::string folderPath = folderInfo->path;
+
+            // Check which library root this folder belongs to
+            auto &rootManager = m_database->getLibraryRootManager();
+            const auto roots = rootManager.getAllRoots();
+            
+            bool isOnline = false;
+            for (const auto &root : roots)
+            {
+                // Check if the folder path starts with this root path
+                if (folderPath.find(root.path) == 0)
+                {
+                    // This track belongs to this root
+                    isOnline = rootManager.isRootOnline(root.id);
+                    break;
+                }
+            }
+
+            // Cache the result
+            m_trackOnlineCache[trackId] = isOnline;
+            return isOnline;
+        }
+
+        void TrackLibrary::clearTrackOnlineCache() const
+        {
+            m_trackOnlineCache.clear();
+            spdlog::debug("Cleared track online status cache");
+        }
+
     } // namespace database
 } // namespace jucyaudio
