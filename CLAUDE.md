@@ -153,19 +153,38 @@
 ✅ Waveform caching  
 
 ### High Priority:
-1. **Unified AI Enrichment Script:**
+
+1. **Unified Timer System (NEXT TASK)**
+   - **Problem Analysis:**
+     - Multiple timers create beat frequency interference (30Hz, 25Hz, 20Hz, 10Hz)
+     - Causes stuttering in VU meters and playhead animation
+     - Current timers: MainComponent (30Hz), EnhancedPlayer (20Hz), VU meters (25Hz), MixEditor (10Hz-disabled)
+   - **Proposed Solution:**
+     - Single timer in MainComponent at 60Hz base rate
+     - TimerMultiplexer class to manage different update rates
+     - Components register for updates at specific frequencies
+     - Dirty rectangle system for coordinated repaints
+     - Lock-free audio-UI communication via atomics
+   - **Implementation Phases:**
+     1. Create TimerMultiplexer infrastructure
+     2. Migrate VU meters as proof of concept
+     3. Migrate all other timed components
+     4. Re-enable smooth playhead animation
+   - **Benefits:** No beat frequencies, smooth 60fps animation, better performance
+
+2. **Unified AI Enrichment Script:**
    - Single Python tool for ALL metadata enrichment (see enrich.md Part 2)
    - Album metadata (genres, moods, tags)
    - WAV path intelligence
    - Cost-controlled, batch processing
 
 ### Medium Priority:
-2. **In-App Tagging System:**
+3. **In-App Tagging System:**
    - mp3tag-like functionality for editing track metadata
    - Store all edits in database only (never modify source files)
    - UI for batch editing and tag management
 
-3. **Nice to Have:** Implement linked movement of cue-points with attach points
+4. **Nice to Have:** Implement linked movement of cue-points with attach points
 
 ---
 
