@@ -1,4 +1,4 @@
-# JucyAudio - AI Introduction Prompt (v7)
+# JucyAudio - AI Development Guide & Session History
 
 **Objective:** To collaboratively develop **JucyAudio**, a sophisticated audio curation and mixing application for macOS (primary target, Apple Silicon) and Windows. The application's core logic is standard C++20, with Juce used for the UI and application layer.
 
@@ -13,7 +13,7 @@
 *   **Architecture over implementation:** Focus on clean design, interfaces, and long-term project direction.
 *   Human has a strong C++20 background. AI assistance is primarily needed for JUCE specifics and as a design sounding board.
 *   Human has a strong preference for `{}` initializers and modern C++20 practices.
-*   **No apologies for mistakes or sycophancy; focus on the tasks ahead.*
+*   **No apologies for mistakes or sycophancy; focus on the tasks ahead.**
 *   **Remember to use 'const auto' or 'auto' where suitable, not static types.**
 
 **Core Functional Pillars:**
@@ -24,331 +24,108 @@
 
 ---
 
-## Session 4: Track Marker System Implementation
-
-**Objective:** Implement a comprehensive marker system for the audio player, allowing users to mark specific points in tracks with comments.
-
-**Work Done:**
-
-1. **Database Schema & Migration (V4):**
-   - Created `TrackMarkers` table with fields: marker_id, track_id, position_ms, comment, created_at, updated_at, color (optional), emoji (optional)
-   - Implemented migration from schema version 3 to 4
-   - Added foreign key constraint to cascade delete markers when tracks are deleted
-
-2. **Data Models & Interfaces:**
-   - Created `TrackMarker` struct with all marker fields
-   - Created `IMarkerManager` interface with CRUD operations
-   - Implemented `SqliteMarkerManager` with full database operations
-   - Integrated marker manager into `TrackLibrary` and `SqliteTrackDatabase`
-
-3. **UI Implementation:**
-   - **Waveform Display Enhancement:**
-     - Added marker rendering as orange/yellow vertical lines with triangular indicators
-     - Implemented hover detection with visual feedback (color change)
-     - Added Ctrl+Click to create new markers at clicked position
-     - Click on existing marker to edit/delete
-   - **MarkerEditDialog:**
-     - Created dialog for adding/editing marker comments
-     - Implemented timer-based focus grabbing (following WorkingSetMetaDataEditorDialog pattern)
-     - Added save, delete, and cancel functionality
-     - Shows marker position in M:SS.mmm format
-   - **Tooltip Support:**
-     - Made WaveformDisplay inherit from TooltipClient
-     - Added TooltipWindow to MainWindow
-     - Shows marker position and comment on hover
-
-4. **Integration:**
-   - Markers automatically load when tracks are played
-   - Markers persist across application sessions
-   - Marker operations update the display in real-time
-
-**Technical Highlights:**
-- Thread-safe database operations maintained through existing SqliteDatabase mutex
-- Modern C++20 practices with `const auto`, aggregate initialization
-- JUCE-specific implementations for tooltips and dialog focus management
-- Clean separation between database layer and UI components
-
-**Current Status:** 
-The marker system is fully functional with create, read, update, delete operations. Users can:
-- Ctrl+Click on waveform to create markers
-- Click existing markers to edit/delete them
-- See tooltips when hovering over markers
-- Have all marker data persist in the database
-
-## Session 5: Bad File Detection System
-
-**Objective:** Implement a system to detect and handle audio files with unsupported decoder formats that cannot be played or analyzed.
-
-**Problem:** Some audio files in the library use exotic encoders that neither JucyAudio nor other players (like AIMP) can decode, causing failures during BPM analysis and playback.
-
-**Work Done:**
-
-1. **Database Schema Update (v4→v5):**
-   - Added `status` field to Tracks table with three values: 'unknown', 'ok', 'bad_format'
-   - Created index on status field for efficient queries
-   - Updated existing tracks with BPM data to 'ok' status during migration
-   - Fixed initialization issue where index creation in initialSqlStatements happened before migration
-
-2. **Data Model & Interface Updates:**
-   - Added `TrackStatus` enum to TrackInfo.h
-   - Updated TrackInfo struct to include status field
-   - Added `updateTrackStatus()` method to ITrackDatabase interface
-   - Modified `getNextTrackForBpmAnalysis()` to exclude bad_format tracks
-
-3. **Bad File Detection During BPM Analysis:**
-   - Modified `BpmAnalysisTask` to catch decoder failures (createReaderFor returns null)
-   - Collects bad files in thread-safe list during analysis
-   - Updates track status to 'bad_format' when decoding fails
-   - Shows dialog after analysis with list of bad files
-
-4. **Playback Status Tracking:**
-   - Updates track status to 'ok' when playback succeeds
-   - Updates track status to 'bad_format' when playback fails
-   - Only updates if status hasn't already been set
-
-5. **Working Set Management:**
-   - Bad files dialog offers to remove tracks from ALL working sets
-   - Iterates through all working sets and removes bad tracks
-   - Files remain in library but marked as bad_format
-   - Clear user messaging: "Remove from Working Sets" vs "Keep in Working Sets"
-   - Status message shows number of bad files and affected working sets
-
-6. **Library Scan Optimization:**
-   - Skip files with 'bad_format' status during library scans
-   - Prevents re-attempting to process known bad files
-   - Improves scan performance by avoiding decoder failures
-
-**Technical Implementation:**
-- Thread-safe bad file collection using mutex in BpmAnalysisTask
-- Database transactions for status updates
-- Batch removal from working sets for efficiency
-- Proper UI refresh after bad file operations
-
-**Current State:**
-- System successfully detects bad files during BPM analysis and playback
-- Bad files are removed from working sets when user chooses
-- Files marked as bad_format are skipped in all future operations
-- UI properly refreshes after bad file removal
-- Clear user communication about what happens to bad files
-
-## Session 6: Comprehensive Deletion System Implementation
-
-**Objective:** Implement proper deletion functionality for tracks, mixes, and working sets across all UI contexts.
-
-**Work Done:**
-
-1. **Node Type System:**
-   - Added `NodeType` enum to identify different navigation node types (Root, Mix, WorkingSet, etc.)
-   - Each node now reports its type via `getNodeType()` method
-   - Enables context-aware deletion operations
-
-2. **Batch Deletion Operations:**
-   - Added `removeMixes()` to IMixManager for deleting multiple mixes
-   - Added `removeTracksFromMix()` for batch track removal from mixes
-   - Added `removeWorkingSets()` to IWorkingSetManager for batch deletion
-   - All operations use database transactions for consistency
-
-3. **UI Integration:**
-   - Added `getObjectIdForRow()` to navigation nodes to retrieve underlying object IDs
-   - Implemented `getUnderlyingObjectIds<T>()` template in DataViewComponent for type-safe ID extraction
-   - Centralized deletion logic in MainComponent::onDeleteSelectedRows()
-   - Created DeleteContext struct to track deletion state and source
-
-4. **Context-Aware Deletion:**
-   - Deleting from navigation panel removes entire containers (mixes/working sets)
-   - Deleting from data view removes items from containers
-   - Proper confirmation dialogs with item counts
-   - Automatic UI refresh after successful deletion
-
-**Technical Highlights:**
-- Used std::ranges for modern C++20 iteration
-- Proper transaction handling in SQLite operations
-- Thread-safe deletion with existing database mutex
-- Maintained separation between UI and database layers
-
-## Session 7: Navigation Tree Refactoring
-
-**Overview:** Implemented a major refactoring to improve separation of concerns in the navigation and node management system.
-
-**Key Architectural Changes:**
-
-1. **NavigationTree Class Introduction:**
-   - Created dedicated `NavigationTree` class to manage all navigation-related operations
-   - Moved navigation logic out of MainComponent into NavigationTree
-   - NavigationTree acts as a mediator between NavigationPanelComponent and DataViewComponent
-   - Centralized node lifecycle management (creation, deletion, refresh)
-
-2. **Improved Node Interface:**
-   - Added `m_refTypeNameForSingleObject` and `m_refTypeNameForMultipleObjects` to INavigationNode constructor
-   - Renamed `removeTracks()` to more generic `removeObjects()` to handle different object types
-   - Added `deleteThisObject()` method for nodes to handle their own deletion
-   - Added `nodeHasBeenDeleted()` for parent notification of child deletion
-   - Added `rename()` method for in-place node renaming
-
-3. **Simplified MainComponent:**
-   - Removed direct node management from MainComponent
-   - MainComponent now delegates to NavigationTree for all node operations
-   - Eliminated switch statements on node types
-   - Removed unsafe reinterpret_cast operations
-
-4. **Object Management:**
-   - Unified deletion flow through NavigationTree::deleteObject()
-   - Batch object removal through NavigationTree::removeObjectsForRows()
-   - Proper parent-child notification on deletion
-   - Automatic UI refresh after operations
-
-5. **Event Handling:**
-   - onMixCreated() and onWorkingSetCreated() now handled by NavigationTree
-   - Automatic selection of newly created items
-   - Proper refresh of parent nodes when children change
-
-**Benefits Achieved:**
-
-1. **Better Separation of Concerns:**
-   - NavigationTree handles all navigation logic
-   - Nodes handle their own type-specific behavior
-   - MainComponent focuses on high-level coordination
-   
-2. **Type Safety:**
-   - Eliminated unsafe casts
-   - Type-specific behavior encapsulated in nodes
-   
-3. **Maintainability:**
-   - Single responsibility for each component
-   - Clear ownership of navigation state
-   - Easier to add new node types
-
-4. **Memory Safety:**
-   - Fixed memory leaks in node management
-   - Proper reference counting with clear ownership
-   - Consistent retain/release patterns
-
-**Current Status:**
-The refactoring successfully addresses the architectural issues identified in Session 6. The system now has:
-- Clear separation between UI components and business logic
-- Type-safe object management without casting
-- Centralized navigation state management
-- Proper memory management with reference counting
-
-## Session 8: Mix Editor Drag & Drop Implementation
-
-**Objective:** Implement drag & drop functionality for reordering tracks in mixes, ensuring both the track list and timeline views stay synchronized.
-
-**Work Done:**
-
-1. **Drag & Drop Infrastructure:**
-   - Added `DragAndDropContainer` to `DataViewComponent` for initiating drags
-   - Implemented `ScalableTableListBox` as a `DragAndDropTarget` 
-   - Added `DropIndicatorOverlay` component for visual feedback during drags
-   - Support for multi-track selection and dragging
-
-2. **Track Reordering Logic in MixProjectLoader:**
-   - Implemented `reorderTracks()` method that handles both single and multiple track moves
-   - Key innovation: When moving tracks, the system:
-     - Calculates the "hole" left by moved tracks
-     - Shifts affected tracks by this exact duration to maintain timeline
-     - Updates both `orderInMix` and temporal positions (`startTimeMs`/`endTimeMs`)
-   - Factored out `reorderSingleTrack()` for clean single-track logic
-   - Multi-track moves apply single moves sequentially with position adjustment
-
-3. **Shared MixProjectLoader Architecture:**
-   - MixNode owns the MixProjectLoader instance
-   - Both DataView and MixEditor reference the same loader
-   - Ensures both views always show consistent data
-   - No synchronization issues as there's only one source of truth
-
-4. **Background BPM Analysis Fix:**
-   - Fixed infinite retry loop for tracks with bad encoding
-   - Background analyzer now marks failed tracks as `bad_format`
-   - Prevents the same unanalyzable track from being selected repeatedly
-
-**Technical Highlights:**
-- Clean separation of concerns with drag source description containing all selected rows
-- Efficient time-shifting algorithm that only affects tracks between source and destination
-- Proper handling of edge cases (moving to first/last position, multiple selections)
-- Consistent state management through shared MixProjectLoader
-
-**Current Status:**
-- Drag & drop fully functional for single and multiple track selections
-- Track order and timeline positions update correctly in both views
-- Bad audio files no longer block the background analyzer
-- System maintains all user-defined overlaps and timing relationships
-
-## Important Build Instructions
-
-**DO NOT BUILD** - The human will handle all builds. When making code changes:
-1. Make the requested changes to the code
-2. Do NOT run cmake or any build commands
-3. Wait for the human to build and report any issues
-
-## Session 9: Library Management & Scanner Overhaul
-
-**Objective:** To build a complete, user-facing library management system on top of the new hierarchical database, enabling users to define library roots, run targeted scans, and correctly prune missing files and folders.
-
-**Work Done:**
-
-1.  **Library Root System:**
-    *   Designed and implemented a `LibraryRoots` table to store user-defined library entry points.
-    *   Created `ILibraryRootManager` and `SqliteLibraryRootManager` to provide a clean interface for managing these roots.
-    *   Developed `LibraryRootsComponent`, a new UI dialog to replace the obsolete `ScanDialogComponent`, allowing users to perform full CRUD operations on their library roots.
-    *   Integrated this system into the main navigation tree by rewriting `VirtualFoldersOverview` to display the user-defined roots instead of the filesystem root.
-
-2.  **Scanner Architecture Rewrite & Debugging:**
-    *   Re-architected the `TrackScanner` to use a robust, folder-centric "mark-and-sweep" methodology.
-    *   The scanner now builds a comprehensive in-memory cache of all expected folders and tracks for the scan scope.
-    *   As it iterates the filesystem, it "un-marks" found items. At the end of the scan, any remaining marked items (both tracks and folders) are correctly pruned from the database.
-    *   Fixed a critical bug that caused duplicate track insertions when scanning overlapping roots by adding a session-scoped set of already-processed file paths.
-    *   Addressed a fundamental flaw where the scanner was blind to empty or deleted directory trees.
-
-3.  **Performance Optimization:**
-    *   Diagnosed and fixed a severe O(N*M) performance bug in `SqliteFolderDatabase`'s `findOrCreateFolderByPath` method, which was causing multi-second delays per file.
-    *   The folder cache was completely rewritten to be path-centric, using a `map<string, FolderId>`.
-    *   The cache was made "self-healing" by persisting reconstructed folder paths back to the database, ensuring fast subsequent application startups.
-    *   The `addFolder` method was optimized to perform a "surgical" insert into the live cache instead of a full, expensive invalidation.
-
-4.  **UI/UX Enhancements:**
-    *   Implemented a splash screen to improve the perceived startup time of the application.
-    *   The logo asset was embedded as binary data into the executable for robustness.
-    *   Refactored the startup sequence using a `juce::Timer` and `std::unique_ptr` to manage object lifetimes correctly, fixing a crash-on-shutdown bug caused by the initial splash screen implementation.
-
-**Technical Highlights:**
-*   **Path-Centric, Self-Healing Cache:** The final `SqliteFolderDatabase` design is a major architectural improvement, ensuring extremely fast folder lookups during scans.
-*   **Folder-First Pruning:** The final `TrackScanner` logic correctly prioritizes the folder structure, allowing it to accurately detect and remove entire deleted directory trees.
-*   **Deterministic Object Lifetime:** Solved a `DeletedAtShutdown` crash by using `std::unique_ptr` and a non-modal startup flow, ensuring the splash screen is destroyed before the main application object.
-
-**Current Status:**
-The library management and scanning systems are now feature-complete, performant, and robust. The application correctly handles adding/removing roots, targeted scanning, and pruning of missing files and folders. The startup experience has been improved with a splash screen. The project is now ready for full-system verification of its core audio functionalities.
-
-## Session 10: Album UI & Enrichment Planning
-
-**Objective:** Implement album browsing UI and plan comprehensive metadata enrichment strategy.
-
-**Work Done:**
-
-1. **Album UI Implementation:**
-   - Created `AlbumsNode` for displaying all albums in a filterable table view
-   - Implemented album-specific columns (Artist, Title, Year, Track Count, Duration, Folder)
-   - Added double-click navigation from album to its folder in the folder tree
-   - Fixed complex navigation issues with folder ID matching instead of name matching
-
-2. **Critical Bug Fixes:**
-   - **Refcounting:** Fixed memory leaks in navigation system, corrected node retain/release patterns
-   - **Mix Creation:** Fixed issue where short tracks (<10s) were skipped; now uses adaptive crossfade
-   - **VUMeter:** Added validation for NaN/infinite values preventing crashes
-
-3. **Schema Evolution (v14):**
-   - Added `bitrate INTEGER` column to Albums table for future enrichment
-
-4. **Enrichment Strategy Defined:**
-   - Two-phase approach: Basic C++ import (free) + Python AI enrichment (paid, controlled)
-   - Planned support for FLAC (easy - has tags) and WAV (harder - needs path parsing)
-   - Single Python script for all AI tasks: album metadata, WAV path parsing, missing data
-   - See `enrich.md` for comprehensive implementation plan
-
-**Key Architectural Decisions:**
-- WAV files import with minimal metadata, marked with `needs_enrichment` flag
-- AI enrichment is database-only, never modifies source files
-- Cost control through batch processing and configurable limits
+## Key Architectural Principles
+
+**The "Pure Cache" Model:**
+*   **Hierarchical Database Schema:** A `Folders` table with a `parent_id` and a cached full `path` column represents the library structure. The `Tracks` table stores only a `filename` and a `folder_id`.
+*   **Application-Layer Logic:** All logic for case-insensitive lookups and uniqueness is handled in the C++ code.
+*   **In-Memory Caching:** A comprehensive, multi-level, path-centric cache for the folder hierarchy is built on startup, making all navigation instantaneous. The cache is "self-healing," persisting reconstructed paths to the database to optimize subsequent startups.
+*   **Native Unicode Normalization:** All case-insensitive comparisons are performed using a robust C++ utility function (`normalizeForCache`) powered by a statically-linked ICU library.
+
+---
+
+## Session History & Major Accomplishments
+
+### Session 1-3: The Great Refactoring - Hierarchical Database & Cache System
+*   **Database Migration:** Successfully converted the user's 1.4-million-track database to the new hierarchical schema.
+*   **ICU Integration:** Statically linked the ICU library for robust, cross-platform Unicode normalization.
+*   **Core Rewrite:** Rewrote the entire data access layer, SQL query engine, and UI navigation nodes to use the new "Pure Cache" model, resulting in instantaneous UI navigation.
+
+### Session 4: Track Marker System Implementation
+*   Created `TrackMarkers` table with fields: marker_id, track_id, position_ms, comment, created_at, updated_at, color, emoji
+*   Implemented `IMarkerManager` interface with CRUD operations
+*   Added marker rendering on waveform display with Ctrl+Click to create, click to edit/delete
+*   Created `MarkerEditDialog` for adding/editing marker comments
+*   Integrated tooltip support showing marker position and comment on hover
+
+### Session 5: Bad File Detection System
+*   Added `status` field to Tracks table with values: 'unknown', 'ok', 'bad_format'
+*   Modified `BpmAnalysisTask` to catch decoder failures and mark bad files
+*   Shows dialog after analysis with list of bad files
+*   Offers to remove bad tracks from ALL working sets
+*   Bad files are skipped in all future operations
+
+### Session 6: Comprehensive Deletion System Implementation
+*   Added `NodeType` enum to identify different navigation node types
+*   Implemented batch deletion operations for mixes and working sets
+*   Created context-aware deletion (navigation panel vs data view)
+*   Proper confirmation dialogs with item counts
+*   Automatic UI refresh after successful deletion
+
+### Session 7: Navigation Tree Refactoring
+*   Created dedicated `NavigationTree` class to manage all navigation-related operations
+*   Improved node interface with generic `removeObjects()` and `deleteThisObject()` methods
+*   Simplified MainComponent by delegating to NavigationTree
+*   Fixed memory leaks in node management with proper reference counting
+
+### Session 8: Mix Editor Drag & Drop Implementation
+*   Added `DragAndDropContainer` to `DataViewComponent` for initiating drags
+*   Implemented track reordering with automatic time-shifting to maintain timeline
+*   Shared MixProjectLoader architecture ensures consistency between views
+*   Fixed infinite retry loop for tracks with bad encoding in background analyzer
+
+### Session 9: Library Management & Scanner Overhaul
+*   Implemented `LibraryRoots` table and `ILibraryRootManager` for user-defined library roots
+*   Created `LibraryRootsComponent` UI for full CRUD operations on roots
+*   Re-architected `TrackScanner` with robust "mark-and-sweep" methodology
+*   Fixed severe O(N*M) performance bug in folder path lookups
+*   Implemented splash screen for better startup experience
+
+### Session 10: Album UI & Enrichment Planning
+*   Created `AlbumsNode` for displaying all albums in filterable table view
+*   Added double-click navigation from album to its folder
+*   Fixed critical refcounting bugs causing memory leaks
+*   Fixed mix creation to handle short tracks (<10s) with adaptive crossfade
+*   Added `bitrate` column to Albums table (schema v14)
+*   Defined comprehensive enrichment strategy (see enrich.md)
+
+### Session 11: Offline Media Management (Complete)
+*   **SQLite Temp Tables:** Created during init for efficient filtering
+    - `temp.OfflineFolders` - folders from offline roots
+    - `temp.OfflineWorkingSets` - working sets with offline tracks
+    - `temp.OfflineMixes` - mixes with offline tracks
+*   **Single Computation Point:** All offline detection during startup while splash screen shows
+*   **SQL-Level Filtering:** All queries respect `showOfflineTracks` setting (default: false)
+*   **UI Updates:** Status indicators, gray/disabled offline items, non-expandable offline folders
+*   **Simplified Design:** No error dialogs needed - offline content is simply hidden
+
+### Additional Sessions Summary:
+
+**Mix Editor Enhancements:**
+*   Fixed playback sync when editing attach points
+*   4K display support with proper viewport resizing
+*   Mix markers system (like SoundCloud comments)
+*   Drag & drop track reordering
+
+**Audio System:**
+*   7-state unified PlaybackController implementation
+*   VU meter with segmented display (green/yellow/red)
+*   Fixed sample rate mismatch in export (resampling)
+*   Thread-safe locking for concurrent access
+
+**UI Polish:**
+*   Theme system with dark/light modes
+*   Settings dialog for MP3 export tags
+*   Waveform caching (200 items)
+*   Library roots component with file counts
+
+**Critical Fixes:**
+*   OrderInMix re-enumeration after track deletion
+*   Concurrency crash fixes with proper locking
+*   Memory leak fixes in navigation system
+*   NaN/infinite value validation in VU meter
+
+---
 
 ## Important Implementation Notes
 
@@ -360,9 +137,49 @@ The library management and scanning systems are now feature-complete, performant
 
 **Performance:** Waveform caching is fully implemented - no longer an issue.
 
-**Next Major Tasks:** 
-1. FLAC/WAV support (C++ side)
-2. Python enrichment script (see enrich.md Part 2)
-3. In-app tagging system (database-only metadata editing)
+**Offline Media:** Handled via temp tables created at startup. Offline content is filtered at SQL level.
 
-For detailed status and TODO items, see `status.md`. For enrichment implementation details, see `enrich.md`.
+**Build Instructions:** DO NOT BUILD - The human will handle all builds. Make code changes only.
+
+---
+
+## Next Major Tasks
+
+### Completed:
+✅ FLAC/WAV support  
+✅ Export with sample rate mismatch  
+✅ Offline media management  
+✅ Album UI and navigation  
+✅ Waveform caching  
+
+### High Priority:
+1. **Unified AI Enrichment Script:**
+   - Single Python tool for ALL metadata enrichment (see enrich.md Part 2)
+   - Album metadata (genres, moods, tags)
+   - WAV path intelligence
+   - Cost-controlled, batch processing
+
+### Medium Priority:
+2. **In-App Tagging System:**
+   - mp3tag-like functionality for editing track metadata
+   - Store all edits in database only (never modify source files)
+   - UI for batch editing and tag management
+
+3. **Nice to Have:** Implement linked movement of cue-points with attach points
+
+---
+
+## Known Issues
+
+### Performance:
+- **Playhead animation:** Disabled due to timer conflicts causing stuttering
+  - Multiple timers at different frequencies create beat patterns
+  - Needs unified timer system or OpenGL rendering
+
+### UI:
+- **Track deletion rebuilds timeline:** All waveforms regenerate (accepted limitation)
+- **macOS icon:** Appears black instead of orange (needs proper alpha channel)
+
+---
+
+For enrichment implementation details, see `enrich.md`.
