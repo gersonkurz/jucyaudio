@@ -259,7 +259,22 @@ namespace jucyaudio
             juce::MenuBarModel::setMacMainMenu(getMenuBarModel());
 #endif
             // --- Timer ---
-            startTimerHz(30); // For smooth UI updates (e.g., playback position slider)
+            startTimerHz(60); // Unified 60Hz base timer for TimerMultiplexer
+            
+            // Register VU meter updates with TimerMultiplexer
+            // Update VU meter levels at 25Hz
+            m_timerMultiplexer.registerClient(&m_statusPanel, 25.0f, [this]() {
+                m_statusPanel.updateVUMeters();
+            });
+            
+            // Update VU meter decay animation at 25Hz  
+            m_timerMultiplexer.registerClient(&m_statusPanel.getVUMeterLeft(), 25.0f, [this]() {
+                m_statusPanel.getVUMeterLeft().updateDecay();
+            });
+            
+            m_timerMultiplexer.registerClient(&m_statusPanel.getVUMeterRight(), 25.0f, [this]() {
+                m_statusPanel.getVUMeterRight().updateDecay();
+            });
 
             // Initial size
             setSize(1200, 800);
@@ -283,6 +298,14 @@ namespace jucyaudio
 #if JUCE_MAC
             juce::MenuBarModel::setMacMainMenu(nullptr);
 #endif
+            
+            stopTimer();
+            
+            // Unregister all components from timer multiplexer
+            m_timerMultiplexer.unregisterComponent(&m_statusPanel);
+            m_timerMultiplexer.unregisterComponent(&m_statusPanel.getVUMeterLeft());
+            m_timerMultiplexer.unregisterComponent(&m_statusPanel.getVUMeterRight());
+            
             // This is important for clean shutdown. It tells all child components
             // to stop using our m_lookAndFeel object before it gets destroyed.
             setLookAndFeel(nullptr);
@@ -297,7 +320,6 @@ namespace jucyaudio
             }
 #endif
 
-            stopTimer();
             shutdownAudio(); // From AudioAppComponent
             // Remove listeners
             if (juce::MessageManager::getInstanceWithoutCreating() != nullptr) // Check if MM still exists
@@ -747,8 +769,11 @@ namespace jucyaudio
         // --- juce::Timer Override ---
         void MainComponent::timerCallback()
         {
-            // EnhancedPlayerComponent has its own timer for UI updates
-            // Any other periodic UI updates can go here
+            // Tick the timer multiplexer at 60Hz
+            m_timerMultiplexer.tick();
+            
+            // MainComponent's own UI updates can go here if needed
+            // (currently none required at 60Hz)
         }
 
         // --- juce::ChangeListener Override ---

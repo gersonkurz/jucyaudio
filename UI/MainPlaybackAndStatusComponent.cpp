@@ -16,12 +16,12 @@ namespace jucyaudio
             addAndMakeVisible(m_vuMeterLeft);
             addAndMakeVisible(m_vuMeterRight);
 
-            startTimerHz(25);
+            // Timer removed - now handled by TimerMultiplexer
         }
 
         MainPlaybackAndStatusComponent::~MainPlaybackAndStatusComponent()
         {
-            stopTimer();
+            // No timer to stop
         }
 
         void MainPlaybackAndStatusComponent::resized()
@@ -42,7 +42,7 @@ namespace jucyaudio
             g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId).darker(0.2f));
         }
 
-        void MainPlaybackAndStatusComponent::timerCallback()
+        void MainPlaybackAndStatusComponent::updateVUMeters()
         {
             m_vuMeterLeft.setLevel(m_ownerMainComponent.m_playbackController.getPeakLeft());
             m_vuMeterRight.setLevel(m_ownerMainComponent.m_playbackController.getPeakRight());

@@ -6,7 +6,7 @@ namespace jucyaudio
 {
     namespace ui
     {
-        class VUMeterComponent : public juce::Component, private juce::Timer
+        class VUMeterComponent : public juce::Component
         {
         public:
             VUMeterComponent();
@@ -15,9 +15,9 @@ namespace jucyaudio
             void paint(juce::Graphics& g) override;
             
             void setLevel(float newLevel);
-
-        private:
-            void timerCallback() override;
+            
+            // Called by TimerMultiplexer instead of internal timer
+            void updateDecay();
 
             float m_level = 0.0f;
             float m_peak = 0.0f;

@@ -8,12 +8,12 @@ namespace jucyaudio
     {
         VUMeterComponent::VUMeterComponent()
         {
-            startTimerHz(25);
+            // Timer removed - now handled by TimerMultiplexer
         }
 
         VUMeterComponent::~VUMeterComponent()
         {
-            stopTimer();
+            // No timer to stop
         }
 
         void VUMeterComponent::paint(juce::Graphics& g)
@@ -84,7 +84,7 @@ namespace jucyaudio
             repaint();
         }
 
-        void VUMeterComponent::timerCallback()
+        void VUMeterComponent::updateDecay()
         {
             if (m_level > 0)
             {

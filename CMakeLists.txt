@@ -331,6 +331,7 @@ target_sources(jucyaudio PRIVATE
     UI/Main.cpp
     UI/MainComponent.cpp
     UI/MainPlaybackAndStatusComponent.cpp
+    UI/TimerMultiplexer.cpp
     UI/NavigationPanelComponent.cpp
     UI/PlaybackController.cpp
     UI/EnhancedPlayerComponent.cpp

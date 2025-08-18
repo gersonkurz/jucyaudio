@@ -14,7 +14,7 @@ namespace jucyaudio
         class MainComponent;
         // PlaybackController is not directly needed by MainPlaybackAndStatusComponent's interface now
 
-        class MainPlaybackAndStatusComponent : public juce::Component, private juce::Timer
+        class MainPlaybackAndStatusComponent : public juce::Component
         {
         public:
             explicit MainPlaybackAndStatusComponent(MainComponent &owner);
@@ -37,10 +37,14 @@ namespace jucyaudio
             {
                 return m_player;
             }
+            
+            // Called by TimerMultiplexer to update VU meters
+            void updateVUMeters();
+            
+            VUMeterComponent& getVUMeterLeft() { return m_vuMeterLeft; }
+            VUMeterComponent& getVUMeterRight() { return m_vuMeterRight; }
 
         private:
-            void timerCallback() override;
-
             MainComponent &m_ownerMainComponent;
             EnhancedPlayerComponent& m_player; 
             StatusBarComponent m_statusBar;

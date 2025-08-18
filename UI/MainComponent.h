@@ -19,6 +19,7 @@
 #include <UI/ThemeManager.h>
 #include <UI/Settings.h>
 #include <Utils/UiUtils.h>
+#include <UI/TimerMultiplexer.h>
 #include <Audio/Includes/ActiveExportSettings.h>
 #include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -150,6 +151,9 @@ namespace jucyaudio
             EnhancedPlayerComponent m_enhancedPlayer; // Direct member object
             MainPlaybackAndStatusComponent m_statusPanel;
             juce::LookAndFeel_V4 m_lookAndFeel;
+            
+            // Unified timer system
+            TimerMultiplexer m_timerMultiplexer;
 
             std::filesystem::path getThemesDirectoryPath() const;
 
