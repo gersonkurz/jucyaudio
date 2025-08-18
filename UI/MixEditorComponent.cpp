@@ -92,7 +92,7 @@ namespace jucyaudio
         
         MixEditorComponent::~MixEditorComponent()
         {
-            stopTimer();
+            // Timer removed - now handled by TimerMultiplexer
             m_viewport.getHorizontalScrollBar().removeListener(this);
             m_viewport.getVerticalScrollBar().removeListener(this);
             // Unload mix before cleanup
@@ -227,8 +227,7 @@ namespace jucyaudio
             // Load markers for this mix
             loadMixMarkers();
             
-            // Start timer with lower frequency to reduce conflicts
-            startTimer(100); // 10Hz update rate instead of 20Hz
+            // Timer removed - now handled by TimerMultiplexer at 60Hz for smooth playhead
             
             // Ensure timeline has keyboard focus for playback controls
             m_timeline.grabKeyboardFocus();
@@ -606,30 +605,17 @@ namespace jucyaudio
             spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Exit");
         }
         
-        void MixEditorComponent::timerCallback()
+        void MixEditorComponent::updatePlayhead()
         {
-            // Simple solution: just comment this out to disable the playhead entirely
-            // Uncomment when we find a better solution
-            return;
-            
-            /*
             if (m_playbackController && m_playbackController->isMixMode())
             {
                 if (m_playbackController->isPlaying())
                 {
                     const double positionSeconds = m_playbackController->getCurrentPositionSeconds();
                     
-                    // Throttle updates - only update if position changed significantly
-                    static double lastUpdatePosition = -1.0;
-                    const double delta = std::abs(positionSeconds - lastUpdatePosition);
-                    
-                    // Only update if moved more than 100ms or just started
-                    if (delta > 0.1 || lastUpdatePosition < 0)
-                    {
-                        m_playheadOverlay.setPlayheadPosition(positionSeconds, m_timeline.getPixelsPerSecond());
-                        m_markerRuler.setPlaybackPosition(positionSeconds * 1000.0);
-                        lastUpdatePosition = positionSeconds;
-                    }
+                    // Update playhead position - now at 60Hz for smooth animation
+                    m_playheadOverlay.setPlayheadPosition(positionSeconds, m_timeline.getPixelsPerSecond());
+                    m_markerRuler.setPlaybackPosition(positionSeconds * 1000.0);
                     
                     // Check if we've reached the end
                     const double totalSeconds = m_playbackController->getLengthInSeconds();
@@ -637,9 +623,7 @@ namespace jucyaudio
                     {
                         spdlog::info("Playback reached end of mix");
                         m_playbackController->stop();
-                        stopTimer();
                         m_playheadOverlay.setPlayheadPosition(-1.0, m_timeline.getPixelsPerSecond());
-                        lastUpdatePosition = -1.0;
                     }
                 }
                 else
@@ -650,11 +634,9 @@ namespace jucyaudio
             }
             else
             {
-                // Not in mix mode - stop timer and hide playhead
-                stopTimer();
+                // Not in mix mode - hide playhead
                 m_playheadOverlay.setPlayheadPosition(-1.0, m_timeline.getPixelsPerSecond());
             }
-            */
         }
         
         void MixEditorComponent::loadMixMarkers()

@@ -280,6 +280,11 @@ namespace jucyaudio
             m_timerMultiplexer.registerClient(&m_enhancedPlayer, 20.0f, [this]() {
                 m_enhancedPlayer.updatePlaybackPosition();
             });
+            
+            // Register MixEditor playhead updates at 60Hz for smooth animation
+            m_timerMultiplexer.registerClient(&m_mixEditorComponent, 60.0f, [this]() {
+                m_mixEditorComponent.updatePlayhead();
+            });
 
             // Initial size
             setSize(1200, 800);
@@ -311,6 +316,7 @@ namespace jucyaudio
             m_timerMultiplexer.unregisterComponent(&m_statusPanel.getVUMeterLeft());
             m_timerMultiplexer.unregisterComponent(&m_statusPanel.getVUMeterRight());
             m_timerMultiplexer.unregisterComponent(&m_enhancedPlayer);
+            m_timerMultiplexer.unregisterComponent(&m_mixEditorComponent);
             
             // This is important for clean shutdown. It tells all child components
             // to stop using our m_lookAndFeel object before it gets destroyed.

@@ -68,7 +68,6 @@ namespace jucyaudio
         };
         
         class MixEditorComponent : public juce::Component, 
-                                    private juce::Timer,
                                     private juce::ScrollBar::Listener
         {
         public:
@@ -85,7 +84,7 @@ namespace jucyaudio
 
             // Set the playback controller for unified playback
             void setPlaybackController(PlaybackController* controller);
-        PlaybackController* getPlaybackController() { return m_playbackController; }
+            PlaybackController* getPlaybackController() { return m_playbackController; }
         
             // Get the current mix node
             database::MixNode* getCurrentMixNode() const { return m_node; }
@@ -98,13 +97,14 @@ namespace jucyaudio
             // Playback is now handled by PlaybackController
 
             void handleDeleteSelectedTrack();
+            void updatePlayhead();
 
         private:
             void updateCueAttachInData(int orderInMix, const database::MixTrack& updatedTrack);
             void updateEnvelopeInData(int orderInMix, const std::vector<database::EnvelopePoint>& points);
             void saveMixChanges();
             void handleMixPlayback(double startTime, bool alwaysPlay = false);
-            void timerCallback() override;
+            // Called by TimerMultiplexer for smooth playhead updates
             void loadMixMarkers();
             void saveMixMarker(const database::MixMarker& marker);
             void handleMarkerClick(MarkerId markerId);
