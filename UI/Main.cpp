@@ -207,7 +207,8 @@ namespace jucyaudio
                 
                 // Create main window but DON'T add to desktop yet
                 spdlog::info("Creating main window...");
-                mainWindow = std::make_unique<MainWindow>(getApplicationName(), commandManager, m_lookAndFeel);
+                juce::String windowTitle = getApplicationName() + " " + getApplicationVersion();
+                mainWindow = std::make_unique<MainWindow>(windowTitle, commandManager, m_lookAndFeel);
                 
                 if (auto *mainComp = mainWindow->getMainComponent())
                 {
