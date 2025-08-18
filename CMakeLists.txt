@@ -165,10 +165,17 @@ endif()
 
 # Create the main application
 juce_add_gui_app(jucyaudio
-    PRODUCT_NAME "jucyaudio"
+    PRODUCT_NAME "JucyAudio"
     BUNDLE_ID "com.p-nand-q.jucyaudio"
     VERSION ${PROJECT_VERSION}
+    COMPANY_NAME "P-nand-Q"
+    COMPANY_COPYRIGHT "Copyright (c) 2025 P-nand-Q"
 )
+
+# Add Windows resource file for icon
+if(WIN32)
+    target_sources(jucyaudio PRIVATE windows_icon.rc)
+endif()
 
 # Add all source files
 target_sources(jucyaudio PRIVATE

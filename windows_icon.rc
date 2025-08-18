@@ -1,0 +1,4 @@
+// Windows Resource File for JucyAudio Icon
+#ifdef _WIN32
+IDI_ICON1 ICON "Assets\\JucyAudio.ico"
+#endif
