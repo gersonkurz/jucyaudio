@@ -92,55 +92,53 @@ namespace jucyaudio
         {
             auto bounds = getLocalBounds();
             const int topRowHeight = static_cast<int>(bounds.getHeight() * 0.7f);
-            //const int bottomRowHeight = bounds.getHeight() - topRowHeight;
-            
+
             auto topRow = bounds.removeFromTop(topRowHeight);
             auto bottomRow = bounds;
-            
-            // Top row layout - now with 5 buttons
-            const int buttonSize = topRowHeight - 8; // Back to square buttons for proper icon size
-            const int buttonPadding = 4; // No padding - buttons will be right next to each other
-            const int iconInset = buttonSize / 4; // Make icons 50% of button size
-            
-            auto transportArea = topRow.removeFromLeft(buttonSize * 5); // 5 buttons, no gaps
-            transportArea = transportArea.reduced(4);
-            
-            // Set button bounds with proper sizing (prev, stop, play, pause, next)
+
+            // Top row layout
+            const int buttonSize = topRowHeight - 8;
+            const int iconInset = buttonSize / 4;
+
+            // 1. Allocate the exact space needed for the 5 buttons.
+            auto transportArea = topRow.removeFromLeft(buttonSize * 5);
+
+            // 2. Add padding between the button group and the waveform.
+            topRow.removeFromLeft(8); // This creates a visual gap.
+
+            // 3. REMOVED: The problematic line `transportArea = transportArea.reduced(4);`
+
+            // Now transportArea has a width of exactly `buttonSize * 5`, so the math works.
             m_prevButton.setBounds(transportArea.removeFromLeft(buttonSize));
             m_stopButton.setBounds(transportArea.removeFromLeft(buttonSize));
             m_playButton.setBounds(transportArea.removeFromLeft(buttonSize));
             m_pauseButton.setBounds(transportArea.removeFromLeft(buttonSize));
-            m_nextButton.setBounds(transportArea.removeFromLeft(buttonSize));
-            
-            // Set icon edge insets to make icons smaller within buttons
+            m_nextButton.setBounds(transportArea.removeFromLeft(buttonSize)); // Will now get the full width.
+
+            // Set icon edge insets
             m_prevButton.setEdgeIndent(iconInset);
             m_stopButton.setEdgeIndent(iconInset);
             m_playButton.setEdgeIndent(iconInset);
             m_pauseButton.setEdgeIndent(iconInset);
             m_nextButton.setEdgeIndent(iconInset);
-            
-            // Waveform takes remaining space
-            m_waveformDisplay.setBounds(topRow.reduced(4));
-            
-            // Bottom row layout
+
+            // Waveform takes the rest of topRow.
+            m_waveformDisplay.setBounds(topRow);
+
+            // Bottom row layout (your existing code for this part is fine)
             bottomRow = bottomRow.reduced(4, 2);
-            
             const int bottomButtonSize = bottomRow.getHeight() - 4;
-            
-            
-            // Speaker icon
+            const int buttonPadding = 4;
+
             m_speakerIcon.setBounds(bottomRow.removeFromLeft(bottomButtonSize));
             bottomRow.removeFromLeft(buttonPadding);
-            
-            // Volume slider
             m_volumeSlider.setBounds(bottomRow.removeFromLeft(100));
             bottomRow.removeFromLeft(buttonPadding * 2);
-            
-            // Time displays
+
             const int timeWidth = 60;
             m_currentTimeLabel.setBounds(bottomRow.removeFromLeft(timeWidth));
             bottomRow.removeFromLeft(buttonPadding);
-            bottomRow.removeFromLeft(20); // Separator space
+            bottomRow.removeFromLeft(20);
             m_totalTimeLabel.setBounds(bottomRow.removeFromLeft(timeWidth));
         }
         
