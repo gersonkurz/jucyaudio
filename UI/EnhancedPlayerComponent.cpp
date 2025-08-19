@@ -272,11 +272,6 @@ namespace jucyaudio
             {
                 shuffleButtonClicked();
             };
-
-            // Set the on/off colors for the new buttons from the LookAndFeel
-            const auto accentColour = findColour(juce::Slider::thumbColourId);
-            const auto offColour = findColour(juce::Label::textColourId).withAlpha(0.7f);
-
         }
 
         void EnhancedPlayerComponent::setupVolumeControl()

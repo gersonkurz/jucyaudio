@@ -92,8 +92,7 @@ namespace jucyaudio
                 std::atomic<size_t> tracksProcessed = 0;
                 std::atomic<size_t> tracksAnalyzed = 0;
                 std::atomic<size_t> tracksSkipped = 0;
-                std::atomic<size_t> tracksTimedOut = 0;
-                
+
                 // Thread-safe collection of bad files
                 std::vector<TrackInfo> badFiles;
                 std::mutex badFilesMutex;
@@ -115,7 +114,6 @@ namespace jucyaudio
                             }
                             
                             const auto& trackInfo = tracksToProcess[trackIndex];
-                            bool fileProcessed = false;
                             
                             try {
                                 const auto trackPath = trackInfo.reconstructFullPath();
@@ -221,7 +219,6 @@ namespace jucyaudio
                                     resultsQueue.push({trackInfo.trackId, metadata});
                                 }
                                 tracksAnalyzed++;
-                                fileProcessed = true;
                             }
                             catch (const std::exception& e) {
                                 spdlog::debug("Exception reading track {}: {}", trackInfo.trackId, e.what());
