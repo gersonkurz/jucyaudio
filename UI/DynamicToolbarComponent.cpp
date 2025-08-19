@@ -1,6 +1,7 @@
 #include <UI/DynamicToolbarComponent.h>
 #include <UI/MainComponent.h>
 #include <Utils/UiUtils.h>
+#include <BinaryData.h>
 
 namespace jucyaudio
 {
@@ -21,14 +22,88 @@ namespace jucyaudio
             m_filterTextEditor.setTextToShowWhenEmpty("Type to filter...", juce::Colours::grey);
             addAndMakeVisible(m_filterTextEditor);
 
-            // Initial state: no node, so no actions
-            updateActionButtons();
+            // Create all possible action buttons upfront (for consistent UI)
+            const DataAction allActions[] = {
+                DataAction::Play,
+                DataAction::CreateWorkingSet,
+                DataAction::CreateMix,
+                DataAction::ShowDetails,
+                DataAction::EditWorkingSetMetadata,
+                DataAction::EditMixMetadata,
+                DataAction::RemoveTracks,
+                DataAction::Delete,
+                DataAction::ExportMix,
+                DataAction::RunBpmAnalysis,
+                DataAction::ShowMixEditor,
+                DataAction::ShowTrackEditor,
+                DataAction::ShowInFolder,
+                DataAction::RemoveDuplicates
+            };
+            
+            // Create special always-visible buttons (Settings, ScanFolders)
+            const DataAction alwaysVisibleActions[] = {
+                DataAction::Settings,
+                DataAction::ScanFolders
+            };
+
+            for (const auto action : allActions)
+            {
+                auto icon = dataActionToIcon(action);
+                if (icon)
+                {
+                    auto button = std::make_unique<juce::DrawableButton>(
+                        dataActionToString(action, nullptr),
+                        juce::DrawableButton::ImageFitted
+                    );
+                    
+                    button->setImages(icon.get());
+                    button->setTooltip(dataActionToString(action, nullptr));
+                    button->setEnabled(false); // Start disabled
+                    
+                    // Capture action by value for the lambda
+                    button->onClick = [this, action]
+                    {
+                        handleActionButtonClicked(action);
+                    };
+                    
+                    addAndMakeVisible(button.get());
+                    m_allActionButtons.push_back({action, std::move(button)});
+                }
+            }
+            
+            // Create the always-visible buttons (Settings, ScanFolders)
+            for (const auto action : alwaysVisibleActions)
+            {
+                auto icon = dataActionToIcon(action);
+                if (icon)
+                {
+                    auto button = std::make_unique<juce::DrawableButton>(
+                        dataActionToString(action, nullptr),
+                        juce::DrawableButton::ImageFitted
+                    );
+                    
+                    button->setImages(icon.get());
+                    button->setTooltip(dataActionToString(action, nullptr));
+                    button->setEnabled(true); // Always enabled
+                    
+                    // Capture action by value for the lambda
+                    button->onClick = [this, action]
+                    {
+                        handleActionButtonClicked(action);
+                    };
+                    
+                    addAndMakeVisible(button.get());
+                    m_alwaysVisibleButtons.push_back({action, std::move(button)});
+                }
+            }
+
+            // Don't call updateActionButtons() here - wait until setCurrentNode() is called
         }
 
         DynamicToolbarComponent::~DynamicToolbarComponent()
         {
             m_filterTextEditor.removeListener(this);
-            // m_actionButtons (OwnedArray) will automatically delete its elements
+            // m_allActionButtons will automatically clean up via unique_ptr destructors
         }
 
         void DynamicToolbarComponent::paint(juce::Graphics &g)
@@ -46,29 +121,49 @@ namespace jucyaudio
             // Simple horizontal layout: Label, Filter Box, then Action Buttons
             // A FlexBox would be more robust for complex layouts.
 
-            int labelWidth = 60;
-            int filterBoxWidth = 200;
-            int buttonSpacing = 5;
-            //int availableWidthForButtons = bounds.getWidth() - labelWidth - filterBoxWidth - buttonSpacing;
+            const int labelWidth = 60;
+            const int filterBoxWidth = 200;
+            const int buttonSpacing = 5;
+            // Make buttons similar size to transport buttons (70% of toolbar height minus some padding)
+            const int buttonSize = static_cast<int>(getHeight() * 0.7f) - 4;
 
             m_filterLabel.setBounds(bounds.removeFromLeft(labelWidth));
             m_filterTextEditor.setBounds(bounds.removeFromLeft(filterBoxWidth).reduced(0, 2)); // Reduce vertical padding a bit
 
-            bounds.removeFromLeft(buttonSpacing); // Space between filter and buttons
+            // First, position the always-visible buttons on the right
+            const int buttonY = (bounds.getHeight() - buttonSize) / 2 + bounds.getY();
+            int rightX = bounds.getRight();
             
-            // Layout action buttons
-            int x = bounds.getX();
-            for (auto *button : m_actionButtons)
+            // Layout always-visible buttons from right to left
+            for (auto it = m_alwaysVisibleButtons.rbegin(); it != m_alwaysVisibleButtons.rend(); ++it)
             {
-                if (button)
+                if (it->button)
                 {
-                    // Simple layout: give each button a fixed width for now, or calculate based on text
-                    int buttonWidth = 80; // Example fixed width
-                    if (x + buttonWidth > bounds.getRight())
-                        break; // Don't overflow
+                    rightX -= buttonSize;
+                    it->button->setBounds(rightX, buttonY, buttonSize, buttonSize);
+                    it->button->setEdgeIndent(buttonSize / 5);
+                    rightX -= buttonSpacing;
+                }
+            }
+            
+            // Add separator space between regular buttons and always-visible buttons
+            const int rightBoundary = rightX - buttonSpacing * 2;
+            
+            bounds.removeFromLeft(buttonSpacing * 2); // Space between filter and buttons
+            
+            // Layout regular action buttons (showing all, enabled/disabled based on context)
+            int x = bounds.getX();
+            
+            for (auto &buttonInfo : m_allActionButtons)
+            {
+                if (buttonInfo.button)
+                {
+                    if (x + buttonSize > rightBoundary)
+                        break; // Don't overflow into always-visible buttons area
 
-                    button->setBounds(x, bounds.getY(), buttonWidth, bounds.getHeight());
-                    x += buttonWidth + buttonSpacing;
+                    buttonInfo.button->setBounds(x, buttonY, buttonSize, buttonSize);
+                    buttonInfo.button->setEdgeIndent(buttonSize / 5); // Add some padding inside the button (less padding for larger buttons)
+                    x += buttonSize + buttonSpacing;
                 }
             }
         }
@@ -134,26 +229,28 @@ namespace jucyaudio
         // --- Private Helper Methods ---
         void DynamicToolbarComponent::updateActionButtons()
         {
-            m_actionButtons.clear(); // Removes and deletes existing buttons
-
+            // Get available actions from current node
+            DataActions availableActions;
             if (m_currentNode)
             {
-                for (const auto &action : m_currentNode->getNodeActions())
-                {
-                    if (action == DataAction::None || action == DataAction::Separator)
-                        continue;
-
-                    auto *button = m_actionButtons.add(new juce::TextButton{});
-                    button->setButtonText(dataActionToString(action, m_currentNode));
-                    // Capture 'action' by value for the lambda
-                    button->onClick = [this, action]
-                    {
-                        handleActionButtonClicked(action);
-                    };
-                    addAndMakeVisible(button);
-                }
+                availableActions = m_currentNode->getNodeActions();
             }
-            resized(); // Trigger a re-layout after buttons change
+
+            // Enable/disable buttons based on available actions
+            for (auto &buttonInfo : m_allActionButtons)
+            {
+                const bool isAvailable = std::find(availableActions.begin(), availableActions.end(), buttonInfo.action) != availableActions.end();
+                buttonInfo.button->setEnabled(isAvailable);
+                
+                // Update tooltip with context-aware text if we have a node
+                if (m_currentNode)
+                {
+                    buttonInfo.button->setTooltip(dataActionToString(buttonInfo.action, m_currentNode));
+                }
+                
+                // Optionally adjust opacity for disabled buttons
+                buttonInfo.button->setAlpha(isAvailable ? 1.0f : 0.4f);
+            }
         }
 
         void DynamicToolbarComponent::handleActionButtonClicked(DataAction action)

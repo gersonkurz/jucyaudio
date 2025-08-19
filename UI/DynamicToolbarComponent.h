@@ -58,9 +58,15 @@ namespace jucyaudio
 
             juce::TextEditor m_filterTextEditor;
             juce::Label m_filterLabel; // Optional label for the filter box
-
-            // Store action buttons. juce::OwnedArray manages their lifetime.
-            juce::OwnedArray<juce::TextButton> m_actionButtons;
+            
+            // Store all possible action buttons (for "show all with disabled state" approach)
+            struct ActionButtonInfo
+            {
+                DataAction action;
+                std::unique_ptr<juce::DrawableButton> button;
+            };
+            std::vector<ActionButtonInfo> m_allActionButtons;
+            std::vector<ActionButtonInfo> m_alwaysVisibleButtons; // Settings, ScanFolders etc.
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DynamicToolbarComponent)
         };

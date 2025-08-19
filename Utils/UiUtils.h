@@ -58,6 +58,13 @@ namespace jucyaudio
         // @see DataAction
         juce::String dataActionToString(DataAction action, const INavigationNode *node);
 
+        // @brief Gets an icon drawable for a database action
+        // @param action The DataAction enum value to get icon for
+        // @return Unique pointer to a Drawable for the action icon
+        // @note Returns nullptr if no icon is available
+        // @see DataAction
+        std::unique_ptr<juce::Drawable> dataActionToIcon(DataAction action);
+
         // @brief Sanitizes text for safe display by filtering out problematic Unicode characters
         // @param text The input text to sanitize
         // @return JUCE string with non-ASCII characters (except basic Latin extended) replaced with "?"

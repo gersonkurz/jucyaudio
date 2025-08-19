@@ -12,7 +12,6 @@ namespace jucyaudio
         const DataActions WorkingSetNodeActions{DataAction::EditWorkingSetMetadata,
             DataAction::CreateMix,
             DataAction::RunBpmAnalysis,
-            DataAction::SelectTracksFromMix,
             DataAction::Delete,
             DataAction::RemoveDuplicates};
 

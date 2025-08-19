@@ -418,6 +418,21 @@ juce_add_binary_data(jucyaudio_assets
         Assets/low-audio.svg
         Assets/shuffle.svg
         Assets/repeat.svg
+        Assets/create_working_set.svg
+        Assets/create_mix.svg
+        Assets/show_mix_editor.svg
+        Assets/show_track_editor.svg
+        Assets/export_mix.svg
+        Assets/delete.svg
+        Assets/remove_tracks.svg
+        Assets/show_in_folder.svg
+        Assets/remove_duplicates.svg
+        Assets/run_bpm_analysis.svg
+        Assets/show_details.svg
+        Assets/edit_mix_metadata.svg
+        Assets/edit_workingset_metadata.svg
+        Assets/settings.svg
+        Assets/scan_folders.svg
 )
 
 # Platform-specific library linking

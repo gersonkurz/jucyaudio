@@ -223,12 +223,13 @@ namespace jucyaudio
             Delete,                 ///< Delete the selected working set
             ExportMix,              ///< Export mix to audio file
             RunBpmAnalysis,         ///< Run BPM analysis on selected items
-            SelectTracksFromMix,    ///< Select tracks in a working set that are part of a specific mix
             ShowMixEditor,          ///< Open the mix editor for the selected mix
             ShowTrackEditor,        ///< Open the track editor for the selected track
             ShowInFolder,           ///< Navigate to the folder containing the item
             Separator,              ///< Separator in context menus (not an action)
-            RemoveDuplicates,       ///< Remove duplicate tracks from the selection 
+            RemoveDuplicates,       ///< Remove duplicate tracks from the selection
+            Settings,               ///< Open application settings dialog
+            ScanFolders,            ///< Open folder scanning dialog 
         };
 
         // @brief Collection of data actions available in the application

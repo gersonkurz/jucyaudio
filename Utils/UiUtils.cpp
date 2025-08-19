@@ -2,6 +2,7 @@
 #include <juce_graphics/juce_graphics.h>
 #include <Utils/UiUtils.h>
 #include <filesystem>
+#include <BinaryData.h>
 
 namespace jucyaudio
 {
@@ -24,7 +25,7 @@ namespace jucyaudio
             case DataAction::CreateMix:
                 return "Create Mix";
             case DataAction::Delete:
-                return std::format("Delete {}", node->m_refTypeNameForSingleObject);
+                return node ? std::format("Delete {}", node->m_refTypeNameForSingleObject) : "Delete";
             case DataAction::ExportMix:
                 return "Export Mix";
             case DataAction::ShowDetails:
@@ -37,8 +38,6 @@ namespace jucyaudio
                 return "Remove Tracks";
             case DataAction::RunBpmAnalysis:
                 return "Run BPM Analysis";
-            case DataAction::SelectTracksFromMix:
-                return "Select Tracks from Mix...";
             case DataAction::ShowMixEditor:
                 return "Show Mix Editor";
             case DataAction::ShowTrackEditor:
@@ -49,6 +48,10 @@ namespace jucyaudio
                 return "------";
             case DataAction::RemoveDuplicates:
                 return "Remove Duplicates";
+            case DataAction::Settings:
+                return "Settings";
+            case DataAction::ScanFolders:
+                return "Scan Folders";
             default:
                 return "dataActionToString()?";
             }
@@ -93,6 +96,57 @@ namespace jucyaudio
                 return availableActions[result - 1];
             }
             return DataAction::None;
+        }
+
+        std::unique_ptr<juce::Drawable> dataActionToIcon(DataAction action)
+        {
+            // Helper to load SVG from binary data
+            auto loadSvg = [](const char *data, size_t size) -> std::unique_ptr<juce::Drawable>
+            {
+                return juce::Drawable::createFromImageData(data, size);
+            };
+
+            // For now, use play_arrow.svg as a placeholder for all actions
+            // This will be replaced with specific icons once they're available
+            switch (action)
+            {
+            case DataAction::Play:
+                return loadSvg(BinaryData::play_arrow_svg, BinaryData::play_arrow_svgSize);
+            case DataAction::CreateWorkingSet:
+                return loadSvg(BinaryData::create_working_set_svg, BinaryData::create_working_set_svgSize); // Placeholder
+            case DataAction::CreateMix:
+                return loadSvg(BinaryData::create_mix_svg, BinaryData::create_mix_svgSize); // Placeholder
+            case DataAction::ShowDetails:
+                return loadSvg(BinaryData::show_details_svg, BinaryData::show_details_svgSize); // Placeholder
+            case DataAction::EditWorkingSetMetadata:
+                return loadSvg(BinaryData::edit_workingset_metadata_svg, BinaryData::edit_workingset_metadata_svgSize); // Placeholder
+            case DataAction::EditMixMetadata:
+                return loadSvg(BinaryData::edit_mix_metadata_svg, BinaryData::edit_mix_metadata_svgSize); // Placeholder
+            case DataAction::RemoveTracks:
+                return loadSvg(BinaryData::remove_tracks_svg, BinaryData::remove_tracks_svgSize); // Placeholder
+            case DataAction::Delete:
+                return loadSvg(BinaryData::delete_svg, BinaryData::delete_svgSize); // Placeholder
+            case DataAction::ExportMix:
+                return loadSvg(BinaryData::export_mix_svg, BinaryData::export_mix_svgSize); // Placeholder
+            case DataAction::RunBpmAnalysis:
+                return loadSvg(BinaryData::run_bpm_analysis_svg, BinaryData::run_bpm_analysis_svgSize); // Placeholder
+            case DataAction::ShowMixEditor:
+                return loadSvg(BinaryData::show_mix_editor_svg, BinaryData::show_mix_editor_svgSize); // Placeholder
+            case DataAction::ShowTrackEditor:
+                return loadSvg(BinaryData::show_track_editor_svg, BinaryData::show_track_editor_svgSize); // Placeholder
+            case DataAction::ShowInFolder:
+                return loadSvg(BinaryData::show_in_folder_svg, BinaryData::show_in_folder_svgSize); // Placeholder
+            case DataAction::RemoveDuplicates:
+                return loadSvg(BinaryData::remove_duplicates_svg, BinaryData::remove_duplicates_svgSize); // Placeholder
+            case DataAction::Settings:
+                return loadSvg(BinaryData::settings_svg, BinaryData::settings_svgSize);
+            case DataAction::ScanFolders:
+                return loadSvg(BinaryData::scan_folders_svg, BinaryData::scan_folders_svgSize);
+            case DataAction::None:
+            case DataAction::Separator:
+            default:
+                return nullptr;
+            }
         }
 
         juce::String getSafeDisplayText(const juce::String &text)
