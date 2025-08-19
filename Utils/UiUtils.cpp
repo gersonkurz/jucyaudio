@@ -54,6 +54,8 @@ namespace jucyaudio
                 return "Scan Folders";
             case DataAction::ShowEqualizer:
                 return "Equalizer";
+            case DataAction::ShowReverb:
+                return "Reverb";
             default:
                 return "dataActionToString()?";
             }
@@ -146,6 +148,8 @@ namespace jucyaudio
                 return loadSvg(BinaryData::scan_folders_svg, BinaryData::scan_folders_svgSize);
             case DataAction::ShowEqualizer:
                 return loadSvg(BinaryData::equalizer_svg, BinaryData::equalizer_svgSize);
+            case DataAction::ShowReverb:
+                return loadSvg(BinaryData::reverb_svg, BinaryData::reverb_svgSize);
             case DataAction::None:
             case DataAction::Separator:
             default:

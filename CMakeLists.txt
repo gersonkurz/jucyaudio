@@ -359,6 +359,7 @@ target_sources(jucyaudio PRIVATE
     UI/PlaybackController.cpp
     UI/EnhancedPlayerComponent.cpp
     UI/EqualizerComponent.cpp
+    UI/ReverbComponent.cpp
     UI/LibraryRootsComponent.cpp
     UI/ColumnConfiguratorDialog.h
     UI/DynamicColumnManager.h
@@ -377,6 +378,7 @@ target_sources(jucyaudio PRIVATE
     UI/PlaybackController.h
     UI/EnhancedPlayerComponent.h
     UI/EqualizerComponent.h
+    UI/ReverbComponent.h
     UI/LibraryRootsComponent.h
     UI/ThemeManager.cpp
     UI/ThemeManager.h

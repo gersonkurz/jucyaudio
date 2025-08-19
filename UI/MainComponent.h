@@ -136,6 +136,12 @@ namespace jucyaudio
             void hideEqualizerWindow();
             void toggleEqualizerWindow();
             void toggleEqualizerEnabled();
+            
+            // Reverb management
+            void showReverbWindow();
+            void hideReverbWindow();
+            void toggleReverbWindow();
+            void toggleReverbEnabled();
 
             audio::AudioLibrary m_audioLibrary;
             juce::ApplicationCommandManager &m_commandManager;
@@ -167,6 +173,10 @@ namespace jucyaudio
             // Equalizer window (optional visibility)
             std::unique_ptr<juce::DocumentWindow> m_equalizerWindow;
             bool m_equalizerEnabled{true}; // Whether EQ processing is active (independent of window visibility)
+            
+            // Reverb window (optional visibility)
+            std::unique_ptr<juce::DocumentWindow> m_reverbWindow;
+            bool m_reverbEnabled{true}; // Whether reverb processing is active (independent of window visibility)
 
             std::filesystem::path getThemesDirectoryPath() const;
 

@@ -333,6 +333,7 @@ namespace jucyaudio
               m_mixManagerWithUndo{m_mixManager, m_undoManager},
               m_albumManager{m_db},
               m_eqPresetManager{m_db},
+              m_reverbPresetManager{m_db},
               m_databaseFilePath{},
               m_lastErrorMessage{},
               m_cachedTotalTrackCount{0},

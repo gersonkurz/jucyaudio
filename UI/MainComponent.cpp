@@ -4,6 +4,7 @@
 #include <Database/BackgroundTasks/BpmAnalysisTask.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Sqlite/SqliteEQPresetManager.h>
+#include <Database/Sqlite/SqliteReverbPresetManager.h>
 #include <Database/Sqlite/SqliteTrackDatabase.h>
 #include <Database/Nodes/AlbumsNode.h>
 #include <Database/Nodes/MixNode.h>
@@ -19,6 +20,7 @@
 #include <UI/EditMixMetaDataDialog.h>
 #include <UI/EditWorkingSetMetaDataDialog.h>
 #include <UI/EqualizerComponent.h>
+#include <UI/ReverbComponent.h>
 #include <UI/ExportMixDialog.h>
 #include <UI/ILongRunningTask.h>
 #include <UI/LibraryRootsComponent.h>
@@ -1284,6 +1286,9 @@ namespace jucyaudio
                 break;
             case DataAction::ShowEqualizer:
                 toggleEqualizerWindow();
+                break;
+            case DataAction::ShowReverb:
+                toggleReverbWindow();
                 break;
             default:
                 spdlog::error("Unsupported action '{}' for node '{}' in MainComponent::handleNodeActionFromNavigationPanel. This should not happen.",
@@ -3010,6 +3015,165 @@ namespace jucyaudio
             // Update status bar
             m_statusPanel.getStatusBar().setInfoMessage(
                 m_equalizerEnabled ? "Equalizer enabled" : "Equalizer bypassed"
+            );
+        }
+        
+        void MainComponent::showReverbWindow()
+        {
+            if (!m_reverbWindow)
+            {
+                // Create the reverb component
+                auto* reverbComponent = new ReverbComponent();
+                
+                // Get the preset manager from the database
+                auto* trackDb = theTrackLibrary.getTrackDatabase();
+                if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
+                {
+                    // Load presets
+                    auto presets = sqliteDb->getReverbPresetManager().getAllPresets();
+                    reverbComponent->loadPresets(presets);
+                }
+                
+                // Load current settings from playback controller
+                audio::model::ReverbSettings currentSettings;
+                reverbComponent->loadSettings(currentSettings);
+                
+                // Set up callbacks
+                reverbComponent->onSettingsChanged = [this](const audio::model::ReverbSettings& settings)
+                {
+                    if (m_reverbEnabled)
+                    {
+                        m_playbackController.updateMasterReverb(settings);
+                    }
+                };
+                
+                reverbComponent->onPresetSelected = [this, reverbComponent](int64_t presetId)
+                {
+                    auto* trackDb = theTrackLibrary.getTrackDatabase();
+                    if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
+                    {
+                        if (auto preset = sqliteDb->getReverbPresetManager().getPreset(presetId))
+                        {
+                            reverbComponent->loadSettings(preset->settings);
+                            if (m_reverbEnabled)
+                            {
+                                m_playbackController.updateMasterReverb(preset->settings);
+                            }
+                        }
+                    }
+                };
+                
+                reverbComponent->onSavePreset = [reverbComponent](const juce::String& name, const audio::model::ReverbSettings& settings)
+                {
+                    auto* trackDb = theTrackLibrary.getTrackDatabase();
+                    if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
+                    {
+                        if (auto savedPreset = sqliteDb->getReverbPresetManager().savePreset(name.toStdString(), settings))
+                        {
+                            // Reload presets
+                            auto presets = sqliteDb->getReverbPresetManager().getAllPresets();
+                            reverbComponent->loadPresets(presets);
+                        }
+                    }
+                };
+                
+                reverbComponent->onDeletePreset = [reverbComponent](int64_t presetId)
+                {
+                    auto* trackDb = theTrackLibrary.getTrackDatabase();
+                    if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
+                    {
+                        if (sqliteDb->getReverbPresetManager().deletePreset(presetId))
+                        {
+                            // Reload presets
+                            auto presets = sqliteDb->getReverbPresetManager().getAllPresets();
+                            reverbComponent->loadPresets(presets);
+                        }
+                    }
+                };
+                
+                // Create a custom window class to handle close button
+                class ReverbWindow : public juce::DocumentWindow
+                {
+                public:
+                    ReverbWindow(MainComponent* parent)
+                        : DocumentWindow("Reverb",
+                                       juce::Desktop::getInstance().getDefaultLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId),
+                                       DocumentWindow::closeButton),  // Only show close button
+                          m_parent(parent)
+                    {}
+                    
+                    void closeButtonPressed() override
+                    {
+                        if (m_parent)
+                            m_parent->hideReverbWindow();
+                    }
+                    
+                private:
+                    MainComponent* m_parent;
+                };
+                
+                // Create the window with only close button
+                m_reverbWindow = std::make_unique<ReverbWindow>(this);
+                
+                m_reverbWindow->setContentOwned(reverbComponent, true);
+                m_reverbWindow->setResizable(true, false);
+                m_reverbWindow->centreWithSize(800, 500);
+                m_reverbWindow->setVisible(true);
+                m_reverbWindow->toFront(true);
+                m_reverbWindow->setWantsKeyboardFocus(true);
+                m_reverbWindow->addToDesktop();
+            }
+            else
+            {
+                m_reverbWindow->setVisible(true);
+                m_reverbWindow->toFront(true);
+            }
+        }
+        
+        void MainComponent::hideReverbWindow()
+        {
+            if (m_reverbWindow)
+            {
+                m_reverbWindow->setVisible(false);
+            }
+        }
+        
+        void MainComponent::toggleReverbWindow()
+        {
+            if (m_reverbWindow && m_reverbWindow->isVisible())
+            {
+                hideReverbWindow();
+            }
+            else
+            {
+                showReverbWindow();
+            }
+        }
+        
+        void MainComponent::toggleReverbEnabled()
+        {
+            m_reverbEnabled = !m_reverbEnabled;
+            
+            // Get current reverb settings and update bypass state
+            audio::model::ReverbSettings settings;
+            if (m_reverbWindow)
+            {
+                if (auto* content = m_reverbWindow->getContentComponent())
+                {
+                    if (auto* reverbComp = dynamic_cast<ReverbComponent*>(content))
+                    {
+                        settings = reverbComp->getCurrentSettings();
+                    }
+                }
+            }
+            
+            // Override the isActive flag based on our enabled state
+            settings.isActive = m_reverbEnabled;
+            m_playbackController.updateMasterReverb(settings);
+            
+            // Update status bar
+            m_statusPanel.getStatusBar().setInfoMessage(
+                m_reverbEnabled ? "Reverb enabled" : "Reverb bypassed"
             );
         }
 
