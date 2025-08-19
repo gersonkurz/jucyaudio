@@ -6,6 +6,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <Audio/Equalizer.h>
+#include <Audio/Reverb.h>
 #include <spdlog/spdlog.h> // For logging within the controller
 #include <memory>
 
@@ -98,6 +99,9 @@ namespace jucyaudio
             
             // Master EQ Control
             void updateMasterEQ(const audio::model::EQSettings& settings);
+            
+            // Master Reverb Control
+            void updateMasterReverb(const audio::model::ReverbSettings& settings);
 
             // Thread-safe execution for mix-related operations
             void withMixEngineLock(std::function<void()> action);
@@ -113,6 +117,7 @@ namespace jucyaudio
             std::unique_ptr<juce::AudioFormatReaderSource> m_currentAudioFileSource;
             juce::AudioTransportSource m_audioTransportSource;
             audio::Equalizer m_masterEqualizer;
+            audio::Reverb m_masterReverb;
             
             // Mix playback support
             std::unique_ptr<audio::MixPlaybackEngine> m_mixPlaybackEngine;

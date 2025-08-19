@@ -117,8 +117,6 @@ namespace jucyaudio
 
             // Internal state
             PlaybackController &m_playbackController;
-            juce::AudioFormatManager &m_formatManager;
-            juce::AudioThumbnailCache &m_thumbnailCache;
             std::optional<TrackId> m_currentTrackId;
             float m_lastVolumeBeforeMute{1.0f};
             bool m_isRepeatOn{false};

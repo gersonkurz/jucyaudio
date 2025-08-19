@@ -12,9 +12,7 @@ namespace jucyaudio
         EnhancedPlayerComponent::EnhancedPlayerComponent(
             PlaybackController &controller, juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache)
             : m_waveformDisplay{formatManager, thumbnailCache},
-              m_playbackController{controller},
-              m_formatManager{formatManager},
-              m_thumbnailCache{thumbnailCache}
+              m_playbackController{controller}
         {
             loadButtonIcons();
             loadVolumeIcons();

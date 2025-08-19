@@ -453,6 +453,7 @@ juce_add_binary_data(jucyaudio_assets
         Assets/settings.svg
         Assets/scan_folders.svg
         Assets/equalizer.svg
+        Assets/reverb.svg
 )
 
 # Platform-specific library linking

@@ -69,12 +69,13 @@ namespace jucyaudio
             
             m_audioTransportSource.prepareToPlay(samplesPerBlockExpected, sampleRate);
             
-            // Prepare the master equalizer
+            // Prepare the master equalizer and reverb
             juce::dsp::ProcessSpec spec;
             spec.sampleRate = sampleRate;
             spec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlockExpected);
             spec.numChannels = 2;
             m_masterEqualizer.prepare(spec);
+            m_masterReverb.prepare(spec);
             
             if (m_mixPlaybackEngine)
             {
@@ -107,12 +108,13 @@ namespace jucyaudio
                 bufferToFill.clearActiveBufferRegion();
             }
             
-            // Apply master EQ to the audio (after getting the source audio)
+            // Apply master EQ and reverb to the audio (after getting the source audio)
             if (m_currentState == PlayerState::TrackPlaying || m_currentState == PlayerState::MixPlaying)
             {
                 juce::dsp::AudioBlock<float> block(*bufferToFill.buffer, 
                                                   static_cast<size_t>(bufferToFill.startSample));
                 m_masterEqualizer.process(block);
+                m_masterReverb.process(block);
             }
         }
 
@@ -120,6 +122,7 @@ namespace jucyaudio
         {
             m_audioTransportSource.releaseResources();
             m_masterEqualizer.reset();
+            m_masterReverb.reset();
             
             if (m_mixPlaybackEngine)
             {
@@ -567,6 +570,18 @@ namespace jucyaudio
             if (m_currentMixLoader)
             {
                 m_currentMixLoader->setMasterEQSettings(settings);
+            }
+        }
+        
+        void PlaybackController::updateMasterReverb(const audio::model::ReverbSettings& settings)
+        {
+            m_masterReverb.updateParameters(settings);
+            
+            // If we're in mix mode, also update the mix project loader
+            if (m_currentMixLoader)
+            {
+                // TODO: Add setMasterReverbSettings to MixProjectLoader when ready
+                // m_currentMixLoader->setMasterReverbSettings(settings);
             }
         }
 
