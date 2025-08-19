@@ -3,6 +3,7 @@
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
 #include <Database/TrackLibrary.h>
+#include <Audio/Model/EQSettings.h>
 #include <unordered_map>
 
 namespace jucyaudio
@@ -44,6 +45,10 @@ namespace jucyaudio
             {
                 return m_mixInfo;
             }
+
+            // Get/set master EQ settings for this mix
+            const model::EQSettings& getMasterEQSettings() const { return m_masterEQSettings; }
+            void setMasterEQSettings(const model::EQSettings& settings) { m_masterEQSettings = settings; }
 
             const TrackInfo *getTrackInfoForId(TrackId trackId) const
             {
@@ -92,6 +97,7 @@ namespace jucyaudio
             std::vector<MixTrack> m_mixTracks;
             std::vector<TrackInfo> m_trackInfos;
             std::unordered_map<TrackId, const TrackInfo *> m_trackInfosMap;
+            model::EQSettings m_masterEQSettings; // Master EQ settings for this mix
         };
     } // namespace audio
 } // namespace jucyaudio

@@ -5,6 +5,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <Audio/Equalizer.h>
 #include <spdlog/spdlog.h> // For logging within the controller
 #include <memory>
 
@@ -94,6 +95,9 @@ namespace jucyaudio
             void processAudioBlock(const juce::AudioBuffer<float>& buffer);
             float getPeakLeft() const { return m_peakLeft.load(); }
             float getPeakRight() const { return m_peakRight.load(); }
+            
+            // Master EQ Control
+            void updateMasterEQ(const audio::model::EQSettings& settings);
 
             // Thread-safe execution for mix-related operations
             void withMixEngineLock(std::function<void()> action);
@@ -108,6 +112,7 @@ namespace jucyaudio
             juce::AudioFormatManager m_audioFormatManager;
             std::unique_ptr<juce::AudioFormatReaderSource> m_currentAudioFileSource;
             juce::AudioTransportSource m_audioTransportSource;
+            audio::Equalizer m_masterEqualizer;
             
             // Mix playback support
             std::unique_ptr<audio::MixPlaybackEngine> m_mixPlaybackEngine;

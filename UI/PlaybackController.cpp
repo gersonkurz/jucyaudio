@@ -69,6 +69,13 @@ namespace jucyaudio
             
             m_audioTransportSource.prepareToPlay(samplesPerBlockExpected, sampleRate);
             
+            // Prepare the master equalizer
+            juce::dsp::ProcessSpec spec;
+            spec.sampleRate = sampleRate;
+            spec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlockExpected);
+            spec.numChannels = 2;
+            m_masterEqualizer.prepare(spec);
+            
             if (m_mixPlaybackEngine)
             {
                 m_mixPlaybackEngine->prepareToPlay(samplesPerBlockExpected, sampleRate);
@@ -99,11 +106,20 @@ namespace jucyaudio
             {
                 bufferToFill.clearActiveBufferRegion();
             }
+            
+            // Apply master EQ to the audio (after getting the source audio)
+            if (m_currentState == PlayerState::TrackPlaying || m_currentState == PlayerState::MixPlaying)
+            {
+                juce::dsp::AudioBlock<float> block(*bufferToFill.buffer, 
+                                                  static_cast<size_t>(bufferToFill.startSample));
+                m_masterEqualizer.process(block);
+            }
         }
 
         void PlaybackController::releaseResources()
         {
             m_audioTransportSource.releaseResources();
+            m_masterEqualizer.reset();
             
             if (m_mixPlaybackEngine)
             {
@@ -214,6 +230,9 @@ namespace jucyaudio
             m_currentMixLoader = mixLoader;
             if (m_mixPlaybackEngine->loadMix(mixLoader))
             {
+                // Apply the mix's EQ settings
+                m_masterEqualizer.updateParameters(mixLoader->getMasterEQSettings());
+                
                 changeState(PlayerState::SilenceMixLoaded);
                 spdlog::info("[PlaybackController] Mix loaded successfully");
                 spdlog::debug("JUCYAUDIO: PlaybackController::loadMix -> Exit (success)");
@@ -537,6 +556,17 @@ namespace jucyaudio
                 // It might be safer to just run the action, or log a warning.
                 // For now, we'll just run it, assuming the action is safe without a mix.
                 action();
+            }
+        }
+        
+        void PlaybackController::updateMasterEQ(const audio::model::EQSettings& settings)
+        {
+            m_masterEqualizer.updateParameters(settings);
+            
+            // If we're in mix mode, also update the mix project loader
+            if (m_currentMixLoader)
+            {
+                m_currentMixLoader->setMasterEQSettings(settings);
             }
         }
 
