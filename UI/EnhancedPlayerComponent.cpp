@@ -234,6 +234,15 @@ namespace jucyaudio
 
         void EnhancedPlayerComponent::setupButtons()
         {
+            // Set tooltips for all buttons
+            m_prevButton.setTooltip("Previous Track");
+            m_stopButton.setTooltip("Stop");
+            m_playPauseButton.setTooltip("Play/Pause");
+            m_nextButton.setTooltip("Next Track");
+            m_volumeButton.setTooltip("Mute/Unmute");
+            m_repeatButton.setTooltip("Toggle Repeat");
+            m_shuffleButton.setTooltip("Toggle Shuffle");
+
             m_prevButton.onClick = [this]
             {
                 if (onPreviousTrack)
@@ -280,6 +289,7 @@ namespace jucyaudio
             m_volumeSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
             m_volumeSlider.setRange(0.0, 1.0, 0.01);
             m_volumeSlider.setValue(m_playbackController.getTransportSource().getGain());
+            m_volumeSlider.setTooltip("Volume");
 
             m_volumeSlider.onValueChange = [this]
             {
@@ -290,9 +300,11 @@ namespace jucyaudio
 
             m_currentTimeLabel.setText("0:00", juce::dontSendNotification);
             m_currentTimeLabel.setJustificationType(juce::Justification::centred);
+            m_currentTimeLabel.setTooltip("Current Position");
 
             m_totalTimeLabel.setText("0:00", juce::dontSendNotification);
             m_totalTimeLabel.setJustificationType(juce::Justification::centred);
+            m_totalTimeLabel.setTooltip("Total Duration");
 
             updateVolumeIcon(m_playbackController.getTransportSource().getGain());
         }
