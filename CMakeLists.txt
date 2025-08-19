@@ -208,8 +208,12 @@ target_sources(jucyaudio PRIVATE
     Audio/MixPlaybackEngine.h
     Audio/Equalizer.cpp
     Audio/Equalizer.h
+    Audio/Reverb.cpp
+    Audio/Reverb.h
     Audio/Model/EQSettings.cpp
     Audio/Model/EQSettings.h
+    Audio/Model/ReverbSettings.cpp
+    Audio/Model/ReverbSettings.h
     
     # Utils files
     Utils/AssortedUtils.cpp
@@ -263,6 +267,7 @@ target_sources(jucyaudio PRIVATE
     Database/Includes/MixMarker.h
     Database/Includes/TrackQueryArgs.h
     Database/Includes/EQPreset.h
+    Database/Includes/ReverbPreset.h
     
     # SQLite files
     Database/Sqlite/sqlite3.c
