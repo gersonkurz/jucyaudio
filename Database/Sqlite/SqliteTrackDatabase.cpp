@@ -1,4 +1,5 @@
 #include <Database/Includes/ITagManager.h>
+#include <Database/Includes/EQPreset.h>
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteStatementConstruction.h>
@@ -1789,6 +1790,97 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 16;
+            }
+
+            // Migration to version 17: Add EQPresets table
+            if (currentVersion < 17)
+            {
+                spdlog::info("Migrating database from version 16 to 17 (EQ Presets)...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Create EQPresets table
+                    const char* createEQPresetsTable = R"SQL(
+                        CREATE TABLE IF NOT EXISTS EQPresets (
+                            preset_id INTEGER PRIMARY KEY,
+                            name TEXT NOT NULL UNIQUE,
+                            is_deletable INTEGER NOT NULL DEFAULT 1,
+                            settings_json TEXT NOT NULL
+                        );
+                    )SQL";
+                    
+                    if (!m_db.execute(createEQPresetsTable))
+                    {
+                        transaction.rollback();
+                        spdlog::error("Failed to create EQPresets table: {}", m_db.getLastError());
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create EQPresets table: " + m_db.getLastError());
+                    }
+                    
+                    // Insert default system presets
+                    const char* insertPresetSql = R"SQL(
+                        INSERT INTO EQPresets (name, is_deletable, settings_json)
+                        VALUES (?, 0, ?)
+                    )SQL";
+                    
+                    // Helper lambda to insert a preset
+                    auto insertPreset = [&](const database::model::EQPreset& preset) -> bool
+                    {
+                        SqliteStatement stmt{m_db, insertPresetSql};
+                        if (!stmt.isValid())
+                        {
+                            spdlog::error("Failed to prepare preset insert: {}", m_db.getLastError());
+                            return false;
+                        }
+                        stmt.addParam(preset.name.toStdString());
+                        stmt.addParam(preset.settings.toJson().toStdString());
+                        return stmt.execute();
+                    };
+                    
+                    // Insert default presets
+                    const std::vector<database::model::EQPreset> defaultPresets = {
+                        database::model::EQPreset::createFlatPreset(),
+                        database::model::EQPreset::createRockPreset(),
+                        database::model::EQPreset::createDancePreset(),
+                        database::model::EQPreset::createVocalBoostPreset(),
+                        database::model::EQPreset::createBassBoostPreset(),
+                        database::model::EQPreset::createTrebleBoostPreset()
+                    };
+                    
+                    for (const auto& preset : defaultPresets)
+                    {
+                        if (!insertPreset(preset))
+                        {
+                            transaction.rollback();
+                            spdlog::error("Failed to insert default preset '{}': {}", 
+                                        preset.name.toStdString(), m_db.getLastError());
+                            return DbResult::failure(DbResultStatus::ErrorDB, 
+                                                   "Failed to insert default presets: " + m_db.getLastError());
+                        }
+                    }
+                    
+                    spdlog::info("Successfully inserted {} default EQ presets", defaultPresets.size());
+                    
+                    if (auto result = setDBSchemaVersion(17); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 17.");
+                    }
+                    
+                    if (transaction.commit())
+                    {
+                        spdlog::info("Migration to version 17 completed successfully. EQPresets table created with default presets.");
+                    }
+                    else
+                    {
+                        const auto error{m_db.getLastError()};
+                        spdlog::error("Failed to commit migration transaction: {}", error);
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration: " + error);
+                    }
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 17;
             }
 
             return DbResult::success();
