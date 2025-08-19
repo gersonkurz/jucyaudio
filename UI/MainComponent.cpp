@@ -188,49 +188,159 @@ namespace jucyaudio
             m_commandManager.registerAllCommandsForTarget(this); // Register commands defined in this class
 
             auto &menuManager = getManager();
+            
+            // Helper lambda to create menu items with DataAction support
+            auto makeActionItem = [&](const std::string& name, 
+                                     const std::string& desc,
+                                     DataAction action,
+                                     int key = 0,
+                                     juce::ModifierKeys mods = juce::ModifierKeys::noModifiers) -> MenuItem
+            {
+                MenuItem item;
+                item.name = name;
+                item.description = desc;
+                item.action = [&, action]() 
+                {
+                    if (m_currentNode)
+                    {
+                        handleNodeActionFromNavigationPanel(m_currentNode, action);
+                    }
+                };
+                if (key != 0)
+                {
+                    item.keyPress = MenuItem::KeyPress{static_cast<char>(key), mods};
+                }
+                item.isEnabled = [this, action]() { return isActionAvailable(action); };
+                return item;
+            };
+            
+            // Helper for static menu items (always enabled)
+            auto makeStaticItem = [](const std::string& name,
+                                    const std::string& desc,
+                                    std::function<void()> action,
+                                    char key = 0,
+                                    juce::ModifierKeys mods = juce::ModifierKeys::noModifiers) -> MenuItem
+            {
+                MenuItem item;
+                item.name = name;
+                item.description = desc;
+                item.action = action;
+                if (key != 0)
+                {
+                    item.keyPress = MenuItem::KeyPress{key, mods};
+                }
+                return item;
+            };
 
-            // 1. Define static menus
+            // 1. Define File menu with enhanced options
             menuManager.registerMenu("File",
-                {// The lambda captures `this` from MainComponent, keeping logic and state together.
-                    {"Scan Folders...",
-                        "...",
-                        [&]()
-                        {
-                            onShowScanDialog();
-                        },
-                        {{'s', juce::ModifierKeys::commandModifier}},
-                        {}},
+                {
+                    makeActionItem("New Working Set...", 
+                                  "Create a new working set from current selection",
+                                  DataAction::CreateWorkingSet,
+                                  'n', juce::ModifierKeys::commandModifier),
+                    makeActionItem("New Mix...",
+                                  "Create a new mix from current selection", 
+                                  DataAction::CreateMix,
+                                  'm', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier),
                     {"-"},
-                    {"Database Maintenance...",
-                        "...",
-                        [&]()
-                        {
-                            onShowMaintenanceDialog();
-                        }},
+                    makeActionItem("Export Mix...",
+                                  "Export the selected mix to audio file",
+                                  DataAction::ExportMix,
+                                  'e', juce::ModifierKeys::commandModifier),
                     {"-"},
-                    {"Exit",
-                        "...",
-                        [&]()
-                        {
-                            juce::JUCEApplication::getInstance()->systemRequestedQuit();
-                        },
-                        {{'q', juce::ModifierKeys::commandModifier}},
-                        {}}});
+                    makeStaticItem("Scan Folders...",
+                                  "Scan library folders for new tracks",
+                                  [&]() { onShowScanDialog(); },
+                                  's', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier),
+                    makeStaticItem("Database Maintenance...",
+                                  "Perform database maintenance tasks",
+                                  [&]() { onShowMaintenanceDialog(); }),
+                    {"-"},
+                    makeStaticItem("Settings...",
+                                  "Open application settings",
+                                  [&]() { SettingsDialog::showSettingsDialog(this); },
+                                  ',', juce::ModifierKeys::commandModifier),
+                    {"-"},
+                    makeStaticItem("Exit",
+                                  "Quit JucyAudio",
+                                  [&]() { juce::JUCEApplication::getInstance()->systemRequestedQuit(); },
+                                  'q', juce::ModifierKeys::commandModifier)});
+            
+            // 2. Define Edit menu with DataActions
+            menuManager.registerMenu("Edit",
+                {
+                    makeActionItem("Delete",
+                                  "Delete selected items",
+                                  DataAction::Delete,
+                                  juce::KeyPress::deleteKey, juce::ModifierKeys::noModifiers),
+                    makeActionItem("Remove Tracks",
+                                  "Remove selected tracks from working set",
+                                  DataAction::RemoveTracks,
+                                  'r', juce::ModifierKeys::commandModifier),
+                    {"-"},
+                    makeActionItem("Edit Working Set Metadata...",
+                                  "Edit metadata for selected working set",
+                                  DataAction::EditWorkingSetMetadata),
+                    makeActionItem("Edit Mix Metadata...",
+                                  "Edit metadata for selected mix",
+                                  DataAction::EditMixMetadata),
+                    {"-"},
+                    makeActionItem("Remove Duplicates",
+                                  "Remove duplicate tracks from selection",
+                                  DataAction::RemoveDuplicates,
+                                  'd', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier)});
+            
+            // 3. Define Library menu
+            menuManager.registerMenu("Library",
+                {
+                    makeActionItem("Play",
+                                  "Play selected tracks",
+                                  DataAction::Play,
+                                  ' ', juce::ModifierKeys::noModifiers), // Spacebar
+                    {"-"},
+                    makeActionItem("Run BPM Analysis...",
+                                  "Analyze BPM for selected tracks",
+                                  DataAction::RunBpmAnalysis,
+                                  'b', juce::ModifierKeys::commandModifier),
+                    makeActionItem("Show in Folder",
+                                  "Show selected track in system file browser",
+                                  DataAction::ShowInFolder,
+                                  'f', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier)});
 
             menuManager.registerMenu("View",
-                {{"Configure Columns...",
-                     "Configure columns for the current view",
-                     [&]()
-                     {
-                         onShowConfigureColumnsDialog();
-                     }},
-                    {"-"}, // Separator
-                    {"Settings...",
-                        "Open application settings",
-                        [&]()
-                        {
-                            SettingsDialog::showSettingsDialog(this);
-                        }}});
+                {
+                    makeActionItem("Show Mix Editor",
+                                  "Switch to mix editor view",
+                                  DataAction::ShowMixEditor,
+                                  '1', juce::ModifierKeys::commandModifier),
+                    makeActionItem("Show Track Editor",
+                                  "Switch to track editor view",
+                                  DataAction::ShowTrackEditor,
+                                  '2', juce::ModifierKeys::commandModifier),
+                    {"-"},
+                    makeStaticItem("Configure Columns...",
+                                  "Configure columns for the current view",
+                                  [&]() { onShowConfigureColumnsDialog(); }),
+                    makeActionItem("Show Details",
+                                  "Show detailed information",
+                                  DataAction::ShowDetails,
+                                  'i', juce::ModifierKeys::commandModifier),
+                    {"-"},
+                    makeStaticItem("Refresh",
+                                  "Refresh current view",
+                                  [&]() {
+                                      if (m_currentMainView == MainViewType::DataView)
+                                      {
+                                          m_dataViewComponent.refreshView();
+                                      }
+                                      else if (m_currentMainView == MainViewType::MixEditor)
+                                      {
+                                          // MixEditor refresh if needed
+                                      }
+                                  },
+                                  'r', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier)}
+                );
 
             // 2. Define dynamic theme submenu
             std::vector<MenuItem> themeItems;
@@ -2475,6 +2585,15 @@ namespace jucyaudio
             return true;
         }
 
+        bool MainComponent::isActionAvailable(DataAction action) const
+        {
+            if (!m_currentNode)
+                return false;
+                
+            const auto availableActions = m_currentNode->getNodeActions();
+            return std::find(availableActions.begin(), availableActions.end(), action) != availableActions.end();
+        }
+        
         bool MainComponent::onApplyThemeByIndex(size_t themeIndex)
         {
             const auto &availableThemes = theThemeManager.getAvailableThemes();

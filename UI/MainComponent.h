@@ -109,6 +109,9 @@ namespace jucyaudio
             bool onShowConfigureColumnsDialog();
             bool onShowAboutDialog();
             bool onApplyThemeByIndex(size_t themeIndex);
+            
+            // Helper to check if a DataAction is available for current node
+            bool isActionAvailable(DataAction action) const;
 
             // working set management -------------------------------
             bool createWorkingSet();

@@ -34,8 +34,8 @@ namespace jucyaudio::ui
             if (item.keyPress)
                 result.addDefaultKeypress(item.keyPress->key, item.keyPress->mods);
             
-            // Here you could add another lambda to the MenuItem struct for dynamic enabling/disabling
-            result.setActive(true);
+            // Use the isEnabled callback if provided, otherwise default to enabled
+            result.setActive(item.isEnabled ? item.isEnabled() : true);
             
             if (item.isRadioButton && item.isTicked)
                 result.setTicked(item.isTicked());
