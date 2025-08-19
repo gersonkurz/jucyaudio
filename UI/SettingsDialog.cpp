@@ -240,38 +240,17 @@ namespace jucyaudio::ui
     // ===========================================================================
     
     SettingsDialog::SettingsDialog()
-        : DialogWindow("Settings", 
-                      juce::LookAndFeel::getDefaultLookAndFeel().findColour(juce::DialogWindow::backgroundColourId),
-                      true) // Has close button
+        : SingletonDialog("Settings", 
+                         juce::LookAndFeel::getDefaultLookAndFeel().findColour(juce::DialogWindow::backgroundColourId),
+                         true) // Has close button
     {
         setContentOwned(new SettingsComponent(), true);
         setResizable(false, false);
-        setUsingNativeTitleBar(true);
-        
-        // Center on screen
-        centreWithSize(getWidth(), getHeight());
-    }
-    
-    SettingsDialog::~SettingsDialog()
-    {
-    }
-    
-    void SettingsDialog::closeButtonPressed()
-    {
-        setVisible(false);
     }
     
     void SettingsDialog::showSettingsDialog(juce::Component* centreAroundComponent)
     {
-        auto* dialog = new SettingsDialog();
-        
-        if (centreAroundComponent)
-        {
-            dialog->centreAroundComponent(centreAroundComponent, dialog->getWidth(), dialog->getHeight());
-        }
-        
-        dialog->setVisible(true);
-        dialog->runModalLoop();
-        delete dialog;
+        // Use the base class singleton functionality
+        showSingletonDialog(centreAroundComponent);
     }
 }

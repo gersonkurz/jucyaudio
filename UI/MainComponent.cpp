@@ -23,6 +23,7 @@
 #include <UI/MarkerEditDialog.h>
 #include <UI/Settings.h>
 #include <UI/SettingsDialog.h>
+#include <UI/SingletonDialog.h>
 #include <UI/TaskDialog.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
@@ -1162,6 +1163,12 @@ namespace jucyaudio
             case DataAction::ShowTrackEditor:
                 onShowTrackEditor();
                 break;
+            case DataAction::Settings:
+                SettingsDialog::showSettingsDialog(this);
+                break;
+            case DataAction::ScanFolders:
+                onShowScanDialog();
+                break;
             default:
                 spdlog::error("Unsupported action '{}' for node '{}' in MainComponent::handleNodeActionFromNavigationPanel. This should not happen.",
                     dataActionToString(action, m_currentNode).toStdString(),
@@ -1714,11 +1721,15 @@ namespace jucyaudio
             auto *dialog = new CreateWorkingSetDialogComponent{trackCount, callback};
 
             juce::DialogWindow::LaunchOptions launchOptions;
-            launchOptions.content.setOwned(dialog);
-            launchOptions.dialogTitle = "Create Working Set";
             launchOptions.escapeKeyTriggersCloseButton = true;
             launchOptions.resizable = false;
-            launchOptions.launchAsync();
+            launchOptions.componentToCentreAround = this;
+            
+            SingletonComponentDialog::showComponent("CreateWorkingSet", 
+                                                   "Create Working Set", 
+                                                   dialog, 
+                                                   launchOptions,
+                                                   true); // modal-style
             return true;
         }
 
@@ -2234,11 +2245,15 @@ namespace jucyaudio
                 });
 
             juce::DialogWindow::LaunchOptions launchOptions;
-            launchOptions.content.setOwned(dialog);
-            launchOptions.dialogTitle = "Create Auto-Mix";
             launchOptions.escapeKeyTriggersCloseButton = true;
             launchOptions.resizable = false;
-            launchOptions.launchAsync();
+            launchOptions.componentToCentreAround = this;
+            
+            SingletonComponentDialog::showComponent("CreateMix", 
+                                                   "Create Auto-Mix", 
+                                                   dialog, 
+                                                   launchOptions,
+                                                   true); // modal-style
         }
 
         void MainComponent::onMixCreatedCallback(bool success, const MixInfo &mixInfo)

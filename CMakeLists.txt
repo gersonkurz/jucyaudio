@@ -352,6 +352,7 @@ target_sources(jucyaudio PRIVATE
     UI/DividerComponent.h
     UI/DynamicToolbarComponent.h
     UI/SettingsDialog.h
+    UI/SingletonDialog.h
     UI/TaskDialog.h
     UI/MainComponent.h
     UI/MainPlaybackAndStatusComponent.h

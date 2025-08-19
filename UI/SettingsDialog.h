@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <UI/Settings.h>
+#include <UI/SingletonDialog.h>
 #include <memory>
 
 namespace jucyaudio::ui
@@ -68,21 +69,20 @@ namespace jucyaudio::ui
     /**
      * @brief Multi-tab settings dialog for JucyAudio
      */
-    class SettingsDialog : public juce::DialogWindow
+    class SettingsDialog : public SingletonDialog<SettingsDialog>
     {
     public:
         SettingsDialog();
-        ~SettingsDialog() override;
-        
-        void closeButtonPressed() override;
+        ~SettingsDialog() override = default;
         
         /**
-         * @brief Shows the settings dialog modally
+         * @brief Shows the settings dialog
          * @param centreAroundComponent Component to center the dialog around
          */
         static void showSettingsDialog(juce::Component* centreAroundComponent = nullptr);
         
     private:
+        
         class SettingsComponent : public juce::Component
         {
         public:
