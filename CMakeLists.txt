@@ -250,6 +250,7 @@ target_sources(jucyaudio PRIVATE
     Database/Includes/IAlbumManager.h
     Database/Includes/IBackgroundTask.h
     Database/Includes/IEQPresetManager.h
+    Database/Includes/IReverbPresetManager.h
     Database/Includes/IFolderDatabase.h
     Database/Includes/IMixManager.h
     Database/Includes/IMarkerManager.h
@@ -303,6 +304,8 @@ target_sources(jucyaudio PRIVATE
     Database/Sqlite/SqliteAlbumManager.h
     Database/Sqlite/SqliteEQPresetManager.cpp
     Database/Sqlite/SqliteEQPresetManager.h
+    Database/Sqlite/SqliteReverbPresetManager.cpp
+    Database/Sqlite/SqliteReverbPresetManager.h
     
     # Database Nodes
     Database/Nodes/WorkingSetsOverview.cpp

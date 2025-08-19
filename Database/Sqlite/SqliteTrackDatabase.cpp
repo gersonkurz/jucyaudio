@@ -1883,6 +1883,99 @@ CREATE TABLE MixUndoHistory (
                 }
                 currentVersion = 17;
             }
+            // Migration to version 18: Add ReverbPresets table
+            if (currentVersion < 18)
+            {
+                spdlog::info("Migrating database from version 17 to 18 (Reverb Presets)...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Create ReverbPresets table
+                    const char* createReverbPresetsTable = R"SQL(
+                        CREATE TABLE IF NOT EXISTS ReverbPresets (
+                            preset_id INTEGER PRIMARY KEY,
+                            name TEXT NOT NULL UNIQUE,
+                            is_deletable INTEGER NOT NULL DEFAULT 1,
+                            settings_json TEXT NOT NULL,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    )SQL";
+                    
+                    if (!m_db.execute(createReverbPresetsTable))
+                    {
+                        transaction.rollback();
+                        spdlog::error("Failed to create ReverbPresets table: {}", m_db.getLastError());
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create ReverbPresets table: " + m_db.getLastError());
+                    }
+                    
+                    // Insert default system reverb presets
+                    const char* insertPresetSql = R"SQL(
+                        INSERT INTO ReverbPresets (name, is_deletable, settings_json)
+                        VALUES (?, 0, ?)
+                    )SQL";
+                    
+                    // Factory presets
+                    struct FactoryPreset {
+                        const char* name;
+                        const char* json;
+                    };
+                    
+                    const FactoryPreset factoryPresets[] = {
+                        {"Small Room", R"({"roomSize":0.2,"damping":0.7,"wetLevel":0.25,"dryLevel":0.75,"width":0.8,"freezeMode":0.0,"isActive":true})"},
+                        {"Large Hall", R"({"roomSize":0.8,"damping":0.5,"wetLevel":0.35,"dryLevel":0.65,"width":1.0,"freezeMode":0.0,"isActive":true})"},
+                        {"Cathedral", R"({"roomSize":0.95,"damping":0.3,"wetLevel":0.4,"dryLevel":0.6,"width":1.0,"freezeMode":0.0,"isActive":true})"},
+                        {"Plate", R"({"roomSize":0.4,"damping":0.9,"wetLevel":0.3,"dryLevel":0.7,"width":1.0,"freezeMode":0.0,"isActive":true})"},
+                        {"Spring", R"({"roomSize":0.3,"damping":0.6,"wetLevel":0.35,"dryLevel":0.65,"width":0.5,"freezeMode":0.0,"isActive":true})"},
+                        {"Ambient", R"({"roomSize":0.85,"damping":0.2,"wetLevel":0.5,"dryLevel":0.5,"width":1.0,"freezeMode":0.0,"isActive":true})"},
+                        {"Subtle", R"({"roomSize":0.15,"damping":0.8,"wetLevel":0.15,"dryLevel":0.85,"width":0.7,"freezeMode":0.0,"isActive":true})"} 
+                    };
+                    
+                    for (const auto& preset : factoryPresets)
+                    {
+                        SqliteStatement stmt{m_db, insertPresetSql};
+                        if (!stmt.isValid())
+                        {
+                            spdlog::error("Failed to prepare reverb preset insert: {}", m_db.getLastError());
+                            transaction.rollback();
+                            return DbResult::failure(DbResultStatus::ErrorDB, "Failed to prepare reverb preset insert.");
+                        }
+                        
+                        stmt.addParam(preset.name);
+                        stmt.addParam(preset.json);
+                        
+                        if (!stmt.execute())
+                        {
+                            spdlog::error("Failed to insert reverb preset '{}': {}", preset.name, m_db.getLastError());
+                            transaction.rollback();
+                            return DbResult::failure(DbResultStatus::ErrorDB, "Failed to insert reverb preset.");
+                        }
+                    }
+                    
+                    // Update schema version
+                     if (auto result = setDBSchemaVersion(18); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 18.");
+                    }
+                    
+                    if (transaction.commit())
+                    {
+                        spdlog::info("Migration to version 18 completed successfully. ReverbPresets table created with factory presets.");
+                    }
+                    else
+                    {
+                        const auto error{m_db.getLastError()};
+                        spdlog::error("Failed to commit migration transaction: {}", error);
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration: " + error);
+                    }
+                }
+                else
+                {
+                    spdlog::error("Failed to begin transaction for migration to version 18.");
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 18;
+            }
 
             return DbResult::success();
         }
