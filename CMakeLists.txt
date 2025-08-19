@@ -206,6 +206,10 @@ target_sources(jucyaudio PRIVATE
     Audio/MixProjectLoader.h
     Audio/MixPlaybackEngine.cpp
     Audio/MixPlaybackEngine.h
+    Audio/Equalizer.cpp
+    Audio/Equalizer.h
+    Audio/Model/EQSettings.cpp
+    Audio/Model/EQSettings.h
     
     # Utils files
     Utils/AssortedUtils.cpp
@@ -257,6 +261,7 @@ target_sources(jucyaudio PRIVATE
     Database/Includes/TrackMarker.h
     Database/Includes/MixMarker.h
     Database/Includes/TrackQueryArgs.h
+    Database/Includes/EQPreset.h
     
     # SQLite files
     Database/Sqlite/sqlite3.c
@@ -447,6 +452,7 @@ if(WIN32)
         juce::juce_audio_utils
         juce::juce_core
         juce::juce_data_structures
+        juce::juce_dsp
         juce::juce_events
         juce::juce_graphics
         juce::juce_gui_basics
@@ -483,6 +489,7 @@ else()
         juce::juce_audio_utils
         juce::juce_core
         juce::juce_data_structures
+        juce::juce_dsp
         juce::juce_events
         juce::juce_graphics
         juce::juce_gui_basics
