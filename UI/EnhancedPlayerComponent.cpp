@@ -69,7 +69,7 @@ namespace jucyaudio
 
             m_trackInfoLabel.setText("No track loaded", juce::dontSendNotification);
             m_trackInfoLabel.setJustificationType(juce::Justification::centredLeft);
-            m_trackInfoLabel.setColour(juce::Label::textColourId, findColour(juce::Label::textColourId).withAlpha(0.7f));
+            // Let the label inherit its text color from the theme
 
             // Initialize button states from PlaybackController
             m_isRepeatOn = m_playbackController.getRepeatMode();
@@ -172,15 +172,22 @@ namespace jucyaudio
                 return juce::Drawable::createFromImageData(data, size);
             };
 
-            // --- Play/Pause Button (no color change needed) ---
+            // --- Play/Pause Button ---
             m_iconPlay = loadSvg(BinaryData::play_arrow_svg, BinaryData::play_arrow_svgSize);
             m_iconPause = loadSvg(BinaryData::pause_svg, BinaryData::pause_svgSize);
             m_playPauseButton.setImages(m_iconPlay.get(), nullptr, nullptr, nullptr, m_iconPause.get());
+            
+            // Make button background transparent so parent background shows through
+            m_playPauseButton.setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentWhite);
+            m_playPauseButton.setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentWhite);
 
-            // --- Simple Transport Buttons (no color change needed) ---
+            // --- Simple Transport Buttons ---
             auto setSimpleButtonImage = [&](juce::DrawableButton &button, const char *data, size_t size)
             {
                 button.setImages(loadSvg(data, size).get());
+                // Make backgrounds transparent
+                button.setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentWhite);
+                button.setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentWhite);
             };
             setSimpleButtonImage(m_prevButton, BinaryData::prev_svg, BinaryData::prev_svgSize);
             setSimpleButtonImage(m_stopButton, BinaryData::stop_svg, BinaryData::stop_svgSize);
@@ -217,6 +224,12 @@ namespace jucyaudio
             // Set the button images: 'off' for normal, 'on' for toggled
             m_repeatButton.setImages(m_iconRepeatOff.get(), nullptr, nullptr, nullptr, m_iconRepeatOn.get());
             m_shuffleButton.setImages(m_iconShuffleOff.get(), nullptr, nullptr, nullptr, m_iconShuffleOn.get());
+            
+            // Make backgrounds transparent
+            m_repeatButton.setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentWhite);
+            m_repeatButton.setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentWhite);
+            m_shuffleButton.setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentWhite);
+            m_shuffleButton.setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentWhite);
         }
         void EnhancedPlayerComponent::loadVolumeIcons()
         {
@@ -240,6 +253,10 @@ namespace jucyaudio
             m_volumeButton.setTooltip("Mute/Unmute");
             m_repeatButton.setTooltip("Toggle Repeat");
             m_shuffleButton.setTooltip("Toggle Shuffle");
+            
+            // Make volume button background transparent
+            m_volumeButton.setColour(juce::DrawableButton::backgroundColourId, juce::Colours::transparentWhite);
+            m_volumeButton.setColour(juce::DrawableButton::backgroundOnColourId, juce::Colours::transparentWhite);
 
             m_prevButton.onClick = [this]
             {

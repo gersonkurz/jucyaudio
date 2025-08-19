@@ -244,6 +244,19 @@ namespace jucyaudio::ui
                          juce::LookAndFeel::getDefaultLookAndFeel().findColour(juce::DialogWindow::backgroundColourId),
                          true) // Has close button
     {
+        // Apply the global theme's look and feel before creating child components
+        if (auto* mainWindow = juce::TopLevelWindow::getActiveTopLevelWindow())
+        {
+            // TopLevelWindow doesn't have getContentComponent, but we can cast to DocumentWindow
+            if (auto* docWindow = dynamic_cast<juce::DocumentWindow*>(mainWindow))
+            {
+                if (auto* mainComponent = docWindow->getContentComponent())
+                {
+                    setLookAndFeel(&mainComponent->getLookAndFeel());
+                }
+            }
+        }
+        
         setContentOwned(new SettingsComponent(), true);
         setResizable(false, false);
     }

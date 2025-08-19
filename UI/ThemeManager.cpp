@@ -21,6 +21,8 @@ namespace jucyaudio
                 DECLARE_COLOUR_ID(TreeView::oddItemsColourId)
                 DECLARE_COLOUR_ID(TreeView::evenItemsColourId)
                 DECLARE_COLOUR_ID(Label::textColourId)
+                DECLARE_COLOUR_ID(Label::textWhenEditingColourId)
+                DECLARE_COLOUR_ID(Label::backgroundWhenEditingColourId)
                 DECLARE_COLOUR_ID(ComboBox::backgroundColourId)
                 DECLARE_COLOUR_ID(TextEditor::backgroundColourId)
                 DECLARE_COLOUR_ID(TextEditor::textColourId)
@@ -44,8 +46,18 @@ namespace jucyaudio
 
                 DECLARE_COLOUR_ID(ResizableWindow::backgroundColourId)
                 
+                DECLARE_COLOUR_ID(TabbedComponent::backgroundColourId)
+                DECLARE_COLOUR_ID(TabbedComponent::outlineColourId)
+                DECLARE_COLOUR_ID(TabbedButtonBar::tabOutlineColourId)
+                DECLARE_COLOUR_ID(TabbedButtonBar::tabTextColourId)
+                DECLARE_COLOUR_ID(TabbedButtonBar::frontOutlineColourId)
+                DECLARE_COLOUR_ID(TabbedButtonBar::frontTextColourId)
+                
                 DECLARE_COLOUR_ID(Slider::thumbColourId)
                 DECLARE_COLOUR_ID(Slider::trackColourId)
+                DECLARE_COLOUR_ID(Slider::textBoxTextColourId)
+                DECLARE_COLOUR_ID(Slider::textBoxBackgroundColourId)
+                DECLARE_COLOUR_ID(Slider::textBoxOutlineColourId)
                 DECLARE_COLOUR_ID(ScrollBar::thumbColourId) // New
                 DECLARE_COLOUR_ID(ScrollBar::trackColourId) // New
                 
@@ -134,6 +146,8 @@ namespace jucyaudio
                 if(pComponent)
                 {
                     pComponent->setLookAndFeel(&lookAndFeel);
+                    // Force all child components to update their colors
+                    pComponent->sendLookAndFeelChange();
                 }
                 return theme.name;
             }

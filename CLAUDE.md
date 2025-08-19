@@ -99,6 +99,32 @@
 *   **UI Updates:** Status indicators, gray/disabled offline items, non-expandable offline folders
 *   **Simplified Design:** No error dialogs needed - offline content is simply hidden
 
+### Session 12: DSP Effects - Equalizer & Reverb (Complete)
+*   **Equalizer Implementation:**
+    - 10-band parametric EQ with frequency/gain/Q controls
+    - Preset management system (Factory + User presets)
+    - Database schema v17 for EQPresets table
+    - Real-time spectrum analyzer visualization
+    - True bypass mode to avoid phase shifts
+*   **Reverb Implementation:**
+    - Master reverb using JUCE's dsp::Reverb processor
+    - Parameters: roomSize, damping, wetLevel, dryLevel, width, freezeMode
+    - Database schema v18 for ReverbPresets table
+    - Factory presets: Small Room, Large Hall, Cathedral, Plate, Spring, Ambient, Subtle
+    - Processing chain: Audio → EQ → Reverb → Output
+*   **UI Integration:**
+    - Both effects accessible from toolbar
+    - Theme-aware dialogs matching main window
+    - Independent enable/bypass controls
+
+### Session 13: Unified Timer System (Complete)
+*   **TimerMultiplexer Implementation:**
+    - Single 60Hz base timer in MainComponent
+    - Components register for callbacks at desired frequencies (VU meters: 25Hz, EnhancedPlayer: 20Hz, MixEditor: 60Hz)
+    - Frame-based interval calculation for precise timing
+    - Eliminated beat frequency interference between multiple timers
+    - Smooth playhead animation now possible at 60fps
+
 ### Additional Sessions Summary:
 
 **Mix Editor Enhancements:**
@@ -129,7 +155,7 @@
 
 ## Important Implementation Notes
 
-**Database Schema:** Currently at version 16. MixMarkers table added for mix-wide comment markers.
+**Database Schema:** Currently at version 18. Latest additions: EQPresets (v17) and ReverbPresets (v18) tables for DSP effect presets.
 
 **Refcounting:** The navigation system uses manual retain/release. Always match retains with releases!
 
@@ -151,28 +177,13 @@
 ✅ Offline media management  
 ✅ Album UI and navigation  
 ✅ Waveform caching  
+✅ Equalizer with presets  
+✅ Reverb with presets  
+✅ Unified Timer System (60Hz base with multiplexing)  
 
 ### High Priority:
 
-1. **Unified Timer System (NEXT TASK)**
-   - **Problem Analysis:**
-     - Multiple timers create beat frequency interference (30Hz, 25Hz, 20Hz, 10Hz)
-     - Causes stuttering in VU meters and playhead animation
-     - Current timers: MainComponent (30Hz), EnhancedPlayer (20Hz), VU meters (25Hz), MixEditor (10Hz-disabled)
-   - **Proposed Solution:**
-     - Single timer in MainComponent at 60Hz base rate
-     - TimerMultiplexer class to manage different update rates
-     - Components register for updates at specific frequencies
-     - Dirty rectangle system for coordinated repaints
-     - Lock-free audio-UI communication via atomics
-   - **Implementation Phases:**
-     1. Create TimerMultiplexer infrastructure
-     2. Migrate VU meters as proof of concept
-     3. Migrate all other timed components
-     4. Re-enable smooth playhead animation
-   - **Benefits:** No beat frequencies, smooth 60fps animation, better performance
-
-2. **Unified AI Enrichment Script:**
+1. **Unified AI Enrichment Script (NEXT TASK):**
    - Single Python tool for ALL metadata enrichment (see enrich.md Part 2)
    - Album metadata (genres, moods, tags)
    - WAV path intelligence
@@ -185,19 +196,6 @@
    - UI for batch editing and tag management
 
 4. **Nice to Have:** Implement linked movement of cue-points with attach points
-
----
-
-## Known Issues
-
-### Performance:
-- **Playhead animation:** Disabled due to timer conflicts causing stuttering
-  - Multiple timers at different frequencies create beat patterns
-  - Needs unified timer system or OpenGL rendering
-
-### UI:
-- **Track deletion rebuilds timeline:** All waveforms regenerate (accepted limitation)
-- **macOS icon:** Appears black instead of orange (needs proper alpha channel)
 
 ---
 

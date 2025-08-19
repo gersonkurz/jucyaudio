@@ -16,9 +16,7 @@ namespace jucyaudio
     namespace ui
     {
         CreateMixDialogComponent::CreateMixDialogComponent(
-                                                           const std::vector<database::TrackInfo> &tracksForMix,
-                                                           WorkingSetId source_ws_id,
-                                                           OnMixCreatedAndExportedCallback onOkCallback)
+            const std::vector<database::TrackInfo> &tracksForMix, WorkingSetId source_ws_id, OnMixCreatedAndExportedCallback onOkCallback)
             : m_tracksForMix{tracksForMix}, // Store reference
               m_source_ws_id{source_ws_id},
               m_onOkCallback{std::move(onOkCallback)},
@@ -44,25 +42,25 @@ namespace jucyaudio
             juce::String countText = "Create a mix from these " + juce::String(m_tracksForMix.size()) + " tracks?";
             m_countLabel.setText(countText, juce::dontSendNotification);
             m_countLabel.setJustificationType(juce::Justification::centred);
-            
+
             // Mix selection combo box
             addAndMakeVisible(m_mixSelectLabel);
             addAndMakeVisible(m_mixSelectCombo);
             m_mixSelectCombo.addListener(this);
-            
+
             // Load existing mixes
             m_availableMixes = theTrackLibrary.getMixManager().getMixes({});
-            
+
             // Add empty option for "Create New Mix"
             m_mixSelectCombo.addItem("<Create New Mix>", 1);
             m_mixSelectCombo.addSeparator();
-            
+
             // Add existing mixes
             for (size_t i = 0; i < m_availableMixes.size(); ++i)
             {
                 m_mixSelectCombo.addItem(m_availableMixes[i].name, static_cast<int>(i + 2));
             }
-            
+
             // Select "Create New Mix" by default
             m_mixSelectCombo.setSelectedId(1);
 
@@ -112,13 +110,13 @@ namespace jucyaudio
             // Count message
             m_countLabel.setBounds(area.removeFromTop(25));
             area.removeFromTop(15); // spacing
-            
+
             // Mix selection row
             auto mixSelectRow = area.removeFromTop(25);
             m_mixSelectLabel.setBounds(mixSelectRow.removeFromLeft(80));
             mixSelectRow.removeFromLeft(10); // spacing
             m_mixSelectCombo.setBounds(mixSelectRow);
-            
+
             area.removeFromTop(10); // spacing
 
             // Name input row
@@ -177,9 +175,9 @@ namespace jucyaudio
                 closeThisDialog(false);
                 return;
             }
-            
+
             int selectedId = m_mixSelectCombo.getSelectedId();
-            
+
             if (selectedId == 1)
             {
                 // Create new mix
@@ -204,19 +202,21 @@ namespace jucyaudio
                 if (!mixDefined || newMixInfo.mixId == -1)
                 {
                     spdlog::error("Failed to define mix '{}' in the database.", mixNameStd);
-                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Mix Creation Failed",
-                                                           "Could not save the mix definition to the database. Check logs for details.");
+                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                        "Mix Creation Failed",
+                        "Could not save the mix definition to the database. Check logs for details.");
                     closeThisDialog(false);
                     return;
                 }
-                
+
                 if (m_onOkCallback)
                 {
                     m_onOkCallback(true, newMixInfo);
                     m_onOkCallback = nullptr; // Clear callback after use
                 }
-                spdlog::info("Mix '{}' (ID: {}) defined successfully in database with {} tracks.", newMixInfo.name, newMixInfo.mixId, resultingMixTracks.size());
-                
+                spdlog::info(
+                    "Mix '{}' (ID: {}) defined successfully in database with {} tracks.", newMixInfo.name, newMixInfo.mixId, resultingMixTracks.size());
+
                 closeThisDialog(true);
             }
             else if (selectedId > 1)
@@ -229,24 +229,23 @@ namespace jucyaudio
                     closeThisDialog(false);
                     return;
                 }
-                
+
                 database::MixInfo targetMix = m_availableMixes[mixIndex];
-                spdlog::info("Attempting to append {} tracks to existing mix '{}' (ID: {})", 
-                            m_tracksForMix.size(), targetMix.name, targetMix.mixId);
-                
+                spdlog::info("Attempting to append {} tracks to existing mix '{}' (ID: {})", m_tracksForMix.size(), targetMix.name, targetMix.mixId);
+
                 // Get existing mix tracks
                 auto existingTracks = theTrackLibrary.getMixManager().getMixTracks(targetMix.mixId);
-                
+
                 // Add new tracks with appropriate crossfade settings
                 const Duration_t defaultCrossfade{5000}; // 5 seconds
                 int nextOrder = static_cast<int>(existingTracks.size());
-                
-                for (const auto& trackInfo : m_tracksForMix)
+
+                for (const auto &trackInfo : m_tracksForMix)
                 {
                     database::MixTrack newMixTrack{};
                     newMixTrack.trackId = trackInfo.trackId;
                     newMixTrack.orderInMix = nextOrder++;
-                    
+
                     // Set up crossfade from previous track
                     if (!existingTracks.empty())
                     {
@@ -257,42 +256,39 @@ namespace jucyaudio
                     // CUE points - use full track (default behavior)
                     newMixTrack.cueStart = Duration_t{0};
                     newMixTrack.cueEnd = Duration_t{0}; // 0 means use full track duration
-                    
+
                     // Create envelope points for crossfade, mirroring the automix logic
-                    const auto fadeInMidpoint = Duration_t{2000};  // 2 seconds
+                    const auto fadeInMidpoint = Duration_t{2000};                       // 2 seconds
                     const auto fadeOutMidpoint = trackInfo.duration - Duration_t{2000}; // 2 seconds before end
 
-                    newMixTrack.envelopePoints = {
-                        {Duration_t{0}, Volume_t{200}},
+                    newMixTrack.envelopePoints = {{Duration_t{0}, Volume_t{200}},
                         {fadeInMidpoint, Volume_t{700}},
                         {defaultCrossfade, database::VOLUME_NORMALIZATION},
                         {trackInfo.duration - defaultCrossfade, database::VOLUME_NORMALIZATION},
                         {fadeOutMidpoint, Volume_t{700}},
-                        {trackInfo.duration, Volume_t{200}}
-                    };
-                    
+                        {trackInfo.duration, Volume_t{200}}};
+
                     existingTracks.push_back(newMixTrack);
                 }
-                
+
                 // Update the mix with all tracks
                 bool success = theTrackLibrary.getMixManager().createOrUpdateMix(targetMix, existingTracks);
-                
+
                 if (!success)
                 {
                     spdlog::error("Failed to append tracks to mix '{}'", targetMix.name);
-                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Append Failed",
-                                                           "Could not append tracks to the existing mix. Check logs for details.");
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon, "Append Failed", "Could not append tracks to the existing mix. Check logs for details.");
                     closeThisDialog(false);
                     return;
                 }
-                
+
                 if (m_onOkCallback)
                 {
                     m_onOkCallback(true, targetMix);
                     m_onOkCallback = nullptr;
                 }
-                spdlog::info("Successfully appended {} tracks to mix '{}' (ID: {})", 
-                            m_tracksForMix.size(), targetMix.name, targetMix.mixId);
+                spdlog::info("Successfully appended {} tracks to mix '{}' (ID: {})", m_tracksForMix.size(), targetMix.name, targetMix.mixId);
                 closeThisDialog(true);
             }
         }
@@ -322,20 +318,20 @@ namespace jucyaudio
             closeThisDialog(false);
         }
 
-        void CreateMixDialogComponent::comboBoxChanged(juce::ComboBox* comboBox)
+        void CreateMixDialogComponent::comboBoxChanged(juce::ComboBox *comboBox)
         {
             if (comboBox == &m_mixSelectCombo)
             {
                 int selectedId = m_mixSelectCombo.getSelectedId();
-                
-                if (selectedId == 1) 
+
+                if (selectedId == 1)
                 {
                     // "Create New Mix" selected - enable name editor
                     m_nameEditor.setEnabled(true);
                     m_nameEditor.setText(generateDefaultMixName(), false);
                     m_nameEditor.selectAll();
                     m_okButton.setButtonText("Create");
-                    
+
                     // Set focus to name editor
                     m_nameEditor.grabKeyboardFocus();
                 }
@@ -352,7 +348,7 @@ namespace jucyaudio
                 }
             }
         }
-        
+
         juce::String CreateMixDialogComponent::generateDefaultMixName()
         {
             auto now = std::time(nullptr);

@@ -35,9 +35,15 @@ namespace jucyaudio::ui
                 return;
             }
             
-            // Create new instance
+            // Create new instance but apply look and feel FIRST
             auto* dialog = new Derived(std::forward<Args>(args)...);
             setCurrentInstance(dialog);
+            
+            // Apply the look and feel from the parent component BEFORE any children are created
+            if (centreAroundComponent)
+            {
+                dialog->setLookAndFeel(&centreAroundComponent->getLookAndFeel());
+            }
             
             // Configure common settings
             dialog->setAlwaysOnTop(true);

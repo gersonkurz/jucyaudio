@@ -1,8 +1,8 @@
 #pragma once
-#include <juce_gui_basics/juce_gui_basics.h>
-#include <juce_graphics/juce_graphics.h>
 #include <Database/Includes/WorkingSetInfo.h>
 #include <functional>
+#include <juce_graphics/juce_graphics.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
 
 namespace jucyaudio
@@ -11,8 +11,8 @@ namespace jucyaudio
     {
         using OnCreateWorkingSetCallback = std::function<void(const juce::String &, WorkingSetId)>;
 
-        class CreateWorkingSetDialogComponent : public juce::Component, 
-                                                public juce::Button::Listener, 
+        class CreateWorkingSetDialogComponent : public juce::Component,
+                                                public juce::Button::Listener,
                                                 public juce::TextEditor::Listener,
                                                 public juce::ComboBox::Listener
         {
@@ -28,8 +28,10 @@ namespace jucyaudio
 
             // TextEditor::Listener
             void textEditorReturnKeyPressed(juce::TextEditor &editor) override;
-            void textEditorFocusLost([[maybe_unused]] juce::TextEditor &editor) override {} // Required by TextEditor::Listener
-            
+            void textEditorFocusLost([[maybe_unused]] juce::TextEditor &editor) override
+            {
+            } // Required by TextEditor::Listener
+
             // ComboBox::Listener
             void comboBoxChanged(juce::ComboBox *comboBox) override;
 
@@ -53,7 +55,7 @@ namespace jucyaudio
             juce::TextButton m_okButton;
             juce::TextButton m_cancelButton;
             juce::LookAndFeel_V4 m_lookAndFeel; // Custom LookAndFeel instance
-            
+
             // Store available working sets
             std::vector<database::WorkingSetInfo> m_availableWorkingSets;
 

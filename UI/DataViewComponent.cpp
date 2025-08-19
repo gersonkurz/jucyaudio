@@ -12,7 +12,7 @@ namespace jucyaudio
     {
         using namespace database; // For convenience, we use the database namespace here
 
-        ScalableTableListBox::ScalableTableListBox(const juce::String& name, juce::TableListBoxModel* model)
+        ScalableTableListBox::ScalableTableListBox(const juce::String &name, juce::TableListBoxModel *model)
             : juce::TableListBox(name, model)
         {
             // Add the overlay as a child component
@@ -35,25 +35,25 @@ namespace jucyaudio
                 TableListBox::mouseWheelMove(event, wheel);
             }
         }
-        
-        bool ScalableTableListBox::isInterestedInDragSource(const SourceDetails& dragSourceDetails)
+
+        bool ScalableTableListBox::isInterestedInDragSource(const SourceDetails &dragSourceDetails)
         {
             // Check if this is our mix track drag
             return dragSourceDetails.description.toString().startsWith("MixTrackDrag:");
         }
-        
-        void ScalableTableListBox::itemDragEnter(const SourceDetails& dragSourceDetails)
+
+        void ScalableTableListBox::itemDragEnter(const SourceDetails &dragSourceDetails)
         {
             spdlog::info("ScalableTableListBox::itemDragEnter");
             m_dropTargetRow = -1;
             m_dropOverlay.clearDropPosition();
         }
-        
-        void ScalableTableListBox::itemDragMove(const SourceDetails& dragSourceDetails)
+
+        void ScalableTableListBox::itemDragMove(const SourceDetails &dragSourceDetails)
         {
             auto pos = dragSourceDetails.localPosition.toInt();
             auto row = getRowContainingPosition(pos.x, pos.y);
-            
+
             if (row >= 0)
             {
                 // Determine if we're in the top or bottom half of the row
@@ -61,11 +61,11 @@ namespace jucyaudio
                 auto rowHeight = getRowHeight();
                 auto relativeY = pos.y - rowPos.getY();
                 m_insertAbove = relativeY < rowHeight / 2;
-                
+
                 // Check if the position changed
                 bool positionChanged = (row != m_dropTargetRow);
                 bool sideChanged = false;
-                
+
                 if (row == m_dropTargetRow)
                 {
                     // Same row, check if we switched from above to below or vice versa
@@ -73,7 +73,7 @@ namespace jucyaudio
                     sideChanged = (newInsertAbove != m_insertAbove);
                     m_insertAbove = newInsertAbove;
                 }
-                
+
                 if (positionChanged || sideChanged)
                 {
                     m_dropTargetRow = row;
@@ -82,18 +82,18 @@ namespace jucyaudio
                 }
             }
         }
-        
-        void ScalableTableListBox::itemDragExit(const SourceDetails& dragSourceDetails)
+
+        void ScalableTableListBox::itemDragExit(const SourceDetails &dragSourceDetails)
         {
             spdlog::info("ScalableTableListBox::itemDragExit");
             m_dropTargetRow = -1;
             m_dropOverlay.clearDropPosition();
         }
-        
-        void ScalableTableListBox::itemDropped(const SourceDetails& dragSourceDetails)
+
+        void ScalableTableListBox::itemDropped(const SourceDetails &dragSourceDetails)
         {
             spdlog::info("ScalableTableListBox::itemDropped at row {}", m_dropTargetRow);
-            
+
             if (m_dropTargetRow >= 0)
             {
                 // Extract the source row from the drag description
@@ -104,20 +104,20 @@ namespace jucyaudio
                     auto rowsString = desc.substring(13);
                     juce::StringArray rowStrings = juce::StringArray::fromTokens(rowsString, ",", "");
                     std::vector<int> sourceRows;
-                    
-                    for (const auto& rowStr : rowStrings)
+
+                    for (const auto &rowStr : rowStrings)
                     {
                         sourceRows.push_back(rowStr.getIntValue());
                     }
-                    
+
                     auto targetRow = m_dropTargetRow;
-                    
+
                     // Adjust target position based on insert position
                     if (!m_insertAbove)
                     {
                         targetRow++;
                     }
-                    
+
                     // If dropping after any source position, we need to adjust
                     // Count how many source rows are before the target
                     int sourceRowsBeforeTarget = 0;
@@ -129,27 +129,26 @@ namespace jucyaudio
                         }
                     }
                     targetRow -= sourceRowsBeforeTarget;
-                    
+
                     spdlog::info("Dropping {} rows at position {}", sourceRows.size(), targetRow);
-                    
+
                     // Notify the parent DataViewComponent about the drop
-                    if (auto* dataView = findParentComponentOfClass<DataViewComponent>())
+                    if (auto *dataView = findParentComponentOfClass<DataViewComponent>())
                     {
                         dataView->handleTracksReorder(sourceRows, targetRow);
                     }
                 }
             }
-            
+
             m_dropTargetRow = -1;
             m_dropOverlay.clearDropPosition();
         }
-        
+
         void ScalableTableListBox::resized()
         {
             TableListBox::resized();
             m_dropOverlay.setBounds(getLocalBounds());
         }
-
 
         DataViewComponent::DataViewComponent(MainComponent &mainComponent)
             : m_tableListBox{juce::String{}, this},
@@ -160,7 +159,7 @@ namespace jucyaudio
             m_tableListBox.setOutlineThickness(1);
             m_tableListBox.setHeaderHeight(30);
             m_tableListBox.setMultipleSelectionEnabled(true);
-            
+
             // Enable mouse events for drag detection
             m_tableListBox.setInterceptsMouseClicks(true, true);
             m_tableListBox.setMouseClickGrabsKeyboardFocus(true);
@@ -231,7 +230,6 @@ namespace jucyaudio
             const int scaledHeaderHeight = static_cast<int>(baseHeaderHeight * m_fontScale);
             m_tableListBox.setHeaderHeight(scaledHeaderHeight);
         }
-        
 
         void DataViewComponent::setCurrentNode(INavigationNode *node, bool refresh)
         {
@@ -401,8 +399,8 @@ namespace jucyaudio
 
         void DataViewComponent::paintCell(juce::Graphics &g, int rowNumber, int columnId, int width, int height, bool rowIsSelected)
         {
-            //const auto start{std::chrono::high_resolution_clock::now()};
-            // columns are 1-based in the TableListBoxModel, so we need to adjust
+            // const auto start{std::chrono::high_resolution_clock::now()};
+            //  columns are 1-based in the TableListBoxModel, so we need to adjust
             const int dataColumnIndex = columnId - 1;
 
             // it must be a column index in our lookup table
@@ -422,14 +420,14 @@ namespace jucyaudio
                 // Use the PopupMenu's highlighted text color for selected items
                 const auto textColor = lf.findColour(juce::PopupMenu::highlightedTextColourId);
                 g.setColour(textColor);
-                //spdlog::info("DataViewComponent::paintCell - Selected text color: #{}", textColor.toDisplayString(true).toStdString());
+                // spdlog::info("DataViewComponent::paintCell - Selected text color: #{}", textColor.toDisplayString(true).toStdString());
             }
             else
             {
                 // Use the ListBox's standard text color for non-selected items
                 const auto textColor = lf.findColour(juce::ListBox::textColourId);
                 g.setColour(textColor);
-                //spdlog::info("DataViewComponent::paintCell - Non-selected text color: #{}", textColor.toDisplayString(true).toStdString());
+                // spdlog::info("DataViewComponent::paintCell - Non-selected text color: #{}", textColor.toDisplayString(true).toStdString());
             }
 
             juce::Justification justification = juce::Justification::centredLeft;
@@ -443,10 +441,10 @@ namespace jucyaudio
             const float baseFontSize = 14.0f;
             g.setFont(juce::Font{juce::FontOptions{}.withHeight(baseFontSize * m_fontScale)});
             g.drawText(textToDisplay, 2, 0, width - 4, height, justification, true);
-            //const auto end{std::chrono::high_resolution_clock::now()};
-            // const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
-            // if (duration.count() > 100)
-            //     spdlog::info("DataViewComponent::paintCell for row {} took {} us", rowNumber, duration.count());
+            // const auto end{std::chrono::high_resolution_clock::now()};
+            //  const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
+            //  if (duration.count() > 100)
+            //      spdlog::info("DataViewComponent::paintCell for row {} took {} us", rowNumber, duration.count());
         }
 
         void DataViewComponent::sortOrderChanged(int newSortColumnId, bool isForwards)
@@ -480,9 +478,8 @@ namespace jucyaudio
 
         void DataViewComponent::cellClicked(int rowNumber, [[maybe_unused]] int columnId, const juce::MouseEvent &e)
         {
-            spdlog::info("DataViewComponent::cellClicked - row: {}, column: {}, position: ({}, {})", 
-                        rowNumber, columnId, e.position.x, e.position.y);
-            
+            spdlog::info("DataViewComponent::cellClicked - row: {}, column: {}, position: ({}, {})", rowNumber, columnId, e.position.x, e.position.y);
+
             if (e.mods.isRightButtonDown())
             {
                 const auto &availableActions{m_currentNode->getRowActions(static_cast<RowIndex_t>(rowNumber))};
@@ -521,21 +518,20 @@ namespace jucyaudio
             }
         }
 
-        juce::var DataViewComponent::getDragSourceDescription(const juce::SparseSet<int>& selectedRows)
+        juce::var DataViewComponent::getDragSourceDescription(const juce::SparseSet<int> &selectedRows)
         {
-            spdlog::info("DataViewComponent::getDragSourceDescription called with {} selected rows", 
-                        selectedRows.size());
-            
+            spdlog::info("DataViewComponent::getDragSourceDescription called with {} selected rows", selectedRows.size());
+
             // Check if we're in the right context for drag & drop
             bool inMixView = m_mainComponent.isTrackEditorInMixView();
             spdlog::info("isTrackEditorInMixView returned: {}", inMixView);
-            
+
             if (!inMixView)
             {
                 spdlog::info("Not in mix track editor view, returning empty drag description");
                 return {};
             }
-            
+
             // Create a description containing all selected rows
             if (selectedRows.size() > 0)
             {
@@ -544,63 +540,62 @@ namespace jucyaudio
                 {
                     rowStrings.add(juce::String(selectedRows[i]));
                 }
-                
+
                 auto description = juce::String("MixTrackDrag:") + rowStrings.joinIntoString(",");
                 spdlog::info("Creating drag description: {}", description.toStdString());
                 return description;
             }
-            
+
             return {};
         }
-        
+
         void DataViewComponent::handleTrackReorder(int sourceRow, int targetRow)
         {
             handleTracksReorder({sourceRow}, targetRow);
         }
-        
-        void DataViewComponent::handleTracksReorder(const std::vector<int>& sourceRows, int targetRow)
+
+        void DataViewComponent::handleTracksReorder(const std::vector<int> &sourceRows, int targetRow)
         {
-            spdlog::info("DataViewComponent::handleTracksReorder - moving {} rows to position {}", 
-                         sourceRows.size(), targetRow);
-            
+            spdlog::info("DataViewComponent::handleTracksReorder - moving {} rows to position {}", sourceRows.size(), targetRow);
+
             // Check if we have a current node and if it's a MixNode
             if (!m_currentNode)
             {
                 spdlog::error("No current node set");
                 return;
             }
-            
+
             // Try to cast to MixNode
-            if (auto* mixNode = dynamic_cast<MixNode*>(m_currentNode))
+            if (auto *mixNode = dynamic_cast<MixNode *>(m_currentNode))
             {
                 // Get the MixProjectLoader
-                auto& mixProjectLoader = const_cast<audio::MixProjectLoader&>(mixNode->getMixProjectLoader());
-                
+                auto &mixProjectLoader = const_cast<audio::MixProjectLoader &>(mixNode->getMixProjectLoader());
+
                 // Create track move pairs for all selected tracks
                 std::vector<std::pair<TrackId, int>> trackMoves;
-                
+
                 for (int sourceRow : sourceRows)
                 {
-                    const auto* trackInfo = mixNode->getTrackInfoForRow(sourceRow);
+                    const auto *trackInfo = mixNode->getTrackInfoForRow(sourceRow);
                     if (!trackInfo)
                     {
                         spdlog::error("Failed to get track info for row {}", sourceRow);
                         return;
                     }
-                    
+
                     // All tracks go to the same target position
                     trackMoves.emplace_back(trackInfo->trackId, targetRow);
                 }
-                
+
                 if (mixProjectLoader.reorderTracks(trackMoves))
                 {
                     spdlog::info("Tracks reorder successful, saving to database");
-                    
+
                     // Save the changes to the database
                     if (mixProjectLoader.saveMix(theTrackLibrary.getMixManager()))
                     {
                         spdlog::info("Mix saved successfully");
-                        
+
                         // Refresh the view to show the new order
                         m_currentNode->refreshCache(true);
                         refreshView();

@@ -1,11 +1,11 @@
 // CreateWorkingSetDialogComponent.cpp
-#include <UI/CreateWorkingSetDialogComponent.h>
 #include <Database/TrackLibrary.h>
+#include <UI/CreateWorkingSetDialogComponent.h>
+#include <UI/MainComponent.h>
 #include <ctime>
 #include <iomanip>
-#include <sstream>
 #include <spdlog/spdlog.h>
-#include <UI/MainComponent.h>
+#include <sstream>
 
 namespace jucyaudio
 {
@@ -24,7 +24,7 @@ namespace jucyaudio
               m_cancelButton{"Cancel"}
         {
             theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
-            setSize(400, 240);  // Increased height for the combo box
+            setSize(400, 240); // Increased height for the combo box
 
             // Title label
             addAndMakeVisible(m_titleLabel);
@@ -36,25 +36,25 @@ namespace jucyaudio
             const juce::String countText = std::format("Create working set from {:L} tracks?", m_trackCount);
             m_countLabel.setText(countText, juce::dontSendNotification);
             m_countLabel.setJustificationType(juce::Justification::centred);
-            
+
             // Working set selection combo box
             addAndMakeVisible(m_wsSelectLabel);
             addAndMakeVisible(m_wsSelectCombo);
             m_wsSelectCombo.addListener(this);
-            
+
             // Load existing working sets
             m_availableWorkingSets = database::theTrackLibrary.getWorkingSetManager().getWorkingSets({});
-            
+
             // Add empty option for "Create New Working Set"
             m_wsSelectCombo.addItem("<Create New Working Set>", 1);
             m_wsSelectCombo.addSeparator();
-            
+
             // Add existing working sets
             for (size_t i = 0; i < m_availableWorkingSets.size(); ++i)
             {
                 m_wsSelectCombo.addItem(m_availableWorkingSets[i].name, static_cast<int>(i + 2));
             }
-            
+
             // Select "Create New Working Set" by default
             m_wsSelectCombo.setSelectedId(1);
 
@@ -104,13 +104,13 @@ namespace jucyaudio
             // Count message
             m_countLabel.setBounds(area.removeFromTop(25));
             area.removeFromTop(15); // spacing
-            
+
             // Working set selection row
             auto wsSelectRow = area.removeFromTop(25);
             m_wsSelectLabel.setBounds(wsSelectRow.removeFromLeft(60));
             wsSelectRow.removeFromLeft(10); // spacing
             m_wsSelectCombo.setBounds(wsSelectRow);
-            
+
             area.removeFromTop(10); // spacing
 
             // Name input row
@@ -157,20 +157,20 @@ namespace jucyaudio
             }
             return juce::Component::keyPressed(key);
         }
-        
+
         void CreateWorkingSetDialogComponent::comboBoxChanged(juce::ComboBox *comboBox)
         {
             if (comboBox == &m_wsSelectCombo)
             {
                 int selectedId = m_wsSelectCombo.getSelectedId();
-                
+
                 if (selectedId == 1)
                 {
                     // "Create New Working Set" selected - enable name editor
                     m_nameEditor.setEnabled(true);
                     m_nameLabel.setText("Name:", juce::dontSendNotification);
                     m_okButton.setButtonText("OK");
-                    
+
                     // Restore default name
                     m_nameEditor.setText(generateDefaultName(), false);
                     m_nameEditor.selectAll();
@@ -181,7 +181,7 @@ namespace jucyaudio
                     m_nameEditor.setEnabled(false);
                     m_nameLabel.setText("Append to:", juce::dontSendNotification);
                     m_okButton.setButtonText("Append");
-                    
+
                     // Show selected working set name in the disabled editor
                     int wsIndex = selectedId - 2;
                     if (wsIndex >= 0 && wsIndex < static_cast<int>(m_availableWorkingSets.size()))
@@ -195,15 +195,14 @@ namespace jucyaudio
         void CreateWorkingSetDialogComponent::handleOk()
         {
             int selectedId = m_wsSelectCombo.getSelectedId();
-            
+
             if (selectedId == 1)
             {
                 // Create new working set
                 juce::String name = m_nameEditor.getText().trim();
                 if (name.isEmpty())
                 {
-                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, 
-                        "Invalid Name", "Please enter a name for the working set.");
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Invalid Name", "Please enter a name for the working set.");
                     m_nameEditor.grabKeyboardFocus();
                     return;
                 }
@@ -222,10 +221,9 @@ namespace jucyaudio
                 {
                     WorkingSetId targetWsId = m_availableWorkingSets[wsIndex].id;
                     juce::String wsName = m_availableWorkingSets[wsIndex].name;
-                    
-                    spdlog::info("Appending {} tracks to existing working set '{}' (ID: {})", 
-                                m_trackCount, wsName.toStdString(), targetWsId);
-                    
+
+                    spdlog::info("Appending {} tracks to existing working set '{}' (ID: {})", m_trackCount, wsName.toStdString(), targetWsId);
+
                     // Call the callback with the existing name and ID
                     if (m_onOkCallback)
                     {

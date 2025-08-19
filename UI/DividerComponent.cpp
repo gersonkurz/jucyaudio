@@ -44,11 +44,11 @@ namespace jucyaudio
             {
                 baseColour = baseColour.brighter(0.3f);
             }
-            g.fillAll(baseColour); 
+            g.fillAll(baseColour);
         }
 
         // Mouse interaction methods - Stubs for Step 1, will be implemented in Step 2
-        void DividerComponent::mouseEnter([[maybe_unused]] const juce::MouseEvent& event)
+        void DividerComponent::mouseEnter([[maybe_unused]] const juce::MouseEvent &event)
         {
             // Cursor is already set in constructor. Repaint if paint() depends on isMouseOver().
             // repaint(); // If paint changes on hover
@@ -106,7 +106,6 @@ namespace jucyaudio
                 // Or, this could be a "commit" point if mouseDrag was only provisional.
             }
         }
-        
 
     } // namespace ui
 } // namespace jucyaudio

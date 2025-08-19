@@ -1,10 +1,9 @@
 #pragma once
 
 #include <Database/Includes/INavigationNode.h> // For INavigationNode and DataColumn
-#include <juce_gui_basics/juce_gui_basics.h>
+#include <UI/Settings.h>                       // Assuming this brings in DataViewColumnSection, TypedValueVector
 #include <juce_graphics/juce_graphics.h>
-#include <UI/Settings.h> // Assuming this brings in DataViewColumnSection, TypedValueVector
-
+#include <juce_gui_basics/juce_gui_basics.h>
 
 namespace jucyaudio
 {
@@ -17,8 +16,7 @@ namespace jucyaudio
             // Callback when OK is pressed, signals if changes were made that require UI refresh
             using ColumnsConfiguredCallback = std::function<void(bool changesMade)>;
 
-            ColumnConfigurationDialogComponent(
-                const juce::String &viewName,                                                   // E.g., "Library View Columns", for title and context
+            ColumnConfigurationDialogComponent(const juce::String &viewName,                    // E.g., "Library View Columns", for title and context
                 const std::vector<database::DataColumn> &allAvailableColumnsFromNode,           // All potential columns
                 config::TypedValueVector<config::DataViewColumnSection> &columnsConfigToModify, // Reference to the config setting
                 ColumnsConfiguredCallback onConfiguredCallback);

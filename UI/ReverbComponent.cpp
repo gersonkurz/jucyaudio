@@ -196,8 +196,8 @@ namespace jucyaudio::ui
     {
         g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
 
-        // Draw title
-        g.setColour(juce::Colours::white);
+        // Draw title using theme color
+        g.setColour(findColour(juce::Label::textColourId));
         g.setFont(20.0f);
         g.drawText("Master Reverb", getLocalBounds().removeFromTop(40), juce::Justification::centred);
     }
