@@ -1,6 +1,6 @@
 SetCompressor /SOLID LZMA 
 
-!define CURRENT_VERSION "0.5.0"
+!define CURRENT_VERSION "0.6.0"
 
 !include "MUI2.nsh"
 
@@ -9,8 +9,8 @@ XPStyle on
 
 Name "jucyaudio ${CURRENT_VERSION}" 
 OutFile "jucyaudio-${CURRENT_VERSION}-setup-x64.exe"
-InstallDir "$PROGRAMFILES64\NGBT\jucyaudio"
-InstallDirRegKey HKLM SOFTWARE\NGBT\jucyaudio "Install_Dir"
+InstallDir "$PROGRAMFILES64\jucyaudio"
+InstallDirRegKey HKLM SOFTWARE\jucyaudio "Install_Dir"
 
 !define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
 !define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
@@ -18,7 +18,7 @@ InstallDirRegKey HKLM SOFTWARE\NGBT\jucyaudio "Install_Dir"
 !define MUI_WELCOMEPAGE_TITLE "jucyaudio ${CURRENT_VERSION}"
 !define MUI_ABORTWARNING
 
-!define MUI_FINISHPAGE_RUN "$INSTDIR\ptraced.exe"
+!define MUI_FINISHPAGE_RUN "$INSTDIR\jucyaudio.exe"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "license.txt"
@@ -53,7 +53,7 @@ RequestExecutionLevel admin
 Section  "-Jucyaudio (required)"
     SetRegView 64
     SetOutPath $INSTDIR
-    File /R ..\..\..\out\build\x64-release\jucyaudio_artefacts\Release*
+    File /R ..\..\..\out\build\x64-release\jucyaudio_artefacts\Release\*
     
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\jucyaudio" "DisplayName" "jucyaudio (Remove only)"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\jucyaudio" "UninstallString" '"$INSTDIR\uninstall.exe"'
@@ -76,6 +76,6 @@ Section "Uninstall"
 	Delete $INSTDIR\uninstall.exe
     Delete "$DESKTOP\jucyaudio.lnk"
     RMDir /r "$SMPROGRAMS\jucyaudio"
-	ReadRegStr $INSTDIR HKLM SOFTWARE\NGBT\jucyaudio "Install_Dir"
+	ReadRegStr $INSTDIR HKLM SOFTWARE\jucyaudio "Install_Dir"
     RMDir /r "$INSTDIR\"
 SectionEnd

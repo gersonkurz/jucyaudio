@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(jucyaudio VERSION 0.5.0)
+project(jucyaudio VERSION 0.6.0)
 
 # Enable debug info in Release builds for better debugging while maintaining performance
 if(MSVC)
