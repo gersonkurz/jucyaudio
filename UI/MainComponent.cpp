@@ -2938,7 +2938,7 @@ namespace jucyaudio
                 public:
                     EqualizerWindow(MainComponent* parent)
                         : DocumentWindow("Equalizer",
-                                       juce::Desktop::getInstance().getDefaultLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId),
+                                       parent->getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId),
                                        DocumentWindow::closeButton),  // Only show close button
                           m_parent(parent)
                     {}
@@ -2955,6 +2955,9 @@ namespace jucyaudio
                 
                 // Create the window with only close button
                 m_equalizerWindow = std::make_unique<EqualizerWindow>(this);
+                
+                // Apply the current theme's look and feel
+                m_equalizerWindow->setLookAndFeel(&m_lookAndFeel);
                 
                 m_equalizerWindow->setContentOwned(equalizerComponent, true);
                 m_equalizerWindow->setResizable(true, false);
@@ -3097,7 +3100,7 @@ namespace jucyaudio
                 public:
                     ReverbWindow(MainComponent* parent)
                         : DocumentWindow("Reverb",
-                                       juce::Desktop::getInstance().getDefaultLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId),
+                                       parent->getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId),
                                        DocumentWindow::closeButton),  // Only show close button
                           m_parent(parent)
                     {}
@@ -3114,6 +3117,9 @@ namespace jucyaudio
                 
                 // Create the window with only close button
                 m_reverbWindow = std::make_unique<ReverbWindow>(this);
+                
+                // Apply the current theme's look and feel
+                m_reverbWindow->setLookAndFeel(&m_lookAndFeel);
                 
                 m_reverbWindow->setContentOwned(reverbComponent, true);
                 m_reverbWindow->setResizable(true, false);
