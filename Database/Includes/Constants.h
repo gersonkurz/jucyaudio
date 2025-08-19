@@ -230,6 +230,7 @@ namespace jucyaudio
             RemoveDuplicates,       ///< Remove duplicate tracks from the selection
             Settings,               ///< Open application settings dialog
             ScanFolders,            ///< Open folder scanning dialog 
+            ShowEqualizer,          ///< Show/hide the equalizer window
         };
 
         // @brief Collection of data actions available in the application

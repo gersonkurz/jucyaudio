@@ -3,6 +3,8 @@
 #include <Database/BackgroundTasks/BpmAnalysis.h>
 #include <Database/BackgroundTasks/BpmAnalysisTask.h>
 #include <Database/Includes/MixInfo.h>
+#include <Database/Sqlite/SqliteEQPresetManager.h>
+#include <Database/Sqlite/SqliteTrackDatabase.h>
 #include <Database/Nodes/AlbumsNode.h>
 #include <Database/Nodes/MixNode.h>
 #include <Database/Nodes/RootNode.h>
@@ -16,6 +18,7 @@
 #include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/EditMixMetaDataDialog.h>
 #include <UI/EditWorkingSetMetaDataDialog.h>
+#include <UI/EqualizerComponent.h>
 #include <UI/ExportMixDialog.h>
 #include <UI/ILongRunningTask.h>
 #include <UI/LibraryRootsComponent.h>
@@ -1278,6 +1281,9 @@ namespace jucyaudio
                 break;
             case DataAction::ScanFolders:
                 onShowScanDialog();
+                break;
+            case DataAction::ShowEqualizer:
+                toggleEqualizerWindow();
                 break;
             default:
                 spdlog::error("Unsupported action '{}' for node '{}' in MainComponent::handleNodeActionFromNavigationPanel. This should not happen.",
@@ -2841,6 +2847,170 @@ namespace jucyaudio
             {
                 m_statusPanel.getStatusBar().setInfoMessage("");
             }
+        }
+        
+        void MainComponent::showEqualizerWindow()
+        {
+            if (!m_equalizerWindow)
+            {
+                // Create the equalizer component
+                auto* equalizerComponent = new EqualizerComponent();
+                
+                // Get the preset manager from the database
+                auto* trackDb = theTrackLibrary.getTrackDatabase();
+                if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
+                {
+                    // Load presets
+                    auto presets = sqliteDb->getEQPresetManager().getAllPresets();
+                    equalizerComponent->loadPresets(presets);
+                }
+                else
+                {
+                    spdlog::error("Failed to get EQ preset manager - not a SqliteTrackDatabase");
+                }
+                
+                // Load current settings from playback controller
+                // For now, use flat settings
+                audio::model::EQSettings currentSettings;
+                equalizerComponent->loadSettings(currentSettings);
+                
+                // Set up callbacks
+                equalizerComponent->onSettingsChanged = [this](const audio::model::EQSettings& settings)
+                {
+                    if (m_equalizerEnabled)
+                    {
+                        m_playbackController.updateMasterEQ(settings);
+                    }
+                };
+                
+                equalizerComponent->onPresetSelected = [this, equalizerComponent](int64_t presetId)
+                {
+                    auto* trackDb = theTrackLibrary.getTrackDatabase();
+                    if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
+                    {
+                        if (auto preset = sqliteDb->getEQPresetManager().getPreset(presetId))
+                        {
+                            equalizerComponent->loadSettings(preset->settings);
+                            if (m_equalizerEnabled)
+                            {
+                                m_playbackController.updateMasterEQ(preset->settings);
+                            }
+                        }
+                    }
+                };
+                
+                equalizerComponent->onSavePreset = [equalizerComponent](const juce::String& name, const audio::model::EQSettings& settings)
+                {
+                    auto* trackDb = theTrackLibrary.getTrackDatabase();
+                    if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
+                    {
+                        if (auto savedPreset = sqliteDb->getEQPresetManager().savePreset(name, settings))
+                        {
+                            // Reload presets
+                            auto presets = sqliteDb->getEQPresetManager().getAllPresets();
+                            equalizerComponent->loadPresets(presets);
+                        }
+                    }
+                };
+                
+                equalizerComponent->onDeletePreset = [equalizerComponent](int64_t presetId)
+                {
+                    auto* trackDb = theTrackLibrary.getTrackDatabase();
+                    if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
+                    {
+                        if (sqliteDb->getEQPresetManager().deletePreset(presetId))
+                        {
+                            // Reload presets
+                            auto presets = sqliteDb->getEQPresetManager().getAllPresets();
+                            equalizerComponent->loadPresets(presets);
+                        }
+                    }
+                };
+                
+                // Create a custom window class to handle close button
+                class EqualizerWindow : public juce::DocumentWindow
+                {
+                public:
+                    EqualizerWindow(MainComponent* parent)
+                        : DocumentWindow("Equalizer",
+                                       juce::Desktop::getInstance().getDefaultLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId),
+                                       DocumentWindow::closeButton),  // Only show close button
+                          m_parent(parent)
+                    {}
+                    
+                    void closeButtonPressed() override
+                    {
+                        if (m_parent)
+                            m_parent->hideEqualizerWindow();
+                    }
+                    
+                private:
+                    MainComponent* m_parent;
+                };
+                
+                // Create the window with only close button
+                m_equalizerWindow = std::make_unique<EqualizerWindow>(this);
+                
+                m_equalizerWindow->setContentOwned(equalizerComponent, true);
+                m_equalizerWindow->setResizable(true, false);
+                m_equalizerWindow->centreWithSize(800, 600);
+                m_equalizerWindow->setVisible(true);
+                m_equalizerWindow->toFront(true);
+                m_equalizerWindow->setWantsKeyboardFocus(true);
+                m_equalizerWindow->addToDesktop();
+            }
+            else
+            {
+                m_equalizerWindow->setVisible(true);
+                m_equalizerWindow->toFront(true);
+            }
+        }
+        
+        void MainComponent::hideEqualizerWindow()
+        {
+            if (m_equalizerWindow)
+            {
+                m_equalizerWindow->setVisible(false);
+            }
+        }
+        
+        void MainComponent::toggleEqualizerWindow()
+        {
+            if (m_equalizerWindow && m_equalizerWindow->isVisible())
+            {
+                hideEqualizerWindow();
+            }
+            else
+            {
+                showEqualizerWindow();
+            }
+        }
+        
+        void MainComponent::toggleEqualizerEnabled()
+        {
+            m_equalizerEnabled = !m_equalizerEnabled;
+            
+            // Get current EQ settings and update bypass state
+            audio::model::EQSettings settings;
+            if (m_equalizerWindow)
+            {
+                if (auto* content = m_equalizerWindow->getContentComponent())
+                {
+                    if (auto* eqComp = dynamic_cast<EqualizerComponent*>(content))
+                    {
+                        settings = eqComp->getCurrentSettings();
+                    }
+                }
+            }
+            
+            // Override the isActive flag based on our enabled state
+            settings.isActive = m_equalizerEnabled;
+            m_playbackController.updateMasterEQ(settings);
+            
+            // Update status bar
+            m_statusPanel.getStatusBar().setInfoMessage(
+                m_equalizerEnabled ? "Equalizer enabled" : "Equalizer bypassed"
+            );
         }
 
     } // namespace ui

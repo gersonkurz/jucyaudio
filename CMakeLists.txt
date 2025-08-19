@@ -350,6 +350,7 @@ target_sources(jucyaudio PRIVATE
     UI/NavigationPanelComponent.cpp
     UI/PlaybackController.cpp
     UI/EnhancedPlayerComponent.cpp
+    UI/EqualizerComponent.cpp
     UI/LibraryRootsComponent.cpp
     UI/ColumnConfiguratorDialog.h
     UI/DynamicColumnManager.h
@@ -367,6 +368,7 @@ target_sources(jucyaudio PRIVATE
     UI/NavigationPanelComponent.h
     UI/PlaybackController.h
     UI/EnhancedPlayerComponent.h
+    UI/EqualizerComponent.h
     UI/LibraryRootsComponent.h
     UI/ThemeManager.cpp
     UI/ThemeManager.h
@@ -442,6 +444,7 @@ juce_add_binary_data(jucyaudio_assets
         Assets/edit_workingset_metadata.svg
         Assets/settings.svg
         Assets/scan_folders.svg
+        Assets/equalizer.svg
 )
 
 # Platform-specific library linking

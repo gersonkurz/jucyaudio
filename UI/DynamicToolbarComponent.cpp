@@ -40,10 +40,11 @@ namespace jucyaudio
                 DataAction::RemoveDuplicates
             };
             
-            // Create special always-visible buttons (Settings, ScanFolders)
+            // Create special always-visible buttons (Settings, ScanFolders, ShowEqualizer)
             const DataAction alwaysVisibleActions[] = {
                 DataAction::Settings,
-                DataAction::ScanFolders
+                DataAction::ScanFolders,
+                DataAction::ShowEqualizer
             };
 
             for (const auto action : allActions)

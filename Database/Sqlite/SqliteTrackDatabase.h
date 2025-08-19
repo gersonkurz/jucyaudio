@@ -13,6 +13,7 @@
 #include <Database/Sqlite/SqliteMarkerManager.h>
 #include <Database/Sqlite/SqliteMixMarkerManager.h>
 #include <Database/Sqlite/SqliteUndoManager.h>
+#include <Database/Sqlite/SqliteEQPresetManager.h>
 #include <Database/Sqlite/sqlite3.h>
 #include <filesystem>
 #include <optional>
@@ -111,6 +112,10 @@ namespace jucyaudio
 
             IAlbumManager &getAlbumManager() override;
             const IAlbumManager &getAlbumManager() const override;
+            
+            // EQ Preset Manager (not in interface, specific to SqliteTrackDatabase)
+            database::sqlite::SqliteEQPresetManager& getEQPresetManager() { return m_eqPresetManager; }
+            const database::sqlite::SqliteEQPresetManager& getEQPresetManager() const { return m_eqPresetManager; }
 
             DbResult updateTrackTags(TrackId trackId, const std::vector<TagId>& tagIds) override;
             std::vector<TagId> getTrackTags(TrackId trackId) const override;
@@ -137,6 +142,7 @@ namespace jucyaudio
             mutable SqliteUndoManager m_undoManager; // Undo manager instance
             mutable SqliteMixManagerWithUndo m_mixManagerWithUndo;
             mutable SqliteAlbumManager m_albumManager; // Album manager instance
+            mutable sqlite::SqliteEQPresetManager m_eqPresetManager; // EQ preset manager instance
             std::filesystem::path m_databaseFilePath; // Store the path
             mutable std::string m_lastErrorMessage;   // For getLastError()
 

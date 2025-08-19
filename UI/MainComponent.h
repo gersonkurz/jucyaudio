@@ -130,6 +130,12 @@ namespace jucyaudio
             void onEditWorkingSetMetadata(INavigationNode *node);
             void onEditMixMetadata(INavigationNode *node);
             void onShowInFolder(RowIndex_t rowIndex);
+            
+            // Equalizer management
+            void showEqualizerWindow();
+            void hideEqualizerWindow();
+            void toggleEqualizerWindow();
+            void toggleEqualizerEnabled();
 
             audio::AudioLibrary m_audioLibrary;
             juce::ApplicationCommandManager &m_commandManager;
@@ -157,6 +163,10 @@ namespace jucyaudio
             
             // Unified timer system
             TimerMultiplexer m_timerMultiplexer;
+            
+            // Equalizer window (optional visibility)
+            std::unique_ptr<juce::DocumentWindow> m_equalizerWindow;
+            bool m_equalizerEnabled{true}; // Whether EQ processing is active (independent of window visibility)
 
             std::filesystem::path getThemesDirectoryPath() const;
 
@@ -176,6 +186,8 @@ namespace jucyaudio
                 cmd_Options_ConfigureColumns,
                 cmd_About,
                 cmd_Exit,
+                cmd_ShowEqualizer,
+                cmd_ToggleEqualizerEnabled,
             };
 
             struct DeleteContext final
