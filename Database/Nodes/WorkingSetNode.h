@@ -34,6 +34,9 @@ namespace jucyaudio
             // Override to persist sort order to database
             bool setSortOrder(const std::vector<SortOrderInfo> &sortOrders) override;
             std::vector<SortOrderInfo> getCurrentSortOrder() const override;
+            
+            // Node-Centric Command Architecture override
+            DeletionAnalysisResult analyzeDeletionRequest(const std::vector<RowIndex_t>& selectedRows) const override;
 
             static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
 

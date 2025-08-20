@@ -84,6 +84,50 @@ namespace jucyaudio
             return m_workingSetInfo.sortOrder;
         }
 
+        DeletionAnalysisResult WorkingSetNode::analyzeDeletionRequest(const std::vector<RowIndex_t>& selectedRows) const
+        {
+            DeletionAnalysisResult result;
+            
+            // For a WorkingSetNode, all deletable items are tracks
+            result.itemTypeSingular = "track";
+            result.itemTypePlural = "tracks";
+            
+            for (const auto& rowIndex : selectedRows)
+            {
+                // A WorkingSetNode only contains tracks, which are always deletable
+                const auto* trackInfo = getTrackInfoForRow(rowIndex);
+                if (trackInfo)
+                {
+                    result.deletableObjectIds.push_back(trackInfo->trackId);
+                    
+                    // If this is the only item being deleted, store its name
+                    if (selectedRows.size() == 1)
+                    {
+                        // Use artist - title format for track name
+                        if (!trackInfo->artist_name.empty() && !trackInfo->title.empty())
+                        {
+                            result.singleItemName = trackInfo->artist_name + " - " + trackInfo->title;
+                        }
+                        else if (!trackInfo->title.empty())
+                        {
+                            result.singleItemName = trackInfo->title;
+                        }
+                        else
+                        {
+                            result.singleItemName = trackInfo->filename;
+                        }
+                    }
+                }
+                else
+                {
+                    // This shouldn't happen in a WorkingSetNode, but handle it gracefully
+                    result.nonDeletableCount++;
+                }
+            }
+            
+            return result;
+        }
+
         void WorkingSetNode::createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children)
         {
             TrackQueryArgs args{};

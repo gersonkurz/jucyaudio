@@ -81,6 +81,7 @@ namespace jucyaudio
             // Node-Centric Command Architecture - Default implementations
             CellRenderInfo getCellRenderInfo(RowIndex_t rowIndex, ColumnIndex_t columnIndex) const override;
             RowActivationResult onRowActivated(RowIndex_t rowIndex) override;
+            DeletionAnalysisResult analyzeDeletionRequest(const std::vector<RowIndex_t>& selectedRows) const override;
             
         private:
             INavigationNode *const m_parent;

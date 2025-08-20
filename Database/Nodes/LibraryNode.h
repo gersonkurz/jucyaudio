@@ -29,14 +29,15 @@ namespace jucyaudio
         protected:
             bool prepareToShowData() override;
             bool setSortOrder(const std::vector<SortOrderInfo> &sortOrders) override;
-            
+            const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;
+
         private:
             
             // INavigationNode interface
             const std::vector<DataColumn> &getColumns() const override;
             bool getNumberOfRows(int64_t &outCount) const override;
             std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const override;
-            const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;
+            
             ObjectId getObjectIdForRow(RowIndex_t rowIndex) const override;
             void dataNoLongerShowing() override;
             const DataActions &getNodeActions() const override;

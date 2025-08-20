@@ -67,5 +67,55 @@ namespace jucyaudio
                 m_cachedRowCount = -1;
             }
         }
+        
+        DeletionAnalysisResult MixNode::analyzeDeletionRequest(const std::vector<RowIndex_t>& selectedRows) const
+        {
+            DeletionAnalysisResult result;
+            
+            // For a MixNode, all deletable items are tracks in the mix
+            result.itemTypeSingular = "track";
+            result.itemTypePlural = "tracks";
+            
+            // Ensure the mix is loaded
+            if (!m_bCacheInitialized)
+            {
+                refreshCache(false);
+            }
+            
+            for (const auto& rowIndex : selectedRows)
+            {
+                // A MixNode only contains tracks, which are always deletable
+                const auto* trackInfo = m_mixProjectLoader.getTrackInfoForRow(rowIndex);
+                if (trackInfo)
+                {
+                    result.deletableObjectIds.push_back(trackInfo->trackId);
+                    
+                    // If this is the only item being deleted, store its name
+                    if (selectedRows.size() == 1)
+                    {
+                        // Use artist - title format for track name
+                        if (!trackInfo->artist_name.empty() && !trackInfo->title.empty())
+                        {
+                            result.singleItemName = trackInfo->artist_name + " - " + trackInfo->title;
+                        }
+                        else if (!trackInfo->title.empty())
+                        {
+                            result.singleItemName = trackInfo->title;
+                        }
+                        else
+                        {
+                            result.singleItemName = trackInfo->filename;
+                        }
+                    }
+                }
+                else
+                {
+                    // This shouldn't happen in a MixNode, but handle it gracefully
+                    result.nonDeletableCount++;
+                }
+            }
+            
+            return result;
+        }
     } // namespace database
 } // namespace jucyaudio

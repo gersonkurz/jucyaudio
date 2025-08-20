@@ -202,23 +202,11 @@ namespace jucyaudio
                 cmd_ToggleEqualizerEnabled,
             };
 
-            struct DeleteContext final
-            {
-                // will have an added reference, so you must release it from the callback
-                INavigationNode *node{nullptr};
-                std::vector<RowIndex_t> selectedRows;
-            };
-
-            
             void onDataActionDelete(INavigationNode *selectedNode);
             
             void onDataActionDeleteConfirmed(INavigationNode *selectedNode, int result);
 
-            // &brief Called when you confirm the warning dialog in onDataActionRemoveTracks in order to proceed 
-            // to the actual removal of the tracks from the current node / mixes from the list of mixes etc.
-            void onRemoveRowsFromCurrentNode(DeleteContext *const dc, int result);
-
-            void onDataActionRemoveNamedObjects(std::string_view itemTypeSingular, std::string_view itemTypePlural);
+            void onDataActionRemoveNamedObjects();
             
             // @brief Called when you want to switch the mix-view to "Mix Editor" mode, that is: waveform view
             void onShowMixEditor();

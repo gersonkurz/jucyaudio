@@ -1312,7 +1312,7 @@ namespace jucyaudio
                 createMix();
                 break;
             case DataAction::Delete:
-                onDataActionRemoveNamedObjects("object", "objects");
+                onDataActionRemoveNamedObjects();
                 break;
             case DataAction::RunBpmAnalysis:
                 onRunBpmAnalysisForSelectedRows();
@@ -1324,7 +1324,7 @@ namespace jucyaudio
                 onShowInFolder(rowIndex);
                 break;
             case DataAction::RemoveTracks: // TODO: we should do this only from the data View
-                onDataActionRemoveNamedObjects("track", "tracks");
+                onDataActionRemoveNamedObjects();
                 break;
             case DataAction::None:
             default:
@@ -1609,70 +1609,7 @@ namespace jucyaudio
             // UI will update via timer in EnhancedPlayerComponent
         }
 
-        void MainComponent::onRemoveRowsFromCurrentNode(DeleteContext *const dc, int result)
-        {
-            if (result == 1) // User clicked "Delete"
-            {
-                // Stop playback before modifying the mix data to prevent audio thread issues
-                stopMixPlayback();
-
-                std::string statusMessage;
-
-                // Use the new locking mechanism in the playback controller
-                bool removalSuccess = false;
-                m_playbackController.withMixEngineLock(
-                    [&]()
-                    {
-                        removalSuccess = m_navigationTree.removeObjectsForRows(dc->node, dc->selectedRows);
-                        if (removalSuccess)
-                        {
-                            statusMessage = std::format("Removed tracks from {} {}", dc->node->m_refTypeNameForSingleObject, dc->node->getName());
-                        }
-                        else
-                        {
-                            statusMessage = std::format("Failed to remove tracks from {} {}", dc->node->m_refTypeNameForSingleObject, dc->node->getName());
-                        }
-                    });
-
-                // If deletion was successful, refresh all views to avoid stale data
-                if (removalSuccess)
-                {
-                    // The node needs to reload its data from the database
-                    // This will also clear the cached row count
-                    dc->node->refreshCache(true);
-
-                    // If we're in mix editor view and this is a mix node, reload the mix editor FIRST
-                    // This ensures the timeline doesn't have stale references when the data view refreshes
-                    if (m_currentMainView == MainViewType::MixEditor)
-                    {
-                        // Try to cast to MixNode to see if this is a mix
-                        if (auto *mixNode = dynamic_cast<database::MixNode *>(dc->node))
-                        {
-                            // Stop any playback to avoid accessing deleted tracks
-                            stopMixPlayback();
-
-                            // Reload the mix in the editor to sync both views
-                            m_mixEditorComponent.loadMix(mixNode);
-                        }
-                    }
-
-                    // Now refresh the data view to show the updated list
-                    // This must happen after the mix editor is updated to avoid race conditions
-                    m_dataViewComponent.refreshView();
-                }
-
-                m_statusPanel.getStatusBar().postMessage(statusMessage, false);
-                updateTrackCountStatus();
-                dc->node->release(REFCOUNT_DEBUG_ARGS);
-                delete dc;
-            }
-            else
-            {
-                m_statusPanel.getStatusBar().postMessage("Operation cancelled", false);
-            }
-        }
-
-        void MainComponent::onDataActionRemoveNamedObjects(std::string_view itemTypeSingular, std::string_view itemTypePlural)
+        void MainComponent::onDataActionRemoveNamedObjects()
         {
             if (!m_currentNode)
             {
@@ -1684,45 +1621,128 @@ namespace jucyaudio
                 m_statusPanel.getStatusBar().postMessage("Cannot delete rows in Mix Editor view.", true);
                 return;
             }
-            const auto dc{new DeleteContext{}};
-            dc->selectedRows = m_dataViewComponent.getSelectedRowIndices();
-            if (dc->selectedRows.empty())
+            
+            const auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
+            if (selectedRows.empty())
             {
-                m_statusPanel.getStatusBar().postMessage("No rows selected for deletion.", true);
+                m_statusPanel.getStatusBar().postMessage("No rows selected for removal.", true);
                 return;
             }
-            std::reverse(dc->selectedRows.begin(), dc->selectedRows.end());
+            
+            // Use the new analyzeDeletionRequest method to get structured deletion information
+            const auto analysisResult = m_currentNode->analyzeDeletionRequest(selectedRows);
+            
+            // Check if anything can actually be deleted
+            if (analysisResult.deletableObjectIds.empty())
+            {
+                if (analysisResult.nonDeletableCount > 0)
+                {
+                    m_statusPanel.getStatusBar().postMessage(
+                        std::format("The selected {} cannot be removed.", 
+                            analysisResult.nonDeletableCount == 1 ? analysisResult.itemTypeSingular : analysisResult.itemTypePlural), 
+                        true);
+                }
+                else
+                {
+                    m_statusPanel.getStatusBar().postMessage("Nothing to remove.", true);
+                }
+                return;
+            }
+            
+            // Build the warning message using the analysis result
             std::string warningMessage;
             std::string okButtonText;
-            const auto nrSelectedRows{dc->selectedRows.size()};
-            dc->node = m_currentNode;
-            dc->node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid during deletion
-            const auto nodeName{dc->node->getName()};
-
-            if (nrSelectedRows == 1)
+            const auto nodeName{m_currentNode->getName()};
+            const auto deletableCount = analysisResult.deletableObjectIds.size();
+            
+            if (deletableCount == 1 && !analysisResult.singleItemName.empty())
             {
-                const auto assumedTrackName{dc->node->getCellText(dc->selectedRows[0], 0)};
                 warningMessage = std::format(
-                    "Do you want to remove the {} {} from the {} {}?", itemTypeSingular, assumedTrackName, dc->node->m_refTypeNameForSingleObject, nodeName);
-                okButtonText = std::format("Remove {}", itemTypeSingular);
+                    "Do you want to remove the {} \"{}\" from the {} \"{}\"?", 
+                    analysisResult.itemTypeSingular, 
+                    analysisResult.singleItemName, 
+                    m_currentNode->m_refTypeNameForSingleObject, 
+                    nodeName);
+                okButtonText = std::format("Remove {}", analysisResult.itemTypeSingular);
             }
             else
             {
                 warningMessage = std::format(
-                    "Do you want to remove the {} {} from the {} {}?", nrSelectedRows, itemTypePlural, dc->node->m_refTypeNameForSingleObject, nodeName);
-                okButtonText = std::format("Remove {}", itemTypePlural);
+                    "Do you want to remove {} {} from the {} \"{}\"?", 
+                    deletableCount, 
+                    analysisResult.itemTypePlural, 
+                    m_currentNode->m_refTypeNameForSingleObject, 
+                    nodeName);
+                okButtonText = std::format("Remove {} {}", deletableCount, analysisResult.itemTypePlural);
+            }
+            
+            // Add note about non-deletable items if any
+            if (analysisResult.nonDeletableCount > 0)
+            {
+                warningMessage += std::format("\n\nNote: {} {} cannot be removed and will be skipped.",
+                    analysisResult.nonDeletableCount,
+                    analysisResult.nonDeletableCount == 1 ? "item" : "items");
             }
 
-            juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon, // Icon type
-                "Confirm Deletion",                                            // Window title
+            // Capture the node and the list of safe object IDs for the callback
+            m_currentNode->retain(REFCOUNT_DEBUG_ARGS); // Ensure node stays alive during async operation
+            
+            juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,
+                "Confirm Removal",
                 warningMessage,
                 okButtonText,
                 "Cancel",
-                nullptr, // TODO: use this window as parent instead
+                nullptr,
                 juce::ModalCallbackFunction::create(
-                    [this, dc](int result)
+                    [this, node = m_currentNode, analysisResult](int result)
                     {
-                        onRemoveRowsFromCurrentNode(dc, result);
+                        if (result == 1) // OK button clicked
+                        {
+                            // Stop playback before modifying data to prevent audio thread issues
+                            stopMixPlayback();
+                            
+                            bool removalSuccess = false;
+                            m_playbackController.withMixEngineLock(
+                                [&]()
+                                {
+                                    // Use the safe list of object IDs
+                                    removalSuccess = node->removeObjects(analysisResult.deletableObjectIds);
+                                });
+                            
+                            if (removalSuccess)
+                            {
+                                // Refresh the node's cache
+                                node->refreshCache(true);
+                                
+                                // If in mix editor view and this is a mix node, reload the mix editor
+                                if (m_currentMainView == MainViewType::MixEditor)
+                                {
+                                    if (auto *mixNode = dynamic_cast<database::MixNode *>(node))
+                                    {
+                                        m_mixEditorComponent.loadMix(mixNode);
+                                    }
+                                }
+                                
+                                // Refresh the data view
+                                m_dataViewComponent.refreshView();
+                                
+                                // Show success message
+                                const auto itemCount = analysisResult.deletableObjectIds.size();
+                                const auto itemType = itemCount == 1 ? analysisResult.itemTypeSingular : analysisResult.itemTypePlural;
+                                m_statusPanel.getStatusBar().postMessage(
+                                    std::format("Removed {} {} from {}", itemCount, itemType, node->getName()), 
+                                    false);
+                            }
+                            else
+                            {
+                                m_statusPanel.getStatusBar().postMessage(
+                                    std::format("Failed to remove items from {}", node->getName()), 
+                                    true);
+                            }
+                        }
+                        
+                        // Release the node reference we retained earlier
+                        node->release(REFCOUNT_DEBUG_ARGS);
                     }));
         }
 

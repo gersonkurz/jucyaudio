@@ -302,6 +302,30 @@ namespace jucyaudio
             // No additional data needed for PlayTrack - we have the row index
         };
 
+        /**
+         * @brief Result of analyzing a selection of rows for deletion
+         * @note Provides structured data for building confirmation dialogs and executing deletions
+         */
+        struct DeletionAnalysisResult
+        {
+            // The list of stable ObjectIds that are confirmed to be deletable
+            std::vector<ObjectId> deletableObjectIds;
+            
+            // --- Data for building the confirmation dialog ---
+            
+            // The singular form for the type of items being deleted, e.g., "track"
+            std::string itemTypeSingular;
+            
+            // The plural form for the type of items being deleted, e.g., "tracks"
+            std::string itemTypePlural;
+            
+            // If exactly one item is being deleted, this holds its name, e.g., "Highway to Hell"
+            std::string singleItemName;
+            
+            // The count of selected items that were determined to be non-deletable (e.g., ".." rows)
+            int nonDeletableCount = 0;
+        };
+
         // Simple status for operations, can be expanded
         enum class DbResultStatus
         {

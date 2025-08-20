@@ -286,6 +286,37 @@ namespace jucyaudio
                 .type = RowActivationResultType::NoAction
             };
         }
+        
+        DeletionAnalysisResult BaseNode::analyzeDeletionRequest(const std::vector<RowIndex_t>& selectedRows) const
+        {
+            DeletionAnalysisResult result;
+            
+            // Use the type names from the constructor
+            result.itemTypeSingular = std::string(m_refTypeNameForSingleObject);
+            result.itemTypePlural = std::string(m_refTypeNameForMultipleObjects);
+            
+            // Analyze each selected row
+            for (auto rowIndex : selectedRows) {
+                // Try to get an object ID for this row
+                const auto objectId = getObjectIdForRow(rowIndex);
+                
+                if (objectId != 0) {
+                    // Valid object ID - this row is deletable
+                    result.deletableObjectIds.push_back(objectId);
+                    
+                    // If exactly one item, get its name
+                    if (selectedRows.size() == 1) {
+                        // Try to get a meaningful name from the first column
+                        result.singleItemName = getCellText(rowIndex, 0);
+                    }
+                } else {
+                    // No valid object ID - this row is not deletable
+                    result.nonDeletableCount++;
+                }
+            }
+            
+            return result;
+        }
 
     } // namespace database
 } // namespace jucyaudio

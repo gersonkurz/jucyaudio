@@ -143,7 +143,6 @@ namespace jucyaudio
 
             virtual const TrackQueryArgs *getQueryArgs() const = 0;
 
-            virtual std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const = 0;
             virtual const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const = 0;
             virtual ObjectId getObjectIdForRow(RowIndex_t rowIndex) const = 0;
 
@@ -201,6 +200,20 @@ namespace jucyaudio
              * @note If returning a node pointer, it must be retained; caller must release
              */
             virtual RowActivationResult onRowActivated(RowIndex_t rowIndex) = 0;
+            
+            /**
+             * @brief Analyze a selection of rows for a deletion operation
+             * @param selectedRows The rows that the user wants to delete
+             * @return DeletionAnalysisResult containing deletable IDs and dialog information
+             * @note This is a "pre-flight check" before showing a confirmation dialog
+             */
+            virtual DeletionAnalysisResult analyzeDeletionRequest(const std::vector<RowIndex_t>& selectedRows) const = 0;
+
+
+
+        protected:
+            // TODO: move them away from here, they are not needed in the interface
+            virtual std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const = 0;
         };
 
         class EnsureNodeIsReleased final
