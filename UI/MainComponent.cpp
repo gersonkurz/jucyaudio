@@ -1069,7 +1069,7 @@ namespace jucyaudio
         }
 
         // --- Handler Method Stubs / Basic Logic ---
-        void MainComponent::handleNodeSelection(INavigationNode *selectedNode, bool forceDisplaySwitch) // selectedNode is retained by caller (NavPanel)
+        void MainComponent::handleNodeSelection(INavigationNode *selectedNode, bool forceDisplaySwitch, bool syncNavigationTree) // selectedNode is retained by caller (NavPanel)
         {
             const auto start{std::chrono::high_resolution_clock::now()};
             const auto currentViewType{m_currentMainView};
@@ -1093,6 +1093,13 @@ namespace jucyaudio
                     m_currentNode->release(REFCOUNT_DEBUG_ARGS);
                 }
                 m_currentNode = selectedNode; // Takes ownership of the retained selectedNode
+                
+                // Sync the navigation tree if requested (e.g., when navigating from data view)
+                if (syncNavigationTree && selectedNode)
+                {
+                    spdlog::info("Syncing navigation tree to node: {}", selectedNode->getName());
+                    m_navigationPanel.selectNode(selectedNode);
+                }
             }
 
             if (m_currentNode)
@@ -1337,11 +1344,20 @@ namespace jucyaudio
             if (!node)
                 return;
 
-            auto trackIds = node->getAllTrackIds();
-            if (trackIds.empty())
+            // Use the Node-Centric method to get all track IDs
+            const auto trackResult = node->getAllTrackInfosForOperation();
+            if (trackResult.trackInfos.empty())
             {
                 m_statusPanel.getStatusBar().postMessage("No tracks to analyze.", true);
                 return;
+            }
+            
+            // Extract just the track IDs
+            std::vector<TrackId> trackIds;
+            trackIds.reserve(trackResult.trackInfos.size());
+            for (const auto& trackInfo : trackResult.trackInfos)
+            {
+                trackIds.push_back(trackInfo.trackId);
             }
 
             auto *task = new background_tasks::BpmAnalysisTask(std::move(trackIds));
@@ -1962,7 +1978,16 @@ namespace jucyaudio
             else
             {
                 // Append to existing working set
-                auto trackIds = node->getAllTrackIds();
+                const auto trackResult = node->getAllTrackInfosForOperation();
+                
+                // Extract just the track IDs
+                std::vector<TrackId> trackIds;
+                trackIds.reserve(trackResult.trackInfos.size());
+                for (const auto& trackInfo : trackResult.trackInfos)
+                {
+                    trackIds.push_back(trackInfo.trackId);
+                }
+                
                 bool success = theTrackLibrary.getWorkingSetManager().addToWorkingSet(targetWsId, trackIds);
 
                 if (success)

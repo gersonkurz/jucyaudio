@@ -138,10 +138,6 @@
         <FILE id="Xt5q7L" name="MixesOverview.cpp" compile="1" resource="0"
               file="Database/Nodes/MixesOverview.cpp"/>
         <FILE id="MZGabv" name="MixesOverview.h" compile="0" resource="0" file="Database/Nodes/MixesOverview.h"/>
-        <FILE id="wZPccW" name="LogicalFolderNode.cpp" compile="1" resource="0"
-              file="Database/Nodes/LogicalFolderNode.cpp"/>
-        <FILE id="HLODeh" name="LogicalFolderNode.h" compile="0" resource="0"
-              file="Database/Nodes/LogicalFolderNode.h"/>
         <FILE id="cI1TLa" name="MixNode.cpp" compile="1" resource="0" file="Database/Nodes/MixNode.cpp"/>
         <FILE id="t1dkCl" name="MixNode.h" compile="0" resource="0" file="Database/Nodes/MixNode.h"/>
         <FILE id="YpFjGB" name="RootNode.cpp" compile="1" resource="0" file="Database/Nodes/RootNode.cpp"/>

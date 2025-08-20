@@ -319,8 +319,8 @@ namespace jucyaudio
             {
                 const auto end{std::chrono::high_resolution_clock::now()};
                 const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
-                if (duration.count() > 100)
-                    spdlog::info("DataViewComponent::getNumRows took {} us", duration.count());
+                //if (duration.count() > 100)
+                //    spdlog::info("DataViewComponent::getNumRows took {} us", duration.count());
                 return static_cast<int>(count);
             }
             return 0;
@@ -390,8 +390,8 @@ namespace jucyaudio
 
             // Use the new Node-Centric Command Architecture
             const auto &columnDef = m_currentDataColumns[dataColumnIndex];
-            const auto renderInfo = m_currentNode->getCellRenderInfo(rowNumber, columnDef.column->index);
-            
+                         const auto renderInfo = m_currentNode->getCellRenderInfo(rowNumber, columnDef.column->index);
+
             auto &lf = getLookAndFeel();
             
             // Set color based on render state and selection

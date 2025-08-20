@@ -163,12 +163,6 @@ namespace jucyaudio
             virtual bool setSearchTerms(const std::vector<std::string> &searchTerms) = 0;
             virtual std::vector<std::string> getCurrentSearchTerms() const = 0;
 
-            /// @brief Get all track IDs for the current node's query.
-            /// This method retrieves all track IDs that match the current filter, sort, and other query parameters for the node.
-            /// It is used for operations that need to act on the entire set of tracks represented by the node,
-            /// such as running a batch analysis.
-            /// @return A vector of TrackIds.
-            virtual std::vector<TrackId> getAllTrackIds() const = 0;
 
             /// @brief Get the working set ID associated with this node. Will be 0 for all non-working-sets
             virtual WorkingSetId getWorkingSetId() const = 0;
@@ -236,6 +230,7 @@ namespace jucyaudio
             virtual std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const = 0;
             virtual ObjectId getObjectIdForRow(RowIndex_t rowIndex) const = 0;
             virtual const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const = 0;
+            virtual std::vector<TrackId> getAllTrackIds() const = 0;
         };
 
         class EnsureNodeIsReleased final

@@ -1,5 +1,4 @@
 #include <Database/Nodes/LibraryNode.h>
-#include <Database/Nodes/LogicalFolderNode.h>
 #include <Database/Nodes/MixNode.h>
 #include <Database/Nodes/MixesOverview.h>
 #include <Database/Nodes/RootNode.h>

@@ -28,10 +28,31 @@ namespace jucyaudio
             // Override to check if this folder is online
             bool isOnline() const override;
 
-        private:
-            FolderId m_folderId;
-            mutable bool m_onlineStatusCached{false};
-            mutable bool m_isOnline{true};
+        // Override Node-Centric Command Architecture methods for folder navigation
+        CellRenderInfo getCellRenderInfo(RowIndex_t rowIndex, ColumnIndex_t columnIndex) const override;
+        RowActivationResult onRowActivated(RowIndex_t rowIndex) override;
+        
+        // Override to include folders in the row count
+        bool getNumberOfRows(int64_t &outCount) const override;
+        
+    protected:
+        // Override to handle folder rows
+        const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;
+        
+    private:
+        FolderId m_folderId;
+        mutable bool m_onlineStatusCached{false};
+        mutable bool m_isOnline{true};
+        
+        // Cached folder children for hierarchical display
+        mutable std::vector<FolderInfo> m_childFolders;
+        mutable bool m_childFoldersLoaded{false};
+        
+        // Helper to determine row type
+        enum class RowType { ParentFolder, ChildFolder, Track };
+        RowType getRowType(RowIndex_t rowIndex) const;
+        int64_t getChildFolderCount() const;
+        bool hasParent() const;
         };
 
     } // namespace database

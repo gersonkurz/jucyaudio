@@ -387,7 +387,9 @@ namespace jucyaudio
                 for (int j = 0; j < currentItem->getNumSubItems(); ++j)
                 {
                     auto *subItem = dynamic_cast<NavTreeViewItem *>(currentItem->getSubItem(j));
-                    if (subItem && subItem->getNode() == targetChildNode)
+                    // Compare by unique ID instead of pointer, since we might have different instances
+                    if (subItem && subItem->getNode() && 
+                        subItem->getNode()->getUniqueId() == targetChildNode->getUniqueId())
                     {
                         nextItem = subItem;
                         break;

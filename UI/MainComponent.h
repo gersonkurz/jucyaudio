@@ -75,13 +75,13 @@ namespace jucyaudio
             void stopMixPlayback();
             
             // Node-Centric Command Architecture support
-            void navigateToNode(INavigationNode *node) { handleNodeSelection(node, true); }
+            void navigateToNode(INavigationNode *node) { handleNodeSelection(node, false, true); }
             void playDataRow(RowIndex_t rowIndex);
             bool navigateToFolder(FolderId folderId);
 
         private:
             friend class MainPlaybackAndStatusComponent;
-            void handleNodeSelection(INavigationNode *selectedNode, bool forceDisplaySwitch = false);
+            void handleNodeSelection(INavigationNode *selectedNode, bool forceDisplaySwitch = false, bool syncNavigationTree = false);
             void handleFilterChange(const juce::String &newFilterText);
             void handleNodeActionFromToolbar(DataAction action);
             void handleNodeActionFromNavigationPanel(INavigationNode *selectedNode, DataAction action);

@@ -313,7 +313,6 @@ target_sources(jucyaudio PRIVATE
     Database/Nodes/LibraryNode.cpp
     Database/Nodes/AlbumsNode.cpp
     Database/Nodes/MixesOverview.cpp
-    Database/Nodes/LogicalFolderNode.cpp
     Database/Nodes/VirtualFolderNode.cpp
     Database/Nodes/VirtualFoldersOverview.cpp
     Database/Nodes/MixNode.cpp
@@ -328,7 +327,6 @@ target_sources(jucyaudio PRIVATE
     Database/Nodes/VirtualFolderNode.h
     Database/Nodes/VirtualFoldersOverview.h
     Database/Nodes/MixesOverview.h
-    Database/Nodes/LogicalFolderNode.h
     Database/Nodes/MixNode.h
     Database/Nodes/RootNode.h
     Database/Nodes/TypedContainerNode.h
