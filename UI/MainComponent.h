@@ -73,6 +73,11 @@ namespace jucyaudio
             
             // @brief Stop mix playback if currently playing
             void stopMixPlayback();
+            
+            // Node-Centric Command Architecture support
+            void navigateToNode(INavigationNode *node) { handleNodeSelection(node, true); }
+            void playDataRow(RowIndex_t rowIndex);
+            bool navigateToFolder(FolderId folderId);
 
         private:
             friend class MainPlaybackAndStatusComponent;
@@ -81,8 +86,6 @@ namespace jucyaudio
             void handleNodeActionFromToolbar(DataAction action);
             void handleNodeActionFromNavigationPanel(INavigationNode *selectedNode, DataAction action);
             void handleRowActionFromDataView(RowIndex_t rowIndex, DataAction action, const juce::Point<int> &screenPos);
-
-            void playDataRow(RowIndex_t rowIndex);
             void createMix();
             
             // Media key actions
@@ -101,7 +104,6 @@ namespace jucyaudio
             void seekToTimelinePosition(double timePosition);
             void removeTrackFromMix(TrackId trackId);
             void updateTrackCountStatus();
-            bool navigateToFolder(FolderId folderId);
 
             // menu management --------------------------------
             bool onShowScanDialog();

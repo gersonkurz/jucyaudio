@@ -277,8 +277,7 @@ namespace jucyaudio
             const auto* trackInfo = getTrackInfoForRow(rowIndex);
             if (trackInfo) {
                 return {
-                    .type = RowActivationResultType::PlayTrack,
-                    .trackToPlay = trackInfo->trackId
+                    .type = RowActivationResultType::PlayTrack
                 };
             }
             

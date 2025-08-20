@@ -411,23 +411,36 @@ namespace jucyaudio
                 return;
             }
 
-            // this is important: we match OUR column to the underlying model column
+            // Use the new Node-Centric Command Architecture
             const auto &columnDef = m_currentDataColumns[dataColumnIndex];
-            const auto textToDisplay = m_currentNode->getCellText(rowNumber, columnDef.column->index);
+            const auto renderInfo = m_currentNode->getCellRenderInfo(rowNumber, columnDef.column->index);
+            
             auto &lf = getLookAndFeel();
+            
+            // Set color based on render state and selection
             if (rowIsSelected)
             {
                 // Use the PopupMenu's highlighted text color for selected items
-                const auto textColor = lf.findColour(juce::PopupMenu::highlightedTextColourId);
-                g.setColour(textColor);
-                // spdlog::info("DataViewComponent::paintCell - Selected text color: #{}", textColor.toDisplayString(true).toStdString());
+                g.setColour(lf.findColour(juce::PopupMenu::highlightedTextColourId));
             }
             else
             {
-                // Use the ListBox's standard text color for non-selected items
-                const auto textColor = lf.findColour(juce::ListBox::textColourId);
-                g.setColour(textColor);
-                // spdlog::info("DataViewComponent::paintCell - Non-selected text color: #{}", textColor.toDisplayString(true).toStdString());
+                // Map RenderState to actual colors via theme
+                switch (renderInfo.state)
+                {
+                    case RenderState::Accent:
+                        g.setColour(juce::Colour(0xFFF96E00)); // Orange for important items
+                        break;
+                    case RenderState::Subdued:
+                        g.setColour(lf.findColour(juce::ListBox::textColourId).withAlpha(0.7f));
+                        break;
+                    case RenderState::Inactive:
+                        g.setColour(juce::Colours::grey);
+                        break;
+                    default: // RenderState::Normal
+                        g.setColour(lf.findColour(juce::ListBox::textColourId));
+                        break;
+                }
             }
 
             juce::Justification justification = juce::Justification::centredLeft;
@@ -437,10 +450,15 @@ namespace jucyaudio
             else if (columnDef.column->alignment == ColumnAlignment::Right)
                 justification = juce::Justification::centredRight;
 
-            // Use the scaled font size
+            // Use the scaled font size, with bold for accent items
             const float baseFontSize = 14.0f;
-            g.setFont(juce::Font{juce::FontOptions{}.withHeight(baseFontSize * m_fontScale)});
-            g.drawText(textToDisplay, 2, 0, width - 4, height, justification, true);
+            auto font = juce::Font{juce::FontOptions{}.withHeight(baseFontSize * m_fontScale)};
+            if (renderInfo.state == RenderState::Accent && !rowIsSelected)
+            {
+                font = font.boldened();
+            }
+            g.setFont(font);
+            g.drawText(renderInfo.text, 2, 0, width - 4, height, justification, true);
             // const auto end{std::chrono::high_resolution_clock::now()};
             //  const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
             //  if (duration.count() > 100)
@@ -491,30 +509,39 @@ namespace jucyaudio
             }
         }
 
-        void DataViewComponent::cellDoubleClicked(int rowNumber, [[maybe_unused]] int columnId, const juce::MouseEvent &e)
+        void DataViewComponent::cellDoubleClicked(int rowNumber, [[maybe_unused]] int columnId, [[maybe_unused]] const juce::MouseEvent &e)
         {
-            const auto &availableActions{m_currentNode->getRowActions(static_cast<RowIndex_t>(rowNumber))};
-            if (!availableActions.empty())
+            // Use the new Node-Centric Command Architecture
+            auto result = m_currentNode->onRowActivated(static_cast<RowIndex_t>(rowNumber));
+            
+            switch (result.type)
             {
-                DataAction actionToExecute = DataAction::None;
-                for (const auto &action : availableActions)
-                {
-                    if (action == DataAction::Play || action == DataAction::ShowDetails || action == DataAction::ShowInFolder)
+                case RowActivationResultType::NavigateToNode:
+                    if (result.newNode)
                     {
-                        actionToExecute = action;
-                        if (action == DataAction::Play || action == DataAction::ShowInFolder)
-                            break;
+                        // Tell MainComponent to navigate to the new node
+                        m_mainComponent.navigateToNode(result.newNode);
+                        result.newNode->release(); // We own the reference, must release
                     }
-                }
-                if (actionToExecute == DataAction::None && !availableActions.empty())
-                {
-                    actionToExecute = availableActions[0];
-                }
-
-                if (actionToExecute != DataAction::None && m_onRowActionRequested)
-                {
-                    m_onRowActionRequested(static_cast<RowIndex_t>(rowNumber), actionToExecute, e.getScreenPosition());
-                }
+                    break;
+                    
+                case RowActivationResultType::NavigateToFolder:
+                    if (result.targetFolderId >= 0)
+                    {
+                        // Tell MainComponent to navigate to the folder
+                        m_mainComponent.navigateToFolder(result.targetFolderId);
+                    }
+                    break;
+                    
+                case RowActivationResultType::PlayTrack:
+                    // Just play the row using the existing method
+                    m_mainComponent.playDataRow(static_cast<RowIndex_t>(rowNumber));
+                    break;
+                    
+                case RowActivationResultType::NoAction:
+                default:
+                    // Nothing to do
+                    break;
             }
         }
 

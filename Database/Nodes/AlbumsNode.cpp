@@ -376,6 +376,26 @@ namespace jucyaudio
 
             return allTrackIds;
         }
+        
+        RowActivationResult AlbumsNode::onRowActivated(RowIndex_t rowIndex)
+        {
+            // Check if we have a valid album at this row
+            if (rowIndex >= 0 && rowIndex < static_cast<RowIndex_t>(m_albums.size()))
+            {
+                const auto& album = m_albums[rowIndex];
+                
+                // Navigate to the album's folder
+                return {
+                    .type = RowActivationResultType::NavigateToFolder,
+                    .targetFolderId = album.folderId
+                };
+            }
+            
+            // No action for invalid rows
+            return {
+                .type = RowActivationResultType::NoAction
+            };
+        }
 
     } // namespace database
 } // namespace jucyaudio

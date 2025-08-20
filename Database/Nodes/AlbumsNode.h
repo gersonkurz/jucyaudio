@@ -24,6 +24,9 @@ namespace jucyaudio
             bool prepareToShowData() override;
             bool setSortOrder(const std::vector<SortOrderInfo> &sortOrders) override;
             
+            // Node-Centric Command Architecture
+            RowActivationResult onRowActivated(RowIndex_t rowIndex) override;
+            
         private:
             // INavigationNode interface
             const std::vector<DataColumn> &getColumns() const override;

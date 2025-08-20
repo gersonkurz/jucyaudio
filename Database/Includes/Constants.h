@@ -281,6 +281,7 @@ namespace jucyaudio
         {
             NoAction,
             NavigateToNode,
+            NavigateToFolder,  // Navigate to a folder by ID (e.g., album folder)
             PlayTrack
         };
         
@@ -295,8 +296,10 @@ namespace jucyaudio
             // Ownership: Node returns a retained pointer; caller must release.
             INavigationNode* newNode = nullptr;
             
-            // Valid if type is PlayTrack.
-            std::optional<TrackId> trackToPlay;
+            // Valid if type is NavigateToFolder.
+            FolderId targetFolderId = -1;
+            
+            // No additional data needed for PlayTrack - we have the row index
         };
 
         // Simple status for operations, can be expanded
