@@ -19,6 +19,7 @@
 #pragma once
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -147,6 +148,9 @@ namespace jucyaudio
 
     namespace database
     {
+        // Forward declarations
+        class INavigationNode;
+        
         /**
          * @brief Normalization factor for volume calculations
          * @details Volume values are stored as integers multiplied by this factor
@@ -248,6 +252,52 @@ namespace jucyaudio
             std::string name; ///< Human-readable tag name for display
         };
 
+        // ===== Node-Centric Command Architecture Types =====
+        
+        /**
+         * @brief Semantic states for a row or cell. The UI theme maps these to actual styles.
+         */
+        enum class RenderState
+        {
+            Normal,     ///< Default text for standard items like track titles
+            Accent,     ///< Important information, such as a folder name or selected item
+            Subdued,    ///< Secondary information, like track count or file format
+            Inactive    ///< Offline or otherwise unavailable content
+        };
+        
+        /**
+         * @brief Information for rendering a cell in the data view
+         */
+        struct CellRenderInfo
+        {
+            std::string text;
+            RenderState state = RenderState::Normal;
+        };
+        
+        /**
+         * @brief Types of results from row activation
+         */
+        enum class RowActivationResultType
+        {
+            NoAction,
+            NavigateToNode,
+            PlayTrack
+        };
+        
+        /**
+         * @brief Result of a row activation event
+         */
+        struct RowActivationResult
+        {
+            RowActivationResultType type = RowActivationResultType::NoAction;
+            
+            // Valid if type is NavigateToNode.
+            // Ownership: Node returns a retained pointer; caller must release.
+            INavigationNode* newNode = nullptr;
+            
+            // Valid if type is PlayTrack.
+            std::optional<TrackId> trackToPlay;
+        };
 
         // Simple status for operations, can be expanded
         enum class DbResultStatus

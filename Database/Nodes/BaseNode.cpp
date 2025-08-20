@@ -1,4 +1,5 @@
 #include <Database/Nodes/BaseNode.h>
+#include <Database/Includes/TrackInfo.h>
 #include <cassert>
 #include <spdlog/spdlog.h>
 
@@ -257,6 +258,34 @@ namespace jucyaudio
         bool BaseNode::collapse()
         {
             return true;
+        }
+        
+        // Node-Centric Command Architecture - Default implementations
+        
+        CellRenderInfo BaseNode::getCellRenderInfo(RowIndex_t rowIndex, ColumnIndex_t columnIndex) const
+        {
+            // Default implementation: use legacy getCellText method
+            return {
+                .text = getCellText(rowIndex, columnIndex),
+                .state = RenderState::Normal
+            };
+        }
+        
+        RowActivationResult BaseNode::onRowActivated(RowIndex_t rowIndex)
+        {
+            // Default implementation: check if this row has a track
+            const auto* trackInfo = getTrackInfoForRow(rowIndex);
+            if (trackInfo) {
+                return {
+                    .type = RowActivationResultType::PlayTrack,
+                    .trackToPlay = trackInfo->trackId
+                };
+            }
+            
+            // No action for non-track rows by default
+            return {
+                .type = RowActivationResultType::NoAction
+            };
         }
 
     } // namespace database

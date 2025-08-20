@@ -77,6 +77,11 @@ namespace jucyaudio
             void rename(std::string_view newName) override;
             
             bool removeObjects(const std::vector<ObjectId> &objectIds) const override;
+            
+            // Node-Centric Command Architecture - Default implementations
+            CellRenderInfo getCellRenderInfo(RowIndex_t rowIndex, ColumnIndex_t columnIndex) const override;
+            RowActivationResult onRowActivated(RowIndex_t rowIndex) override;
+            
         private:
             INavigationNode *const m_parent;
             // no longer const to support renaming

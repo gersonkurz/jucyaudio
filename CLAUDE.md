@@ -103,13 +103,13 @@
 *   **Equalizer Implementation:**
     - 10-band parametric EQ with frequency/gain/Q controls
     - Preset management system (Factory + User presets)
-    - Database schema v17 for EQPresets table
+    - Database migration v17 adds EQPresets table
     - Real-time spectrum analyzer visualization
     - True bypass mode to avoid phase shifts
 *   **Reverb Implementation:**
     - Master reverb using JUCE's dsp::Reverb processor
     - Parameters: roomSize, damping, wetLevel, dryLevel, width, freezeMode
-    - Database schema v18 for ReverbPresets table
+    - Database migration v18 adds ReverbPresets table
     - Factory presets: Small Room, Large Hall, Cathedral, Plate, Spring, Ambient, Subtle
     - Processing chain: Audio → EQ → Reverb → Output
 *   **UI Integration:**
@@ -155,9 +155,9 @@
 
 ## Important Implementation Notes
 
-**Database Schema:** Currently at version 18. Latest additions: EQPresets (v17) and ReverbPresets (v18) tables for DSP effect presets.
+**Database Schema:** Migration code goes up to version 18 with EQPresets (v17) and ReverbPresets (v18) tables. Note: `latestSchemaVersion` currently set to 15 in code - will be consolidated into clean production schema for 1.0 release.
 
-**Refcounting:** The navigation system uses manual retain/release. Always match retains with releases!
+**Refcounting:** The navigation system uses manual retain/release with atomic reference counting. Works well - just remember to match retains with releases!
 
 **Mix Editor:** Uses shared `MixProjectLoader` between DataView and Timeline for consistency.
 
@@ -181,21 +181,60 @@
 ✅ Reverb with presets  
 ✅ Unified Timer System (60Hz base with multiplexing)  
 
-### High Priority:
+### Required for 1.0 Release:
 
-1. **Unified AI Enrichment Script (NEXT TASK):**
-   - Single Python tool for ALL metadata enrichment (see enrich.md Part 2)
-   - Album metadata (genres, moods, tags)
-   - WAV path intelligence
-   - Cost-controlled, batch processing
+#### High Priority:
 
-### Medium Priority:
-3. **In-App Tagging System:**
+1. **Prepare Database Release for Latest Version:**
+   - Roll all migration steps into a single clean schema
+   - Start with clean-slate database for production release
+   - Update latestSchemaVersion to match actual schema
+
+2. **Folder Navigation/Selection Support:**
+   - Enable folder-based navigation and selection in the UI
+
+3. **Fix Light-Theme Issues:**
+   - Address remaining visual/contrast issues in light theme mode
+
+#### Medium Priority:
+
+1. **Orange-Light / Orange-Dark Themes:**
+   - Design new orange-based themes
+   - Set one as default theme
+
+2. **Intelligent Duplicates Detection:**
+   - Improve existing working-set duplicate detection
+   - Add more sophisticated duplicate identification algorithms
+
+3. **i18n Support:**
+   - Implement internationalization framework
+   - Support UI translation to multiple languages
+
+4. **Scan Dialog Enhancement:**
+   - Add "I moved this folder" option for relocated library folders
+
+5. **In-App Tagging System:**
    - mp3tag-like functionality for editing track metadata
    - Store all edits in database only (never modify source files)
    - UI for batch editing and tag management
 
-4. **Nice to Have:** Implement linked movement of cue-points with attach points
+6. **Linked Cue-Points:**
+   - Implement linked movement of cue-points with attach points
+
+7. **Code Quality Review and Refactoring:**
+   - Comprehensive code review
+   - Refactor for maintainability and performance
+
+8. **MacOS: DMG Image Creation:**
+   - Create distributable DMG installer for macOS
+
+### Long-term (Version 2.0):
+
+1. **Unified AI Enrichment Script:**
+   - Single Python tool for ALL metadata enrichment (see enrich.md Part 2)
+   - Album metadata (genres, moods, tags)
+   - WAV path intelligence
+   - Cost-controlled, batch processing
 
 ---
 

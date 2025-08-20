@@ -183,6 +183,24 @@ namespace jucyaudio
             /// this to check actual availability.
             /// @return true if the content is available/online, false if offline/unavailable
             virtual bool isOnline() const { return true; }
+            
+            // ===== Node-Centric Command Architecture Methods =====
+            
+            /**
+             * @brief Get rendering information for a specific cell
+             * @param rowIndex The row index
+             * @param columnIndex The column index
+             * @return CellRenderInfo containing text and semantic state for rendering
+             */
+            virtual CellRenderInfo getCellRenderInfo(RowIndex_t rowIndex, ColumnIndex_t columnIndex) const = 0;
+            
+            /**
+             * @brief Handle row activation (e.g., double-click)
+             * @param rowIndex The row that was activated
+             * @return RowActivationResult indicating the intent (navigate, play, etc.)
+             * @note If returning a node pointer, it must be retained; caller must release
+             */
+            virtual RowActivationResult onRowActivated(RowIndex_t rowIndex) = 0;
         };
 
         class EnsureNodeIsReleased final
