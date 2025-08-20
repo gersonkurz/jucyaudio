@@ -1453,14 +1453,42 @@ namespace jucyaudio
 
         void MainComponent::onRunBpmAnalysisForSelectedRows()
         {
-            auto objectIds = m_dataViewComponent.getSelectedObjectIds();
-            if (objectIds.empty())
+            // Get selected rows
+            const auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
+            if (selectedRows.empty())
             {
-                m_statusPanel.getStatusBar().postMessage("No tracks selected for analysis.", true);
+                m_statusPanel.getStatusBar().postMessage("No rows selected for analysis.", true);
                 return;
             }
+            
+            // Use the new Node-Centric method to get track IDs
+            const auto trackResult = m_currentNode->getTrackIdsForOperation(selectedRows);
+            
+            if (trackResult.trackIds.empty())
+            {
+                if (trackResult.nonApplicableCount > 0)
+                {
+                    m_statusPanel.getStatusBar().postMessage(
+                        std::format("The selected items are not tracks and cannot be analyzed."), 
+                        true);
+                }
+                else
+                {
+                    m_statusPanel.getStatusBar().postMessage("No tracks selected for analysis.", true);
+                }
+                return;
+            }
+            
+            // Show a note if some selections were skipped
+            if (trackResult.nonApplicableCount > 0)
+            {
+                m_statusPanel.getStatusBar().postMessage(
+                    std::format("Analyzing {} tracks ({} non-track items skipped)", 
+                        trackResult.trackIds.size(), trackResult.nonApplicableCount), 
+                    false);
+            }
 
-            auto *task = new background_tasks::BpmAnalysisTask(std::move(objectIds));
+            auto *task = new background_tasks::BpmAnalysisTask(std::move(trackResult.trackIds));
             TaskDialog::launch("BPM Analysis",
                 task,
                 500,
@@ -1545,16 +1573,20 @@ namespace jucyaudio
                 m_statusPanel.getStatusBar().postMessage("No node selected for playback.", true);
                 return;
             }
-            const auto track{m_currentNode->getTrackInfoForRow(rowIndex)};
-            if (!track)
+            
+            // Use the Node-Centric method with a single row
+            const auto trackResult = m_currentNode->getTrackInfosForOperation({rowIndex});
+            if (trackResult.trackInfos.empty())
             {
                 m_statusPanel.getStatusBar().postMessage("No track info available for row: " + std::to_string(rowIndex), true);
                 return;
             }
+            
+            const auto& track = trackResult.trackInfos[0];
 
-            spdlog::info("playDataRow: trackId={}, filename={}, folderId={}", track->trackId, track->filename, track->folderId);
+            spdlog::info("playDataRow: trackId={}, filename={}, folderId={}", track.trackId, track.filename, track.folderId);
 
-            const auto trackPath{track->reconstructFullPath()};
+            const auto trackPath{track.reconstructFullPath()};
 
             spdlog::info("playDataRow: reconstructed path = '{}'", trackPath.string());
 
@@ -1579,32 +1611,32 @@ namespace jucyaudio
                         juce::AlertWindow::WarningIcon, "Playback Error", "Cannot play file:\n" + audioFile.getFullPathName());
 
                     // Update track status to bad_format if it wasn't already marked
-                    if (track->status != database::TrackStatus::BadFormat)
+                    if (track.status != database::TrackStatus::BadFormat)
                     {
-                        theTrackLibrary.getTrackDatabase()->updateTrackStatus(track->trackId, database::TrackStatus::BadFormat);
+                        theTrackLibrary.getTrackDatabase()->updateTrackStatus(track.trackId, database::TrackStatus::BadFormat);
                     }
                 }
                 else
                 {
                     // Update track status to ok if it wasn't already marked
-                    if (track->status != database::TrackStatus::Ok)
+                    if (track.status != database::TrackStatus::Ok)
                     {
-                        theTrackLibrary.getTrackDatabase()->updateTrackStatus(track->trackId, database::TrackStatus::Ok);
+                        theTrackLibrary.getTrackDatabase()->updateTrackStatus(track.trackId, database::TrackStatus::Ok);
                     }
 
                     // Load waveform when playback starts successfully
-                    m_enhancedPlayer.loadFile(audioFile, std::format("{} / {} / {}", track->artist_name, track->album_title, track->title), track->trackId);
+                    m_enhancedPlayer.loadFile(audioFile, std::format("{} / {} / {}", track.artist_name, track.album_title, track.title), track.trackId);
 
                     // Load markers for this track
-                    const auto markers = theTrackLibrary.getMarkerManager().getMarkersForTrack(track->trackId);
+                    const auto markers = theTrackLibrary.getMarkerManager().getMarkersForTrack(track.trackId);
                     m_enhancedPlayer.setMarkers(markers);
                 }
             }
             else
             {
-                m_statusPanel.getStatusBar().postMessage("Cannot play: " + std::to_string(track->trackId) + " (No path)", true);
+                m_statusPanel.getStatusBar().postMessage("Cannot play: " + std::to_string(track.trackId) + " (No path)", true);
                 juce::AlertWindow::showMessageBoxAsync(
-                    juce::AlertWindow::WarningIcon, "Playback Error", "Cannot find audio file for: " + std::to_string(track->trackId));
+                    juce::AlertWindow::WarningIcon, "Playback Error", "Cannot find audio file for: " + std::to_string(track.trackId));
             }
             // UI will update via timer in EnhancedPlayerComponent
         }
@@ -1760,9 +1792,38 @@ namespace jucyaudio
                 return false;
             }
 
-            if (m_dataViewComponent.getNumSelectedRows() > 0)
+            // Check if there are selected rows
+            const auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
+            if (!selectedRows.empty())
             {
-                return createWorkingSetFromTrackIds(m_dataViewComponent.getSelectedObjectIds());
+                // Use the new Node-Centric method to get track IDs
+                const auto trackResult = m_currentNode->getTrackIdsForOperation(selectedRows);
+                
+                if (trackResult.trackIds.empty())
+                {
+                    if (trackResult.nonApplicableCount > 0)
+                    {
+                        m_statusPanel.getStatusBar().postMessage(
+                            "The selected items are not tracks and cannot be added to a working set.", 
+                            true);
+                    }
+                    else
+                    {
+                        m_statusPanel.getStatusBar().postMessage("No tracks selected for working set.", true);
+                    }
+                    return false;
+                }
+                
+                // Show a note if some selections were skipped
+                if (trackResult.nonApplicableCount > 0)
+                {
+                    m_statusPanel.getStatusBar().postMessage(
+                        std::format("Creating working set from {} tracks ({} non-track items skipped)", 
+                            trackResult.trackIds.size(), trackResult.nonApplicableCount), 
+                        false);
+                }
+                
+                return createWorkingSetFromTrackIds(trackResult.trackIds);
             }
             else if (m_currentNode)
             {
@@ -1931,26 +1992,16 @@ namespace jucyaudio
             }
         }
 
-        // helper method
+        // helper method to get all tracks from a node using the Node-Centric architecture
         std::vector<TrackInfo> getAllTracks(const INavigationNode *node)
         {
-            std::vector<TrackInfo> result;
             if (node)
             {
-                int64_t nrRows = 0;
-                if (node->getNumberOfRows(nrRows))
-                {
-                    for (int64_t index = 0; index < nrRows; ++index)
-                    {
-                        const auto pti{node->getTrackInfoForRow(static_cast<RowIndex_t>(index))};
-                        if (pti)
-                        {
-                            result.push_back(*pti);
-                        }
-                    }
-                }
+                // Use the Node-Centric method to get all valid tracks
+                const auto trackResult = node->getAllTrackInfosForOperation();
+                return trackResult.trackInfos;
             }
-            return result;
+            return {};
         }
 
         void MainComponent::onExportMix(INavigationNode *selectedNode)
@@ -2367,7 +2418,45 @@ namespace jucyaudio
             // Capture the source working set ID from the current node (only if it's a WorkingSet)
             const WorkingSetId source_ws_id = m_currentNode->getWorkingSetId();
 
-            std::vector<TrackInfo> selectedTracks{m_dataViewComponent.getSelectedTracks()};
+            // Get selected rows to check what's selected
+            const auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
+            std::vector<TrackInfo> selectedTracks;
+            
+            if (!selectedRows.empty())
+            {
+                // Use the new Node-Centric method to get full track information
+                const auto trackResult = m_currentNode->getTrackInfosForOperation(selectedRows);
+                
+                if (trackResult.trackInfos.empty())
+                {
+                    // Only non-track items selected or no valid tracks
+                    if (trackResult.nonApplicableCount > 0)
+                    {
+                        m_statusPanel.getStatusBar().postMessage(
+                            "The selected items are not tracks and cannot be added to a mix.", 
+                            true);
+                    }
+                    else
+                    {
+                        m_statusPanel.getStatusBar().postMessage("No valid tracks selected.", true);
+                    }
+                    return;
+                }
+                
+                // Use the validated track information
+                selectedTracks = trackResult.trackInfos;
+                
+                // Show a note if some selections were skipped
+                if (trackResult.nonApplicableCount > 0)
+                {
+                    m_statusPanel.getStatusBar().postMessage(
+                        std::format("Creating mix from {} tracks ({} non-track items skipped)", 
+                            selectedTracks.size(), trackResult.nonApplicableCount), 
+                        false);
+                }
+            }
+            
+            // If we have 0 or 1 track selected, use all tracks from the node
             if (selectedTracks.size() <= 1)
             {
                 selectedTracks = getAllTracks(m_currentNode);

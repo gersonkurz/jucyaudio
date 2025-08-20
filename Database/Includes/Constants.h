@@ -325,6 +325,32 @@ namespace jucyaudio
             // The count of selected items that were determined to be non-deletable (e.g., ".." rows)
             int nonDeletableCount = 0;
         };
+        
+        /**
+         * @brief Result of a query for track IDs from a selection of rows
+         * @note Used for batch operations like BPM analysis, creating working sets, etc.
+         */
+        struct TrackIdsForOperationResult
+        {
+            // A validated list of TrackIds corresponding to the selectable tracks
+            std::vector<TrackId> trackIds;
+            
+            // The count of selected items that were not valid tracks (e.g., folder or ".." rows)
+            int nonApplicableCount = 0;
+        };
+        
+        /**
+         * @brief Result of a query for full track information from a selection of rows
+         * @note Used for operations that need complete track data like creating mixes
+         */
+        struct TrackInfosForOperationResult
+        {
+            // A validated list of TrackInfo objects for the selectable tracks
+            std::vector<TrackInfo> trackInfos;
+            
+            // The count of selected items that were not valid tracks (e.g., folder or ".." rows)
+            int nonApplicableCount = 0;
+        };
 
         // Simple status for operations, can be expanded
         enum class DbResultStatus

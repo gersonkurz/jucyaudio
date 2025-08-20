@@ -114,30 +114,7 @@ namespace jucyaudio
                 return m_tableListBox.getNumSelectedRows();
             }
 
-            std::vector<TrackInfo> getSelectedTracks() const; // Returns selected tracks from the table
             std::vector<RowIndex_t> getSelectedRowIndices() const;
-
-            std::vector<ObjectId> getUnderlyingObjectIds(const std::vector<RowIndex_t> &rowIndices) const
-            {
-                std::vector<ObjectId> result;
-                if (m_currentNode)
-                {
-                    for (const auto rowIndex : rowIndices)
-                    {
-                        const auto objectId{m_currentNode->getObjectIdForRow(rowIndex)};
-                        if (objectId)
-                        {
-                            result.push_back(objectId);
-                        }
-                    }
-                }
-                return result;
-            }
-
-            std::vector<ObjectId> getSelectedObjectIds() const
-            {
-                return getUnderlyingObjectIds(getSelectedRowIndices());
-            }
 
             // Handle track reordering from drag & drop
             void handleTrackReorder(int sourceRow, int targetRow);

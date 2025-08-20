@@ -35,8 +35,10 @@ namespace jucyaudio
             bool setSortOrder(const std::vector<SortOrderInfo> &sortOrders) override;
             std::vector<SortOrderInfo> getCurrentSortOrder() const override;
             
-            // Node-Centric Command Architecture override
+            // Node-Centric Command Architecture overrides
             DeletionAnalysisResult analyzeDeletionRequest(const std::vector<RowIndex_t>& selectedRows) const override;
+            TrackIdsForOperationResult getTrackIdsForOperation(const std::vector<RowIndex_t>& selectedRows) const override;
+            TrackInfosForOperationResult getTrackInfosForOperation(const std::vector<RowIndex_t>& selectedRows) const override;
 
             static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
 

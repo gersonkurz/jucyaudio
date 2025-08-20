@@ -71,13 +71,15 @@ namespace jucyaudio
         
         bool NavigationTree::removeObjectsForRows(INavigationNode *node, const std::vector<RowIndex_t> &rows)
         {
+            // NOTE: This method is deprecated - use node->analyzeDeletionRequest() and node->removeObjects() directly
             // what to do depends entirely on the context of the operation
             bool success = false;
-            //const auto nrSelectedRows{rows.size()};
-            std::string statusMessage;
-            const auto objectIds{m_dvc.getUnderlyingObjectIds(rows)};
+            
+            // Use the new Node-Centric method to get valid object IDs
+            const auto trackResult = node->getTrackIdsForOperation(rows);
+            std::vector<ObjectId> objectIds(trackResult.trackIds.begin(), trackResult.trackIds.end());
             success = node->removeObjects(objectIds);
-            statusMessage = success ? "Removed tracks from mix." : "Failed to remove tracks from mix.";
+            std::string statusMessage = success ? "Removed tracks from mix." : "Failed to remove tracks from mix.";
             if (success)
             {
                 // now we need to remove the rows from the nodes' cache

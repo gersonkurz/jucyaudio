@@ -143,9 +143,6 @@ namespace jucyaudio
 
             virtual const TrackQueryArgs *getQueryArgs() const = 0;
 
-            virtual const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const = 0;
-            virtual ObjectId getObjectIdForRow(RowIndex_t rowIndex) const = 0;
-
             /// @brief Prepare to show data for this node.
             /// This method is called when the node's data is about to be displayed.
             /// It can be used to perform any necessary setup or caching.
@@ -208,12 +205,37 @@ namespace jucyaudio
              * @note This is a "pre-flight check" before showing a confirmation dialog
              */
             virtual DeletionAnalysisResult analyzeDeletionRequest(const std::vector<RowIndex_t>& selectedRows) const = 0;
+            
+            /**
+             * @brief Safely extract all valid TrackIds from a selection of rows for a background operation
+             * @param selectedRows The rows that the user has selected
+             * @return TrackIdsForOperationResult containing valid track IDs and count of non-tracks
+             * @note This is the designated way to get a list of tracks for batch processing (BPM analysis, etc.)
+             */
+            virtual TrackIdsForOperationResult getTrackIdsForOperation(const std::vector<RowIndex_t>& selectedRows) const = 0;
+            
+            /**
+             * @brief Safely extract full TrackInfo objects from a selection of rows for operations needing complete data
+             * @param selectedRows The rows that the user has selected
+             * @return TrackInfosForOperationResult containing TrackInfo objects and count of non-tracks
+             * @note This is the designated way to get full track information for operations like creating mixes
+             */
+            virtual TrackInfosForOperationResult getTrackInfosForOperation(const std::vector<RowIndex_t>& selectedRows) const = 0;
+            
+            /**
+             * @brief Get all valid track information from this node
+             * @return TrackInfosForOperationResult containing all valid tracks in the node
+             * @note This is the designated way to get all tracks when no specific selection is made
+             */
+            virtual TrackInfosForOperationResult getAllTrackInfosForOperation() const = 0;
 
 
 
         protected:
-            // TODO: move them away from here, they are not needed in the interface
+            // These methods are implementation details, not part of the public interface
             virtual std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const = 0;
+            virtual ObjectId getObjectIdForRow(RowIndex_t rowIndex) const = 0;
+            virtual const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const = 0;
         };
 
         class EnsureNodeIsReleased final

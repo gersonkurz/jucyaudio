@@ -317,6 +317,73 @@ namespace jucyaudio
             
             return result;
         }
+        
+        TrackIdsForOperationResult BaseNode::getTrackIdsForOperation(const std::vector<RowIndex_t>& selectedRows) const
+        {
+            TrackIdsForOperationResult result;
+            
+            for (const auto& rowIndex : selectedRows)
+            {
+                // Use the OLD methods to simulate the new behavior
+                const auto* trackInfo = getTrackInfoForRow(rowIndex);
+                
+                if (trackInfo != nullptr && trackInfo->trackId > 0)
+                {
+                    result.trackIds.push_back(trackInfo->trackId);
+                }
+                else
+                {
+                    result.nonApplicableCount++;
+                }
+            }
+            
+            return result;
+        }
+        
+        TrackInfosForOperationResult BaseNode::getTrackInfosForOperation(const std::vector<RowIndex_t>& selectedRows) const
+        {
+            TrackInfosForOperationResult result;
+            
+            for (const auto& rowIndex : selectedRows)
+            {
+                // Use the OLD method to get full track info
+                const auto* trackInfo = getTrackInfoForRow(rowIndex);
+                
+                if (trackInfo != nullptr)
+                {
+                    result.trackInfos.push_back(*trackInfo);
+                }
+                else
+                {
+                    result.nonApplicableCount++;
+                }
+            }
+            
+            return result;
+        }
+        
+        TrackInfosForOperationResult BaseNode::getAllTrackInfosForOperation() const
+        {
+            TrackInfosForOperationResult result;
+            
+            int64_t numRows = 0;
+            if (getNumberOfRows(numRows))
+            {
+                for (int64_t i = 0; i < numRows; ++i)
+                {
+                    if (const auto* trackInfo = getTrackInfoForRow(static_cast<RowIndex_t>(i)))
+                    {
+                        result.trackInfos.push_back(*trackInfo);
+                    }
+                    else
+                    {
+                        result.nonApplicableCount++;
+                    }
+                }
+            }
+            
+            return result;
+        }
 
     } // namespace database
 } // namespace jucyaudio

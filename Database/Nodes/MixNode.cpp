@@ -117,5 +117,61 @@ namespace jucyaudio
             
             return result;
         }
+        
+        TrackIdsForOperationResult MixNode::getTrackIdsForOperation(const std::vector<RowIndex_t>& selectedRows) const
+        {
+            TrackIdsForOperationResult result;
+            
+            // Ensure the mix is loaded
+            if (!m_bCacheInitialized)
+            {
+                refreshCache(false);
+            }
+            
+            // A MixNode only contains tracks, all of which are valid for operations
+            for (const auto& rowIndex : selectedRows)
+            {
+                const auto* trackInfo = m_mixProjectLoader.getTrackInfoForRow(rowIndex);
+                if (trackInfo && trackInfo->trackId > 0)
+                {
+                    result.trackIds.push_back(trackInfo->trackId);
+                }
+                else
+                {
+                    // This shouldn't happen in a MixNode, but handle it gracefully
+                    result.nonApplicableCount++;
+                }
+            }
+            
+            return result;
+        }
+        
+        TrackInfosForOperationResult MixNode::getTrackInfosForOperation(const std::vector<RowIndex_t>& selectedRows) const
+        {
+            TrackInfosForOperationResult result;
+            
+            // Ensure the mix is loaded
+            if (!m_bCacheInitialized)
+            {
+                refreshCache(false);
+            }
+            
+            // A MixNode only contains tracks, all of which are valid for operations
+            for (const auto& rowIndex : selectedRows)
+            {
+                const auto* trackInfo = m_mixProjectLoader.getTrackInfoForRow(rowIndex);
+                if (trackInfo)
+                {
+                    result.trackInfos.push_back(*trackInfo);
+                }
+                else
+                {
+                    // This shouldn't happen in a MixNode, but handle it gracefully
+                    result.nonApplicableCount++;
+                }
+            }
+            
+            return result;
+        }
     } // namespace database
 } // namespace jucyaudio

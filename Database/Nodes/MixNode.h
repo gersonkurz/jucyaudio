@@ -39,8 +39,10 @@ namespace jucyaudio
                 return m_mixProjectLoader;
             }
             
-            // Node-Centric Command Architecture override
+            // Node-Centric Command Architecture overrides
             DeletionAnalysisResult analyzeDeletionRequest(const std::vector<RowIndex_t>& selectedRows) const override;
+            TrackIdsForOperationResult getTrackIdsForOperation(const std::vector<RowIndex_t>& selectedRows) const override;
+            TrackInfosForOperationResult getTrackInfosForOperation(const std::vector<RowIndex_t>& selectedRows) const override;
 
         private:
             const DataActions &getNodeActions() const override;

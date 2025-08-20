@@ -345,29 +345,6 @@ namespace jucyaudio
             return result;
         }
 
-        std::vector<TrackInfo> DataViewComponent::getSelectedTracks() const
-        {
-            std::vector<TrackInfo> result;
-            if (m_currentNode)
-            {
-                const auto selectedRows = m_tableListBox.getSelectedRows();
-
-                for (int i = 0; i < selectedRows.getNumRanges(); ++i)
-                {
-                    const auto range = selectedRows.getRange(i);
-                    for (int row = range.getStart(); row < range.getEnd(); ++row)
-                    {
-                        const auto pti{m_currentNode->getTrackInfoForRow(static_cast<RowIndex_t>(row))};
-                        if (pti)
-                        {
-                            result.push_back(*pti);
-                        }
-                    }
-                }
-            }
-            return result;
-        }
-
         void DataViewComponent::paintRowBackground(
             juce::Graphics &g, int rowNumber, [[maybe_unused]] int width, [[maybe_unused]] int height, bool rowIsSelected)
         {
@@ -598,20 +575,29 @@ namespace jucyaudio
                 // Get the MixProjectLoader
                 auto &mixProjectLoader = const_cast<audio::MixProjectLoader &>(mixNode->getMixProjectLoader());
 
+                // Convert sourceRows to RowIndex_t vector for the Node-Centric method
+                std::vector<RowIndex_t> rowIndices;
+                rowIndices.reserve(sourceRows.size());
+                for (int row : sourceRows)
+                {
+                    rowIndices.push_back(static_cast<RowIndex_t>(row));
+                }
+                
+                // Use Node-Centric method to get track information
+                const auto trackResult = mixNode->getTrackInfosForOperation(rowIndices);
+                
+                if (trackResult.trackInfos.size() != sourceRows.size())
+                {
+                    spdlog::error("Failed to get track info for all rows");
+                    return;
+                }
+
                 // Create track move pairs for all selected tracks
                 std::vector<std::pair<TrackId, int>> trackMoves;
-
-                for (int sourceRow : sourceRows)
+                for (const auto& trackInfo : trackResult.trackInfos)
                 {
-                    const auto *trackInfo = mixNode->getTrackInfoForRow(sourceRow);
-                    if (!trackInfo)
-                    {
-                        spdlog::error("Failed to get track info for row {}", sourceRow);
-                        return;
-                    }
-
                     // All tracks go to the same target position
-                    trackMoves.emplace_back(trackInfo->trackId, targetRow);
+                    trackMoves.emplace_back(trackInfo.trackId, targetRow);
                 }
 
                 if (mixProjectLoader.reorderTracks(trackMoves))
