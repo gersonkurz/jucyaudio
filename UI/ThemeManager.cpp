@@ -1,5 +1,5 @@
-#include <UI/ThemeManager.h>
 #include <UI/CustomColourIds.h>
+#include <UI/ThemeManager.h>
 #include <spdlog/spdlog.h>
 #include <toml++/toml.h> // Include the parser implementation here
 
@@ -9,66 +9,57 @@ namespace jucyaudio
     {
         namespace
         {
-#define DECLARE_COLOUR_ID(name) {#name, juce::name},
-#define DECLARE_CUSTOM_COLOUR_ID(name) {#name, jucyaudio::ui::name},
-
-            const std::unordered_map<std::string, int> colourNameMap
-            {
-                DECLARE_COLOUR_ID(TreeView::backgroundColourId)
-                DECLARE_COLOUR_ID(TreeView::linesColourId)
-                DECLARE_COLOUR_ID(TreeView::dragAndDropIndicatorColourId)
-                DECLARE_COLOUR_ID(TreeView::selectedItemBackgroundColourId)
-                DECLARE_COLOUR_ID(TreeView::oddItemsColourId)
-                DECLARE_COLOUR_ID(TreeView::evenItemsColourId)
-                DECLARE_COLOUR_ID(Label::textColourId)
-                DECLARE_COLOUR_ID(Label::textWhenEditingColourId)
-                DECLARE_COLOUR_ID(Label::backgroundWhenEditingColourId)
-                DECLARE_COLOUR_ID(ComboBox::backgroundColourId)
-                DECLARE_COLOUR_ID(TextEditor::backgroundColourId)
-                DECLARE_COLOUR_ID(TextEditor::textColourId)
-                DECLARE_COLOUR_ID(TextEditor::outlineColourId)
-                DECLARE_COLOUR_ID(ToggleButton::textColourId)
-                
-                DECLARE_COLOUR_ID(TextButton::buttonColourId)
-                DECLARE_COLOUR_ID(TextButton::buttonOnColourId)
-                DECLARE_COLOUR_ID(TextButton::textColourOffId) 
-                DECLARE_COLOUR_ID(TextButton::textColourOnId)
-
-                DECLARE_COLOUR_ID(PopupMenu::backgroundColourId)
-                DECLARE_COLOUR_ID(PopupMenu::textColourId)
-                DECLARE_COLOUR_ID(PopupMenu::headerTextColourId)
-                DECLARE_COLOUR_ID(PopupMenu::highlightedBackgroundColourId)
-                DECLARE_COLOUR_ID(PopupMenu::highlightedTextColourId)
-
-                DECLARE_COLOUR_ID(ListBox::backgroundColourId)
-                DECLARE_COLOUR_ID(ListBox::outlineColourId)
-                DECLARE_COLOUR_ID(ListBox::textColourId)
-
-                DECLARE_COLOUR_ID(ResizableWindow::backgroundColourId)
-                
-                DECLARE_COLOUR_ID(TabbedComponent::backgroundColourId)
-                DECLARE_COLOUR_ID(TabbedComponent::outlineColourId)
-                DECLARE_COLOUR_ID(TabbedButtonBar::tabOutlineColourId)
-                DECLARE_COLOUR_ID(TabbedButtonBar::tabTextColourId)
-                DECLARE_COLOUR_ID(TabbedButtonBar::frontOutlineColourId)
-                DECLARE_COLOUR_ID(TabbedButtonBar::frontTextColourId)
-                
-                DECLARE_COLOUR_ID(Slider::thumbColourId)
-                DECLARE_COLOUR_ID(Slider::trackColourId)
-                DECLARE_COLOUR_ID(Slider::textBoxTextColourId)
-                DECLARE_COLOUR_ID(Slider::textBoxBackgroundColourId)
-                DECLARE_COLOUR_ID(Slider::textBoxOutlineColourId)
-                DECLARE_COLOUR_ID(ScrollBar::thumbColourId) // New
-                DECLARE_COLOUR_ID(ScrollBar::trackColourId) // New
-                DECLARE_COLOUR_ID(ProgressBar::backgroundColourId)
-                DECLARE_COLOUR_ID(ProgressBar::foregroundColourId)
-                
-                // Custom JucyAudio colour IDs
-                DECLARE_CUSTOM_COLOUR_ID(waveformColourId)
-                DECLARE_CUSTOM_COLOUR_ID(folderOnlineTextColourId)
-                DECLARE_CUSTOM_COLOUR_ID(folderOfflineTextColourId)
-                DECLARE_CUSTOM_COLOUR_ID(accentColourId)
+            std::unordered_map<std::string, std::unordered_set<int>> semanticColourMap{
+                {"accentColourId",
+                    {juce::ComboBox::backgroundColourId,
+                        juce::PopupMenu::highlightedBackgroundColourId,
+                        juce::TabbedButtonBar::frontOutlineColourId,
+                        juce::Slider::thumbColourId,
+                        juce::TextButton::buttonOnColourId,
+                        juce::TreeView::dragAndDropIndicatorColourId,
+                        juce::TreeView::selectedItemBackgroundColourId,
+                        juce::ProgressBar::foregroundColourId,
+                        juce::ScrollBar::thumbColourId}} // namespace ui
+                ,
             };
+
+            const std::unordered_map<std::string, int> colourNameMap{{"TreeView::backgroundColourId", juce::TreeView::backgroundColourId},
+                {"TreeView::linesColourId", juce::TreeView::linesColourId},
+                {"TreeView::oddItemsColourId", juce::TreeView::oddItemsColourId},
+                {"TreeView::evenItemsColourId", juce::TreeView::evenItemsColourId},
+                {"Label::textColourId", juce::Label::textColourId},
+                {"Label::textWhenEditingColourId", juce::Label::textWhenEditingColourId},
+                {"Label::backgroundWhenEditingColourId", juce::Label::backgroundWhenEditingColourId},
+                {"TextEditor::backgroundColourId", juce::TextEditor::backgroundColourId},
+                {"TextEditor::textColourId", juce::TextEditor::textColourId},
+                {"TextEditor::outlineColourId", juce::TextEditor::outlineColourId},
+                {"ToggleButton::textColourId", juce::ToggleButton::textColourId},
+                {"TextButton::buttonColourId", juce::TextButton::buttonColourId},
+                {"TextButton::textColourOffId", juce::TextButton::textColourOffId},
+                {"TextButton::textColourOnId", juce::TextButton::textColourOnId},
+                {"PopupMenu::backgroundColourId", juce::PopupMenu::backgroundColourId},
+                {"PopupMenu::textColourId", juce::PopupMenu::textColourId},
+                {"PopupMenu::headerTextColourId", juce::PopupMenu::headerTextColourId},
+                {"PopupMenu::highlightedTextColourId", juce::PopupMenu::highlightedTextColourId},
+                {"ListBox::backgroundColourId", juce::ListBox::backgroundColourId},
+                {"ListBox::outlineColourId", juce::ListBox::outlineColourId},
+                {"ListBox::textColourId", juce::ListBox::textColourId},
+                {"ResizableWindow::backgroundColourId", juce::ResizableWindow::backgroundColourId},
+                {"TabbedComponent::backgroundColourId", juce::TabbedComponent::backgroundColourId},
+                {"TabbedComponent::outlineColourId", juce::TabbedComponent::outlineColourId},
+                {"TabbedButtonBar::tabOutlineColourId", juce::TabbedButtonBar::tabOutlineColourId},
+                {"TabbedButtonBar::tabTextColourId", juce::TabbedButtonBar::tabTextColourId},
+                {"TabbedButtonBar::frontTextColourId", juce::TabbedButtonBar::frontTextColourId},
+                {"Slider::trackColourId", juce::Slider::trackColourId},
+                {"Slider::textBoxTextColourId", juce::Slider::textBoxTextColourId},
+                {"Slider::textBoxBackgroundColourId", juce::Slider::textBoxBackgroundColourId},
+                {"Slider::textBoxOutlineColourId", juce::Slider::textBoxOutlineColourId},
+                {"ScrollBar::trackColourId", juce::ScrollBar::trackColourId},
+                {"ProgressBar::backgroundColourId", juce::ProgressBar::backgroundColourId},
+                {"waveformColourId", jucyaudio::ui::waveformColourId},
+                {"folderOnlineTextColourId", jucyaudio::ui::folderOnlineTextColourId},
+                {"folderOfflineTextColourId", jucyaudio::ui::folderOfflineTextColourId},
+                {"accentColourId", jucyaudio::ui::accentColourId}};
         } // namespace
 
         std::optional<JucyTheme> ThemeManager::loadThemeFromFile(const std::filesystem::path &path)
@@ -86,6 +77,21 @@ namespace jucyaudio
                     for (const auto &[key, value] : *colors)
                     {
                         const std::string nameOfColour{key.str()};
+
+                        const auto semanticKey{semanticColourMap.find(nameOfColour)};
+                        if (semanticKey != semanticColourMap.end())
+                        {
+                            if (auto colorStr = value.value<std::string>())
+                            {
+                                // Parse the color string (e.g., "#RRGGBB")
+                                const auto decodedColour{juce::Colour::fromString(*colorStr)};
+                                spdlog::info("Decoded semantic {} to '#{}'", *colorStr, decodedColour.toString().toStdString());
+                                for (const auto idOfColour : semanticKey->second)
+                                {
+                                    theme.colours[idOfColour] = decodedColour;
+                                }
+                            }
+                        }
 
                         // Find the integer ColourId for this string key
                         const auto it = colourNameMap.find(nameOfColour);
@@ -111,7 +117,7 @@ namespace jucyaudio
             }
         }
 
-        void ThemeManager::initialize(const std::filesystem::path &themesFolderPath, const std::string& currentThemeName)
+        void ThemeManager::initialize(const std::filesystem::path &themesFolderPath, const std::string &currentThemeName)
         {
             m_availableThemes.clear();
             for (const auto &entry : std::filesystem::directory_iterator(themesFolderPath))
@@ -127,14 +133,29 @@ namespace jucyaudio
             m_currentThemeIndex = getThemeIndexByName(currentThemeName);
         }
 
-        std::string ThemeManager::applyTheme(juce::LookAndFeel_V4& lookAndFeel, size_t themeIndex, juce::Component* pComponent)
+        std::string ThemeManager::applyTheme(juce::LookAndFeel_V4 &lookAndFeel, size_t themeIndex, juce::Component *pComponent)
         {
             // TODO: rework logging here
             if (themeIndex < m_availableThemes.size())
             {
-                const auto& theme = m_availableThemes[themeIndex];
+                const auto &theme = m_availableThemes[themeIndex];
                 m_currentThemeIndex = themeIndex; // Update current theme index
-                //spdlog::info("Applying theme: {}", theme.name);
+                // spdlog::info("Applying theme: {}", theme.name);
+
+                // also apply semantic colours
+                for (const auto &[nameOfColour, setOfColourIds] : semanticColourMap)
+                {
+                    for (const auto intColourId : setOfColourIds)
+                    {
+                        const auto it = theme.colours.find(intColourId);
+                        if (it != theme.colours.end())
+                        {
+                            const auto colorToSet = it->second;
+                            lookAndFeel.setColour(intColourId, colorToSet);
+                            // spdlog::info("Set colour '{}' to '#{}'", nameOfColour, colorToSet.toString().toStdString());
+                        }
+                    }
+                }
 
                 for (const auto &[nameOfColour, intColourId] : colourNameMap)
                 {
@@ -143,10 +164,10 @@ namespace jucyaudio
                     {
                         const auto colorToSet = it->second;
                         lookAndFeel.setColour(intColourId, colorToSet);
-                        //spdlog::info("Set colour '{}' to '#{}'", nameOfColour, colorToSet.toString().toStdString());
+                        // spdlog::info("Set colour '{}' to '#{}'", nameOfColour, colorToSet.toString().toStdString());
                     }
                 }
-                if(pComponent)
+                if (pComponent)
                 {
                     pComponent->setLookAndFeel(&lookAndFeel);
                     // Force all child components to update their colors

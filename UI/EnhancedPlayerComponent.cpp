@@ -177,8 +177,10 @@ namespace jucyaudio
         void EnhancedPlayerComponent::loadButtonIcons()
         {
             const auto originalIconColour = juce::Colour(0xFFF96E00);  // Standardized orange in all SVGs
-            const auto accentColour = findColour(jucyaudio::ui::accentColourId);
-            
+
+            const bool isThemeLoaded = getLookAndFeel().isColourSpecified(jucyaudio::ui::accentColourId);
+            const auto accentColour = isThemeLoaded ? findColour(jucyaudio::ui::accentColourId) : originalIconColour;
+
             auto loadSvg = [&](const char *data, size_t size)
             {
                 auto drawable = juce::Drawable::createFromImageData(data, size);
@@ -248,7 +250,8 @@ namespace jucyaudio
         void EnhancedPlayerComponent::loadVolumeIcons()
         {
             const auto originalIconColour = juce::Colour(0xFFF96E00);  // Standardized orange in all SVGs
-            const auto accentColour = findColour(jucyaudio::ui::accentColourId);
+            const bool isThemeLoaded = getLookAndFeel().isColourSpecified(jucyaudio::ui::accentColourId);
+            const auto accentColour = isThemeLoaded ? findColour(jucyaudio::ui::accentColourId) : originalIconColour;
             
             auto loadSvg = [&](const char *data, size_t size)
             {

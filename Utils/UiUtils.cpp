@@ -106,12 +106,13 @@ namespace jucyaudio
         std::unique_ptr<juce::Drawable> dataActionToIcon(DataAction action, const juce::LookAndFeel* lookAndFeel)
         {
             const auto originalIconColour = juce::Colour(0xFFF96E00);  // Standardized orange in all SVGs
+            const bool isThemeLoaded = lookAndFeel->isColourSpecified(jucyaudio::ui::accentColourId);
             
             // Helper to load SVG from binary data and apply accent color
             auto loadSvg = [&](const char *data, size_t size) -> std::unique_ptr<juce::Drawable>
             {
                 auto drawable = juce::Drawable::createFromImageData(data, size);
-                if (drawable && lookAndFeel)
+                if (drawable && lookAndFeel && isThemeLoaded)
                 {
                     const auto accentColour = lookAndFeel->findColour(jucyaudio::ui::accentColourId);
                     if (accentColour != originalIconColour)
