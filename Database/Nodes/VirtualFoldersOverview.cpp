@@ -11,6 +11,13 @@ namespace jucyaudio
         namespace
         {
             const DataActions EmptyActions{};
+            
+            // Simple folder columns - just show name and info
+            const std::vector<DataColumn> FolderColumns = {
+                DataColumn{0, "title", "Name", 300, ColumnAlignment::Left, ColumnDataTypeHint::String},
+                DataColumn{1, "artist_name", "Info", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
+                DataColumn{2, "album_title", "", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
+            };
         }
 
         VirtualFoldersOverview::VirtualFoldersOverview(INavigationNode *parent)
@@ -20,43 +27,17 @@ namespace jucyaudio
 
         bool VirtualFoldersOverview::expand(std::vector<INavigationNode *> &outChildren)
         {
-            // Get the required database managers from the central library instance.
-            auto &rootManager = theTrackLibrary.getLibraryRootManager();
-            auto &folderDb = theTrackLibrary.getFolderDatabase();
-
-            // 1. Get the list of user-defined root paths from our new manager.
-            const auto libraryRoots = rootManager.getAllRoots();
-
-            // 2. For each configured root path, create a display node.
-            for (const auto &rootInfo : libraryRoots)
+            // Ensure root folders are loaded
+            loadRootFolders();
+            
+            // Create navigation nodes for each root folder
+            for (const auto &folderInfo : m_rootFolders)
             {
-                // To create a VirtualFolderNode, we need the full FolderInfo struct.
-                // We can get this by looking up the folder by its path.
-                // NOTE: This call is robust; if a root was added but never scanned,
-                // this will ensure its entry exists in the Folders table.
-                const FolderId folderId = folderDb.findOrCreateFolderByPath(rootInfo.path);
-
-                if (folderId != -1)
-                {
-                    // Now that we have the ID, get the full info object.
-                    // This is fast, as it should hit the folder cache.
-                    if (auto folderInfoOpt = folderDb.getFolderById(folderId))
-                    {
-                        outChildren.push_back(new VirtualFolderNode{this, *folderInfoOpt});
-                    }
-                    else
-                    {
-                        spdlog::warn("Could not retrieve FolderInfo for a known root path '{}' with ID {}", rootInfo.path, folderId);
-                    }
-                }
-                else
-                {
-                    spdlog::warn("Could not find or create a folder entry for root path '{}'", rootInfo.path);
-                }
+                outChildren.push_back(new VirtualFolderNode{this, folderInfo});
             }
 
-            spdlog::debug("VirtualFoldersOverview loaded {} custom root folders.", libraryRoots.size());
-            return !libraryRoots.empty();
+            spdlog::debug("VirtualFoldersOverview expanded {} root folders.", m_rootFolders.size());
+            return !m_rootFolders.empty();
         }
 
         const DataActions &VirtualFoldersOverview::getNodeActions() const
@@ -67,6 +48,98 @@ namespace jucyaudio
         const DataActions &VirtualFoldersOverview::getRowActions(RowIndex_t /*rowIndex*/) const
         {
             return EmptyActions;
+        }
+        
+        const std::vector<DataColumn> &VirtualFoldersOverview::getColumns() const
+        {
+            return FolderColumns;
+        }
+        
+        void VirtualFoldersOverview::loadRootFolders() const
+        {
+            if (m_rootFoldersLoaded)
+                return;
+                
+            m_rootFolders.clear();
+            
+            // Get the library roots and convert to FolderInfo
+            auto &rootManager = theTrackLibrary.getLibraryRootManager();
+            auto &folderDb = theTrackLibrary.getFolderDatabase();
+            
+            const auto libraryRoots = rootManager.getAllRoots();
+            
+            for (const auto &rootInfo : libraryRoots)
+            {
+                const FolderId folderId = folderDb.findOrCreateFolderByPath(rootInfo.path);
+                if (folderId != -1)
+                {
+                    if (auto folderInfoOpt = folderDb.getFolderById(folderId))
+                    {
+                        m_rootFolders.push_back(*folderInfoOpt);
+                    }
+                }
+            }
+            
+            m_rootFoldersLoaded = true;
+            spdlog::debug("VirtualFoldersOverview::loadRootFolders loaded {} root folders", m_rootFolders.size());
+        }
+        
+        bool VirtualFoldersOverview::getNumberOfRows(int64_t &outCount) const
+        {
+            loadRootFolders();
+            outCount = static_cast<int64_t>(m_rootFolders.size());
+            return true;
+        }
+        
+        CellRenderInfo VirtualFoldersOverview::getCellRenderInfo(RowIndex_t rowIndex, ColumnIndex_t columnIndex) const
+        {
+            CellRenderInfo info;
+            
+            loadRootFolders();
+            
+            if (rowIndex < 0 || rowIndex >= static_cast<RowIndex_t>(m_rootFolders.size()))
+                return info;
+                
+            const auto &folder = m_rootFolders[rowIndex];
+            
+            // Check column type by index (matching VirtualFolderNode's approach)
+            std::string columnName;
+            if (columnIndex == 0) columnName = "title";
+            else if (columnIndex == 1) columnName = "artist_name";
+            else if (columnIndex == 2) columnName = "album_title";
+            
+            if (columnName == "title")
+            {
+                info.text = "📁 " + folder.name;
+                info.state = RenderState::Accent;
+            }
+            else if (columnName == "artist_name")
+            {
+                info.text = std::to_string(folder.trackCount) + " tracks";
+                info.state = RenderState::Subdued;
+            }
+            // Other columns remain empty
+            
+            return info;
+        }
+        
+        RowActivationResult VirtualFoldersOverview::onRowActivated(RowIndex_t rowIndex)
+        {
+            RowActivationResult result;
+            
+            loadRootFolders();
+            
+            if (rowIndex >= 0 && rowIndex < static_cast<RowIndex_t>(m_rootFolders.size()))
+            {
+                const auto &folder = m_rootFolders[rowIndex];
+                result.type = RowActivationResultType::NavigateToNode;
+                result.newNode = new VirtualFolderNode(this, folder);
+                result.newNode->retain(); // Caller must release
+                spdlog::info("VirtualFoldersOverview::onRowActivated - navigating to folder '{}' (ID: {})", 
+                            folder.name, folder.folderId);
+            }
+            
+            return result;
         }
 
         INavigationNode* VirtualFoldersOverview::findFolderNode(FolderId targetFolderId)

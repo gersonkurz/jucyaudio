@@ -27,6 +27,19 @@ namespace jucyaudio
             // Find a specific folder node by folder ID
             // Returns a retained pointer that must be released by the caller
             INavigationNode* findFolderNode(FolderId folderId);
+            
+            // Data view methods to show folders as rows
+            const std::vector<DataColumn> &getColumns() const override;
+            bool getNumberOfRows(int64_t &outCount) const override;
+            CellRenderInfo getCellRenderInfo(RowIndex_t rowIndex, ColumnIndex_t columnIndex) const override;
+            RowActivationResult onRowActivated(RowIndex_t rowIndex) override;
+            
+        private:
+            // Cache for root folders
+            mutable std::vector<FolderInfo> m_rootFolders;
+            mutable bool m_rootFoldersLoaded = false;
+            
+            void loadRootFolders() const;
         };
     } // namespace database
 } // namespace jucyaudio

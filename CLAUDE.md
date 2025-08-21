@@ -125,6 +125,34 @@
     - Eliminated beat frequency interference between multiple timers
     - Smooth playhead animation now possible at 60fps
 
+### Session 14: Node-Centric Folder Navigation (90% Complete)
+*   **Completed Phase 4 - Folder Navigation in Data View:**
+    - Removed unused LogicalFolderNode class (dead code cleanup)
+    - Changed VirtualFolderNode from recursive to non-recursive track display
+    - Fixed critical blank row issue:
+        - Root cause: LibraryNode::getCellText calling virtual getTrackInfoForRow
+        - VirtualFolderNode's override was returning nullptr for adjusted index 0
+        - Solution: Call LibraryNode::getTrackInfoForRow explicitly to bypass virtual dispatch
+        - Added LibraryNode::getCellRenderInfo override for proper rendering
+    - Fixed parent hierarchy bugs:
+        - Child folders now correctly use 'this' as parent (not getParent())
+        - Proper path: Root → Folders → DARKGAZE → SubFolder
+    - Implemented navigation tree synchronization:
+        - Tree auto-selects folder when navigating via data view double-click
+        - Modified selectNode to compare nodes by UniqueId instead of pointer
+        - Added syncNavigationTree parameter to handleNodeSelection
+    - Enhanced VirtualFoldersOverview (Folders root):
+        - Now shows library roots as clickable rows in data view
+        - Added getColumns, getNumberOfRows, getCellRenderInfo, onRowActivated
+        - Unified expand() and data view to use same cached m_rootFolders
+        - Double-click to navigate into folders, ".." to go back
+    
+*   **Remaining Issue - Parent Navigation Bug:**
+    - SYMPTOM: Click ".." from root folder (DARKGAZE) → goes to MP3 instead of Folders
+    - LIKELY CAUSE: getParent() returning wrong node for dynamically created VirtualFolderNode
+    - TO DEBUG: Check how VirtualFolderNode is created in VirtualFoldersOverview::onRowActivated
+    - HYPOTHESIS: Parent pointer might be getting corrupted or incorrectly set
+
 ### Additional Sessions Summary:
 
 **Mix Editor Enhancements:**

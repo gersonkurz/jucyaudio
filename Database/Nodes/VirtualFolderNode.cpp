@@ -309,6 +309,11 @@ namespace jucyaudio
             
             return info;
         }
+        
+        bool VirtualFolderNode::parentHasDifferentType() const
+        {
+            return getParent()->m_refTypeNameForSingleObject != m_refTypeNameForMultipleObjects;
+        }
 
         RowActivationResult VirtualFolderNode::onRowActivated(RowIndex_t rowIndex)
         {
@@ -322,18 +327,52 @@ namespace jucyaudio
             
             if (rowType == RowType::ParentFolder)
             {
-                // Navigate to parent folder
-                auto &folderDb = theTrackLibrary.getFolderDatabase();
-                auto folderInfo = folderDb.getFolderById(m_folderId);
-                
-                if (folderInfo && folderInfo->parentId >= 0)
+                if (parentHasDifferentType())
                 {
-                    auto parentInfo = folderDb.getFolderById(folderInfo->parentId);
-                    if (parentInfo)
+                    // move to the real raw root ;)
+                    // This is a root folder, navigate back to the Folders overview
+                    // The parent of this node should be VirtualFoldersOverview
+                    auto *parent = getParent();
+
+                    result.type = RowActivationResultType::NavigateToNode;
+                    result.newNode = parent;
+                    if (result.newNode)
                     {
-                        result.type = RowActivationResultType::NavigateToNode;
-                        result.newNode = new VirtualFolderNode(getParent(), *parentInfo);
                         result.newNode->retain(); // Caller must release
+                    }
+                }
+                else
+                {
+                    // Navigate to parent folder
+                    auto &folderDb = theTrackLibrary.getFolderDatabase();
+                    auto folderInfo = folderDb.getFolderById(m_folderId);
+                
+                    if (folderInfo)
+                    {
+                        if (folderInfo->parentId >= 0)
+                        {
+                            // Regular parent folder - create another VirtualFolderNode
+                            auto parentInfo = folderDb.getFolderById(folderInfo->parentId);
+                            if (parentInfo)
+                            {
+                                result.type = RowActivationResultType::NavigateToNode;
+                                result.newNode = new VirtualFolderNode(getParent(), *parentInfo);
+                                result.newNode->retain(); // Caller must release
+                            }
+                        }
+                        else
+                        {
+                            // This is a root folder, navigate back to the Folders overview
+                            // The parent of this node should be VirtualFoldersOverview
+                            auto *parent = getParent();
+
+                            result.type = RowActivationResultType::NavigateToNode;
+                            result.newNode = parent;
+                            if (result.newNode)
+                            {
+                                result.newNode->retain(); // Caller must release
+                            }
+                        }
                     }
                 }
             }

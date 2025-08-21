@@ -40,6 +40,8 @@ namespace jucyaudio
         const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;
         
     private:
+        bool parentHasDifferentType() const;
+
         FolderId m_folderId;
         mutable bool m_onlineStatusCached{false};
         mutable bool m_isOnline{true};
