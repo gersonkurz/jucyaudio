@@ -12,6 +12,7 @@
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Utils/AssortedUtils.h>
 #include <UI/SplashScreenComponent.h>
+#include <Database/DatabaseBackupManager.h>
 #include <filesystem>
 #include <tuple>
 #include <unordered_map>
@@ -182,20 +183,30 @@ namespace jucyaudio
                 spdlog::info("Begin timerCallback");
                 stopTimer();
 
-                // Do ALL initialization first
+                // Load settings first to get backup configuration
                 config::TomlBackend backend{g_strConfigFilename};
                 config::theSettings.load(backend);
+
+                // Determine database path
+                juce::File appDataDir{juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("jucyaudioApp_Dev")};
+                juce::File dbJuceFile{appDataDir.getChildFile("jucyaudio_library_dev.sqlite")};
+                std::filesystem::path dbPath{dbJuceFile.getFullPathName().toStdString()};
+
+                // Perform database backup check before the database is opened
+                {
+                    database::DatabaseBackupManager backupManager;
+                    // Enable creation (false) but keep pruning in dry-run mode (true) for now.
+                    backupManager.performBackupCheck(config::theSettings, dbPath, false, true);
+                }
+                
                 theThemeManager.initialize(getThemesDirectoryPath(), config::theSettings.uiSettings.theme.get());
                 
                 // Initialize database
-                juce::File appDataDir{juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("jucyaudioApp_Dev")};
                 if (!appDataDir.exists())
                 {
                     appDataDir.createDirectory();
                 }
-                juce::File dbJuceFile{appDataDir.getChildFile("jucyaudio_library_dev.sqlite")};
-                std::filesystem::path dbPath{dbJuceFile.getFullPathName().toStdString()};
-
+                
                 if (theTrackLibrary.initialise(dbPath))
                 {
                     spdlog::info("TrackLibrary initialised successfully");

@@ -171,6 +171,17 @@ namespace jucyaudio
                 TypedValue<int> maxOperations{this, "MaxOperations", 100};
 
             } undoSettings{this};
+
+            struct BackupSettings : public Section
+            {
+                BackupSettings(Section *parent)
+                    : Section{parent, "Backup"}
+                {
+                }
+
+                TypedValue<int> numberOfBackups{this, "NumberOfBackups", 5};
+
+            } backupSettings{this};
         };
 
         extern RootSettings theSettings;

@@ -44,7 +44,7 @@ namespace jucyaudio
 
         void BackgroundTaskService::registerTask(IBackgroundTask *task)
         {
-            if (task && false)
+            if (task)
             {
                 const std::lock_guard<std::mutex> lock{m_tasksMutex};
                 task->retain(REFCOUNT_DEBUG_ARGS);

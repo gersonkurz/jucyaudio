@@ -230,6 +230,8 @@ target_sources(jucyaudio PRIVATE
     Database/TrackScanner.h
     Database/BackgroundService.cpp
     Database/BackgroundService.h
+    Database/DatabaseBackupManager.cpp
+    Database/DatabaseBackupManager.h
     
     # Background Tasks
     Database/BackgroundTasks/BpmAnalysis.cpp

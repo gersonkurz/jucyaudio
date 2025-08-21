@@ -419,7 +419,7 @@ namespace jucyaudio
             // Required for AudioAppComponent
             setAudioChannels(0, 2); // Output only
 
-            // Setup the background service (assuming it's a member m_backgroundService)
+            // Setup the background service
             theBackgroundTaskService.start();
 
             // Create and register our new BPM analysis task.
