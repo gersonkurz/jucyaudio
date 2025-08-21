@@ -57,6 +57,8 @@ namespace jucyaudio::ui
         setUsingNativeTitleBar(true);
         centreWithSize(800, 500);
     }
+
+    ReverbDialog::~ReverbDialog() = default;
     
     audio::model::ReverbSettings ReverbDialog::getCurrentSettings() const
     {

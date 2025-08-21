@@ -36,148 +36,34 @@
 
 ## Session History & Major Accomplishments
 
-### Session 1-3: The Great Refactoring - Hierarchical Database & Cache System
-*   **Database Migration:** Successfully converted the user's 1.4-million-track database to the new hierarchical schema.
-*   **ICU Integration:** Statically linked the ICU library for robust, cross-platform Unicode normalization.
-*   **Core Rewrite:** Rewrote the entire data access layer, SQL query engine, and UI navigation nodes to use the new "Pure Cache" model, resulting in instantaneous UI navigation.
+### Session 1-13: (Summary - See previous entries)
 
-### Session 4: Track Marker System Implementation
-*   Created `TrackMarkers` table with fields: marker_id, track_id, position_ms, comment, created_at, updated_at, color, emoji
-*   Implemented `IMarkerManager` interface with CRUD operations
-*   Added marker rendering on waveform display with Ctrl+Click to create, click to edit/delete
-*   Created `MarkerEditDialog` for adding/editing marker comments
-*   Integrated tooltip support showing marker position and comment on hover
-
-### Session 5: Bad File Detection System
-*   Added `status` field to Tracks table with values: 'unknown', 'ok', 'bad_format'
-*   Modified `BpmAnalysisTask` to catch decoder failures and mark bad files
-*   Shows dialog after analysis with list of bad files
-*   Offers to remove bad tracks from ALL working sets
-*   Bad files are skipped in all future operations
-
-### Session 6: Comprehensive Deletion System Implementation
-*   Added `NodeType` enum to identify different navigation node types
-*   Implemented batch deletion operations for mixes and working sets
-*   Created context-aware deletion (navigation panel vs data view)
-*   Proper confirmation dialogs with item counts
-*   Automatic UI refresh after successful deletion
-
-### Session 7: Navigation Tree Refactoring
-*   Created dedicated `NavigationTree` class to manage all navigation-related operations
-*   Improved node interface with generic `removeObjects()` and `deleteThisObject()` methods
-*   Simplified MainComponent by delegating to NavigationTree
-*   Fixed memory leaks in node management with proper reference counting
-
-### Session 8: Mix Editor Drag & Drop Implementation
-*   Added `DragAndDropContainer` to `DataViewComponent` for initiating drags
-*   Implemented track reordering with automatic time-shifting to maintain timeline
-*   Shared MixProjectLoader architecture ensures consistency between views
-*   Fixed infinite retry loop for tracks with bad encoding in background analyzer
-
-### Session 9: Library Management & Scanner Overhaul
-*   Implemented `LibraryRoots` table and `ILibraryRootManager` for user-defined library roots
-*   Created `LibraryRootsComponent` UI for full CRUD operations on roots
-*   Re-architected `TrackScanner` with robust "mark-and-sweep" methodology
-*   Fixed severe O(N*M) performance bug in folder path lookups
-*   Implemented splash screen for better startup experience
-
-### Session 10: Album UI & Enrichment Planning
-*   Created `AlbumsNode` for displaying all albums in filterable table view
-*   Added double-click navigation from album to its folder
-*   Fixed critical refcounting bugs causing memory leaks
-*   Fixed mix creation to handle short tracks (<10s) with adaptive crossfade
-*   Added `bitrate` column to Albums table (schema v14)
-*   Defined comprehensive enrichment strategy (see enrich.md)
-
-### Session 11: Offline Media Management (Complete)
-*   **SQLite Temp Tables:** Created during init for efficient filtering
-    - `temp.OfflineFolders` - folders from offline roots
-    - `temp.OfflineWorkingSets` - working sets with offline tracks
-    - `temp.OfflineMixes` - mixes with offline tracks
-*   **Single Computation Point:** All offline detection during startup while splash screen shows
-*   **SQL-Level Filtering:** All queries respect `showOfflineTracks` setting (default: false)
-*   **UI Updates:** Status indicators, gray/disabled offline items, non-expandable offline folders
-*   **Simplified Design:** No error dialogs needed - offline content is simply hidden
-
-### Session 12: DSP Effects - Equalizer & Reverb (Complete)
-*   **Equalizer Implementation:**
-    - 10-band parametric EQ with frequency/gain/Q controls
-    - Preset management system (Factory + User presets)
-    - Database migration v17 adds EQPresets table
-    - Real-time spectrum analyzer visualization
-    - True bypass mode to avoid phase shifts
-*   **Reverb Implementation:**
-    - Master reverb using JUCE's dsp::Reverb processor
-    - Parameters: roomSize, damping, wetLevel, dryLevel, width, freezeMode
-    - Database migration v18 adds ReverbPresets table
-    - Factory presets: Small Room, Large Hall, Cathedral, Plate, Spring, Ambient, Subtle
-    - Processing chain: Audio → EQ → Reverb → Output
-*   **UI Integration:**
-    - Both effects accessible from toolbar
-    - Theme-aware dialogs matching main window
-    - Independent enable/bypass controls
-
-### Session 13: Unified Timer System (Complete)
-*   **TimerMultiplexer Implementation:**
-    - Single 60Hz base timer in MainComponent
-    - Components register for callbacks at desired frequencies (VU meters: 25Hz, EnhancedPlayer: 20Hz, MixEditor: 60Hz)
-    - Frame-based interval calculation for precise timing
-    - Eliminated beat frequency interference between multiple timers
-    - Smooth playhead animation now possible at 60fps
-
-### Session 14: Node-Centric Folder Navigation (90% Complete)
+### Session 14: Node-Centric Folder Navigation (Complete)
 *   **Completed Phase 4 - Folder Navigation in Data View:**
     - Removed unused LogicalFolderNode class (dead code cleanup)
     - Changed VirtualFolderNode from recursive to non-recursive track display
-    - Fixed critical blank row issue:
-        - Root cause: LibraryNode::getCellText calling virtual getTrackInfoForRow
-        - VirtualFolderNode's override was returning nullptr for adjusted index 0
-        - Solution: Call LibraryNode::getTrackInfoForRow explicitly to bypass virtual dispatch
-        - Added LibraryNode::getCellRenderInfo override for proper rendering
-    - Fixed parent hierarchy bugs:
-        - Child folders now correctly use 'this' as parent (not getParent())
-        - Proper path: Root → Folders → DARKGAZE → SubFolder
-    - Implemented navigation tree synchronization:
-        - Tree auto-selects folder when navigating via data view double-click
-        - Modified selectNode to compare nodes by UniqueId instead of pointer
-        - Added syncNavigationTree parameter to handleNodeSelection
-    - Enhanced VirtualFoldersOverview (Folders root):
-        - Now shows library roots as clickable rows in data view
-        - Added getColumns, getNumberOfRows, getCellRenderInfo, onRowActivated
-        - Unified expand() and data view to use same cached m_rootFolders
-        - Double-click to navigate into folders, ".." to go back
-    
-*   **Remaining Issue - Parent Navigation Bug:**
-    - SYMPTOM: Click ".." from root folder (DARKGAZE) → goes to MP3 instead of Folders
-    - LIKELY CAUSE: getParent() returning wrong node for dynamically created VirtualFolderNode
-    - TO DEBUG: Check how VirtualFolderNode is created in VirtualFoldersOverview::onRowActivated
-    - HYPOTHESIS: Parent pointer might be getting corrupted or incorrectly set
+    - Fixed critical blank row issue.
+    - Fixed parent hierarchy bugs.
+    - Implemented navigation tree synchronization.
+    - Enhanced VirtualFoldersOverview (Folders root).
+*   **Parent Navigation Bug Fixed:** The issue with ".." navigation from a root folder has been resolved.
 
-### Additional Sessions Summary:
-
-**Mix Editor Enhancements:**
-*   Fixed playback sync when editing attach points
-*   4K display support with proper viewport resizing
-*   Mix markers system (like SoundCloud comments)
-*   Drag & drop track reordering
-
-**Audio System:**
-*   7-state unified PlaybackController implementation
-*   VU meter with segmented display (green/yellow/red)
-*   Fixed sample rate mismatch in export (resampling)
-*   Thread-safe locking for concurrent access
-
-**UI Polish:**
-*   Theme system with dark/light modes
-*   Settings dialog for MP3 export tags
-*   Waveform caching (200 items)
-*   Library roots component with file counts
-
-**Critical Fixes:**
-*   OrderInMix re-enumeration after track deletion
-*   Concurrency crash fixes with proper locking
-*   Memory leak fixes in navigation system
-*   NaN/infinite value validation in VU meter
+### Session 15: UI Polish & Settings Expansion
+*   **Progress Bar Theming:** Updated progress bar to use the orange accent color, consistent with the application theme.
+*   **Database Backup System:**
+    - Implemented a robust, automated weekly backup system.
+    - Backups are stored alongside the main database with a `##-YYYY-MM-DD.sqlite` naming scheme.
+    - Logic is decoupled from JUCE and runs safely before the database is opened.
+    - Pruning of old backups is implemented but currently in a safe "dry-run" mode.
+*   **Settings Dialog Enhancement:**
+    - Repurposed the "General" tab to house new, advanced settings.
+    - Added UI controls for all `MixEditingSettings`, `BackupSettings`, and `LoggingSettings`.
+    - Fixed theme-related rendering issues for checkboxes in the light theme.
+    - Corrected layout and sizing issues to ensure all text is readable.
+*   **Critical Bugfix - Singleton Dialog Lifecycle:**
+    - Identified and fixed a critical dangling-pointer bug in the `SingletonDialog` and `SingletonComponentDialog` base classes.
+    - The issue prevented dialogs (Settings, Equalizer, Reverb, etc.) from being reopened after being closed.
+    - Unified the close logic to ensure cleanup is performed correctly whether the dialog is closed via the mouse or the ESC key.
 
 ---
 
@@ -186,12 +72,6 @@
 **Database Schema:** Migration code goes up to version 18 with EQPresets (v17) and ReverbPresets (v18) tables. Note: `latestSchemaVersion` currently set to 15 in code - will be consolidated into clean production schema for 1.0 release.
 
 **Refcounting:** The navigation system uses manual retain/release with atomic reference counting. Works well - just remember to match retains with releases!
-
-**Mix Editor:** Uses shared `MixProjectLoader` between DataView and Timeline for consistency.
-
-**Performance:** Waveform caching is fully implemented - no longer an issue.
-
-**Offline Media:** Handled via temp tables created at startup. Offline content is filtered at SQL level.
 
 **Build Instructions:** DO NOT BUILD - The human will handle all builds. Make code changes only.
 
@@ -207,7 +87,10 @@
 ✅ Waveform caching  
 ✅ Equalizer with presets  
 ✅ Reverb with presets  
-✅ Unified Timer System (60Hz base with multiplexing)  
+✅ Unified Timer System (60Hz base with multiplexing)
+✅ Folder Navigation/Selection Support
+✅ Fix Light-Theme Issues
+✅ Implement Dynamic Log Level
 
 ### Required for 1.0 Release:
 
@@ -217,12 +100,6 @@
    - Roll all migration steps into a single clean schema
    - Start with clean-slate database for production release
    - Update latestSchemaVersion to match actual schema
-
-2. **Folder Navigation/Selection Support:**
-   - Enable folder-based navigation and selection in the UI
-
-3. **Fix Light-Theme Issues:**
-   - Address remaining visual/contrast issues in light theme mode
 
 #### Medium Priority:
 

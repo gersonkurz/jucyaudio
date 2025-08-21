@@ -102,22 +102,30 @@ namespace jucyaudio::ui
                 delete this; 
             });
         }
-        
-    private:
-        // Static storage for singleton instances, one per derived type
-        static inline std::unordered_map<std::type_index, void*> s_instances;
-        static inline juce::CriticalSection s_instanceLock;
-        
-        static Derived* getCurrentInstance()
+
+        bool escapeKeyPressed() override
+        {
+            closeButtonPressed();
+            return true; // Indicate that we've handled the key press
+        }
+
+    protected:
+        static Derived *getCurrentInstance()
         {
             const juce::ScopedLock lock(s_instanceLock);
             auto it = s_instances.find(std::type_index(typeid(Derived)));
             if (it != s_instances.end())
             {
-                return static_cast<Derived*>(it->second);
+                return static_cast<Derived *>(it->second);
             }
             return nullptr;
         }
+    private:
+        // Static storage for singleton instances, one per derived type
+        static inline std::unordered_map<std::type_index, void*> s_instances;
+        static inline juce::CriticalSection s_instanceLock;
+        
+        
         
         static void setCurrentInstance(Derived* instance)
         {
@@ -251,68 +259,47 @@ namespace jucyaudio::ui
             launchOptions.escapeKeyTriggersCloseButton = true;
             launchOptions.useNativeTitleBar = true;
             
+            auto* dialogWindow = launchOptions.launchAsync();
+            if (!dialogWindow)
+            {
+                delete component; // Clean up if launch fails
+                return;
+            }
+
+            registerDialog(dialogId, dialogWindow);
+            dialogWindow->setAlwaysOnTop(true);
+
             if (modal)
             {
-                // For modal-style dialogs, we need to track and disable the main window
-                auto* dialogWindow = launchOptions.launchAsync();
-                if (dialogWindow)
+                // For modal dialogs, use enterModalState with a callback for cleanup.
+                // This is the robust JUCE way to handle modality and cleanup.
+                struct DialogCleanupCallback : public juce::ModalComponentManager::Callback
                 {
-                    registerDialog(dialogId, dialogWindow);
-                    dialogWindow->setAlwaysOnTop(true);
-                    
-                    // Set up cleanup when dialog closes
-                    struct DialogCleanup : public juce::ComponentListener
+                    juce::String id;
+                    DialogCleanupCallback(const juce::String& dialogId) : id(dialogId) {}
+                    void modalStateFinished(int /*returnCode*/) override
                     {
-                        juce::String id;
-                        bool wasModal;
-                        
-                        DialogCleanup(const juce::String& dialogId, bool isModal) 
-                            : id(dialogId), wasModal(isModal) {}
-                        
-                        void componentBeingDeleted(juce::Component& component) override
-                        {
-                            SingletonComponentDialog::unregisterDialog(id);
-                            if (wasModal)
-                            {
-                                SingletonComponentDialog::enableMainWindow();
-                            }
-                            delete this;
-                        }
-                    };
-                    
-                    dialogWindow->addComponentListener(new DialogCleanup(dialogId, modal));
-                    
-                    if (modal)
-                    {
-                        disableMainWindow();
+                        SingletonComponentDialog::unregisterDialog(id);
                     }
-                }
+                };
+                
+                dialogWindow->enterModalState(true, new DialogCleanupCallback(dialogId), true);
             }
             else
             {
-                // Non-modal dialog
-                auto* dialogWindow = launchOptions.launchAsync();
-                if (dialogWindow)
+                // For non-modal dialogs, we still need to know when they close.
+                // A ComponentListener is appropriate here.
+                struct DialogCleanupListener : public juce::ComponentListener
                 {
-                    registerDialog(dialogId, dialogWindow);
-                    dialogWindow->setAlwaysOnTop(true);
-                    
-                    // Set up cleanup when dialog closes
-                    struct DialogCleanup : public juce::ComponentListener
+                    juce::String id;
+                    DialogCleanupListener(const juce::String& dialogId) : id(dialogId) {}
+                    void componentBeingDeleted(juce::Component&) override
                     {
-                        juce::String id;
-                        
-                        DialogCleanup(const juce::String& dialogId) : id(dialogId) {}
-                        
-                        void componentBeingDeleted(juce::Component& component) override
-                        {
-                            SingletonComponentDialog::unregisterDialog(id);
-                            delete this;
-                        }
-                    };
-                    
-                    dialogWindow->addComponentListener(new DialogCleanup(dialogId));
-                }
+                        SingletonComponentDialog::unregisterDialog(id);
+                        delete this; // The listener must delete itself.
+                    }
+                };
+                dialogWindow->addComponentListener(new DialogCleanupListener(dialogId));
             }
         }
         

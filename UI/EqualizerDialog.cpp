@@ -57,6 +57,8 @@ namespace jucyaudio::ui
         setUsingNativeTitleBar(true);
         centreWithSize(800, 600);
     }
+
+    EqualizerDialog::~EqualizerDialog() = default;
     
     audio::model::EQSettings EqualizerDialog::getCurrentSettings() const
     {

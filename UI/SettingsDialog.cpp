@@ -3,6 +3,7 @@
 #include <Config/toml_backend.h>
 #include <spdlog/spdlog.h>
 #include <chrono>
+#include <Utils/LoggingUtils.h>
 
 namespace jucyaudio::ui
 {
@@ -243,9 +244,11 @@ namespace jucyaudio::ui
 
         // Logging
         config::theSettings.loggingSettings.logLevel.set(m_logLevelCombo.getText().toLowerCase().toStdString());
+        const auto logLevelStr = m_logLevelCombo.getText().toLowerCase().toStdString();
+        config::theSettings.loggingSettings.logLevel.set(logLevelStr);
+        setLogLevelFromString(logLevelStr);
 
-        // TODO: Add call to dynamically update log level here
-
+        
         // Save all to TOML file
         config::TomlBackend backend{g_strConfigFilename};
         config::theSettings.save(backend);
@@ -428,18 +431,15 @@ namespace jucyaudio::ui
     
     void SettingsDialog::showSettingsDialog(juce::Component* centreAroundComponent)
     {
-        // Check if dialog already exists
-        static SettingsDialog* existingDialog = nullptr;
-        
-        if (existingDialog && existingDialog->isVisible())
+        // Use the singleton management from the base class
+        if (auto* existing = getCurrentInstance())
         {
-            existingDialog->toFront(true);
+            existing->toFront(true);
             return;
         }
         
-        // Create new dialog
+        // Create new dialog (which will register itself as the current instance)
         auto* dialog = new SettingsDialog();
-        existingDialog = dialog;
         
         // Apply L&F BEFORE creating content
         if (centreAroundComponent)
@@ -447,7 +447,7 @@ namespace jucyaudio::ui
             dialog->setLookAndFeel(&centreAroundComponent->getLookAndFeel());
         }
         
-        // Now create content with proper L&F
+        // Now create content with proper L&F. This will also set the dialog's size.
         dialog->initializeContent();
         
         // Configure and show

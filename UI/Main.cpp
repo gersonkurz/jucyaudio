@@ -21,6 +21,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include "Utils/LoggingUtils.h"
 
 namespace jucyaudio
 {
@@ -304,23 +305,11 @@ namespace jucyaudio
                     // 4. Set Log Level from config file
                     config::TomlBackend backend{g_strConfigFilename};
                     config::theSettings.load(backend);
-                    auto level_str = config::theSettings.loggingSettings.logLevel.get();
-                    auto level = spdlog::level::from_str(level_str);
-
-                    if (level == spdlog::level::off && level_str != "off")
-                    {
-                        level = spdlog::level::critical;
-                    }
-                    combined_logger->set_level(level);
-                    combined_logger->flush_on(level);
-                    conf_logger->set_level(spdlog::level::warn);
-                    conf_logger->flush_on(spdlog::level::warn);
+                    setLogLevelFromString(config::theSettings.loggingSettings.logLevel);
 
                     // 5. Test log message
                     spdlog::info("---------------------------------------------------------");
                     spdlog::info("jucyaudio Application Started. Logging initialised.");
-                    spdlog::info("Log file: {}", logFilePath_std);
-                    spdlog::info("Log level set to \"{}\"", spdlog::level::to_string_view(level));
 
                     try
                     {

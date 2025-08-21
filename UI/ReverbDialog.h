@@ -15,7 +15,7 @@ namespace jucyaudio::ui
     public:
         ReverbDialog(database::ITrackDatabase* trackDb,
                     std::function<void(const audio::model::ReverbSettings&)> onSettingsChanged);
-        ~ReverbDialog() override = default;
+        ~ReverbDialog() override;
         
         /**
          * @brief Get current reverb settings from the dialog

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(jucyaudio VERSION 0.6.0)
+project(jucyaudio VERSION 0.7.0)
 
 # Enable debug info in Release builds for better debugging while maintaining performance
 if(MSVC)
@@ -219,6 +219,7 @@ target_sources(jucyaudio PRIVATE
     Utils/AssortedUtils.cpp
     Utils/StringWriter.cpp
     Utils/UiUtils.cpp
+    Utils/LoggingUtils.cpp
     Utils/AssortedUtils.h
     Utils/StringWriter.h
     Utils/UiUtils.h

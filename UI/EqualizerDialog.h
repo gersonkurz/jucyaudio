@@ -15,7 +15,7 @@ namespace jucyaudio::ui
     public:
         EqualizerDialog(database::ITrackDatabase* trackDb,
                        std::function<void(const audio::model::EQSettings&)> onSettingsChanged);
-        ~EqualizerDialog() override = default;
+        ~EqualizerDialog() override;
         
         /**
          * @brief Get current EQ settings from the dialog
