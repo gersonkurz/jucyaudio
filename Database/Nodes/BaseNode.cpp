@@ -318,28 +318,6 @@ namespace jucyaudio
             return result;
         }
         
-        TrackIdsForOperationResult BaseNode::getTrackIdsForOperation(const std::vector<RowIndex_t>& selectedRows) const
-        {
-            TrackIdsForOperationResult result;
-            
-            for (const auto& rowIndex : selectedRows)
-            {
-                // Use the OLD methods to simulate the new behavior
-                const auto* trackInfo = getTrackInfoForRow(rowIndex);
-                
-                if (trackInfo != nullptr && trackInfo->trackId > 0)
-                {
-                    result.trackIds.push_back(trackInfo->trackId);
-                }
-                else
-                {
-                    result.nonApplicableCount++;
-                }
-            }
-            
-            return result;
-        }
-        
         TrackInfosForOperationResult BaseNode::getTrackInfosForOperation(const std::vector<RowIndex_t>& selectedRows) const
         {
             TrackInfosForOperationResult result;

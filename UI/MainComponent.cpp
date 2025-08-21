@@ -1350,17 +1350,9 @@ namespace jucyaudio
             {
                 m_statusPanel.getStatusBar().postMessage("No tracks to analyze.", true);
                 return;
-            }
-            
-            // Extract just the track IDs
-            std::vector<TrackId> trackIds;
-            trackIds.reserve(trackResult.trackInfos.size());
-            for (const auto& trackInfo : trackResult.trackInfos)
-            {
-                trackIds.push_back(trackInfo.trackId);
-            }
+            }            
 
-            auto *task = new background_tasks::BpmAnalysisTask(std::move(trackIds));
+            auto *task = new background_tasks::BpmAnalysisTask(std::move(trackResult.trackInfos));
             TaskDialog::launch("BPM Analysis",
                 task,
                 500,
@@ -1478,9 +1470,9 @@ namespace jucyaudio
             }
             
             // Use the new Node-Centric method to get track IDs
-            const auto trackResult = m_currentNode->getTrackIdsForOperation(selectedRows);
+            const auto trackResult = m_currentNode->getTrackInfosForOperation(selectedRows);
             
-            if (trackResult.trackIds.empty())
+            if (trackResult.trackInfos.empty())
             {
                 if (trackResult.nonApplicableCount > 0)
                 {
@@ -1500,11 +1492,11 @@ namespace jucyaudio
             {
                 m_statusPanel.getStatusBar().postMessage(
                     std::format("Analyzing {} tracks ({} non-track items skipped)", 
-                        trackResult.trackIds.size(), trackResult.nonApplicableCount), 
+                        trackResult.trackInfos.size(), trackResult.nonApplicableCount), 
                     false);
             }
 
-            auto *task = new background_tasks::BpmAnalysisTask(std::move(trackResult.trackIds));
+            auto *task = new background_tasks::BpmAnalysisTask(std::move(trackResult.trackInfos));
             TaskDialog::launch("BPM Analysis",
                 task,
                 500,
@@ -1813,9 +1805,9 @@ namespace jucyaudio
             if (!selectedRows.empty())
             {
                 // Use the new Node-Centric method to get track IDs
-                const auto trackResult = m_currentNode->getTrackIdsForOperation(selectedRows);
+                const auto trackResult = m_currentNode->getTrackInfosForOperation(selectedRows);
                 
-                if (trackResult.trackIds.empty())
+                if (trackResult.trackInfos.empty())
                 {
                     if (trackResult.nonApplicableCount > 0)
                     {
@@ -1835,11 +1827,11 @@ namespace jucyaudio
                 {
                     m_statusPanel.getStatusBar().postMessage(
                         std::format("Creating working set from {} tracks ({} non-track items skipped)", 
-                            trackResult.trackIds.size(), trackResult.nonApplicableCount), 
+                            trackResult.trackInfos.size(), trackResult.nonApplicableCount), 
                         false);
                 }
                 
-                return createWorkingSetFromTrackIds(trackResult.trackIds);
+                return createWorkingSetFromTrackInfos(trackResult.trackInfos);
             }
             else if (m_currentNode)
             {
@@ -1849,12 +1841,12 @@ namespace jucyaudio
             return false;
         }
 
-        bool MainComponent::createWorkingSetFromTrackIds(std::vector<TrackId> trackIds)
+        bool MainComponent::createWorkingSetFromTrackInfos(std::vector<TrackInfo> trackInfos)
         {
-            return onHandleCreateWorkingSetDialog(static_cast<int64_t>(trackIds.size()),
-                [this, trackIds](const juce::String &name, WorkingSetId targetWsId)
+            return onHandleCreateWorkingSetDialog(static_cast<int64_t>(trackInfos.size()),
+                [this, trackInfos](const juce::String &name, WorkingSetId targetWsId)
                 {
-                    onCreateWorkingSetFromTrackIdsCallback(name, targetWsId, trackIds);
+                    onCreateWorkingSetFromTrackInfosCallback(name, targetWsId, trackInfos);
                 });
         }
 
@@ -1871,7 +1863,7 @@ namespace jucyaudio
             }
         }
 
-        void MainComponent::onCreateWorkingSetFromTrackIdsCallback(const juce::String &name, WorkingSetId targetWsId, std::vector<TrackId> trackIds)
+        void MainComponent::onCreateWorkingSetFromTrackInfosCallback(const juce::String &name, WorkingSetId targetWsId, std::vector<TrackInfo> trackInfos)
         {
             WorkingSetInfo workingSetInfo;
 
@@ -1879,12 +1871,12 @@ namespace jucyaudio
             {
                 // Create new working set
                 onCommonCreateWorkingSetCallback(
-                    theTrackLibrary.getWorkingSetManager().createWorkingSetFromTrackIds(trackIds, name.toStdString(), workingSetInfo), workingSetInfo);
+                    theTrackLibrary.getWorkingSetManager().createWorkingSetFromTrackInfos(trackInfos, name.toStdString(), workingSetInfo), workingSetInfo);
             }
             else
             {
                 // Append to existing working set
-                bool success = theTrackLibrary.getWorkingSetManager().addToWorkingSet(targetWsId, trackIds);
+                bool success = theTrackLibrary.getWorkingSetManager().addToWorkingSet(targetWsId, trackInfos);
                 if (success)
                 {
                     // Get the working set name for the success message
@@ -1900,7 +1892,7 @@ namespace jucyaudio
                     {
                         workingSetInfo = *it;
                         m_statusPanel.getStatusBar().postMessage(
-                            std::format("Added {} tracks to working set '{}'", trackIds.size(), workingSetInfo.name), false);
+                            std::format("Added {} tracks to working set '{}'", trackInfos.size(), workingSetInfo.name), false);
                         // Refresh the working set node to show the new track count
                         m_navigationTree.onWorkingSetCreated(targetWsId);
                     }
@@ -1979,16 +1971,8 @@ namespace jucyaudio
             {
                 // Append to existing working set
                 const auto trackResult = node->getAllTrackInfosForOperation();
-                
-                // Extract just the track IDs
-                std::vector<TrackId> trackIds;
-                trackIds.reserve(trackResult.trackInfos.size());
-                for (const auto& trackInfo : trackResult.trackInfos)
-                {
-                    trackIds.push_back(trackInfo.trackId);
-                }
-                
-                bool success = theTrackLibrary.getWorkingSetManager().addToWorkingSet(targetWsId, trackIds);
+                                
+                bool success = theTrackLibrary.getWorkingSetManager().addToWorkingSet(targetWsId, trackResult.trackInfos);
 
                 if (success)
                 {
@@ -2005,7 +1989,7 @@ namespace jucyaudio
                     {
                         workingSetInfo = *it;
                         m_statusPanel.getStatusBar().postMessage(
-                            std::format("Added {} tracks to working set '{}'", trackIds.size(), workingSetInfo.name), false);
+                            std::format("Added {} tracks to working set '{}'", trackResult.trackInfos.size(), workingSetInfo.name), false);
                         // Refresh the working set node to show the new track count
                         m_navigationTree.onWorkingSetCreated(targetWsId);
                     }

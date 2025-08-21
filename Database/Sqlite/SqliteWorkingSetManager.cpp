@@ -260,8 +260,8 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             return false;
         }
 
-        bool SqliteWorkingSetManager::createWorkingSetFromTrackIds(
-            const std::vector<TrackId> &trackIds, std::string_view name, WorkingSetInfo &newWorkingSet) const
+        bool SqliteWorkingSetManager::createWorkingSetFromTrackInfos(
+            const std::vector<TrackInfo> &trackInfos, std::string_view name, WorkingSetInfo &newWorkingSet) const
         {
             if (SqliteTransaction transaction{m_db})
             {
@@ -276,13 +276,13 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
                         timestampToInt64(newWorkingSet.timestamp)))
                 {
                     newWorkingSet.id = m_db.getLastInsertRowId(); // Get the new working set ID
-                    for (const auto &trackId : trackIds)
+                    for (const auto &trackInfo : trackInfos)
                     {
                         if (!transaction.execute("INSERT OR IGNORE INTO "
                                                  "WorkingSetTracks (ws_id, "
                                                  "track_id) VALUES (?, ?);",
                                 newWorkingSet.id,
-                                trackId))
+                                trackInfo.trackId))
                         {
                             return transaction.rollback();
                         }
@@ -293,36 +293,20 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             return false;
         }
 
-        bool SqliteWorkingSetManager::addToWorkingSet(WorkingSetId workingSetId, const std::vector<TrackId> &trackIds)
+        bool SqliteWorkingSetManager::addToWorkingSet(WorkingSetId workingSetId, const std::vector<TrackInfo> &trackInfos)
         {
             if (SqliteTransaction transaction{m_db})
             {
-                for (const auto &trackId : trackIds)
+                for (const auto &trackInfo : trackInfos)
                 {
                     if (!transaction.execute("INSERT OR IGNORE INTO "
                                              "WorkingSetTracks (ws_id, "
                                              "track_id) VALUES (?, ?);",
                             workingSetId,
-                            trackId))
+                            trackInfo.trackId))
                     {
                         return transaction.rollback();
                     }
-                }
-                return transaction.commit();
-            }
-            return false;
-        }
-
-        bool SqliteWorkingSetManager::addToWorkingSet(WorkingSetId workingSetId, TrackId trackId)
-        {
-            if (SqliteTransaction transaction{m_db})
-            {
-                if (transaction.execute("INSERT OR IGNORE INTO WorkingSetTracks (ws_id, "
-                                        "track_id) VALUES (?, ?);",
-                        workingSetId,
-                        trackId))
-                {
-                    return transaction.commit();
                 }
                 return transaction.commit();
             }

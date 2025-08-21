@@ -416,5 +416,66 @@ namespace jucyaudio
             return result;
         }
 
+        TrackInfosForOperationResult VirtualFolderNode::getTrackInfosForOperation(const std::vector<RowIndex_t>& selectedRows) const
+        {
+            TrackInfosForOperationResult result;
+            auto& folderDb = theTrackLibrary.getFolderDatabase();
+            
+            for (const auto& rowIndex : selectedRows)
+            {
+                const auto rowType = getRowType(rowIndex);
+                
+                if (rowType == RowType::ParentFolder)
+                {
+                    // ".." folder - cannot be added to working set
+                    result.nonApplicableCount++;
+                }
+                else if (rowType == RowType::ChildFolder)
+                {
+                    // Get the folder index
+                    int64_t folderIndex = rowIndex;
+                    if (hasParent())
+                        folderIndex--; // Adjust for parent ".." row
+                    
+                    if (folderIndex >= 0 && folderIndex < static_cast<int64_t>(m_childFolders.size()))
+                    {
+                        const auto& childFolder = m_childFolders[folderIndex];
+                        
+                        // Get all tracks recursively from this folder
+                        const auto allChildFolders = folderDb.getAllChildFolders({childFolder.folderId});
+                        
+                        // Build query to get all tracks from these folders
+                        TrackQueryArgs args;
+                        args.folderIds = std::vector<FolderId>{allChildFolders.begin(), allChildFolders.end()};
+                        args.recursive = false; // We already have all child folders
+                        args.usePaging = false;
+                        
+                        // Get all tracks from these folders
+                        const auto tracks = theTrackLibrary.getTracks(args);
+                        result.trackInfos.insert(result.trackInfos.end(), tracks.begin(), tracks.end());
+                    }
+                    else
+                    {
+                        result.nonApplicableCount++;
+                    }
+                }
+                else if (rowType == RowType::Track)
+                {
+                    // Regular track - use base implementation
+                    const auto* trackInfo = getTrackInfoForRow(rowIndex);
+                    if (trackInfo != nullptr)
+                    {
+                        result.trackInfos.push_back(*trackInfo);
+                    }
+                    else
+                    {
+                        result.nonApplicableCount++;
+                    }
+                }
+            }
+            
+            return result;
+        }
+
     } // namespace database
 } // namespace jucyaudio

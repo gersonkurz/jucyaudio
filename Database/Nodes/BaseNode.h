@@ -82,7 +82,6 @@ namespace jucyaudio
             CellRenderInfo getCellRenderInfo(RowIndex_t rowIndex, ColumnIndex_t columnIndex) const override;
             RowActivationResult onRowActivated(RowIndex_t rowIndex) override;
             DeletionAnalysisResult analyzeDeletionRequest(const std::vector<RowIndex_t>& selectedRows) const override;
-            TrackIdsForOperationResult getTrackIdsForOperation(const std::vector<RowIndex_t>& selectedRows) const override;
             TrackInfosForOperationResult getTrackInfosForOperation(const std::vector<RowIndex_t>& selectedRows) const override;
             TrackInfosForOperationResult getAllTrackInfosForOperation() const override;
             

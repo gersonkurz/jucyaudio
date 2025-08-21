@@ -69,34 +69,6 @@ namespace jucyaudio
             return deleted;
         }
         
-        bool NavigationTree::removeObjectsForRows(INavigationNode *node, const std::vector<RowIndex_t> &rows)
-        {
-            // NOTE: This method is deprecated - use node->analyzeDeletionRequest() and node->removeObjects() directly
-            // what to do depends entirely on the context of the operation
-            bool success = false;
-            
-            // Use the new Node-Centric method to get valid object IDs
-            const auto trackResult = node->getTrackIdsForOperation(rows);
-            std::vector<ObjectId> objectIds(trackResult.trackIds.begin(), trackResult.trackIds.end());
-            success = node->removeObjects(objectIds);
-            std::string statusMessage = success ? "Removed tracks from mix." : "Failed to remove tracks from mix.";
-            if (success)
-            {
-                // now we need to remove the rows from the nodes' cache
-                for (const auto rowIndex : rows)
-                {
-                    node->removeObjectAtRow(rowIndex);
-                }
-
-                // this is not quite true; we should probably instead just remove the individual items!
-                m_npc.refreshNode(node);
-
-                // refresh objects in the node itself.
-                m_dvc.refreshView(); // Refresh data view if it's the current view
-            }
-            return success;
-        }
-
         void NavigationTree::onMixCreated(MixId mixId)
         {
             if (const auto mixesRootNode{m_root->getMixesRootNode()})

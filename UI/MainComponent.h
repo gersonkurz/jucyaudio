@@ -1,36 +1,35 @@
 #pragma once
 
 #include <Audio/AudioLibrary.h>
+#include <Audio/Includes/ActiveExportSettings.h>
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Nodes/RootNode.h>
 #include <Database/TrackLibrary.h>
+#include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/DataViewComponent.h>
 #include <UI/DividerComponent.h>
 #include <UI/DynamicToolbarComponent.h>
+#include <UI/EnhancedPlayerComponent.h>
 #include <UI/MainPlaybackAndStatusComponent.h>
 #include <UI/MenuManager.h>
-#include <UI/NavigationTree.h>
 #include <UI/MenuPresenter.h>
-#include <UI/NavigationPanelComponent.h>
 #include <UI/MixEditorComponent.h>
+#include <UI/NavigationPanelComponent.h>
+#include <UI/NavigationTree.h>
 #include <UI/PlaybackController.h>
-#include <UI/EnhancedPlayerComponent.h>
-#include <UI/CreateWorkingSetDialogComponent.h>
-#include <UI/ThemeManager.h>
 #include <UI/Settings.h>
-#include <Utils/UiUtils.h>
+#include <UI/ThemeManager.h>
 #include <UI/TimerMultiplexer.h>
-#include <Audio/Includes/ActiveExportSettings.h>
+#include <Utils/UiUtils.h>
+#include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
-#include <juce_audio_utils/juce_audio_utils.h>
 
 namespace jucyaudio
 {
     namespace ui
     {
         using namespace database;
-
 
         MainViewType determineMainViewType(const INavigationNode *node);
         MainViewType getLastKnownMainViewType();
@@ -39,7 +38,7 @@ namespace jucyaudio
 
         class MainComponent : public juce::AudioAppComponent, public MenuPresenter, public juce::Timer, public juce::ChangeListener
         {
-        public:            
+        public:
             MainComponent(juce::ApplicationCommandManager &commandManager);
             ~MainComponent() override;
 
@@ -48,7 +47,7 @@ namespace jucyaudio
 
             void timerCallback() override;
             void changeListenerCallback(juce::ChangeBroadcaster *source) override;
-            
+
             // Keyboard handling for media keys
             bool keyPressed(const juce::KeyPress &key) override;
 
@@ -66,16 +65,19 @@ namespace jucyaudio
 
             // Method called by DividerComponent during drag
             void updateNavPanelWidthFromDrag(int originalNavPanelWidthAtDragStart, int dragDeltaX);
-            
+
             // @brief Helper method to check if we're in track editor view for a mix
             // @return true if the current main view is MixEditor, false otherwise
             bool isTrackEditorInMixView() const;
-            
+
             // @brief Stop mix playback if currently playing
             void stopMixPlayback();
-            
+
             // Node-Centric Command Architecture support
-            void navigateToNode(INavigationNode *node) { handleNodeSelection(node, false, true); }
+            void navigateToNode(INavigationNode *node)
+            {
+                handleNodeSelection(node, false, true);
+            }
             void playDataRow(RowIndex_t rowIndex);
             bool navigateToFolder(FolderId folderId);
 
@@ -87,14 +89,14 @@ namespace jucyaudio
             void handleNodeActionFromNavigationPanel(INavigationNode *selectedNode, DataAction action);
             void handleRowActionFromDataView(RowIndex_t rowIndex, DataAction action, const juce::Point<int> &screenPos);
             void createMix();
-            
+
             // Media key actions
             void playNextTrack();
             void playPreviousTrack();
 
             // --- export mix functionality ---
             void onExportMix(INavigationNode *selectedNode);
-            void onRemoveDuplicates(INavigationNode* selectedNode);
+            void onRemoveDuplicates(INavigationNode *selectedNode);
             void onExportMixSettingsReceived(const MixInfo &mixInfo, const audio::ActiveExportSettings &settings);
             std::unique_ptr<juce::FileChooser> m_activeFileChooser;
 
@@ -111,34 +113,34 @@ namespace jucyaudio
             bool onShowConfigureColumnsDialog();
             bool onShowAboutDialog();
             bool onApplyThemeByIndex(size_t themeIndex);
-            
+
             // Helper to check if a DataAction is available for current node
             bool isActionAvailable(DataAction action) const;
 
             // working set management -------------------------------
             bool createWorkingSet();
-            bool createWorkingSetFromTrackIds(std::vector<TrackId> trackIds);
-            void onCreateWorkingSetFromTrackIdsCallback(const juce::String &name, WorkingSetId targetWsId, std::vector<TrackId> trackIds);
+            bool createWorkingSetFromTrackInfos(std::vector<TrackInfo> trackInfos);
+            void onCreateWorkingSetFromTrackInfosCallback(const juce::String &name, WorkingSetId targetWsId, std::vector<TrackInfo> trackInfos);
             bool createWorkingSetFromNode(const INavigationNode *node);
             void onCreateWorkingSetFromNodeCallback(const juce::String &name, WorkingSetId targetWsId, const INavigationNode *node);
             void onCommonCreateWorkingSetCallback(bool success, const WorkingSetInfo &workingSetInfo);
             void onMixCreatedCallback(bool success, const MixInfo &mixInfo);
             bool onHandleCreateWorkingSetDialog(int64_t trackCount, OnCreateWorkingSetCallback callback);
 
-            void onRunBpmAnalysis(INavigationNode* node);
+            void onRunBpmAnalysis(INavigationNode *node);
             void onRunBpmAnalysisForSelectedRows();
-            void showBadFilesDialog(const std::vector<TrackInfo>& badFiles);
+            void showBadFilesDialog(const std::vector<TrackInfo> &badFiles);
 
             void onEditWorkingSetMetadata(INavigationNode *node);
             void onEditMixMetadata(INavigationNode *node);
             void onShowInFolder(RowIndex_t rowIndex);
-            
+
             // Equalizer management
             void showEqualizerWindow();
             void hideEqualizerWindow();
             void toggleEqualizerWindow();
             void toggleEqualizerEnabled();
-            
+
             // Reverb management
             void showReverbWindow();
             void hideReverbWindow();
@@ -159,7 +161,7 @@ namespace jucyaudio
             MixEditorComponent m_mixEditorComponent;
 
             DividerComponent m_verticalDivider;
-            
+
             // Audio components for waveform display
             juce::AudioFormatManager m_audioFormatManager;
             juce::AudioThumbnailCache m_audioThumbnailCache{200}; // Cache for 200 thumbnails - enough for large mixes
@@ -168,14 +170,14 @@ namespace jucyaudio
             EnhancedPlayerComponent m_enhancedPlayer; // Direct member object
             MainPlaybackAndStatusComponent m_statusPanel;
             juce::LookAndFeel_V4 m_lookAndFeel;
-            
+
             // Unified timer system
             TimerMultiplexer m_timerMultiplexer;
-            
+
             // Equalizer window (optional visibility)
             std::unique_ptr<juce::DocumentWindow> m_equalizerWindow;
             bool m_equalizerEnabled{true}; // Whether EQ processing is active (independent of window visibility)
-            
+
             // Reverb window (optional visibility)
             std::unique_ptr<juce::DocumentWindow> m_reverbWindow;
             bool m_reverbEnabled{true}; // Whether reverb processing is active (independent of window visibility)
@@ -203,11 +205,11 @@ namespace jucyaudio
             };
 
             void onDataActionDelete(INavigationNode *selectedNode);
-            
+
             void onDataActionDeleteConfirmed(INavigationNode *selectedNode, int result);
 
             void onDataActionRemoveNamedObjects();
-            
+
             // @brief Called when you want to switch the mix-view to "Mix Editor" mode, that is: waveform view
             void onShowMixEditor();
 

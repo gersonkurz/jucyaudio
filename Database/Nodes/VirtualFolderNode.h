@@ -35,6 +35,9 @@ namespace jucyaudio
         // Override to include folders in the row count
         bool getNumberOfRows(int64_t &outCount) const override;
         
+        // Override to handle folders recursively
+        TrackInfosForOperationResult getTrackInfosForOperation(const std::vector<RowIndex_t>& selectedRows) const override;
+        
     protected:
         // Override to handle folder rows
         const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;

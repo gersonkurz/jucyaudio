@@ -201,14 +201,6 @@ namespace jucyaudio
             virtual DeletionAnalysisResult analyzeDeletionRequest(const std::vector<RowIndex_t>& selectedRows) const = 0;
             
             /**
-             * @brief Safely extract all valid TrackIds from a selection of rows for a background operation
-             * @param selectedRows The rows that the user has selected
-             * @return TrackIdsForOperationResult containing valid track IDs and count of non-tracks
-             * @note This is the designated way to get a list of tracks for batch processing (BPM analysis, etc.)
-             */
-            virtual TrackIdsForOperationResult getTrackIdsForOperation(const std::vector<RowIndex_t>& selectedRows) const = 0;
-            
-            /**
              * @brief Safely extract full TrackInfo objects from a selection of rows for operations needing complete data
              * @param selectedRows The rows that the user has selected
              * @return TrackInfosForOperationResult containing TrackInfo objects and count of non-tracks

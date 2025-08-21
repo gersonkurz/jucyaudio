@@ -1,5 +1,5 @@
-#include <Database/BackgroundTasks/BpmAnalysis.h>
 #include <Database/BackgroundTasks/AudioAnalysis.h>
+#include <Database/BackgroundTasks/BpmAnalysis.h>
 #include <Database/TrackLibrary.h>
 #include <spdlog/spdlog.h>
 
@@ -32,7 +32,7 @@ namespace jucyaudio
                 }
 
                 const auto &trackInfo = *trackOpt;
-                
+
                 const auto start_time = std::chrono::high_resolution_clock::now();
                 const auto trackPath{trackInfo.reconstructFullPath()};
                 AudioMetadata am = analyzeAudioFile(trackPath);
@@ -42,19 +42,18 @@ namespace jucyaudio
                 // Check if analysis failed (BPM = 0 indicates failure)
                 if (am.bpm <= 0.0)
                 {
-                    spdlog::error("Failed to analyze '{}' - marking as bad format", 
-                        trackPath.filename().string());
-                    
+                    spdlog::error("Failed to analyze '{}' - marking as bad format", trackPath.filename().string());
+
                     // Mark the track as bad format so it won't be retried
                     theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
                 }
                 else
                 {
-                    spdlog::info("Analyzed '{}' in {} ms. BPM: {:.2f}, Has Intro: {}, Has Outro: {}", 
-                        trackPath.filename().string(), 
-                        duration.count(), 
-                        am.bpm, 
-                        am.hasIntro, 
+                    spdlog::info("Analyzed '{}' in {} ms. BPM: {:.2f}, Has Intro: {}, Has Outro: {}",
+                        trackPath.filename().string(),
+                        duration.count(),
+                        am.bpm,
+                        am.hasIntro,
                         am.hasOutro);
 
                     theTrackLibrary.getTrackDatabase()->updateTrackBpm(trackInfo.trackId, am);

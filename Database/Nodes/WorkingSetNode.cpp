@@ -127,29 +127,7 @@ namespace jucyaudio
             
             return result;
         }
-        
-        TrackIdsForOperationResult WorkingSetNode::getTrackIdsForOperation(const std::vector<RowIndex_t>& selectedRows) const
-        {
-            TrackIdsForOperationResult result;
-            
-            // A WorkingSetNode only contains tracks, all of which are valid for operations
-            for (const auto& rowIndex : selectedRows)
-            {
-                const auto* trackInfo = getTrackInfoForRow(rowIndex);
-                if (trackInfo && trackInfo->trackId > 0)
-                {
-                    result.trackIds.push_back(trackInfo->trackId);
-                }
-                else
-                {
-                    // This shouldn't happen in a WorkingSetNode, but handle it gracefully
-                    result.nonApplicableCount++;
-                }
-            }
-            
-            return result;
-        }
-        
+                
         TrackInfosForOperationResult WorkingSetNode::getTrackInfosForOperation(const std::vector<RowIndex_t>& selectedRows) const
         {
             TrackInfosForOperationResult result;
