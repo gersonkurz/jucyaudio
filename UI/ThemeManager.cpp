@@ -60,6 +60,8 @@ namespace jucyaudio
                 DECLARE_COLOUR_ID(Slider::textBoxOutlineColourId)
                 DECLARE_COLOUR_ID(ScrollBar::thumbColourId) // New
                 DECLARE_COLOUR_ID(ScrollBar::trackColourId) // New
+                DECLARE_COLOUR_ID(ProgressBar::backgroundColourId)
+                DECLARE_COLOUR_ID(ProgressBar::foregroundColourId)
                 
                 // Custom JucyAudio colour IDs
                 DECLARE_CUSTOM_COLOUR_ID(waveformColourId)
