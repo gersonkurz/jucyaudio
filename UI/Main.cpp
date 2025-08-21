@@ -105,6 +105,8 @@ namespace jucyaudio
                     setContentOwned(m_pMainComponent, true);                             // Set as content
                     setMenuBar(m_pMainComponent);
                     theThemeManager.applyCurrentTheme(lookAndFeel, getMenuBarComponent());
+                    // Apply theme to MainComponent after creation so all child components get the accent color
+                    theThemeManager.applyCurrentTheme(lookAndFeel, m_pMainComponent);
                     setResizable(true, true);
                     
                     // Don't center or show yet - wait for explicit show
