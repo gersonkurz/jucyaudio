@@ -65,6 +65,20 @@
     - The issue prevented dialogs (Settings, Equalizer, Reverb, etc.) from being reopened after being closed.
     - Unified the close logic to ensure cleanup is performed correctly whether the dialog is closed via the mouse or the ESC key.
 
+### Session 16: Theme System Overhaul & Semantic Colors
+*   **Semantic Color System Implementation:**
+    - Migrated from hardcoded colors to semantic color mappings in `ThemeManager`.
+    - Introduced `semanticColourMap` that defines which UI elements use which semantic colors.
+    - Themes now only need to define semantic colors (accent, mainBackground, alternateBackground, mainForeground, disabledForeground).
+    - The mapping of semantic colors to UI elements is hardcoded in the application, not configurable per theme.
+*   **Accent Color for Icons:**
+    - Added `accentColourId` that dynamically colors all SVG icons.
+    - Icons automatically update when themes change via `lookAndFeelChanged()`.
+    - Fixed startup issue where icons appeared black before theme was applied.
+*   **Orange Themes Added:**
+    - Successfully created Orange-Dark and Orange-Light theme variants.
+    - All themes now use the semantic color system for easier maintenance.
+
 ---
 
 ## Important Implementation Notes
@@ -103,9 +117,9 @@
 
 #### Medium Priority:
 
-1. **Orange-Light / Orange-Dark Themes:**
-   - Design new orange-based themes
-   - Set one as default theme
+1. ~~**Orange-Light / Orange-Dark Themes:**~~ ✅ COMPLETED
+   - ~~Design new orange-based themes~~
+   - ~~Set one as default theme~~
 
 2. **Intelligent Duplicates Detection:**
    - Improve existing working-set duplicate detection

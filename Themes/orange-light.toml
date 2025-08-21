@@ -1,4 +1,4 @@
-name = "Jucy Light"
+name = "Orange Light"
 
 [colors]
 "Label::textWhenEditingColourId"           = "#FF212121"  # Dark text when editing labels/sliders
@@ -13,8 +13,8 @@ name = "Jucy Light"
 "TextEditor::outlineColourId"              = "#FFC7C7CC"
 "TreeView::linesColourId"                  = "#FFD1D1D6"
 "waveformColourId"                         = "#FF404040"  # Dark gray waveform for light theme
-"accent"                           = "#FFF96E00"  # Orange accent for icons in light theme
-"mainBackground"				   = "#FFFFFFFF"  # Main background color for the application
-"alternateBackground"			   = "#FFCCCCCC"  # Gray
-"mainForeground"				   = "#FF000005"	# Dark blue
-"disabledForeground"			   = "#FF333333"	# Dark gray
+"accent"                           = "#FFFFFFFF"
+"mainBackground"				   = "#FFF96E00"
+"alternateBackground"			   = "#FFF98F44"
+"mainForeground"				   = "#FFFFFFFF"
+"disabledForeground"			   = "#FFDDDDCC"

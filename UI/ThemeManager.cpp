@@ -10,8 +10,10 @@ namespace jucyaudio
         namespace
         {
             std::unordered_map<std::string, std::unordered_set<int>> semanticColourMap{
-                {"accentColourId",
-                    {juce::ComboBox::backgroundColourId,
+                {
+                    "accent",
+                    {
+                        juce::ComboBox::backgroundColourId,
                         juce::PopupMenu::highlightedBackgroundColourId,
                         juce::TabbedButtonBar::frontOutlineColourId,
                         juce::Slider::thumbColourId,
@@ -19,47 +21,75 @@ namespace jucyaudio
                         juce::TreeView::dragAndDropIndicatorColourId,
                         juce::TreeView::selectedItemBackgroundColourId,
                         juce::ProgressBar::foregroundColourId,
-                        juce::ScrollBar::thumbColourId}} // namespace ui
-                ,
+                        juce::ScrollBar::thumbColourId
+                    }
+                },
+                {
+                    "mainBackground",
+                    {
+                        juce::ResizableWindow::backgroundColourId,
+                        juce::TreeView::backgroundColourId,
+                        juce::ListBox::backgroundColourId,
+                        juce::TabbedComponent::backgroundColourId,
+                        juce::TextEditor::backgroundColourId,
+                        juce::PopupMenu::backgroundColourId,
+                        juce::ProgressBar::backgroundColourId,
+                        juce::Slider::textBoxBackgroundColourId,
+                        juce::TreeView::evenItemsColourId,
+                        juce::TextButton::buttonColourId,
+                        juce::PopupMenu::highlightedTextColourId,
+                    }
+                },
+                {
+                    "alternateBackground", 
+                    {
+                        juce::TreeView::oddItemsColourId
+                    }
+                },
+                {
+                    "mainForeground",
+                    {
+                        juce::Label::textColourId,
+                        juce::TextEditor::textColourId,
+                        juce::ToggleButton::textColourId,
+                        juce::PopupMenu::textColourId,
+                        juce::PopupMenu::headerTextColourId,
+                        juce::ListBox::textColourId,
+                        juce::TabbedButtonBar::tabTextColourId,
+                        juce::TabbedButtonBar::frontTextColourId,
+                        juce::Slider::textBoxTextColourId,
+                        jucyaudio::ui::folderOnlineTextColourId,
+                        juce::TextButton::textColourOnId,
+                    }
+                },
+                {
+                    "disabledForeground", 
+                    {
+                        jucyaudio::ui::folderOfflineTextColourId, juce::TextButton::textColourOffId
+                    }   
+                },
             };
 
-            const std::unordered_map<std::string, int> colourNameMap{{"TreeView::backgroundColourId", juce::TreeView::backgroundColourId},
+            const std::unordered_map<std::string, int> colourNameMap{
                 {"TreeView::linesColourId", juce::TreeView::linesColourId},
-                {"TreeView::oddItemsColourId", juce::TreeView::oddItemsColourId},
-                {"TreeView::evenItemsColourId", juce::TreeView::evenItemsColourId},
-                {"Label::textColourId", juce::Label::textColourId},
+                
                 {"Label::textWhenEditingColourId", juce::Label::textWhenEditingColourId},
                 {"Label::backgroundWhenEditingColourId", juce::Label::backgroundWhenEditingColourId},
-                {"TextEditor::backgroundColourId", juce::TextEditor::backgroundColourId},
-                {"TextEditor::textColourId", juce::TextEditor::textColourId},
                 {"TextEditor::outlineColourId", juce::TextEditor::outlineColourId},
-                {"ToggleButton::textColourId", juce::ToggleButton::textColourId},
-                {"TextButton::buttonColourId", juce::TextButton::buttonColourId},
-                {"TextButton::textColourOffId", juce::TextButton::textColourOffId},
-                {"TextButton::textColourOnId", juce::TextButton::textColourOnId},
-                {"PopupMenu::backgroundColourId", juce::PopupMenu::backgroundColourId},
-                {"PopupMenu::textColourId", juce::PopupMenu::textColourId},
-                {"PopupMenu::headerTextColourId", juce::PopupMenu::headerTextColourId},
-                {"PopupMenu::highlightedTextColourId", juce::PopupMenu::highlightedTextColourId},
-                {"ListBox::backgroundColourId", juce::ListBox::backgroundColourId},
+
                 {"ListBox::outlineColourId", juce::ListBox::outlineColourId},
-                {"ListBox::textColourId", juce::ListBox::textColourId},
-                {"ResizableWindow::backgroundColourId", juce::ResizableWindow::backgroundColourId},
-                {"TabbedComponent::backgroundColourId", juce::TabbedComponent::backgroundColourId},
                 {"TabbedComponent::outlineColourId", juce::TabbedComponent::outlineColourId},
                 {"TabbedButtonBar::tabOutlineColourId", juce::TabbedButtonBar::tabOutlineColourId},
-                {"TabbedButtonBar::tabTextColourId", juce::TabbedButtonBar::tabTextColourId},
-                {"TabbedButtonBar::frontTextColourId", juce::TabbedButtonBar::frontTextColourId},
-                {"Slider::trackColourId", juce::Slider::trackColourId},
-                {"Slider::textBoxTextColourId", juce::Slider::textBoxTextColourId},
-                {"Slider::textBoxBackgroundColourId", juce::Slider::textBoxBackgroundColourId},
+                {"Slider::trackColourId", juce::Slider::trackColourId},                
                 {"Slider::textBoxOutlineColourId", juce::Slider::textBoxOutlineColourId},
                 {"ScrollBar::trackColourId", juce::ScrollBar::trackColourId},
-                {"ProgressBar::backgroundColourId", juce::ProgressBar::backgroundColourId},
-                {"waveformColourId", jucyaudio::ui::waveformColourId},
-                {"folderOnlineTextColourId", jucyaudio::ui::folderOnlineTextColourId},
-                {"folderOfflineTextColourId", jucyaudio::ui::folderOfflineTextColourId},
-                {"accentColourId", jucyaudio::ui::accentColourId}};
+                {"waveformColourId", jucyaudio::ui::waveformColourId},                
+                {"accent", jucyaudio::ui::accentColourId},
+                {"mainBackground", jucyaudio::ui::mainBackgroundColourId},
+                {"alternateBackground", jucyaudio::ui::alternateBackgroundColourId},
+                {"mainForeground", jucyaudio::ui::mainForegroundColourId},
+                {"disabledForeground", jucyaudio::ui::disabledForegroundColourId},
+            };
         } // namespace
 
         std::optional<JucyTheme> ThemeManager::loadThemeFromFile(const std::filesystem::path &path)
