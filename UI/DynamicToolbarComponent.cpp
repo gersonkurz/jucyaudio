@@ -50,7 +50,7 @@ namespace jucyaudio
 
             for (const auto action : allActions)
             {
-                auto icon = dataActionToIcon(action);
+                auto icon = dataActionToIcon(action, &getLookAndFeel());
                 if (icon)
                 {
                     auto button = std::make_unique<juce::DrawableButton>(
@@ -76,7 +76,7 @@ namespace jucyaudio
             // Create the always-visible buttons (Settings, ScanFolders)
             for (const auto action : alwaysVisibleActions)
             {
-                auto icon = dataActionToIcon(action);
+                auto icon = dataActionToIcon(action, &getLookAndFeel());
                 if (icon)
                 {
                     auto button = std::make_unique<juce::DrawableButton>(
@@ -114,6 +114,30 @@ namespace jucyaudio
             g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId).darker(0.1f)); // Example background
             g.setColour(juce::Colours::black.withAlpha(0.5f));
             g.drawLine(0, (float)getHeight() - 1.0f, (float)getWidth(), (float)getHeight() - 1.0f, 1.0f); // Bottom border line
+        }
+
+        void DynamicToolbarComponent::lookAndFeelChanged()
+        {
+            // Reload icons with new accent color when theme changes
+            for (auto& buttonInfo : m_allActionButtons)
+            {
+                auto icon = dataActionToIcon(buttonInfo.action, &getLookAndFeel());
+                if (icon && buttonInfo.button)
+                {
+                    buttonInfo.button->setImages(icon.get());
+                }
+            }
+            
+            for (auto& buttonInfo : m_alwaysVisibleButtons)
+            {
+                auto icon = dataActionToIcon(buttonInfo.action, &getLookAndFeel());
+                if (icon && buttonInfo.button)
+                {
+                    buttonInfo.button->setImages(icon.get());
+                }
+            }
+            
+            repaint();
         }
 
         void DynamicToolbarComponent::resized()

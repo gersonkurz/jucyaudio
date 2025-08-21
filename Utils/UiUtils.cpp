@@ -1,6 +1,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_graphics/juce_graphics.h>
 #include <Utils/UiUtils.h>
+#include <UI/CustomColourIds.h>
 #include <filesystem>
 #include <BinaryData.h>
 
@@ -102,12 +103,21 @@ namespace jucyaudio
             return DataAction::None;
         }
 
-        std::unique_ptr<juce::Drawable> dataActionToIcon(DataAction action)
+        std::unique_ptr<juce::Drawable> dataActionToIcon(DataAction action, const juce::LookAndFeel* lookAndFeel)
         {
-            // Helper to load SVG from binary data
-            auto loadSvg = [](const char *data, size_t size) -> std::unique_ptr<juce::Drawable>
+            const auto originalIconColour = juce::Colour(0xFFF96E00);  // Standardized orange in all SVGs
+            
+            // Helper to load SVG from binary data and apply accent color
+            auto loadSvg = [&](const char *data, size_t size) -> std::unique_ptr<juce::Drawable>
             {
-                return juce::Drawable::createFromImageData(data, size);
+                auto drawable = juce::Drawable::createFromImageData(data, size);
+                if (drawable && lookAndFeel)
+                {
+                    const auto accentColour = lookAndFeel->findColour(jucyaudio::ui::accentColourId);
+                    if (accentColour != originalIconColour)
+                        drawable->replaceColour(originalIconColour, accentColour);
+                }
+                return drawable;
             };
 
             // For now, use play_arrow.svg as a placeholder for all actions

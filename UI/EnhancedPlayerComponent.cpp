@@ -95,6 +95,15 @@ namespace jucyaudio
             }
         }
 
+        void EnhancedPlayerComponent::lookAndFeelChanged()
+        {
+            // Reload icons with new accent color when theme changes
+            loadButtonIcons();
+            loadVolumeIcons();
+            updateToggleButtons(); // Refresh toggle button states
+            repaint();
+        }
+
         void EnhancedPlayerComponent::resized()
         {
             auto bounds = getLocalBounds();
@@ -167,9 +176,15 @@ namespace jucyaudio
 
         void EnhancedPlayerComponent::loadButtonIcons()
         {
-            auto loadSvg = [](const char *data, size_t size)
+            const auto originalIconColour = juce::Colour(0xFFF96E00);  // Standardized orange in all SVGs
+            const auto accentColour = findColour(jucyaudio::ui::accentColourId);
+            
+            auto loadSvg = [&](const char *data, size_t size)
             {
-                return juce::Drawable::createFromImageData(data, size);
+                auto drawable = juce::Drawable::createFromImageData(data, size);
+                if (drawable && accentColour != originalIconColour)
+                    drawable->replaceColour(originalIconColour, accentColour);
+                return drawable;
             };
 
             // --- Play/Pause Button ---
@@ -194,7 +209,6 @@ namespace jucyaudio
             setSimpleButtonImage(m_nextButton, BinaryData::next_svg, BinaryData::next_svgSize);
 
             // --- Repeat and Shuffle Buttons with On/Off Colors ---
-            const auto accentColour = juce::Colour(0xFFF96F00);  // Orange color matching other icons
             const auto offColour = findColour(juce::Label::textColourId).withAlpha(0.7f);
 
             // =================================================================================
@@ -203,7 +217,7 @@ namespace jucyaudio
             // are designed with a single, consistent color that we can target for replacement.
             // The SVGs currently use orange (#ff8e31), so we need to replace that color.
             // =================================================================================
-            const auto originalSvgColour = juce::Colour(0xffff8e31);
+            const auto originalSvgColour = juce::Colour(0xFFFF8E31);  // The actual color in repeat/shuffle SVGs
 
             auto createColouredIcon = [&](const char *data, size_t size, juce::Colour newColour)
             {
@@ -233,9 +247,15 @@ namespace jucyaudio
         }
         void EnhancedPlayerComponent::loadVolumeIcons()
         {
-            auto loadSvg = [](const char *data, size_t size)
+            const auto originalIconColour = juce::Colour(0xFFF96E00);  // Standardized orange in all SVGs
+            const auto accentColour = findColour(jucyaudio::ui::accentColourId);
+            
+            auto loadSvg = [&](const char *data, size_t size)
             {
-                return juce::Drawable::createFromImageData(data, size);
+                auto drawable = juce::Drawable::createFromImageData(data, size);
+                if (drawable && accentColour != originalIconColour)
+                    drawable->replaceColour(originalIconColour, accentColour);
+                return drawable;
             };
 
             m_iconVolumeHigh = loadSvg(BinaryData::highaudio_svg, BinaryData::highaudio_svgSize);

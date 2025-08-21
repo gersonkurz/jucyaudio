@@ -29,6 +29,7 @@ namespace jucyaudio
 
             void resized() override;
             void paint(juce::Graphics &g) override; // For background, borders, etc.
+            void lookAndFeelChanged() override;
 
             // Sets the current INavigationNode whose actions should be displayed.
             // The node's lifetime is managed externally (e.g., by MainComponent).

@@ -45,3 +45,4 @@ name = "Jucy Light"
 "waveformColourId"                         = "#FF404040"  # Dark gray waveform for light theme
 "folderOnlineTextColourId"                 = "#FF212121"  # Normal dark text for online folders
 "folderOfflineTextColourId"                = "#FFB0B0B0"  # Light gray for offline folders
+"accentColourId"                           = "#FF0080FF"  # Blue accent for icons in light theme

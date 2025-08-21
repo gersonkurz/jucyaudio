@@ -67,6 +67,7 @@ namespace jucyaudio
                 DECLARE_CUSTOM_COLOUR_ID(waveformColourId)
                 DECLARE_CUSTOM_COLOUR_ID(folderOnlineTextColourId)
                 DECLARE_CUSTOM_COLOUR_ID(folderOfflineTextColourId)
+                DECLARE_CUSTOM_COLOUR_ID(accentColourId)
             };
         } // namespace
 

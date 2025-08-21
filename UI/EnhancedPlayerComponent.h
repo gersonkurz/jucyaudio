@@ -27,6 +27,7 @@ namespace jucyaudio
 
             void paint(juce::Graphics &g) override;
             void resized() override;
+            void lookAndFeelChanged() override;
 
             // Called by TimerMultiplexer for updating UI
             void updatePlaybackPosition();
