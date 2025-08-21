@@ -50,7 +50,7 @@ namespace jucyaudio::ui
     };
     
     /**
-     * @brief Tab component for general application settings
+     * @brief Tab component for general and advanced application settings
      */
     class GeneralSettingsTab : public juce::Component
     {
@@ -61,10 +61,28 @@ namespace jucyaudio::ui
         void resized() override;
         void saveSettings();
         void loadSettings();
-        
+        void parentHierarchyChanged() override;
     private:
-        juce::Label m_headerLabel{"header", "General Settings"};
-        juce::Label m_placeholderLabel{"placeholder", "General settings will be added here in future versions."};
+        // Backup Settings
+        juce::Label m_backupLabel;
+        juce::Slider m_backupSlider;
+        juce::Label m_backupSliderLabel;
+
+        // Mix Editing Settings
+        juce::Label m_mixEditingLabel;
+        juce::ToggleButton m_removeFromWsToggle;
+        juce::ToggleButton m_askBeforeRemovingToggle;
+        juce::ToggleButton m_clearWsAfterExportToggle;
+        juce::Label m_removeTrackOptionLabel;
+        juce::ComboBox m_removeTrackOptionCombo;
+
+        // Logging Settings
+        juce::Label m_loggingLabel;
+        juce::Label m_logLevelLabel;
+        juce::ComboBox m_logLevelCombo;
+
+        // Custom LookAndFeel for checkboxes to handle theme colors
+        std::unique_ptr<juce::LookAndFeel_V4> m_checkboxLookAndFeel;
         
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GeneralSettingsTab)
     };
@@ -78,15 +96,8 @@ namespace jucyaudio::ui
         SettingsDialog();
         ~SettingsDialog() override = default;
         
-        /**
-         * @brief Initialize content after L&F has been set
-         */
         void initializeContent();
         
-        /**
-         * @brief Shows the settings dialog
-         * @param centreAroundComponent Component to center the dialog around
-         */
         static void showSettingsDialog(juce::Component* centreAroundComponent = nullptr);
         
     private:

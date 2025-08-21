@@ -119,11 +119,11 @@ namespace jucyaudio::ui
     
     void ExportSettingsTab::loadSettings()
     {
-        m_artistEditor.setText(config::theSettings.exportSettings.defaultArtist.get());
-        m_albumEditor.setText(config::theSettings.exportSettings.defaultAlbum.get());
-        m_yearEditor.setText(config::theSettings.exportSettings.defaultYear.get());
-        m_genreEditor.setText(config::theSettings.exportSettings.defaultGenre.get());
-        m_commentEditor.setText(config::theSettings.exportSettings.defaultComment.get());
+        m_artistEditor.setText(juce::String{config::theSettings.exportSettings.defaultArtist});
+        m_albumEditor.setText(juce::String{config::theSettings.exportSettings.defaultAlbum});
+        m_yearEditor.setText(juce::String{config::theSettings.exportSettings.defaultYear});
+        m_genreEditor.setText(juce::String{config::theSettings.exportSettings.defaultGenre});
+        m_commentEditor.setText(juce::String{config::theSettings.exportSettings.defaultComment});
         
         spdlog::info("Export settings loaded");
     }
@@ -151,33 +151,185 @@ namespace jucyaudio::ui
     
     GeneralSettingsTab::GeneralSettingsTab()
     {
-        m_headerLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(24.0f)}.boldened());
-        m_headerLabel.setJustificationType(juce::Justification::centred);
-        addAndMakeVisible(m_headerLabel);
-        
-        m_placeholderLabel.setJustificationType(juce::Justification::centred);
-        m_placeholderLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
-        addAndMakeVisible(m_placeholderLabel);
+        auto setupLabel = [this](juce::Label& label, const juce::String& text, float fontSize, bool isBold)
+        {
+            juce::Font font{juce::FontOptions{}.withHeight(fontSize)};
+            if (isBold)
+                font = font.boldened();
+            label.setFont(font);
+            label.setText(text, juce::dontSendNotification);
+            label.setJustificationType(juce::Justification::centredLeft);
+            addAndMakeVisible(label);
+        };
+
+        // Backup Settings
+        setupLabel(m_backupLabel, "Backup", 18.0f, true);
+        setupLabel(m_backupSliderLabel, "Number of backups to keep:", 15.0f, false);
+        m_backupSlider.setRange(1, 20, 1);
+        m_backupSlider.setSliderStyle(juce::Slider::IncDecButtons);
+        m_backupSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 40, 20);
+        addAndMakeVisible(m_backupSlider);
+
+        // Mix Editing Settings
+        setupLabel(m_mixEditingLabel, "Mix Editing", 18.0f, true);
+        m_removeFromWsToggle.setButtonText("Remove tracks from Working Set when deleting from a Mix");
+        addAndMakeVisible(m_removeFromWsToggle);
+        m_askBeforeRemovingToggle.setButtonText("Show confirmation before removing tracks from a Working Set");
+        addAndMakeVisible(m_askBeforeRemovingToggle);
+        m_clearWsAfterExportToggle.setButtonText("Clear Working Set after a successful export");
+        addAndMakeVisible(m_clearWsAfterExportToggle);
+        setupLabel(m_removeTrackOptionLabel, "Default action for removing tracks from Mix:", 15.0f, false);
+        m_removeTrackOptionCombo.addItem("Remove from Mix and Working Set", (int)config::RemoveTrackOption::RemoveFromBoth + 1);
+        m_removeTrackOptionCombo.addItem("Remove from Mix Only", (int)config::RemoveTrackOption::RemoveFromMixOnly + 1);
+        m_removeTrackOptionCombo.addItem("Always Ask", (int)config::RemoveTrackOption::AskUser + 1);
+        addAndMakeVisible(m_removeTrackOptionCombo);
+
+        // Logging Settings
+        setupLabel(m_loggingLabel, "Logging", 18.0f, true);
+        setupLabel(m_logLevelLabel, "Log Level:", 15.0f, false);
+        m_logLevelCombo.addItem("Trace", 1);
+        m_logLevelCombo.addItem("Debug", 2);
+        m_logLevelCombo.addItem("Info", 3);
+        m_logLevelCombo.addItem("Warn", 4);
+        m_logLevelCombo.addItem("Error", 5);
+        m_logLevelCombo.addItem("Critical", 6);
+        addAndMakeVisible(m_logLevelCombo);
+
+        loadSettings();
     }
     
     void GeneralSettingsTab::resized()
     {
         auto bounds = getLocalBounds().reduced(20);
-        
-        m_headerLabel.setBounds(bounds.removeFromTop(30));
-        bounds.removeFromTop(20);
-        
-        m_placeholderLabel.setBounds(bounds.reduced(20));
+        const int rowHeight = 25;
+        const int groupSpacing = 20;
+        const int labelWidth = 400; // Increased width for labels
+
+        // Backup section
+        m_backupLabel.setBounds(bounds.removeFromTop(30));
+        auto backupRow = bounds.removeFromTop(rowHeight);
+        m_backupSliderLabel.setBounds(backupRow.removeFromLeft(labelWidth));
+        m_backupSlider.setBounds(backupRow);
+        bounds.removeFromTop(groupSpacing);
+
+        // Mix Editing section
+        m_mixEditingLabel.setBounds(bounds.removeFromTop(30));
+        m_removeFromWsToggle.setBounds(bounds.removeFromTop(rowHeight));
+        m_askBeforeRemovingToggle.setBounds(bounds.removeFromTop(rowHeight));
+        m_clearWsAfterExportToggle.setBounds(bounds.removeFromTop(rowHeight));
+        auto mixRow = bounds.removeFromTop(rowHeight);
+        m_removeTrackOptionLabel.setBounds(mixRow.removeFromLeft(labelWidth));
+        m_removeTrackOptionCombo.setBounds(mixRow);
+        bounds.removeFromTop(groupSpacing);
+
+        // Logging section
+        m_loggingLabel.setBounds(bounds.removeFromTop(30));
+        auto logRow = bounds.removeFromTop(rowHeight);
+        m_logLevelLabel.setBounds(logRow.removeFromLeft(labelWidth));
+        m_logLevelCombo.setBounds(logRow);
     }
     
     void GeneralSettingsTab::saveSettings()
     {
-        // No settings to save yet
+        // Backup
+        config::theSettings.backupSettings.numberOfBackups.set((int)m_backupSlider.getValue());
+
+        // Mix Editing
+        config::theSettings.mixEditingSettings.removeFromWorkingSetOnDelete.set(m_removeFromWsToggle.getToggleState());
+        config::theSettings.mixEditingSettings.askBeforeRemovingFromWorkingSet.set(m_askBeforeRemovingToggle.getToggleState());
+        config::theSettings.mixEditingSettings.clearWorkingSetAfterExport.set(m_clearWsAfterExportToggle.getToggleState());
+        auto removeOption = (config::RemoveTrackOption)(m_removeTrackOptionCombo.getSelectedId() - 1);
+        config::theSettings.mixEditingSettings.removeTrackOption.set(removeOption);
+
+        // Logging
+        config::theSettings.loggingSettings.logLevel.set(m_logLevelCombo.getText().toLowerCase().toStdString());
+
+        // TODO: Add call to dynamically update log level here
+
+        // Save all to TOML file
+        config::TomlBackend backend{g_strConfigFilename};
+        config::theSettings.save(backend);
+        
+        spdlog::info("General settings saved");
     }
     
     void GeneralSettingsTab::loadSettings()
     {
-        // No settings to load yet
+        // Backup
+        m_backupSlider.setValue(config::theSettings.backupSettings.numberOfBackups, juce::dontSendNotification);
+
+        // Mix Editing
+        m_removeFromWsToggle.setToggleState(config::theSettings.mixEditingSettings.removeFromWorkingSetOnDelete, juce::dontSendNotification);
+        m_askBeforeRemovingToggle.setToggleState(config::theSettings.mixEditingSettings.askBeforeRemovingFromWorkingSet, juce::dontSendNotification);
+        m_clearWsAfterExportToggle.setToggleState(config::theSettings.mixEditingSettings.clearWorkingSetAfterExport, juce::dontSendNotification);
+        m_removeTrackOptionCombo.setSelectedId((int)config::theSettings.mixEditingSettings.removeTrackOption.get().value + 1, juce::dontSendNotification);
+
+        // Logging
+        m_logLevelCombo.setText(juce::String{config::theSettings.loggingSettings.logLevel}, juce::dontSendNotification);
+        
+        spdlog::info("General settings loaded");
+    }
+
+    void GeneralSettingsTab::parentHierarchyChanged()
+    {
+        // Custom LookAndFeel class to fix checkbox rendering in light theme
+        class CheckboxLookAndFeel : public juce::LookAndFeel_V4
+        {
+        public:
+            CheckboxLookAndFeel(juce::LookAndFeel& parent)
+            {
+                // Copy colors from parent to ensure we match the current theme
+                setColour(juce::ToggleButton::textColourId, parent.findColour(juce::ToggleButton::textColourId));
+                setColour(juce::ToggleButton::tickColourId, parent.findColour(juce::ToggleButton::textColourId)); // Tick the same color as text
+                setColour(juce::ToggleButton::tickDisabledColourId, parent.findColour(juce::ToggleButton::textColourId).withAlpha(0.5f));
+            }
+            
+            void drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
+                                bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
+            {
+                juce::ignoreUnused(shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+                const auto fontSize = juce::jmin(15.0f, button.getHeight() * 0.75f);
+                const auto tickWidth = fontSize * 1.1f;
+                
+                // Draw checkbox outline
+                juce::Rectangle<float> tickBounds(4.0f, (button.getHeight() - tickWidth) * 0.5f, tickWidth, tickWidth);
+                
+                g.setColour(button.findColour(juce::ToggleButton::textColourId).withAlpha(0.8f));
+                g.drawRect(tickBounds, 1.0f);
+                
+                // Fill if checked
+                if (button.getToggleState())
+                {
+                    g.setColour(button.findColour(juce::ToggleButton::tickColourId));
+                    const auto tick = tickBounds.reduced(tickWidth * 0.25f);
+                    
+                    juce::Path p;
+                    p.startNewSubPath(tick.getX(), tick.getCentreY());
+                    p.lineTo(tick.getCentreX(), tick.getBottom());
+                    p.lineTo(tick.getRight(), tick.getY());
+                    
+                    g.strokePath(p, juce::PathStrokeType(2.0f));
+                }
+                
+                // Draw text
+                g.setColour(button.findColour(juce::ToggleButton::textColourId));
+                g.setFont(fontSize);
+                
+                if (!button.isEnabled())
+                    g.setOpacity(0.5f);
+                
+                g.drawFittedText(button.getButtonText(),
+                               button.getLocalBounds().withTrimmedLeft(juce::roundToInt(tickWidth) + 10).withTrimmedRight(2),
+                               juce::Justification::centredLeft, 10);
+            }
+        };
+        
+        // Create and set custom LookAndFeel for checkboxes
+        // We create a new instance because it captures the parent L&F colors.
+        m_checkboxLookAndFeel = std::make_unique<CheckboxLookAndFeel>(getLookAndFeel());
+        m_removeFromWsToggle.setLookAndFeel(m_checkboxLookAndFeel.get());
+        m_askBeforeRemovingToggle.setLookAndFeel(m_checkboxLookAndFeel.get());
+        m_clearWsAfterExportToggle.setLookAndFeel(m_checkboxLookAndFeel.get());
     }
     
     // ===========================================================================
@@ -223,7 +375,7 @@ namespace jucyaudio::ui
         };
         addAndMakeVisible(m_cancelButton);
         
-        setSize(600, 400);
+        setSize(750, 500); // Increased width and height for new settings
     }
     
     void SettingsDialog::SettingsComponent::resized()
