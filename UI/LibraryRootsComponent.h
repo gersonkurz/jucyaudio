@@ -17,6 +17,7 @@ namespace jucyaudio
 
             void paint(juce::Graphics &g) override;
             void resized() override;
+            void parentHierarchyChanged() override;
             void buttonClicked(juce::Button *button) override;
 
             std::function<void()> onDialogClosed;

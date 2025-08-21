@@ -137,13 +137,11 @@ namespace jucyaudio
 
             // Equalizer management
             void showEqualizerWindow();
-            void hideEqualizerWindow();
             void toggleEqualizerWindow();
             void toggleEqualizerEnabled();
 
             // Reverb management
             void showReverbWindow();
-            void hideReverbWindow();
             void toggleReverbWindow();
             void toggleReverbEnabled();
 
@@ -174,13 +172,9 @@ namespace jucyaudio
             // Unified timer system
             TimerMultiplexer m_timerMultiplexer;
 
-            // Equalizer window (optional visibility)
-            std::unique_ptr<juce::DocumentWindow> m_equalizerWindow;
-            bool m_equalizerEnabled{true}; // Whether EQ processing is active (independent of window visibility)
-
-            // Reverb window (optional visibility)
-            std::unique_ptr<juce::DocumentWindow> m_reverbWindow;
-            bool m_reverbEnabled{true}; // Whether reverb processing is active (independent of window visibility)
+            // DSP effects state
+            bool m_equalizerEnabled{true}; // Whether EQ processing is active
+            bool m_reverbEnabled{true}; // Whether reverb processing is active
 
             std::filesystem::path getThemesDirectoryPath() const;
 

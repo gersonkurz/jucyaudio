@@ -23,6 +23,9 @@ namespace jucyaudio::ui
         // Load settings from config
         void loadSettings();
         
+        // Override to fix light theme text colors
+        void parentHierarchyChanged() override;
+        
     private:
         juce::Label m_headerLabel{"header", "Default MP3 Export Tags"};
         
@@ -74,6 +77,11 @@ namespace jucyaudio::ui
     public:
         SettingsDialog();
         ~SettingsDialog() override = default;
+        
+        /**
+         * @brief Initialize content after L&F has been set
+         */
+        void initializeContent();
         
         /**
          * @brief Shows the settings dialog

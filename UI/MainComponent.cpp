@@ -19,8 +19,8 @@
 #include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/EditMixMetaDataDialog.h>
 #include <UI/EditWorkingSetMetaDataDialog.h>
-#include <UI/EqualizerComponent.h>
-#include <UI/ReverbComponent.h>
+#include <UI/EqualizerDialog.h>
+#include <UI/ReverbDialog.h>
 #include <UI/ExportMixDialog.h>
 #include <UI/ILongRunningTask.h>
 #include <UI/LibraryRootsComponent.h>
@@ -2974,162 +2974,33 @@ namespace jucyaudio
         
         void MainComponent::showEqualizerWindow()
         {
-            if (!m_equalizerWindow)
-            {
-                // Create the equalizer component
-                auto* equalizerComponent = new EqualizerComponent();
-                
-                // Get the preset manager from the database
-                auto* trackDb = theTrackLibrary.getTrackDatabase();
-                if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
+            auto* trackDb = theTrackLibrary.getTrackDatabase();
+            
+            EqualizerDialog::showEqualizerDialog(
+                this,
+                trackDb,
+                [this](const audio::model::EQSettings& settings)
                 {
-                    // Load presets
-                    auto presets = sqliteDb->getEQPresetManager().getAllPresets();
-                    equalizerComponent->loadPresets(presets);
-                }
-                else
-                {
-                    spdlog::error("Failed to get EQ preset manager - not a SqliteTrackDatabase");
-                }
-                
-                // Load current settings from playback controller
-                // For now, use flat settings
-                audio::model::EQSettings currentSettings;
-                equalizerComponent->loadSettings(currentSettings);
-                
-                // Set up callbacks
-                equalizerComponent->onSettingsChanged = [this](const audio::model::EQSettings& settings)
-                {
-                    if (m_equalizerEnabled)
-                    {
-                        m_playbackController.updateMasterEQ(settings);
-                    }
-                };
-                
-                equalizerComponent->onPresetSelected = [this, equalizerComponent](int64_t presetId)
-                {
-                    auto* trackDb = theTrackLibrary.getTrackDatabase();
-                    if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
-                    {
-                        if (auto preset = sqliteDb->getEQPresetManager().getPreset(presetId))
-                        {
-                            equalizerComponent->loadSettings(preset->settings);
-                            if (m_equalizerEnabled)
-                            {
-                                m_playbackController.updateMasterEQ(preset->settings);
-                            }
-                        }
-                    }
-                };
-                
-                equalizerComponent->onSavePreset = [equalizerComponent](const juce::String& name, const audio::model::EQSettings& settings)
-                {
-                    auto* trackDb = theTrackLibrary.getTrackDatabase();
-                    if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
-                    {
-                        if (auto savedPreset = sqliteDb->getEQPresetManager().savePreset(name, settings))
-                        {
-                            // Reload presets
-                            auto presets = sqliteDb->getEQPresetManager().getAllPresets();
-                            equalizerComponent->loadPresets(presets);
-                        }
-                    }
-                };
-                
-                equalizerComponent->onDeletePreset = [equalizerComponent](int64_t presetId)
-                {
-                    auto* trackDb = theTrackLibrary.getTrackDatabase();
-                    if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
-                    {
-                        if (sqliteDb->getEQPresetManager().deletePreset(presetId))
-                        {
-                            // Reload presets
-                            auto presets = sqliteDb->getEQPresetManager().getAllPresets();
-                            equalizerComponent->loadPresets(presets);
-                        }
-                    }
-                };
-                
-                // Create a custom window class to handle close button
-                class EqualizerWindow : public juce::DocumentWindow
-                {
-                public:
-                    EqualizerWindow(MainComponent* parent)
-                        : DocumentWindow("Equalizer",
-                                       parent->getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId),
-                                       DocumentWindow::closeButton),  // Only show close button
-                          m_parent(parent)
-                    {}
-                    
-                    void closeButtonPressed() override
-                    {
-                        if (m_parent)
-                            m_parent->hideEqualizerWindow();
-                    }
-                    
-                private:
-                    MainComponent* m_parent;
-                };
-                
-                // Create the window with only close button
-                m_equalizerWindow = std::make_unique<EqualizerWindow>(this);
-                
-                // Apply the current theme's look and feel
-                m_equalizerWindow->setLookAndFeel(&m_lookAndFeel);
-                
-                m_equalizerWindow->setContentOwned(equalizerComponent, true);
-                m_equalizerWindow->setResizable(true, false);
-                m_equalizerWindow->centreWithSize(800, 600);
-                m_equalizerWindow->setVisible(true);
-                m_equalizerWindow->toFront(true);
-                m_equalizerWindow->setWantsKeyboardFocus(true);
-                m_equalizerWindow->addToDesktop();
-            }
-            else
-            {
-                m_equalizerWindow->setVisible(true);
-                m_equalizerWindow->toFront(true);
-            }
-        }
-        
-        void MainComponent::hideEqualizerWindow()
-        {
-            if (m_equalizerWindow)
-            {
-                m_equalizerWindow->setVisible(false);
-            }
+                    // Update the playback controller when settings change
+                    auto updatedSettings = settings;
+                    updatedSettings.isActive = m_equalizerEnabled;
+                    m_playbackController.updateMasterEQ(updatedSettings);
+                });
         }
         
         void MainComponent::toggleEqualizerWindow()
         {
-            if (m_equalizerWindow && m_equalizerWindow->isVisible())
-            {
-                hideEqualizerWindow();
-            }
-            else
-            {
-                showEqualizerWindow();
-            }
+            // SingletonDialog handles visibility toggling automatically
+            showEqualizerWindow();
         }
         
         void MainComponent::toggleEqualizerEnabled()
         {
             m_equalizerEnabled = !m_equalizerEnabled;
             
-            // Get current EQ settings and update bypass state
+            // Get current EQ settings from the dialog if it exists
             audio::model::EQSettings settings;
-            if (m_equalizerWindow)
-            {
-                if (auto* content = m_equalizerWindow->getContentComponent())
-                {
-                    if (auto* eqComp = dynamic_cast<EqualizerComponent*>(content))
-                    {
-                        settings = eqComp->getCurrentSettings();
-                    }
-                }
-            }
-            
-            // Override the isActive flag based on our enabled state
+            // The dialog will handle its own settings, we just need to update the bypass state
             settings.isActive = m_equalizerEnabled;
             m_playbackController.updateMasterEQ(settings);
             
@@ -3141,157 +3012,33 @@ namespace jucyaudio
         
         void MainComponent::showReverbWindow()
         {
-            if (!m_reverbWindow)
-            {
-                // Create the reverb component
-                auto* reverbComponent = new ReverbComponent();
-                
-                // Get the preset manager from the database
-                auto* trackDb = theTrackLibrary.getTrackDatabase();
-                if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
+            auto* trackDb = theTrackLibrary.getTrackDatabase();
+            
+            ReverbDialog::showReverbDialog(
+                this,
+                trackDb,
+                [this](const audio::model::ReverbSettings& settings)
                 {
-                    // Load presets
-                    auto presets = sqliteDb->getReverbPresetManager().getAllPresets();
-                    reverbComponent->loadPresets(presets);
-                }
-                
-                // Load current settings from playback controller
-                audio::model::ReverbSettings currentSettings;
-                reverbComponent->loadSettings(currentSettings);
-                
-                // Set up callbacks
-                reverbComponent->onSettingsChanged = [this](const audio::model::ReverbSettings& settings)
-                {
-                    if (m_reverbEnabled)
-                    {
-                        m_playbackController.updateMasterReverb(settings);
-                    }
-                };
-                
-                reverbComponent->onPresetSelected = [this, reverbComponent](int64_t presetId)
-                {
-                    auto* trackDb = theTrackLibrary.getTrackDatabase();
-                    if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
-                    {
-                        if (auto preset = sqliteDb->getReverbPresetManager().getPreset(presetId))
-                        {
-                            reverbComponent->loadSettings(preset->settings);
-                            if (m_reverbEnabled)
-                            {
-                                m_playbackController.updateMasterReverb(preset->settings);
-                            }
-                        }
-                    }
-                };
-                
-                reverbComponent->onSavePreset = [reverbComponent](const juce::String& name, const audio::model::ReverbSettings& settings)
-                {
-                    auto* trackDb = theTrackLibrary.getTrackDatabase();
-                    if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
-                    {
-                        if (auto savedPreset = sqliteDb->getReverbPresetManager().savePreset(name.toStdString(), settings))
-                        {
-                            // Reload presets
-                            auto presets = sqliteDb->getReverbPresetManager().getAllPresets();
-                            reverbComponent->loadPresets(presets);
-                        }
-                    }
-                };
-                
-                reverbComponent->onDeletePreset = [reverbComponent](int64_t presetId)
-                {
-                    auto* trackDb = theTrackLibrary.getTrackDatabase();
-                    if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
-                    {
-                        if (sqliteDb->getReverbPresetManager().deletePreset(presetId))
-                        {
-                            // Reload presets
-                            auto presets = sqliteDb->getReverbPresetManager().getAllPresets();
-                            reverbComponent->loadPresets(presets);
-                        }
-                    }
-                };
-                
-                // Create a custom window class to handle close button
-                class ReverbWindow : public juce::DocumentWindow
-                {
-                public:
-                    ReverbWindow(MainComponent* parent)
-                        : DocumentWindow("Reverb",
-                                       parent->getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId),
-                                       DocumentWindow::closeButton),  // Only show close button
-                          m_parent(parent)
-                    {}
-                    
-                    void closeButtonPressed() override
-                    {
-                        if (m_parent)
-                            m_parent->hideReverbWindow();
-                    }
-                    
-                private:
-                    MainComponent* m_parent;
-                };
-                
-                // Create the window with only close button
-                m_reverbWindow = std::make_unique<ReverbWindow>(this);
-                
-                // Apply the current theme's look and feel
-                m_reverbWindow->setLookAndFeel(&m_lookAndFeel);
-                
-                m_reverbWindow->setContentOwned(reverbComponent, true);
-                m_reverbWindow->setResizable(true, false);
-                m_reverbWindow->centreWithSize(800, 500);
-                m_reverbWindow->setVisible(true);
-                m_reverbWindow->toFront(true);
-                m_reverbWindow->setWantsKeyboardFocus(true);
-                m_reverbWindow->addToDesktop();
-            }
-            else
-            {
-                m_reverbWindow->setVisible(true);
-                m_reverbWindow->toFront(true);
-            }
-        }
-        
-        void MainComponent::hideReverbWindow()
-        {
-            if (m_reverbWindow)
-            {
-                m_reverbWindow->setVisible(false);
-            }
+                    // Update the playback controller when settings change
+                    auto updatedSettings = settings;
+                    updatedSettings.isActive = m_reverbEnabled;
+                    m_playbackController.updateMasterReverb(updatedSettings);
+                });
         }
         
         void MainComponent::toggleReverbWindow()
         {
-            if (m_reverbWindow && m_reverbWindow->isVisible())
-            {
-                hideReverbWindow();
-            }
-            else
-            {
-                showReverbWindow();
-            }
+            // SingletonDialog handles visibility toggling automatically
+            showReverbWindow();
         }
         
         void MainComponent::toggleReverbEnabled()
         {
             m_reverbEnabled = !m_reverbEnabled;
             
-            // Get current reverb settings and update bypass state
+            // Get current reverb settings from the dialog if it exists
             audio::model::ReverbSettings settings;
-            if (m_reverbWindow)
-            {
-                if (auto* content = m_reverbWindow->getContentComponent())
-                {
-                    if (auto* reverbComp = dynamic_cast<ReverbComponent*>(content))
-                    {
-                        settings = reverbComp->getCurrentSettings();
-                    }
-                }
-            }
-            
-            // Override the isActive flag based on our enabled state
+            // The dialog will handle its own settings, we just need to update the bypass state
             settings.isActive = m_reverbEnabled;
             m_playbackController.updateMasterReverb(settings);
             

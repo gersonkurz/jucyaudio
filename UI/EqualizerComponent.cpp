@@ -239,20 +239,103 @@ namespace jucyaudio::ui
 
     void EqualizerComponent::showSavePresetDialog()
     {
-        juce::AlertWindow dialog("Save EQ Preset", "Enter a name for the preset:", juce::AlertWindow::NoIcon);
-
-        dialog.addTextEditor("name", "", "Preset Name:");
-        dialog.addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
-        dialog.addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-
-        if (dialog.runModalLoop() == 1)
+        // Create a simple dialog component for preset naming
+        class PresetNameDialog : public juce::Component
         {
-            const auto name = dialog.getTextEditor("name")->getText();
-            if (name.isNotEmpty() && onSavePreset)
+        public:
+            PresetNameDialog(juce::LookAndFeel* laf)
             {
-                onSavePreset(name, getCurrentSettings());
+                // Apply the parent's LookAndFeel immediately
+                setLookAndFeel(laf);
+                
+                addAndMakeVisible(m_label);
+                m_label.setText("Preset Name:", juce::dontSendNotification);
+                
+                addAndMakeVisible(m_textEditor);
+                m_textEditor.setSelectAllWhenFocused(true);
+                
+                addAndMakeVisible(m_saveButton);
+                m_saveButton.setButtonText("Save");
+                m_saveButton.onClick = [this]() { closeWithResult(1); };
+                
+                addAndMakeVisible(m_cancelButton);
+                m_cancelButton.setButtonText("Cancel");
+                m_cancelButton.onClick = [this]() { closeWithResult(0); };
+                
+                setSize(300, 120);
             }
-        }
+            
+            void parentHierarchyChanged() override
+            {
+                // Force proper text colors when added to window
+                m_textEditor.setColour(juce::TextEditor::textColourId, 
+                                      findColour(juce::TextEditor::textColourId));
+                m_textEditor.setColour(juce::TextEditor::backgroundColourId,
+                                      findColour(juce::TextEditor::backgroundColourId));
+                m_textEditor.applyFontToAllText(m_textEditor.getFont());
+            }
+            
+            void resized() override
+            {
+                auto bounds = getLocalBounds().reduced(10);
+                
+                m_label.setBounds(bounds.removeFromTop(25));
+                m_textEditor.setBounds(bounds.removeFromTop(25));
+                bounds.removeFromTop(10);
+                
+                auto buttonArea = bounds.removeFromTop(30);
+                const int buttonWidth = 80;
+                m_cancelButton.setBounds(buttonArea.removeFromRight(buttonWidth));
+                buttonArea.removeFromRight(10);
+                m_saveButton.setBounds(buttonArea.removeFromRight(buttonWidth));
+            }
+            
+            void paint(juce::Graphics& g) override
+            {
+                g.fillAll(findColour(juce::DialogWindow::backgroundColourId));
+            }
+            
+            juce::String getName() const { return m_textEditor.getText(); }
+            
+            std::function<void(int)> onClose;
+            
+        private:
+            void closeWithResult(int result)
+            {
+                if (onClose)
+                    onClose(result);
+            }
+            
+            juce::Label m_label;
+            juce::TextEditor m_textEditor;
+            juce::TextButton m_saveButton;
+            juce::TextButton m_cancelButton;
+        };
+        
+        auto* dialogComponent = new PresetNameDialog(&getLookAndFeel());
+        
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = "Save EQ Preset";
+        options.content.setOwned(dialogComponent);
+        options.componentToCentreAround = this;
+        options.dialogBackgroundColour = getLookAndFeel().findColour(juce::DialogWindow::backgroundColourId);
+        options.useNativeTitleBar = true;
+        options.resizable = false;
+        
+        auto* dialog = options.launchAsync();
+        
+        dialogComponent->onClose = [this, dialog, dialogComponent](int result)
+        {
+            if (result == 1)
+            {
+                const auto name = dialogComponent->getName();
+                if (name.isNotEmpty() && onSavePreset)
+                {
+                    onSavePreset(name, getCurrentSettings());
+                }
+            }
+            dialog->exitModalState(0);
+        };
     }
 
     void EqualizerComponent::showDeleteConfirmation()

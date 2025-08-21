@@ -128,6 +128,23 @@ namespace jucyaudio::ui
         spdlog::info("Export settings loaded");
     }
     
+    void ExportSettingsTab::parentHierarchyChanged()
+    {
+        // Force text color refresh when the component is added to the window hierarchy
+        // This ensures the L&F colors are properly applied to existing text
+        for (auto* editor : {&m_artistEditor, &m_albumEditor, &m_yearEditor,
+                            &m_genreEditor, &m_commentEditor})
+        {
+            // Get the current text
+            const auto text = editor->getText();
+            // Clear and re-set to force color update
+            editor->clear();
+            editor->setText(text, juce::dontSendNotification);
+            // Apply the font to ensure proper formatting
+            editor->applyFontToAllText(editor->getFont());
+        }
+    }
+    
     // ===========================================================================
     // GeneralSettingsTab Implementation
     // ===========================================================================
@@ -244,26 +261,60 @@ namespace jucyaudio::ui
                          juce::LookAndFeel::getDefaultLookAndFeel().findColour(juce::DialogWindow::backgroundColourId),
                          true) // Has close button
     {
-        // Apply the global theme's look and feel before creating child components
-        if (auto* mainWindow = juce::TopLevelWindow::getActiveTopLevelWindow())
-        {
-            // TopLevelWindow doesn't have getContentComponent, but we can cast to DocumentWindow
-            if (auto* docWindow = dynamic_cast<juce::DocumentWindow*>(mainWindow))
-            {
-                if (auto* mainComponent = docWindow->getContentComponent())
-                {
-                    setLookAndFeel(&mainComponent->getLookAndFeel());
-                }
-            }
-        }
-        
-        setContentOwned(new SettingsComponent(), true);
+        // Don't create content here - it will be done after L&F is set
         setResizable(false, false);
+    }
+    
+    void SettingsDialog::initializeContent()
+    {
+        // This should be called AFTER the L&F has been set by showSingletonDialog
+        if (getContentComponent() == nullptr)
+        {
+            setContentOwned(new SettingsComponent(), true);
+        }
     }
     
     void SettingsDialog::showSettingsDialog(juce::Component* centreAroundComponent)
     {
-        // Use the base class singleton functionality
-        showSingletonDialog(centreAroundComponent);
+        // Check if dialog already exists
+        static SettingsDialog* existingDialog = nullptr;
+        
+        if (existingDialog && existingDialog->isVisible())
+        {
+            existingDialog->toFront(true);
+            return;
+        }
+        
+        // Create new dialog
+        auto* dialog = new SettingsDialog();
+        existingDialog = dialog;
+        
+        // Apply L&F BEFORE creating content
+        if (centreAroundComponent)
+        {
+            dialog->setLookAndFeel(&centreAroundComponent->getLookAndFeel());
+        }
+        
+        // Now create content with proper L&F
+        dialog->initializeContent();
+        
+        // Configure and show
+        dialog->setAlwaysOnTop(true);
+        dialog->setUsingNativeTitleBar(true);
+        
+        if (centreAroundComponent)
+        {
+            dialog->centreAroundComponent(centreAroundComponent, 
+                                         dialog->getWidth(), 
+                                         dialog->getHeight());
+        }
+        else
+        {
+            dialog->centreWithSize(dialog->getWidth(), dialog->getHeight());
+        }
+        
+        dialog->setVisible(true);
+        dialog->toFront(true);
+        dialog->grabKeyboardFocus();
     }
 }

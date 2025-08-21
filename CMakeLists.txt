@@ -357,7 +357,9 @@ target_sources(jucyaudio PRIVATE
     UI/PlaybackController.cpp
     UI/EnhancedPlayerComponent.cpp
     UI/EqualizerComponent.cpp
+    UI/EqualizerDialog.cpp
     UI/ReverbComponent.cpp
+    UI/ReverbDialog.cpp
     UI/LibraryRootsComponent.cpp
     UI/ColumnConfiguratorDialog.h
     UI/DynamicColumnManager.h

@@ -100,15 +100,11 @@ namespace jucyaudio
     
      /**
      * @brief Track identifier type for database namespace
-     * @note Redefined in database namespace for compatibility
-     * @deprecated Use jucyaudio::TrackId instead
      */
     typedef ObjectId TrackId;
 
     /**
      * @brief Tag identifier type for database namespace
-     * @note Redefined in database namespace for compatibility
-     * @deprecated Use jucyaudio::TagId instead
      */
     typedef ObjectId TagId;
 
