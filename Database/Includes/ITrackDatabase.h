@@ -79,6 +79,10 @@ namespace jucyaudio
             virtual std::filesystem::path reconstructFullPath(FolderId folderId) const = 0;
 
             virtual bool runMaintenanceTasks(std::atomic<bool> &shouldCancel) = 0; // For maintenance tasks like vacuuming, reindexing, etc.
+            
+            // Overload with progress callback for UI feedback
+            using MaintenanceProgressCallback = std::function<void(int percentComplete, const std::string& statusMessage)>;
+            virtual bool runMaintenanceTasks(std::atomic<bool> &shouldCancel, MaintenanceProgressCallback progressCb) = 0;
 
             virtual std::optional<TrackInfo> getTrackById(TrackId trackId) const = 0;
             

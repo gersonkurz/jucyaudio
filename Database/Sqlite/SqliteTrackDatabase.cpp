@@ -544,7 +544,13 @@ namespace jucyaudio
             return DbResult::success();
         }
 
-        bool SqliteTrackDatabase::runMaintenanceTasks([[maybe_unused]] std::atomic<bool> &shouldCancel)
+        bool SqliteTrackDatabase::runMaintenanceTasks(std::atomic<bool> &shouldCancel)
+        {
+            // Call the overloaded version with no progress callback
+            return runMaintenanceTasks(shouldCancel, nullptr);
+        }
+        
+        bool SqliteTrackDatabase::runMaintenanceTasks(std::atomic<bool> &shouldCancel, MaintenanceProgressCallback progressCb)
         {
             if (!isOpen())
             {
@@ -554,6 +560,9 @@ namespace jucyaudio
             
             spdlog::info("Starting database maintenance tasks...");
             
+            const int totalSteps = 5; // 4 SQL operations + 1 WAV enrichment
+            int currentStep = 0;
+            
             for (const auto *sql : maintenanceSqlStatements)
             {
                 if (shouldCancel)
@@ -562,24 +571,35 @@ namespace jucyaudio
                     return false;
                 }
                 
-                // Log what we're about to do
+                // Determine which step we're on and report progress
+                std::string statusMessage;
                 if (std::string(sql).find("PRAGMA optimize") != std::string::npos)
                 {
-                    spdlog::info("Optimizing query planner statistics...");
-                }
-                else if (std::string(sql).find("TracksSearchFTS") != std::string::npos && 
-                         std::string(sql).find("optimize") != std::string::npos)
-                {
-                    spdlog::info("Optimizing FTS5 search index...");
+                    statusMessage = "Optimizing query planner statistics...";
+                    spdlog::info("Step 1/4: {}", statusMessage);
                 }
                 else if (std::string(sql).find("TracksSearchFTS") != std::string::npos && 
                          std::string(sql).find("rebuild") != std::string::npos)
                 {
-                    spdlog::info("Rebuilding FTS5 search index...");
+                    statusMessage = "Rebuilding search index (this may take a moment)...";
+                    spdlog::info("Step 2/4: {}", statusMessage);
+                }
+                else if (std::string(sql).find("TracksSearchFTS") != std::string::npos && 
+                         std::string(sql).find("optimize") != std::string::npos)
+                {
+                    statusMessage = "Optimizing search index...";
+                    spdlog::info("Step 3/4: {}", statusMessage);
                 }
                 else if (std::string(sql).find("VACUUM") != std::string::npos)
                 {
-                    spdlog::info("Vacuuming database (this may take a while)...");
+                    statusMessage = "Vacuuming database (this may take a while)...";
+                    spdlog::info("Step 4/4: {}", statusMessage);
+                }
+                
+                // Report progress if callback provided
+                if (progressCb)
+                {
+                    progressCb((currentStep * 100) / totalSteps, statusMessage);
                 }
                 
                 if (!m_db.execute(sql))
@@ -588,6 +608,7 @@ namespace jucyaudio
                     if (std::string(sql).find("TracksSearchFTS") != std::string::npos)
                     {
                         spdlog::warn("FTS5 maintenance skipped (table may not exist): {}", m_db.getLastError());
+                        currentStep++;  // Still count this as a completed step
                         continue;  // Don't fail the whole maintenance for this
                     }
                     
@@ -595,10 +616,17 @@ namespace jucyaudio
                     spdlog::error("Maintenance task failed: {}", m_lastErrorMessage);
                     return false;
                 }
+                
+                currentStep++;
             }
             
-            // Run WAV metadata enrichment
+            // Step 5: Run WAV metadata enrichment
+            if (progressCb)
+            {
+                progressCb((currentStep * 100) / totalSteps, "Enriching WAV metadata...");
+            }
             spdlog::info("Running WAV metadata enrichment...");
+            
             if (!enrichWavMetadata(shouldCancel))
             {
                 spdlog::warn("WAV metadata enrichment failed, but continuing maintenance.");

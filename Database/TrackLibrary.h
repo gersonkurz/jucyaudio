@@ -145,6 +145,16 @@ namespace jucyaudio
                 }
                 return m_database->runMaintenanceTasks(shouldCancel);
             }
+            
+            bool runMaintenanceTasks(std::atomic<bool> &shouldCancel, ITrackDatabase::MaintenanceProgressCallback progressCb)
+            {
+                if (!m_isInitialised || !m_database)
+                {
+                    setLastError("TrackLibrary not initialised.");
+                    return false;
+                }
+                return m_database->runMaintenanceTasks(shouldCancel, progressCb);
+            }
 
             std::optional<TrackInfo> getTrackById(TrackId trackId) const
             {

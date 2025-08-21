@@ -2751,14 +2751,32 @@ namespace jucyaudio
             {
             public:
                 DatabaseMaintenanceTask()
-                    : ILongRunningTask{"Performing Database Maintenance", false}
+                    : ILongRunningTask{"Performing Database Maintenance", true}  // Changed to cancellable
                 {
                 }
 
-                void run([[maybe_unused]] ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel) override
+                void run(ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel) override
                 {
-                    theTrackLibrary.runMaintenanceTasks(shouldCancel);
-                    completionCb(true, "Database maintenance completed successfully.");
+                    // Convert our ProgressCallback to MaintenanceProgressCallback
+                    auto maintenanceProgressCb = [&progressCb](int percentComplete, const std::string& statusMessage) {
+                        progressCb(percentComplete, statusMessage);
+                    };
+                    
+                    // Call the new overloaded method with progress callback
+                    const bool success = theTrackLibrary.runMaintenanceTasks(shouldCancel, maintenanceProgressCb);
+                    
+                    if (shouldCancel)
+                    {
+                        completionCb(false, "Database maintenance cancelled.");
+                    }
+                    else if (success)
+                    {
+                        completionCb(true, "Database maintenance completed successfully.");
+                    }
+                    else
+                    {
+                        completionCb(false, "Database maintenance failed.");
+                    }
                 }
             };
 

@@ -44,6 +44,7 @@ namespace jucyaudio
             bool isOpen() const override;
             std::string getLastError() const override; // Gets from lastErrorMessage
             bool runMaintenanceTasks(std::atomic<bool> &shouldCancel) override;
+            bool runMaintenanceTasks(std::atomic<bool> &shouldCancel, MaintenanceProgressCallback progressCb) override;
             DbResult createTablesIfNeeded() override;
             // int getCurrentSchemaVersion() override; // Implementation for schema versioning
             // DbResult upgradeSchemaTo(int targetVersion) override;
