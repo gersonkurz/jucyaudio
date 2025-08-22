@@ -468,7 +468,7 @@ namespace jucyaudio
             {
                 auto &source = m_trackSources[i];
                 
-                if (!source || !source->mixTrack || !source->trackInfo)
+                if (!source || !source->mixTrack || !source->trackInfo || !source->reader)
                 {
                     continue;
                 }
@@ -502,8 +502,9 @@ namespace jucyaudio
                 int outputOffset = static_cast<int>(std::max(trackStartSamples - startSample, juce::int64(0)));
 
                 // Check if this track has special characters in filename
-                const bool hasSpecialChars = source->trackInfo->filename.find('{') != std::string::npos ||
-                                            source->trackInfo->filename.find('}') != std::string::npos;
+                const bool hasSpecialChars = source->trackInfo &&
+                                            (source->trackInfo->filename.find('{') != std::string::npos ||
+                                             source->trackInfo->filename.find('}') != std::string::npos);
                 
                 // Create track buffer - check if we need to handle mono->stereo conversion
                 const int sourceChannels = source->reader ? source->reader->numChannels : numChannels;
