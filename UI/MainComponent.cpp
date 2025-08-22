@@ -3,9 +3,6 @@
 #include <Database/BackgroundTasks/BpmAnalysis.h>
 #include <Database/BackgroundTasks/BpmAnalysisTask.h>
 #include <Database/Includes/MixInfo.h>
-#include <Database/Sqlite/SqliteEQPresetManager.h>
-#include <Database/Sqlite/SqliteReverbPresetManager.h>
-#include <Database/Sqlite/SqliteTrackDatabase.h>
 #include <Database/Nodes/AlbumsNode.h>
 #include <Database/Nodes/MixNode.h>
 #include <Database/Nodes/RootNode.h>
@@ -13,29 +10,32 @@
 #include <Database/Nodes/VirtualFolderNode.h>
 #include <Database/Nodes/VirtualFoldersOverview.h>
 #include <Database/Nodes/WorkingSetNode.h>
+#include <Database/Sqlite/SqliteEQPresetManager.h>
+#include <Database/Sqlite/SqliteReverbPresetManager.h>
+#include <Database/Sqlite/SqliteTrackDatabase.h>
 #include <UI/AboutDialog.h>
+#include <UI/CheckboxLookAndFeel.h>
 #include <UI/ColumnConfiguratorDialog.h>
 #include <UI/CreateMixDialogComponent.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/EditMixMetaDataDialog.h>
 #include <UI/EditWorkingSetMetaDataDialog.h>
 #include <UI/EqualizerDialog.h>
-#include <UI/ReverbDialog.h>
 #include <UI/ExportMixDialog.h>
 #include <UI/ILongRunningTask.h>
 #include <UI/LibraryRootsComponent.h>
 #include <UI/MainComponent.h>
 #include <UI/MarkerEditDialog.h>
+#include <UI/ReverbDialog.h>
 #include <UI/Settings.h>
 #include <UI/SettingsDialog.h>
 #include <UI/SingletonDialog.h>
 #include <UI/TaskDialog.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
-#include <UI/CheckboxLookAndFeel.h>
 #include <algorithm>
-#include <random>
 #include <format>
+#include <random>
 #include <spdlog/spdlog.h>
 #ifndef JUCE_WINDOWS
 #include <unistd.h>
@@ -89,6 +89,19 @@ namespace jucyaudio
               m_enhancedPlayer{m_playbackController, m_audioFormatManager, m_audioThumbnailCache},
               m_statusPanel{*this}
         {
+            // Load audio bypass states from config (inverted: bypassed = !enabled)
+            m_equalizerEnabled = !config::theSettings.audioSettings.equalizerBypassed;
+            m_reverbEnabled = !config::theSettings.audioSettings.reverbBypassed;
+
+            // Apply initial bypass states to the playback controller
+            audio::model::EQSettings eqSettings;
+            eqSettings.isActive = m_equalizerEnabled;
+            m_playbackController.updateMasterEQ(eqSettings);
+
+            audio::model::ReverbSettings reverbSettings;
+            reverbSettings.isActive = m_reverbEnabled;
+            m_playbackController.updateMasterReverb(reverbSettings);
+
             theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
 
             // Register audio formats
@@ -150,12 +163,12 @@ namespace jucyaudio
 
                 showMarkerDialog(trackId, position, isNewMarker);
             };
-            
+
             m_enhancedPlayer.onNextTrack = [this]()
             {
                 playNextTrack();
             };
-            
+
             m_enhancedPlayer.onPreviousTrack = [this]()
             {
                 playPreviousTrack();
@@ -186,7 +199,7 @@ namespace jucyaudio
             // PlaybackToolbarComponent fetches it on init) For now, let
             // PlaybackController::syncUIToPlaybackControllerState handle this
             // via toolbar reference.
-            
+
             // Enable keyboard focus for media keys
             setWantsKeyboardFocus(true);
 
@@ -194,18 +207,18 @@ namespace jucyaudio
             m_commandManager.registerAllCommandsForTarget(this); // Register commands defined in this class
 
             auto &menuManager = getManager();
-            
+
             // Helper lambda to create menu items with DataAction support
-            auto makeActionItem = [&](const std::string& name, 
-                                     const std::string& desc,
-                                     DataAction action,
-                                     int key = 0,
-                                     juce::ModifierKeys mods = juce::ModifierKeys::noModifiers) -> MenuItem
+            auto makeActionItem = [&](const std::string &name,
+                                      const std::string &desc,
+                                      DataAction action,
+                                      int key = 0,
+                                      juce::ModifierKeys mods = juce::ModifierKeys::noModifiers) -> MenuItem
             {
                 MenuItem item;
                 item.name = name;
                 item.description = desc;
-                item.action = [&, action]() 
+                item.action = [&, action]()
                 {
                     if (m_currentNode)
                     {
@@ -216,16 +229,19 @@ namespace jucyaudio
                 {
                     item.keyPress = MenuItem::KeyPress{static_cast<char>(key), mods};
                 }
-                item.isEnabled = [this, action]() { return isActionAvailable(action); };
+                item.isEnabled = [this, action]()
+                {
+                    return isActionAvailable(action);
+                };
                 return item;
             };
-            
+
             // Helper for static menu items (always enabled)
-            auto makeStaticItem = [](const std::string& name,
-                                    const std::string& desc,
-                                    std::function<void()> action,
-                                    char key = 0,
-                                    juce::ModifierKeys mods = juce::ModifierKeys::noModifiers) -> MenuItem
+            auto makeStaticItem = [](const std::string &name,
+                                      const std::string &desc,
+                                      std::function<void()> action,
+                                      char key = 0,
+                                      juce::ModifierKeys mods = juce::ModifierKeys::noModifiers) -> MenuItem
             {
                 MenuItem item;
                 item.name = name;
@@ -240,113 +256,110 @@ namespace jucyaudio
 
             // 1. Define File menu with enhanced options
             menuManager.registerMenu("File",
-                {
-                    makeActionItem("New Working Set...", 
-                                  "Create a new working set from current selection",
-                                  DataAction::CreateWorkingSet,
-                                  'n', juce::ModifierKeys::commandModifier),
+                {makeActionItem("New Working Set...",
+                     "Create a new working set from current selection",
+                     DataAction::CreateWorkingSet,
+                     'n',
+                     juce::ModifierKeys::commandModifier),
                     makeActionItem("New Mix...",
-                                  "Create a new mix from current selection", 
-                                  DataAction::CreateMix,
-                                  'm', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier),
+                        "Create a new mix from current selection",
+                        DataAction::CreateMix,
+                        'm',
+                        juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier),
                     {"-"},
-                    makeActionItem("Export Mix...",
-                                  "Export the selected mix to audio file",
-                                  DataAction::ExportMix,
-                                  'e', juce::ModifierKeys::commandModifier),
+                    makeActionItem("Export Mix...", "Export the selected mix to audio file", DataAction::ExportMix, 'e', juce::ModifierKeys::commandModifier),
                     {"-"},
-                    makeStaticItem("Scan Folders...",
-                                  "Scan library folders for new tracks",
-                                  [&]() { onShowScanDialog(); },
-                                  's', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier),
+                    makeStaticItem(
+                        "Scan Folders...",
+                        "Scan library folders for new tracks",
+                        [&]()
+                        {
+                            onShowScanDialog();
+                        },
+                        's',
+                        juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier),
                     makeStaticItem("Database Maintenance...",
-                                  "Perform database maintenance tasks",
-                                  [&]() { onShowMaintenanceDialog(); }),
+                        "Perform database maintenance tasks",
+                        [&]()
+                        {
+                            onShowMaintenanceDialog();
+                        }),
                     {"-"},
-                    makeStaticItem("Settings...",
-                                  "Open application settings",
-                                  [&]() { SettingsDialog::showSettingsDialog(this); },
-                                  ',', juce::ModifierKeys::commandModifier),
+                    makeStaticItem(
+                        "Settings...",
+                        "Open application settings",
+                        [&]()
+                        {
+                            SettingsDialog::showSettingsDialog(this);
+                        },
+                        ',',
+                        juce::ModifierKeys::commandModifier),
                     {"-"},
-                    makeStaticItem("Exit",
-                                  "Quit JucyAudio",
-                                  [&]() { juce::JUCEApplication::getInstance()->systemRequestedQuit(); },
-                                  'q', juce::ModifierKeys::commandModifier)});
-            
+                    makeStaticItem(
+                        "Exit",
+                        "Quit JucyAudio",
+                        [&]()
+                        {
+                            juce::JUCEApplication::getInstance()->systemRequestedQuit();
+                        },
+                        'q',
+                        juce::ModifierKeys::commandModifier)});
+
             // 2. Define Edit menu with DataActions
             menuManager.registerMenu("Edit",
-                {
-                    makeActionItem("Delete",
-                                  "Delete selected items",
-                                  DataAction::Delete,
-                                  juce::KeyPress::deleteKey, juce::ModifierKeys::noModifiers),
-                    makeActionItem("Remove Tracks",
-                                  "Remove selected tracks from working set",
-                                  DataAction::RemoveTracks,
-                                  'r', juce::ModifierKeys::commandModifier),
+                {makeActionItem("Delete", "Delete selected items", DataAction::Delete, juce::KeyPress::deleteKey, juce::ModifierKeys::noModifiers),
+                    makeActionItem(
+                        "Remove Tracks", "Remove selected tracks from working set", DataAction::RemoveTracks, 'r', juce::ModifierKeys::commandModifier),
                     {"-"},
-                    makeActionItem("Edit Working Set Metadata...",
-                                  "Edit metadata for selected working set",
-                                  DataAction::EditWorkingSetMetadata),
-                    makeActionItem("Edit Mix Metadata...",
-                                  "Edit metadata for selected mix",
-                                  DataAction::EditMixMetadata),
+                    makeActionItem("Edit Working Set Metadata...", "Edit metadata for selected working set", DataAction::EditWorkingSetMetadata),
+                    makeActionItem("Edit Mix Metadata...", "Edit metadata for selected mix", DataAction::EditMixMetadata),
                     {"-"},
                     makeActionItem("Remove Duplicates",
-                                  "Remove duplicate tracks from selection",
-                                  DataAction::RemoveDuplicates,
-                                  'd', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier)});
-            
+                        "Remove duplicate tracks from selection",
+                        DataAction::RemoveDuplicates,
+                        'd',
+                        juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier)});
+
             // 3. Define Library menu
             menuManager.registerMenu("Library",
-                {
-                    makeActionItem("Play",
-                                  "Play selected tracks",
-                                  DataAction::Play,
-                                  ' ', juce::ModifierKeys::noModifiers), // Spacebar
+                {makeActionItem("Play", "Play selected tracks", DataAction::Play, ' ', juce::ModifierKeys::noModifiers), // Spacebar
                     {"-"},
-                    makeActionItem("Run BPM Analysis...",
-                                  "Analyze BPM for selected tracks",
-                                  DataAction::RunBpmAnalysis,
-                                  'b', juce::ModifierKeys::commandModifier),
+                    makeActionItem(
+                        "Run BPM Analysis...", "Analyze BPM for selected tracks", DataAction::RunBpmAnalysis, 'b', juce::ModifierKeys::commandModifier),
                     makeActionItem("Show in Folder",
-                                  "Show selected track in system file browser",
-                                  DataAction::ShowInFolder,
-                                  'f', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier)});
+                        "Show selected track in system file browser",
+                        DataAction::ShowInFolder,
+                        'f',
+                        juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier)});
 
             menuManager.registerMenu("View",
-                {
-                    makeActionItem("Show Mix Editor",
-                                  "Switch to mix editor view",
-                                  DataAction::ShowMixEditor,
-                                  '1', juce::ModifierKeys::commandModifier),
-                    makeActionItem("Show Track Editor",
-                                  "Switch to track editor view",
-                                  DataAction::ShowTrackEditor,
-                                  '2', juce::ModifierKeys::commandModifier),
+                {makeActionItem("Show Mix Editor", "Switch to mix editor view", DataAction::ShowMixEditor, '1', juce::ModifierKeys::commandModifier),
+                    makeActionItem("Show Track Editor", "Switch to track editor view", DataAction::ShowTrackEditor, '2', juce::ModifierKeys::commandModifier),
                     {"-"},
                     makeStaticItem("Configure Columns...",
-                                  "Configure columns for the current view",
-                                  [&]() { onShowConfigureColumnsDialog(); }),
-                    makeActionItem("Show Details",
-                                  "Show detailed information",
-                                  DataAction::ShowDetails,
-                                  'i', juce::ModifierKeys::commandModifier),
+                        "Configure columns for the current view",
+                        [&]()
+                        {
+                            onShowConfigureColumnsDialog();
+                        }),
+                    makeActionItem("Show Details", "Show detailed information", DataAction::ShowDetails, 'i', juce::ModifierKeys::commandModifier),
                     {"-"},
-                    makeStaticItem("Refresh",
-                                  "Refresh current view",
-                                  [&]() {
-                                      if (m_currentMainView == MainViewType::DataView)
-                                      {
-                                          m_dataViewComponent.refreshView();
-                                      }
-                                      else if (m_currentMainView == MainViewType::MixEditor)
-                                      {
-                                          // MixEditor refresh if needed
-                                      }
-                                  },
-                                  'r', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier)}
-                );
+                    makeStaticItem(
+                        "Refresh",
+                        "Refresh current view",
+                        [&]()
+                        {
+                            if (m_currentMainView == MainViewType::DataView)
+                            {
+                                m_dataViewComponent.refreshView();
+                            }
+                            else if (m_currentMainView == MainViewType::MixEditor)
+                            {
+                                // MixEditor refresh if needed
+                            }
+                        },
+                        'r',
+                        juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier)});
 
             // 2. Define dynamic theme submenu
             std::vector<MenuItem> themeItems;
@@ -388,31 +401,46 @@ namespace jucyaudio
 #endif
             // --- Timer ---
             startTimerHz(60); // Unified 60Hz base timer for TimerMultiplexer
-            
+
             // Register VU meter updates with TimerMultiplexer
             // Update VU meter levels at 25Hz
-            m_timerMultiplexer.registerClient(&m_statusPanel, 25.0f, [this]() {
-                m_statusPanel.updateVUMeters();
-            });
-            
-            // Update VU meter decay animation at 25Hz  
-            m_timerMultiplexer.registerClient(&m_statusPanel.getVUMeterLeft(), 25.0f, [this]() {
-                m_statusPanel.getVUMeterLeft().updateDecay();
-            });
-            
-            m_timerMultiplexer.registerClient(&m_statusPanel.getVUMeterRight(), 25.0f, [this]() {
-                m_statusPanel.getVUMeterRight().updateDecay();
-            });
-            
+            m_timerMultiplexer.registerClient(&m_statusPanel,
+                25.0f,
+                [this]()
+                {
+                    m_statusPanel.updateVUMeters();
+                });
+
+            // Update VU meter decay animation at 25Hz
+            m_timerMultiplexer.registerClient(&m_statusPanel.getVUMeterLeft(),
+                25.0f,
+                [this]()
+                {
+                    m_statusPanel.getVUMeterLeft().updateDecay();
+                });
+
+            m_timerMultiplexer.registerClient(&m_statusPanel.getVUMeterRight(),
+                25.0f,
+                [this]()
+                {
+                    m_statusPanel.getVUMeterRight().updateDecay();
+                });
+
             // Register EnhancedPlayer updates at 20Hz (was 50ms timer)
-            m_timerMultiplexer.registerClient(&m_enhancedPlayer, 20.0f, [this]() {
-                m_enhancedPlayer.updatePlaybackPosition();
-            });
-            
+            m_timerMultiplexer.registerClient(&m_enhancedPlayer,
+                20.0f,
+                [this]()
+                {
+                    m_enhancedPlayer.updatePlaybackPosition();
+                });
+
             // Register MixEditor playhead updates at 60Hz for smooth animation
-            m_timerMultiplexer.registerClient(&m_mixEditorComponent, 60.0f, [this]() {
-                m_mixEditorComponent.updatePlayhead();
-            });
+            m_timerMultiplexer.registerClient(&m_mixEditorComponent,
+                60.0f,
+                [this]()
+                {
+                    m_mixEditorComponent.updatePlayhead();
+                });
 
             // Initial size
             setSize(1200, 800);
@@ -437,16 +465,16 @@ namespace jucyaudio
 #if JUCE_MAC
             juce::MenuBarModel::setMacMainMenu(nullptr);
 #endif
-            
+
             stopTimer();
-            
+
             // Unregister all components from timer multiplexer
             m_timerMultiplexer.unregisterComponent(&m_statusPanel);
             m_timerMultiplexer.unregisterComponent(&m_statusPanel.getVUMeterLeft());
             m_timerMultiplexer.unregisterComponent(&m_statusPanel.getVUMeterRight());
             m_timerMultiplexer.unregisterComponent(&m_enhancedPlayer);
             m_timerMultiplexer.unregisterComponent(&m_mixEditorComponent);
-            
+
             // This is important for clean shutdown. It tells all child components
             // to stop using our m_lookAndFeel object before it gets destroyed.
             setLookAndFeel(nullptr);
@@ -483,25 +511,25 @@ namespace jucyaudio
         bool MainComponent::keyPressed(const juce::KeyPress &key)
         {
             const auto keyCode = key.getKeyCode();
-            
-            // Windows media key virtual codes
-            #ifdef _WIN32
-                constexpr int VK_MEDIA_PLAY_PAUSE = 0xB3;
-                constexpr int VK_MEDIA_STOP = 0xB2;
-                constexpr int VK_MEDIA_PREV_TRACK = 0xB1;
-                constexpr int VK_MEDIA_NEXT_TRACK = 0xB0;
-                constexpr int VK_VOLUME_MUTE = 0xAD;
-                constexpr int VK_VOLUME_DOWN = 0xAE;
-                constexpr int VK_VOLUME_UP = 0xAF;
-            #endif
-            
+
+// Windows media key virtual codes
+#ifdef _WIN32
+            constexpr int VK_MEDIA_PLAY_PAUSE = 0xB3;
+            constexpr int VK_MEDIA_STOP = 0xB2;
+            constexpr int VK_MEDIA_PREV_TRACK = 0xB1;
+            constexpr int VK_MEDIA_NEXT_TRACK = 0xB0;
+            constexpr int VK_VOLUME_MUTE = 0xAD;
+            constexpr int VK_VOLUME_DOWN = 0xAE;
+            constexpr int VK_VOLUME_UP = 0xAF;
+#endif
+
             // Media keys (cross-platform)
             // Check both JUCE's cross-platform codes and Windows-specific virtual keys
             if (keyCode == juce::KeyPress::playKey || keyCode == juce::KeyPress::F8Key
-                #ifdef _WIN32
+#ifdef _WIN32
                 || keyCode == VK_MEDIA_PLAY_PAUSE
-                #endif
-                )
+#endif
+            )
             {
                 // Toggle play/pause
                 if (m_playbackController.isPlaying())
@@ -516,10 +544,10 @@ namespace jucyaudio
                 return true;
             }
             else if (keyCode == juce::KeyPress::stopKey
-                #ifdef _WIN32
-                || keyCode == VK_MEDIA_STOP
-                #endif
-                )
+#ifdef _WIN32
+                     || keyCode == VK_MEDIA_STOP
+#endif
+            )
             {
                 // Stop playback
                 m_playbackController.stop();
@@ -527,10 +555,10 @@ namespace jucyaudio
                 return true;
             }
             else if (keyCode == juce::KeyPress::fastForwardKey || keyCode == juce::KeyPress::F9Key
-                #ifdef _WIN32
-                || keyCode == VK_MEDIA_NEXT_TRACK
-                #endif
-                )
+#ifdef _WIN32
+                     || keyCode == VK_MEDIA_NEXT_TRACK
+#endif
+            )
             {
                 // Next track
                 playNextTrack();
@@ -538,24 +566,24 @@ namespace jucyaudio
                 return true;
             }
             else if (keyCode == juce::KeyPress::rewindKey || keyCode == juce::KeyPress::F7Key
-                #ifdef _WIN32
-                || keyCode == VK_MEDIA_PREV_TRACK
-                #endif
-                )
+#ifdef _WIN32
+                     || keyCode == VK_MEDIA_PREV_TRACK
+#endif
+            )
             {
                 // Previous track
                 playPreviousTrack();
                 spdlog::info("[MainComponent] Media key: previous track");
                 return true;
             }
-            #ifdef _WIN32
+#ifdef _WIN32
             // Windows volume control keys
             else if (keyCode == VK_VOLUME_MUTE)
             {
                 // Toggle mute (set gain to 0 or restore)
                 static float previousGain = 1.0f;
                 static bool isMuted = false;
-                
+
                 if (isMuted)
                 {
                     m_playbackController.setGain(previousGain);
@@ -591,8 +619,8 @@ namespace jucyaudio
                 spdlog::info("[MainComponent] Volume up: {}", newGain);
                 return true;
             }
-            #endif
-            
+#endif
+
             // Space bar for play/pause (common convention)
             if (keyCode == juce::KeyPress::spaceKey && !key.getModifiers().isAnyModifierKeyDown())
             {
@@ -607,10 +635,10 @@ namespace jucyaudio
                 spdlog::info("[MainComponent] Space key: play/pause toggled");
                 return true;
             }
-            
+
             return false; // Key not handled
         }
-        
+
         void MainComponent::playNextTrack()
         {
             if (m_currentMainView == MainViewType::DataView)
@@ -618,12 +646,12 @@ namespace jucyaudio
                 // In DataView mode - play next track in the current view (respects filters, sort order, etc.)
                 const auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
                 const auto totalRows = m_dataViewComponent.getTotalRowCount();
-                
+
                 if (totalRows > 0)
                 {
                     // Get the first selected row or default to -1 to start from beginning
                     const auto currentRow = selectedRows.empty() ? -1 : selectedRows.front();
-                    
+
                     int nextRow;
                     if (m_playbackController.getShuffleMode())
                     {
@@ -638,7 +666,7 @@ namespace jucyaudio
                     {
                         // Sequential mode
                         nextRow = currentRow + 1;
-                        
+
                         // Check if we're at the end of the playlist
                         if (nextRow >= totalRows)
                         {
@@ -657,11 +685,11 @@ namespace jucyaudio
                             }
                         }
                     }
-                    
+
                     // Select and play the next row
                     m_dataViewComponent.selectSingleRow(nextRow);
                     playDataRow(nextRow);
-                    
+
                     spdlog::info("[MainComponent] Playing next track in DataView: row {}", nextRow);
                 }
             }
@@ -672,43 +700,42 @@ namespace jucyaudio
                 {
                     // Get current position and find which track is playing
                     const auto currentPos = m_playbackController.getCurrentPositionSeconds();
-                    
-                    if (auto* mixNode = m_mixEditorComponent.getCurrentMixNode())
+
+                    if (auto *mixNode = m_mixEditorComponent.getCurrentMixNode())
                     {
-                        auto& mixLoader = mixNode->getMixProjectLoader();
-                        const auto& mixTracks = mixLoader.getMixTracks();
+                        auto &mixLoader = mixNode->getMixProjectLoader();
+                        const auto &mixTracks = mixLoader.getMixTracks();
                         if (!mixTracks.empty())
                         {
                             // Calculate track start times using the same algorithm as MixPlaybackEngine
                             std::vector<double> trackStartTimes;
                             trackStartTimes.reserve(mixTracks.size());
-                            
+
                             double previousAudioStartTime = 0.0;
                             for (size_t i = 0; i < mixTracks.size(); ++i)
                             {
-                                const auto& mixTrack = mixTracks[i];
+                                const auto &mixTrack = mixTracks[i];
                                 double audioStartTime;
-                                
+
                                 if (i == 0)
                                 {
                                     audioStartTime = 0.0;
                                 }
                                 else
                                 {
-                                    const auto& prevTrack = mixTracks[i - 1];
-                                    audioStartTime = previousAudioStartTime + 
-                                                   (prevTrack.attachTo.count() - mixTrack.attachFrom.count()) / 1000.0;
+                                    const auto &prevTrack = mixTracks[i - 1];
+                                    audioStartTime = previousAudioStartTime + (prevTrack.attachTo.count() - mixTrack.attachFrom.count()) / 1000.0;
                                 }
-                                
+
                                 trackStartTimes.push_back(audioStartTime);
                                 previousAudioStartTime = audioStartTime;
                             }
-                            
+
                             // Find the next track start time after current position
                             double nextTrackTime = -1.0;
                             bool foundNext = false;
-                            
-                            for (const auto& startTime : trackStartTimes)
+
+                            for (const auto &startTime : trackStartTimes)
                             {
                                 if (startTime > currentPos + 0.5) // Add small tolerance
                                 {
@@ -717,7 +744,7 @@ namespace jucyaudio
                                     break;
                                 }
                             }
-                            
+
                             if (foundNext && nextTrackTime >= 0)
                             {
                                 // Seek to the next track's start position
@@ -739,7 +766,7 @@ namespace jucyaudio
                 }
             }
         }
-        
+
         void MainComponent::playPreviousTrack()
         {
             if (m_currentMainView == MainViewType::DataView)
@@ -747,7 +774,7 @@ namespace jucyaudio
                 // In DataView mode - play previous track in the current view (respects filters, sort order, etc.)
                 const auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
                 const auto totalRows = m_dataViewComponent.getTotalRowCount();
-                
+
                 if (totalRows > 0)
                 {
                     int prevRow;
@@ -764,8 +791,8 @@ namespace jucyaudio
                     {
                         // Get the first selected row or default to 0
                         const auto currentRow = selectedRows.empty() ? 0 : selectedRows.front();
-                        
-                        // Calculate previous row 
+
+                        // Calculate previous row
                         if (currentRow > 0)
                         {
                             prevRow = currentRow - 1;
@@ -782,11 +809,11 @@ namespace jucyaudio
                             prevRow = 0;
                         }
                     }
-                    
+
                     // Select and play the previous row
                     m_dataViewComponent.selectSingleRow(prevRow);
                     playDataRow(prevRow);
-                    
+
                     spdlog::info("[MainComponent] Playing previous track in DataView: row {}", prevRow);
                 }
             }
@@ -797,41 +824,40 @@ namespace jucyaudio
                 {
                     // Get current position and find which track is playing
                     const auto currentPos = m_playbackController.getCurrentPositionSeconds();
-                    
-                    if (auto* mixNode = m_mixEditorComponent.getCurrentMixNode())
+
+                    if (auto *mixNode = m_mixEditorComponent.getCurrentMixNode())
                     {
-                        auto& mixLoader = mixNode->getMixProjectLoader();
-                        const auto& mixTracks = mixLoader.getMixTracks();
+                        auto &mixLoader = mixNode->getMixProjectLoader();
+                        const auto &mixTracks = mixLoader.getMixTracks();
                         if (!mixTracks.empty())
                         {
                             // Calculate track start times using the same algorithm as MixPlaybackEngine
                             std::vector<double> trackStartTimes;
                             trackStartTimes.reserve(mixTracks.size());
-                            
+
                             double previousAudioStartTime = 0.0;
                             for (size_t i = 0; i < mixTracks.size(); ++i)
                             {
-                                const auto& mixTrack = mixTracks[i];
+                                const auto &mixTrack = mixTracks[i];
                                 double audioStartTime;
-                                
+
                                 if (i == 0)
                                 {
                                     audioStartTime = 0.0;
                                 }
                                 else
                                 {
-                                    const auto& prevTrack = mixTracks[i - 1];
-                                    audioStartTime = previousAudioStartTime + 
-                                                   (prevTrack.attachTo.count() - mixTrack.attachFrom.count()) / 1000.0;
+                                    const auto &prevTrack = mixTracks[i - 1];
+                                    audioStartTime = previousAudioStartTime + (prevTrack.attachTo.count() - mixTrack.attachFrom.count()) / 1000.0;
                                 }
-                                
+
                                 trackStartTimes.push_back(audioStartTime);
                                 previousAudioStartTime = audioStartTime;
                             }
-                            
+
                             // Find the previous track start time before current position
                             double prevTrackTime = 0.0;
-                            
+
                             for (auto it = trackStartTimes.rbegin(); it != trackStartTimes.rend(); ++it)
                             {
                                 if (*it < currentPos - 1.0) // Subtract tolerance to avoid getting stuck
@@ -840,11 +866,11 @@ namespace jucyaudio
                                     break;
                                 }
                             }
-                            
+
                             // If we're very close to the start of current track, go to previous track
                             // Otherwise, restart current track
                             bool shouldGoToPrevious = false;
-                            for (const auto& startTime : trackStartTimes)
+                            for (const auto &startTime : trackStartTimes)
                             {
                                 if (std::abs(startTime - currentPos) < 3.0) // Within 3 seconds of track start
                                 {
@@ -852,7 +878,7 @@ namespace jucyaudio
                                     break;
                                 }
                             }
-                            
+
                             if (shouldGoToPrevious || currentPos < 3.0)
                             {
                                 // Go to actual previous track
@@ -1043,7 +1069,7 @@ namespace jucyaudio
         {
             // Tick the timer multiplexer at 60Hz
             m_timerMultiplexer.tick();
-            
+
             // MainComponent's own UI updates can go here if needed
             // (currently none required at 60Hz)
         }
@@ -1054,8 +1080,7 @@ namespace jucyaudio
             if (source == &m_playbackController.getTransportSource())
             {
                 // Check if the track has finished playing
-                if (!m_playbackController.getTransportSource().isPlaying() && 
-                    m_playbackController.getState() == PlaybackController::PlayerState::TrackPlaying)
+                if (!m_playbackController.getTransportSource().isPlaying() && m_playbackController.getState() == PlaybackController::PlayerState::TrackPlaying)
                 {
                     // Track just ended - auto-advance to next track
                     spdlog::info("[MainComponent] Track ended, auto-advancing to next");
@@ -1073,7 +1098,8 @@ namespace jucyaudio
         }
 
         // --- Handler Method Stubs / Basic Logic ---
-        void MainComponent::handleNodeSelection(INavigationNode *selectedNode, bool forceDisplaySwitch, bool syncNavigationTree) // selectedNode is retained by caller (NavPanel)
+        void MainComponent::handleNodeSelection(
+            INavigationNode *selectedNode, bool forceDisplaySwitch, bool syncNavigationTree) // selectedNode is retained by caller (NavPanel)
         {
             const auto start{std::chrono::high_resolution_clock::now()};
             const auto currentViewType{m_currentMainView};
@@ -1097,7 +1123,7 @@ namespace jucyaudio
                     m_currentNode->release(REFCOUNT_DEBUG_ARGS);
                 }
                 m_currentNode = selectedNode; // Takes ownership of the retained selectedNode
-                
+
                 // Sync the navigation tree if requested (e.g., when navigating from data view)
                 if (syncNavigationTree && selectedNode)
                 {
@@ -1354,7 +1380,7 @@ namespace jucyaudio
             {
                 m_statusPanel.getStatusBar().postMessage("No tracks to analyze.", true);
                 return;
-            }            
+            }
 
             auto *task = new background_tasks::BpmAnalysisTask(std::move(trackResult.trackInfos));
             TaskDialog::launch("BPM Analysis",
@@ -1395,13 +1421,13 @@ namespace jucyaudio
                       m_workingSetId{workingSetId}
                 {
                 }
-            private:
 
+            private:
                 ~RemoveDuplicatesFromWorkingSet() override
                 {
                 }
-            
-                static std::string createUniqueTrackKey(const TrackInfo& ti)
+
+                static std::string createUniqueTrackKey(const TrackInfo &ti)
                 {
                     return std::format("{}/{}/{}/{}/{}", ti.artist_name, ti.album_title, ti.title, ti.bpm.has_value() ? *ti.bpm : 0, ti.duration);
                 }
@@ -1419,7 +1445,7 @@ namespace jucyaudio
                     TrackQueryArgs tqa{};
                     tqa.workingSetId = m_workingSetId;
                     tqa.usePaging = false;
-                    const auto allTracks{ theTrackLibrary.getTrackDatabase()->getTracks(tqa) };
+                    const auto allTracks{theTrackLibrary.getTrackDatabase()->getTracks(tqa)};
                     spdlog::info("Found a total of {} tracks in working set {}", allTracks.size(), m_workingSetId);
 
                     std::vector<TrackId> trackIdsToRemove;
@@ -1428,7 +1454,7 @@ namespace jucyaudio
                     for (const auto &track : allTracks)
                     {
                         const auto uniqueTrackKey{createUniqueTrackKey(track)};
-                        if(uniqueTrackKeys.contains(uniqueTrackKey))
+                        if (uniqueTrackKeys.contains(uniqueTrackKey))
                         {
                             // Duplicate found, remove it
                             trackIdsToRemove.push_back(track.trackId);
@@ -1440,12 +1466,11 @@ namespace jucyaudio
                         }
                     }
                     spdlog::info("Found {} duplicates in working set {}", trackIdsToRemove.size(), m_workingSetId);
-                    if(!trackIdsToRemove.empty())
+                    if (!trackIdsToRemove.empty())
                     {
                         theTrackLibrary.getWorkingSetManager().removeTracksFromWorkingSet(m_workingSetId, trackIdsToRemove);
                     }
                 }
-
 
             private:
                 const WorkingSetId m_workingSetId;
@@ -1472,17 +1497,15 @@ namespace jucyaudio
                 m_statusPanel.getStatusBar().postMessage("No rows selected for analysis.", true);
                 return;
             }
-            
+
             // Use the new Node-Centric method to get track IDs
             const auto trackResult = m_currentNode->getTrackInfosForOperation(selectedRows);
-            
+
             if (trackResult.trackInfos.empty())
             {
                 if (trackResult.nonApplicableCount > 0)
                 {
-                    m_statusPanel.getStatusBar().postMessage(
-                        std::format("The selected items are not tracks and cannot be analyzed."), 
-                        true);
+                    m_statusPanel.getStatusBar().postMessage(std::format("The selected items are not tracks and cannot be analyzed."), true);
                 }
                 else
                 {
@@ -1490,14 +1513,12 @@ namespace jucyaudio
                 }
                 return;
             }
-            
+
             // Show a note if some selections were skipped
             if (trackResult.nonApplicableCount > 0)
             {
                 m_statusPanel.getStatusBar().postMessage(
-                    std::format("Analyzing {} tracks ({} non-track items skipped)", 
-                        trackResult.trackInfos.size(), trackResult.nonApplicableCount), 
-                    false);
+                    std::format("Analyzing {} tracks ({} non-track items skipped)", trackResult.trackInfos.size(), trackResult.nonApplicableCount), false);
             }
 
             auto *task = new background_tasks::BpmAnalysisTask(std::move(trackResult.trackInfos));
@@ -1585,7 +1606,7 @@ namespace jucyaudio
                 m_statusPanel.getStatusBar().postMessage("No node selected for playback.", true);
                 return;
             }
-            
+
             // Use the Node-Centric method with a single row
             const auto trackResult = m_currentNode->getTrackInfosForOperation({rowIndex});
             if (trackResult.trackInfos.empty())
@@ -1593,8 +1614,8 @@ namespace jucyaudio
                 m_statusPanel.getStatusBar().postMessage("No track info available for row: " + std::to_string(rowIndex), true);
                 return;
             }
-            
-            const auto& track = trackResult.trackInfos[0];
+
+            const auto &track = trackResult.trackInfos[0];
 
             spdlog::info("playDataRow: trackId={}, filename={}, folderId={}", track.trackId, track.filename, track.folderId);
 
@@ -1665,25 +1686,25 @@ namespace jucyaudio
                 m_statusPanel.getStatusBar().postMessage("Cannot delete rows in Mix Editor view.", true);
                 return;
             }
-            
+
             const auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
             if (selectedRows.empty())
             {
                 m_statusPanel.getStatusBar().postMessage("No rows selected for removal.", true);
                 return;
             }
-            
+
             // Use the new analyzeDeletionRequest method to get structured deletion information
             const auto analysisResult = m_currentNode->analyzeDeletionRequest(selectedRows);
-            
+
             // Check if anything can actually be deleted
             if (analysisResult.deletableObjectIds.empty())
             {
                 if (analysisResult.nonDeletableCount > 0)
                 {
                     m_statusPanel.getStatusBar().postMessage(
-                        std::format("The selected {} cannot be removed.", 
-                            analysisResult.nonDeletableCount == 1 ? analysisResult.itemTypeSingular : analysisResult.itemTypePlural), 
+                        std::format("The selected {} cannot be removed.",
+                            analysisResult.nonDeletableCount == 1 ? analysisResult.itemTypeSingular : analysisResult.itemTypePlural),
                         true);
                 }
                 else
@@ -1692,34 +1713,32 @@ namespace jucyaudio
                 }
                 return;
             }
-            
+
             // Build the warning message using the analysis result
             std::string warningMessage;
             std::string okButtonText;
             const auto nodeName{m_currentNode->getName()};
             const auto deletableCount = analysisResult.deletableObjectIds.size();
-            
+
             if (deletableCount == 1 && !analysisResult.singleItemName.empty())
             {
-                warningMessage = std::format(
-                    "Do you want to remove the {} \"{}\" from the {} \"{}\"?", 
-                    analysisResult.itemTypeSingular, 
-                    analysisResult.singleItemName, 
-                    m_currentNode->m_refTypeNameForSingleObject, 
+                warningMessage = std::format("Do you want to remove the {} \"{}\" from the {} \"{}\"?",
+                    analysisResult.itemTypeSingular,
+                    analysisResult.singleItemName,
+                    m_currentNode->m_refTypeNameForSingleObject,
                     nodeName);
                 okButtonText = std::format("Remove {}", analysisResult.itemTypeSingular);
             }
             else
             {
-                warningMessage = std::format(
-                    "Do you want to remove {} {} from the {} \"{}\"?", 
-                    deletableCount, 
-                    analysisResult.itemTypePlural, 
-                    m_currentNode->m_refTypeNameForSingleObject, 
+                warningMessage = std::format("Do you want to remove {} {} from the {} \"{}\"?",
+                    deletableCount,
+                    analysisResult.itemTypePlural,
+                    m_currentNode->m_refTypeNameForSingleObject,
                     nodeName);
                 okButtonText = std::format("Remove {} {}", deletableCount, analysisResult.itemTypePlural);
             }
-            
+
             // Add note about non-deletable items if any
             if (analysisResult.nonDeletableCount > 0)
             {
@@ -1730,7 +1749,7 @@ namespace jucyaudio
 
             // Capture the node and the list of safe object IDs for the callback
             m_currentNode->retain(REFCOUNT_DEBUG_ARGS); // Ensure node stays alive during async operation
-            
+
             juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,
                 "Confirm Removal",
                 warningMessage,
@@ -1744,7 +1763,7 @@ namespace jucyaudio
                         {
                             // Stop playback before modifying data to prevent audio thread issues
                             stopMixPlayback();
-                            
+
                             bool removalSuccess = false;
                             m_playbackController.withMixEngineLock(
                                 [&]()
@@ -1752,12 +1771,12 @@ namespace jucyaudio
                                     // Use the safe list of object IDs
                                     removalSuccess = node->removeObjects(analysisResult.deletableObjectIds);
                                 });
-                            
+
                             if (removalSuccess)
                             {
                                 // Refresh the node's cache
                                 node->refreshCache(true);
-                                
+
                                 // If in mix editor view and this is a mix node, reload the mix editor
                                 if (m_currentMainView == MainViewType::MixEditor)
                                 {
@@ -1766,25 +1785,21 @@ namespace jucyaudio
                                         m_mixEditorComponent.loadMix(mixNode);
                                     }
                                 }
-                                
+
                                 // Refresh the data view
                                 m_dataViewComponent.refreshView();
-                                
+
                                 // Show success message
                                 const auto itemCount = analysisResult.deletableObjectIds.size();
                                 const auto itemType = itemCount == 1 ? analysisResult.itemTypeSingular : analysisResult.itemTypePlural;
-                                m_statusPanel.getStatusBar().postMessage(
-                                    std::format("Removed {} {} from {}", itemCount, itemType, node->getName()), 
-                                    false);
+                                m_statusPanel.getStatusBar().postMessage(std::format("Removed {} {} from {}", itemCount, itemType, node->getName()), false);
                             }
                             else
                             {
-                                m_statusPanel.getStatusBar().postMessage(
-                                    std::format("Failed to remove items from {}", node->getName()), 
-                                    true);
+                                m_statusPanel.getStatusBar().postMessage(std::format("Failed to remove items from {}", node->getName()), true);
                             }
                         }
-                        
+
                         // Release the node reference we retained earlier
                         node->release(REFCOUNT_DEBUG_ARGS);
                     }));
@@ -1810,14 +1825,12 @@ namespace jucyaudio
             {
                 // Use the new Node-Centric method to get track IDs
                 const auto trackResult = m_currentNode->getTrackInfosForOperation(selectedRows);
-                
+
                 if (trackResult.trackInfos.empty())
                 {
                     if (trackResult.nonApplicableCount > 0)
                     {
-                        m_statusPanel.getStatusBar().postMessage(
-                            "The selected items are not tracks and cannot be added to a working set.", 
-                            true);
+                        m_statusPanel.getStatusBar().postMessage("The selected items are not tracks and cannot be added to a working set.", true);
                     }
                     else
                     {
@@ -1825,16 +1838,16 @@ namespace jucyaudio
                     }
                     return false;
                 }
-                
+
                 // Show a note if some selections were skipped
                 if (trackResult.nonApplicableCount > 0)
                 {
                     m_statusPanel.getStatusBar().postMessage(
-                        std::format("Creating working set from {} tracks ({} non-track items skipped)", 
-                            trackResult.trackInfos.size(), trackResult.nonApplicableCount), 
+                        std::format(
+                            "Creating working set from {} tracks ({} non-track items skipped)", trackResult.trackInfos.size(), trackResult.nonApplicableCount),
                         false);
                 }
-                
+
                 return createWorkingSetFromTrackInfos(trackResult.trackInfos);
             }
             else if (m_currentNode)
@@ -1938,12 +1951,9 @@ namespace jucyaudio
             launchOptions.escapeKeyTriggersCloseButton = true;
             launchOptions.resizable = false;
             launchOptions.componentToCentreAround = this;
-            
-            SingletonComponentDialog::showComponent("CreateWorkingSet", 
-                                                   "Create Working Set", 
-                                                   dialog, 
-                                                   launchOptions,
-                                                   true); // modal-style
+
+            SingletonComponentDialog::showComponent("CreateWorkingSet", "Create Working Set", dialog, launchOptions,
+                true); // modal-style
             return true;
         }
 
@@ -1975,7 +1985,7 @@ namespace jucyaudio
             {
                 // Append to existing working set
                 const auto trackResult = node->getAllTrackInfosForOperation();
-                                
+
                 bool success = theTrackLibrary.getWorkingSetManager().addToWorkingSet(targetWsId, trackResult.trackInfos);
 
                 if (success)
@@ -2434,20 +2444,18 @@ namespace jucyaudio
             // Get selected rows to check what's selected
             const auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
             std::vector<TrackInfo> selectedTracks;
-            
+
             if (!selectedRows.empty())
             {
                 // Use the new Node-Centric method to get full track information
                 const auto trackResult = m_currentNode->getTrackInfosForOperation(selectedRows);
-                
+
                 if (trackResult.trackInfos.empty())
                 {
                     // Only non-track items selected or no valid tracks
                     if (trackResult.nonApplicableCount > 0)
                     {
-                        m_statusPanel.getStatusBar().postMessage(
-                            "The selected items are not tracks and cannot be added to a mix.", 
-                            true);
+                        m_statusPanel.getStatusBar().postMessage("The selected items are not tracks and cannot be added to a mix.", true);
                     }
                     else
                     {
@@ -2455,20 +2463,18 @@ namespace jucyaudio
                     }
                     return;
                 }
-                
+
                 // Use the validated track information
                 selectedTracks = trackResult.trackInfos;
-                
+
                 // Show a note if some selections were skipped
                 if (trackResult.nonApplicableCount > 0)
                 {
                     m_statusPanel.getStatusBar().postMessage(
-                        std::format("Creating mix from {} tracks ({} non-track items skipped)", 
-                            selectedTracks.size(), trackResult.nonApplicableCount), 
-                        false);
+                        std::format("Creating mix from {} tracks ({} non-track items skipped)", selectedTracks.size(), trackResult.nonApplicableCount), false);
                 }
             }
-            
+
             // If we have 0 or 1 track selected, use all tracks from the node
             if (selectedTracks.size() <= 1)
             {
@@ -2491,12 +2497,9 @@ namespace jucyaudio
             launchOptions.escapeKeyTriggersCloseButton = true;
             launchOptions.resizable = false;
             launchOptions.componentToCentreAround = this;
-            
-            SingletonComponentDialog::showComponent("CreateMix", 
-                                                   "Create Auto-Mix", 
-                                                   dialog, 
-                                                   launchOptions,
-                                                   true); // modal-style
+
+            SingletonComponentDialog::showComponent("CreateMix", "Create Auto-Mix", dialog, launchOptions,
+                true); // modal-style
         }
 
         void MainComponent::onMixCreatedCallback(bool success, const MixInfo &mixInfo)
@@ -2722,11 +2725,11 @@ namespace jucyaudio
         {
             if (!m_currentNode)
                 return false;
-                
+
             const auto availableActions = m_currentNode->getNodeActions();
             return std::find(availableActions.begin(), availableActions.end(), action) != availableActions.end();
         }
-        
+
         bool MainComponent::onApplyThemeByIndex(size_t themeIndex)
         {
             const auto &availableThemes = theThemeManager.getAvailableThemes();
@@ -2756,7 +2759,7 @@ namespace jucyaudio
             {
             public:
                 DatabaseMaintenanceTask()
-                    : ILongRunningTask{"Performing Database Maintenance", true}  // Changed to cancellable
+                    : ILongRunningTask{"Performing Database Maintenance", true} // Changed to cancellable
                 {
                 }
 
@@ -2765,13 +2768,14 @@ namespace jucyaudio
                     theBackgroundTaskService.pause();
 
                     // Convert our ProgressCallback to MaintenanceProgressCallback
-                    auto maintenanceProgressCb = [&progressCb](int percentComplete, const std::string& statusMessage) {
+                    auto maintenanceProgressCb = [&progressCb](int percentComplete, const std::string &statusMessage)
+                    {
                         progressCb(percentComplete, statusMessage);
                     };
-                    
+
                     // Call the new overloaded method with progress callback
                     const bool success = theTrackLibrary.runMaintenanceTasks(shouldCancel, maintenanceProgressCb);
-                    
+
                     if (shouldCancel)
                     {
                         completionCb(false, "Database maintenance cancelled.");
@@ -2997,85 +3001,95 @@ namespace jucyaudio
                 m_statusPanel.getStatusBar().setInfoMessage("");
             }
         }
-        
+
         void MainComponent::showEqualizerWindow()
         {
-            auto* trackDb = theTrackLibrary.getTrackDatabase();
-            
+            auto *trackDb = theTrackLibrary.getTrackDatabase();
+
             // Get current settings from playback controller
             auto currentSettings = m_playbackController.getCurrentEQSettings();
-            
+
             EqualizerDialog::showEqualizerDialog(
                 this,
                 trackDb,
-                [this](const audio::model::EQSettings& settings)
+                [this](const audio::model::EQSettings &settings)
                 {
                     // Update the playback controller when settings change
                     m_playbackController.updateMasterEQ(settings);
+
+                    // Update our enabled state and save to config
+                    m_equalizerEnabled = settings.isActive;
+                    config::theSettings.audioSettings.equalizerBypassed.set(!settings.isActive);
                 },
                 currentSettings);
         }
-        
+
         void MainComponent::toggleEqualizerWindow()
         {
             // SingletonDialog handles visibility toggling automatically
             showEqualizerWindow();
         }
-        
+
         void MainComponent::toggleEqualizerEnabled()
         {
             m_equalizerEnabled = !m_equalizerEnabled;
-            
+
+            // Save to config (inverted: bypassed = !enabled)
+            config::theSettings.audioSettings.equalizerBypassed.set(!m_equalizerEnabled);
+
             // Get current EQ settings from the dialog if it exists
             audio::model::EQSettings settings;
             // The dialog will handle its own settings, we just need to update the bypass state
             settings.isActive = m_equalizerEnabled;
             m_playbackController.updateMasterEQ(settings);
-            
+
             // Update status bar
-            m_statusPanel.getStatusBar().setInfoMessage(
-                m_equalizerEnabled ? "Equalizer enabled" : "Equalizer bypassed"
-            );
+            m_statusPanel.getStatusBar().setInfoMessage(m_equalizerEnabled ? "Equalizer enabled" : "Equalizer bypassed");
         }
-        
+
         void MainComponent::showReverbWindow()
         {
-            auto* trackDb = theTrackLibrary.getTrackDatabase();
-            
+            auto *trackDb = theTrackLibrary.getTrackDatabase();
+
             // Get current settings from playback controller
             auto currentSettings = m_playbackController.getCurrentReverbSettings();
-            
+
             ReverbDialog::showReverbDialog(
                 this,
                 trackDb,
-                [this](const audio::model::ReverbSettings& settings)
+                [this](const audio::model::ReverbSettings &settings)
                 {
                     // Update the playback controller when settings change
                     m_playbackController.updateMasterReverb(settings);
+
+                    // Update our enabled state and save to config
+                    m_reverbEnabled = settings.isActive;
+                    config::theSettings.audioSettings.reverbBypassed.set(!settings.isActive);
                 },
                 currentSettings);
         }
-        
+
         void MainComponent::toggleReverbWindow()
         {
             // SingletonDialog handles visibility toggling automatically
             showReverbWindow();
         }
-        
+
         void MainComponent::toggleReverbEnabled()
         {
             m_reverbEnabled = !m_reverbEnabled;
-            
+
+            // Save to config (inverted: bypassed = !enabled)
+            config::theSettings.audioSettings.reverbBypassed.set(!m_reverbEnabled);
+
             // Get current reverb settings from the dialog if it exists
             audio::model::ReverbSettings settings;
             // The dialog will handle its own settings, we just need to update the bypass state
             settings.isActive = m_reverbEnabled;
             m_playbackController.updateMasterReverb(settings);
-            
+
             // Update status bar
-            m_statusPanel.getStatusBar().setInfoMessage(
-                m_reverbEnabled ? "Reverb enabled" : "Reverb bypassed"
-            );
+            m_statusPanel.getStatusBar().setInfoMessage(m_reverbEnabled ? "Reverb enabled" : "Reverb bypassed");
         }
 
     } // namespace ui

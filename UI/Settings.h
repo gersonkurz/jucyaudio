@@ -182,6 +182,18 @@ namespace jucyaudio
                 TypedValue<int> numberOfBackups{this, "NumberOfBackups", 5};
 
             } backupSettings{this};
+            
+            struct AudioSettings : public Section
+            {
+                AudioSettings(Section *parent)
+                    : Section{parent, "Audio"}
+                {
+                }
+
+                TypedValue<bool> equalizerBypassed{this, "EqualizerBypassed", true};  // Default to bypassed (disabled)
+                TypedValue<bool> reverbBypassed{this, "ReverbBypassed", true};        // Default to bypassed (disabled)
+
+            } audioSettings{this};
         };
 
         extern RootSettings theSettings;
