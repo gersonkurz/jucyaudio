@@ -129,8 +129,10 @@
    - Update latestSchemaVersion to match actual schema
 
 2. **Intelligent Duplicates Detection:**
-   - Improve existing working-set duplicate detection
-   - Add more sophisticated duplicate identification algorithms
+   - Configuration-based duplicate management system
+   - Quality scoring for automatic keep/remove decisions
+   - Three-tier approach: Working Sets, Mixes, Library
+   - See `dedupe.md` for detailed design specification
 
 3. **i18n Support:**
    - Implement internationalization framework
@@ -179,4 +181,7 @@
 
 ---
 
-For enrichment implementation details, see `enrich.md`.
+## Design Documents
+
+- For AI enrichment implementation details, see `enrich.md`
+- For duplicate detection system design, see `dedupe.md`
