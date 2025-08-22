@@ -32,6 +32,7 @@
 #include <UI/TaskDialog.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
+#include <UI/CheckboxLookAndFeel.h>
 #include <algorithm>
 #include <random>
 #include <format>
@@ -448,6 +449,7 @@ namespace jucyaudio
             // This is important for clean shutdown. It tells all child components
             // to stop using our m_lookAndFeel object before it gets destroyed.
             setLookAndFeel(nullptr);
+            juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
 
             m_navigationPanel.releaseRootNode();
             m_navigationTree.releaseRootNode();
@@ -2735,6 +2737,7 @@ namespace jucyaudio
                 m_enhancedPlayer.sendLookAndFeelChange();
                 m_statusPanel.sendLookAndFeelChange();
                 m_dynamicToolbar.sendLookAndFeelChange();
+                CheckboxLookAndFeel::getInstance()->setDefaultLookAndFeel(&m_lookAndFeel);
 
                 config::TomlBackend backend{g_strConfigFilename};
                 config::theSettings.uiSettings.theme.set(selectedThemeName);
@@ -2757,6 +2760,8 @@ namespace jucyaudio
 
                 void run(ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel) override
                 {
+                    theBackgroundTaskService.pause();
+
                     // Convert our ProgressCallback to MaintenanceProgressCallback
                     auto maintenanceProgressCb = [&progressCb](int percentComplete, const std::string& statusMessage) {
                         progressCb(percentComplete, statusMessage);
@@ -2777,6 +2782,7 @@ namespace jucyaudio
                     {
                         completionCb(false, "Database maintenance failed.");
                     }
+                    theBackgroundTaskService.resume();
                 }
             };
 

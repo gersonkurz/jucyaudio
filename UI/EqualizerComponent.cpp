@@ -1,8 +1,10 @@
 #include "EqualizerComponent.h"
 #include <spdlog/spdlog.h>
+#include <UI/CheckboxLookAndFeel.h>
 
 namespace jucyaudio::ui
 {
+    
     EqualizerComponent::EqualizerComponent()
     {
         // Setup preset controls
@@ -25,6 +27,8 @@ namespace jucyaudio::ui
         // Setup bypass button
         m_bypassButton.setButtonText("Bypass EQ");
         addAndMakeVisible(m_bypassButton);
+        m_bypassButton.setLookAndFeel(CheckboxLookAndFeel::getInstance());
+        
         m_bypassButton.onClick = [this]()
         {
             notifySettingsChanged();
@@ -88,6 +92,12 @@ namespace jucyaudio::ui
 
     EqualizerComponent::~EqualizerComponent() = default;
 
+    void EqualizerComponent::parentHierarchyChanged()
+    {
+        m_bypassButton.setLookAndFeel(CheckboxLookAndFeel::getInstance());
+        m_preampSlider.setLookAndFeel(CheckboxLookAndFeel::getInstance());
+    }
+
     void EqualizerComponent::setupBandControls(size_t bandIndex)
     {
         auto &band = m_bandControls[bandIndex];
@@ -109,6 +119,8 @@ namespace jucyaudio::ui
         band.enableButton.setButtonText(freqText);
         band.enableButton.setToggleState(true, juce::dontSendNotification);
         addAndMakeVisible(band.enableButton);
+        band.enableButton.setLookAndFeel(CheckboxLookAndFeel::getInstance());
+        
         band.enableButton.onClick = [this]()
         {
             notifySettingsChanged();

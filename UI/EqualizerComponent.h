@@ -33,6 +33,8 @@ namespace jucyaudio::ui
         void paint(juce::Graphics &g) override;
         void resized() override;
 
+        void parentHierarchyChanged() override;
+
     private:
         // Master controls
         juce::ComboBox m_presetSelector;

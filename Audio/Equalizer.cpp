@@ -72,7 +72,7 @@ namespace jucyaudio::audio
             if (band.isActive && std::abs(band.gainInDecibels) > 0.01f)
             {
                 // Calculate peak filter coefficients
-                *filter.coefficients = *juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+                *filter.state = *juce::dsp::IIR::Coefficients<float>::makePeakFilter(
                     sampleRate,
                     band.frequency,
                     band.quality,
@@ -82,7 +82,7 @@ namespace jucyaudio::audio
             else
             {
                 // Bypass this band by setting it to unity gain (all-pass)
-                *filter.coefficients = *juce::dsp::IIR::Coefficients<float>::makeAllPass(
+                *filter.state = *juce::dsp::IIR::Coefficients<float>::makeAllPass(
                     sampleRate, 
                     band.frequency, 
                     band.quality

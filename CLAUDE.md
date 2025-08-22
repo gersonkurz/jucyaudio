@@ -79,6 +79,17 @@
     - Successfully created Orange-Dark and Orange-Light theme variants.
     - All themes now use the semantic color system for easier maintenance.
 
+### Session 17: Audio DSP & UI Bug Fixes
+*   **Fixed Equalizer Stereo/Mono Handling:**
+    - Resolved assertion failures in debug mode when processing stereo audio
+    - Updated Equalizer to use `ProcessorDuplicator` for IIR filters to handle multi-channel audio
+    - Mix engine already converts mono tracks to stereo, ensuring consistent stereo processing
+*   **Fixed Checkbox Rendering in Dialogs:**
+    - Created shared `CheckboxLookAndFeel` singleton for consistent checkbox rendering across all themes
+    - Applied to EqualizerComponent, ReverbComponent, SettingsDialog, and LibraryRootsComponent
+    - Resolved LookAndFeel lifetime issues that caused assertions in debug mode
+    - Checkboxes now properly render in both light and dark themes
+
 ---
 
 ## Important Implementation Notes
@@ -106,20 +117,16 @@
 ✅ Fix Light-Theme Issues
 ✅ Implement Dynamic Log Level
 
-### Required for 1.0 Release:
+### Known Bugs:
 
-#### High Priority:
+(Currently no known critical bugs)
+
+### Scheduled for 1.0 Release:
 
 1. **Prepare Database Release for Latest Version:**
    - Roll all migration steps into a single clean schema
    - Start with clean-slate database for production release
    - Update latestSchemaVersion to match actual schema
-
-#### Medium Priority:
-
-1. ~~**Orange-Light / Orange-Dark Themes:**~~ ✅ COMPLETED
-   - ~~Design new orange-based themes~~
-   - ~~Set one as default theme~~
 
 2. **Intelligent Duplicates Detection:**
    - Improve existing working-set duplicate detection
@@ -132,19 +139,34 @@
 4. **Scan Dialog Enhancement:**
    - Add "I moved this folder" option for relocated library folders
 
-5. **In-App Tagging System:**
+5. **Linked Cue-Points:**
+   - Implement linked movement of cue-points with attach points
+
+6. **Code Quality Review and Refactoring:**
+   - Comprehensive code review
+   - Refactor for maintainability and performance
+
+7. **BPM Scanner Control:**
+   - Add ability to disable/re-enable automated BPM scanner in background
+   - Provide UI controls in Settings dialog
+
+8. **Library View Channel Mode Column:**
+   - Add a DataColumn showing audio channel configuration (Stereo/Mono)
+   - Display channel mode for each track in the library view
+
+9. **Mix Editor Track Context Menu:**
+   - Add right-click context menu for tracks in the Mix Editor
+   - Include "Show Track Details" option
+   - Display dialog showing filename and all TrackInfo data (BPM, duration, sample rate, bit depth, etc.)
+
+### Nice to Have for 1.0 (if time permits):
+
+1. **In-App Tagging System:**
    - mp3tag-like functionality for editing track metadata
    - Store all edits in database only (never modify source files)
    - UI for batch editing and tag management
 
-6. **Linked Cue-Points:**
-   - Implement linked movement of cue-points with attach points
-
-7. **Code Quality Review and Refactoring:**
-   - Comprehensive code review
-   - Refactor for maintainability and performance
-
-8. **MacOS: DMG Image Creation:**
+2. **MacOS: DMG Image Creation:**
    - Create distributable DMG installer for macOS
 
 ### Long-term (Version 2.0):

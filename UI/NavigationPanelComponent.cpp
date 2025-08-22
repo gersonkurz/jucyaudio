@@ -91,7 +91,7 @@ namespace jucyaudio
             {
                 // Use the modern, non-deprecated Font constructor that you were already using.
                 g.setFont(juce::Font{juce::FontOptions{}.withHeight(height * 0.7f)});
-                g.drawText(m_node->getName(), textBounds, juce::Justification::centredLeft, true);
+                g.drawText(getSafeDisplayText(m_node->getName()), textBounds, juce::Justification::centredLeft, true);
             }
             else
             {

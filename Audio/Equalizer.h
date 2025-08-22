@@ -28,12 +28,14 @@ namespace jucyaudio::audio
         
     private:
         // 10-band filter chain + preamp gain
-        using Filter = juce::dsp::IIR::Filter<float>;
+        using MonoFilter = juce::dsp::IIR::Filter<float>;
+        using Filter = juce::dsp::ProcessorDuplicator<MonoFilter, juce::dsp::IIR::Coefficients<float>>;
         using Gain = juce::dsp::Gain<float>;
         
         // We use a ProcessorChain for efficient processing
+        // ProcessorDuplicator wraps each mono IIR filter to handle stereo audio
         juce::dsp::ProcessorChain<
-            Gain,     // Preamp gain
+            Gain,     // Preamp gain (already handles stereo)
             Filter,   // Band 0: 31 Hz
             Filter,   // Band 1: 63 Hz
             Filter,   // Band 2: 125 Hz

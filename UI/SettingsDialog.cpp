@@ -4,6 +4,7 @@
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <Utils/LoggingUtils.h>
+#include <UI/CheckboxLookAndFeel.h>
 
 namespace jucyaudio::ui
 {
@@ -275,64 +276,9 @@ namespace jucyaudio::ui
 
     void GeneralSettingsTab::parentHierarchyChanged()
     {
-        // Custom LookAndFeel class to fix checkbox rendering in light theme
-        class CheckboxLookAndFeel : public juce::LookAndFeel_V4
-        {
-        public:
-            CheckboxLookAndFeel(juce::LookAndFeel& parent)
-            {
-                // Copy colors from parent to ensure we match the current theme
-                setColour(juce::ToggleButton::textColourId, parent.findColour(juce::ToggleButton::textColourId));
-                setColour(juce::ToggleButton::tickColourId, parent.findColour(juce::ToggleButton::textColourId)); // Tick the same color as text
-                setColour(juce::ToggleButton::tickDisabledColourId, parent.findColour(juce::ToggleButton::textColourId).withAlpha(0.5f));
-            }
-            
-            void drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
-                                bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
-            {
-                juce::ignoreUnused(shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
-                const auto fontSize = juce::jmin(15.0f, button.getHeight() * 0.75f);
-                const auto tickWidth = fontSize * 1.1f;
-                
-                // Draw checkbox outline
-                juce::Rectangle<float> tickBounds(4.0f, (button.getHeight() - tickWidth) * 0.5f, tickWidth, tickWidth);
-                
-                g.setColour(button.findColour(juce::ToggleButton::textColourId).withAlpha(0.8f));
-                g.drawRect(tickBounds, 1.0f);
-                
-                // Fill if checked
-                if (button.getToggleState())
-                {
-                    g.setColour(button.findColour(juce::ToggleButton::tickColourId));
-                    const auto tick = tickBounds.reduced(tickWidth * 0.25f);
-                    
-                    juce::Path p;
-                    p.startNewSubPath(tick.getX(), tick.getCentreY());
-                    p.lineTo(tick.getCentreX(), tick.getBottom());
-                    p.lineTo(tick.getRight(), tick.getY());
-                    
-                    g.strokePath(p, juce::PathStrokeType(2.0f));
-                }
-                
-                // Draw text
-                g.setColour(button.findColour(juce::ToggleButton::textColourId));
-                g.setFont(fontSize);
-                
-                if (!button.isEnabled())
-                    g.setOpacity(0.5f);
-                
-                g.drawFittedText(button.getButtonText(),
-                               button.getLocalBounds().withTrimmedLeft(juce::roundToInt(tickWidth) + 10).withTrimmedRight(2),
-                               juce::Justification::centredLeft, 10);
-            }
-        };
-        
-        // Create and set custom LookAndFeel for checkboxes
-        // We create a new instance because it captures the parent L&F colors.
-        m_checkboxLookAndFeel = std::make_unique<CheckboxLookAndFeel>(getLookAndFeel());
-        m_removeFromWsToggle.setLookAndFeel(m_checkboxLookAndFeel.get());
-        m_askBeforeRemovingToggle.setLookAndFeel(m_checkboxLookAndFeel.get());
-        m_clearWsAfterExportToggle.setLookAndFeel(m_checkboxLookAndFeel.get());
+        m_removeFromWsToggle.setLookAndFeel(CheckboxLookAndFeel::getInstance());
+        m_askBeforeRemovingToggle.setLookAndFeel(CheckboxLookAndFeel::getInstance());
+        m_clearWsAfterExportToggle.setLookAndFeel(CheckboxLookAndFeel::getInstance());
     }
     
     // ===========================================================================

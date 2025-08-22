@@ -80,9 +80,6 @@ namespace jucyaudio::ui
         juce::Label m_loggingLabel;
         juce::Label m_logLevelLabel;
         juce::ComboBox m_logLevelCombo;
-
-        // Custom LookAndFeel for checkboxes to handle theme colors
-        std::unique_ptr<juce::LookAndFeel_V4> m_checkboxLookAndFeel;
         
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GeneralSettingsTab)
     };

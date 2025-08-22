@@ -2,6 +2,7 @@
 #include <UI/ThemeManager.h>
 #include <spdlog/spdlog.h>
 #include <toml++/toml.h> // Include the parser implementation here
+#include <UI/CheckboxLookAndFeel.h>
 
 namespace jucyaudio
 {
@@ -200,6 +201,8 @@ namespace jucyaudio
                 if (pComponent)
                 {
                     pComponent->setLookAndFeel(&lookAndFeel);
+                    // Also set as default so dialogs get it too
+                    juce::LookAndFeel::setDefaultLookAndFeel(&lookAndFeel);
                     // Force all child components to update their colors
                     pComponent->sendLookAndFeelChange();
                 }

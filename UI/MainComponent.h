@@ -20,6 +20,7 @@
 #include <UI/Settings.h>
 #include <UI/ThemeManager.h>
 #include <UI/TimerMultiplexer.h>
+#include <UI/JucyLookAndFeel.h>
 #include <Utils/UiUtils.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_graphics/juce_graphics.h>
@@ -167,7 +168,7 @@ namespace jucyaudio
             PlaybackController m_playbackController;
             EnhancedPlayerComponent m_enhancedPlayer; // Direct member object
             MainPlaybackAndStatusComponent m_statusPanel;
-            juce::LookAndFeel_V4 m_lookAndFeel;
+            JucyLookAndFeel m_lookAndFeel;
 
             // Unified timer system
             TimerMultiplexer m_timerMultiplexer;
