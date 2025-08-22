@@ -99,9 +99,11 @@ namespace jucyaudio
             
             // Master EQ Control
             void updateMasterEQ(const audio::model::EQSettings& settings);
+            audio::model::EQSettings getCurrentEQSettings() const { return m_currentEQSettings; }
             
             // Master Reverb Control
             void updateMasterReverb(const audio::model::ReverbSettings& settings);
+            audio::model::ReverbSettings getCurrentReverbSettings() const { return m_currentReverbSettings; }
 
             // Thread-safe execution for mix-related operations
             void withMixEngineLock(std::function<void()> action);
@@ -118,6 +120,10 @@ namespace jucyaudio
             juce::AudioTransportSource m_audioTransportSource;
             audio::Equalizer m_masterEqualizer;
             audio::Reverb m_masterReverb;
+            
+            // Current effect settings
+            audio::model::EQSettings m_currentEQSettings;
+            audio::model::ReverbSettings m_currentReverbSettings;
             
             // Mix playback support
             std::unique_ptr<audio::MixPlaybackEngine> m_mixPlaybackEngine;

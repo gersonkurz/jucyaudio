@@ -425,9 +425,10 @@ namespace jucyaudio
 
             // Create and register our new BPM analysis task.
             // Note: the service will retain() the task, so we can release our initial reference.
-            auto *bpmTask = new background_tasks::BpmAnalysis{};
+            /* auto *bpmTask = new background_tasks::BpmAnalysis{};
             theBackgroundTaskService.registerTask(bpmTask);
             bpmTask->release(REFCOUNT_DEBUG_ARGS);
+            */
         }
 
         MainComponent::~MainComponent()
@@ -3001,16 +3002,18 @@ namespace jucyaudio
         {
             auto* trackDb = theTrackLibrary.getTrackDatabase();
             
+            // Get current settings from playback controller
+            auto currentSettings = m_playbackController.getCurrentEQSettings();
+            
             EqualizerDialog::showEqualizerDialog(
                 this,
                 trackDb,
                 [this](const audio::model::EQSettings& settings)
                 {
                     // Update the playback controller when settings change
-                    auto updatedSettings = settings;
-                    updatedSettings.isActive = m_equalizerEnabled;
-                    m_playbackController.updateMasterEQ(updatedSettings);
-                });
+                    m_playbackController.updateMasterEQ(settings);
+                },
+                currentSettings);
         }
         
         void MainComponent::toggleEqualizerWindow()
@@ -3039,16 +3042,18 @@ namespace jucyaudio
         {
             auto* trackDb = theTrackLibrary.getTrackDatabase();
             
+            // Get current settings from playback controller
+            auto currentSettings = m_playbackController.getCurrentReverbSettings();
+            
             ReverbDialog::showReverbDialog(
                 this,
                 trackDb,
                 [this](const audio::model::ReverbSettings& settings)
                 {
                     // Update the playback controller when settings change
-                    auto updatedSettings = settings;
-                    updatedSettings.isActive = m_reverbEnabled;
-                    m_playbackController.updateMasterReverb(updatedSettings);
-                });
+                    m_playbackController.updateMasterReverb(settings);
+                },
+                currentSettings);
         }
         
         void MainComponent::toggleReverbWindow()

@@ -5,10 +5,12 @@
 namespace jucyaudio::ui
 {
     ReverbDialog::ReverbDialog(database::ITrackDatabase* trackDb,
-                             std::function<void(const audio::model::ReverbSettings&)> onSettingsChanged)
+                             std::function<void(const audio::model::ReverbSettings&)> onSettingsChanged,
+                             const audio::model::ReverbSettings& initialSettings)
         : SingletonDialog("Reverb", 
                          juce::LookAndFeel::getDefaultLookAndFeel().findColour(juce::DialogWindow::backgroundColourId),
-                         true) // Has close button
+                         true), // Has close button
+          m_onSettingsChanged(onSettingsChanged)
     {
         // Create the reverb component
         m_reverbComponent = std::make_unique<ReverbComponent>();
@@ -52,6 +54,12 @@ namespace jucyaudio::ui
             };
         }
         
+        // Load initial settings
+        if (auto* content = m_reverbComponent.get())
+        {
+            content->loadSettings(initialSettings);
+        }
+        
         setContentOwned(m_reverbComponent.release(), true);
         setResizable(true, false);
         setUsingNativeTitleBar(true);
@@ -59,6 +67,26 @@ namespace jucyaudio::ui
     }
 
     ReverbDialog::~ReverbDialog() = default;
+    
+    void ReverbDialog::closeButtonPressed()
+    {
+        // Apply current settings before closing
+        if (m_onSettingsChanged)
+        {
+            m_onSettingsChanged(getCurrentSettings());
+        }
+        SingletonDialog::closeButtonPressed();
+    }
+    
+    bool ReverbDialog::escapeKeyPressed()
+    {
+        // Apply current settings before closing
+        if (m_onSettingsChanged)
+        {
+            m_onSettingsChanged(getCurrentSettings());
+        }
+        return SingletonDialog::escapeKeyPressed();
+    }
     
     audio::model::ReverbSettings ReverbDialog::getCurrentSettings() const
     {
@@ -85,8 +113,9 @@ namespace jucyaudio::ui
     
     void ReverbDialog::showReverbDialog(juce::Component* centreAroundComponent,
                                        database::ITrackDatabase* trackDb,
-                                       std::function<void(const audio::model::ReverbSettings&)> onSettingsChanged)
+                                       std::function<void(const audio::model::ReverbSettings&)> onSettingsChanged,
+                                       const audio::model::ReverbSettings& initialSettings)
     {
-        showSingletonDialog(centreAroundComponent, trackDb, onSettingsChanged);
+        showSingletonDialog(centreAroundComponent, trackDb, onSettingsChanged, initialSettings);
     }
 }

@@ -5,10 +5,12 @@
 namespace jucyaudio::ui
 {
     EqualizerDialog::EqualizerDialog(database::ITrackDatabase* trackDb,
-                                   std::function<void(const audio::model::EQSettings&)> onSettingsChanged)
+                                   std::function<void(const audio::model::EQSettings&)> onSettingsChanged,
+                                   const audio::model::EQSettings& initialSettings)
         : SingletonDialog("Equalizer", 
                          juce::LookAndFeel::getDefaultLookAndFeel().findColour(juce::DialogWindow::backgroundColourId),
-                         true) // Has close button
+                         true), // Has close button
+          m_onSettingsChanged(onSettingsChanged)
     {
         // Create the equalizer component
         m_equalizerComponent = std::make_unique<EqualizerComponent>();
@@ -52,6 +54,12 @@ namespace jucyaudio::ui
             };
         }
         
+        // Load initial settings
+        if (auto* content = m_equalizerComponent.get())
+        {
+            content->loadSettings(initialSettings);
+        }
+        
         setContentOwned(m_equalizerComponent.release(), true);
         setResizable(true, false);
         setUsingNativeTitleBar(true);
@@ -59,6 +67,26 @@ namespace jucyaudio::ui
     }
 
     EqualizerDialog::~EqualizerDialog() = default;
+    
+    void EqualizerDialog::closeButtonPressed()
+    {
+        // Apply current settings before closing
+        if (m_onSettingsChanged)
+        {
+            m_onSettingsChanged(getCurrentSettings());
+        }
+        SingletonDialog::closeButtonPressed();
+    }
+    
+    bool EqualizerDialog::escapeKeyPressed()
+    {
+        // Apply current settings before closing
+        if (m_onSettingsChanged)
+        {
+            m_onSettingsChanged(getCurrentSettings());
+        }
+        return SingletonDialog::escapeKeyPressed();
+    }
     
     audio::model::EQSettings EqualizerDialog::getCurrentSettings() const
     {
@@ -85,8 +113,9 @@ namespace jucyaudio::ui
     
     void EqualizerDialog::showEqualizerDialog(juce::Component* centreAroundComponent,
                                              database::ITrackDatabase* trackDb,
-                                             std::function<void(const audio::model::EQSettings&)> onSettingsChanged)
+                                             std::function<void(const audio::model::EQSettings&)> onSettingsChanged,
+                                             const audio::model::EQSettings& initialSettings)
     {
-        showSingletonDialog(centreAroundComponent, trackDb, onSettingsChanged);
+        showSingletonDialog(centreAroundComponent, trackDb, onSettingsChanged, initialSettings);
     }
 }

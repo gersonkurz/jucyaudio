@@ -564,6 +564,7 @@ namespace jucyaudio
         
         void PlaybackController::updateMasterEQ(const audio::model::EQSettings& settings)
         {
+            m_currentEQSettings = settings;
             m_masterEqualizer.updateParameters(settings);
             
             // If we're in mix mode, also update the mix project loader
@@ -575,6 +576,7 @@ namespace jucyaudio
         
         void PlaybackController::updateMasterReverb(const audio::model::ReverbSettings& settings)
         {
+            m_currentReverbSettings = settings;
             m_masterReverb.updateParameters(settings);
             
             // If we're in mix mode, also update the mix project loader

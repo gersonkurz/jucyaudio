@@ -14,7 +14,8 @@ namespace jucyaudio::ui
     {
     public:
         ReverbDialog(database::ITrackDatabase* trackDb,
-                    std::function<void(const audio::model::ReverbSettings&)> onSettingsChanged);
+                    std::function<void(const audio::model::ReverbSettings&)> onSettingsChanged,
+                    const audio::model::ReverbSettings& initialSettings = {});
         ~ReverbDialog() override;
         
         /**
@@ -35,10 +36,16 @@ namespace jucyaudio::ui
          */
         static void showReverbDialog(juce::Component* centreAroundComponent,
                                     database::ITrackDatabase* trackDb,
-                                    std::function<void(const audio::model::ReverbSettings&)> onSettingsChanged);
+                                    std::function<void(const audio::model::ReverbSettings&)> onSettingsChanged,
+                                    const audio::model::ReverbSettings& initialSettings = {});
+    
+    protected:
+        void closeButtonPressed() override;
+        bool escapeKeyPressed() override;
         
     private:
         std::unique_ptr<ReverbComponent> m_reverbComponent;
+        std::function<void(const audio::model::ReverbSettings&)> m_onSettingsChanged;
         
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ReverbDialog)
     };

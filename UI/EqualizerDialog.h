@@ -14,7 +14,8 @@ namespace jucyaudio::ui
     {
     public:
         EqualizerDialog(database::ITrackDatabase* trackDb,
-                       std::function<void(const audio::model::EQSettings&)> onSettingsChanged);
+                       std::function<void(const audio::model::EQSettings&)> onSettingsChanged,
+                       const audio::model::EQSettings& initialSettings = {});
         ~EqualizerDialog() override;
         
         /**
@@ -35,10 +36,16 @@ namespace jucyaudio::ui
          */
         static void showEqualizerDialog(juce::Component* centreAroundComponent,
                                        database::ITrackDatabase* trackDb,
-                                       std::function<void(const audio::model::EQSettings&)> onSettingsChanged);
+                                       std::function<void(const audio::model::EQSettings&)> onSettingsChanged,
+                                       const audio::model::EQSettings& initialSettings = {});
+    
+    protected:
+        void closeButtonPressed() override;
+        bool escapeKeyPressed() override;
         
     private:
         std::unique_ptr<EqualizerComponent> m_equalizerComponent;
+        std::function<void(const audio::model::EQSettings&)> m_onSettingsChanged;
         
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EqualizerDialog)
     };
