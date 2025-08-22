@@ -17,8 +17,7 @@ namespace jucyaudio
         public:
             NavigationTree(NavigationPanelComponent &npc, DataViewComponent &dvc)
                 : m_root{nullptr},
-                  m_npc{npc},
-                  m_dvc{dvc}
+                  m_npc{npc}
             {
             }
             ~NavigationTree();
@@ -64,7 +63,6 @@ namespace jucyaudio
         private:
             RootNode *m_root{nullptr}; // Pointer to the root node of the navigation tree
             NavigationPanelComponent &m_npc;            // Reference to the UI that will display the navigation tree
-            DataViewComponent &m_dvc;                   // Reference to the DataViewComponent for data display
         };
 
     } // namespace ui

@@ -309,7 +309,7 @@ namespace jucyaudio
 
         int DataViewComponent::getNumRows()
         {
-            const auto start{std::chrono::high_resolution_clock::now()};
+            //const auto start{std::chrono::high_resolution_clock::now()};
             if (!m_currentNode)
             {
                 return 0;
@@ -317,8 +317,8 @@ namespace jucyaudio
             int64_t count = 0;
             if (m_currentNode->getNumberOfRows(count))
             {
-                const auto end{std::chrono::high_resolution_clock::now()};
-                const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
+                //const auto end{std::chrono::high_resolution_clock::now()};
+                //const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
                 //if (duration.count() > 100)
                 //    spdlog::info("DataViewComponent::getNumRows took {} us", duration.count());
                 return static_cast<int>(count);

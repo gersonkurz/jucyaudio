@@ -174,7 +174,7 @@ juce_add_gui_app(jucyaudio
 
 # Add Windows resource file for icon
 if(WIN32)
-    target_sources(jucyaudio PRIVATE windows_icon.rc "UI/CheckboxLookAndFeel.h" "UI/CheckboxLookAndFeel.cpp")
+    target_sources(jucyaudio PRIVATE windows_icon.rc)
 endif()
 
 # Add all source files
@@ -385,6 +385,8 @@ target_sources(jucyaudio PRIVATE
     UI/EqualizerComponent.h
     UI/ReverbComponent.h
     UI/LibraryRootsComponent.h
+    UI/CheckboxLookAndFeel.h
+    UI/CheckboxLookAndFeel.cpp
     UI/ThemeManager.cpp
     UI/ThemeManager.h
     UI/MenuManager.cpp

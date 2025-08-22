@@ -164,7 +164,7 @@ namespace jucyaudio
 
         VirtualFolderNode::RowType VirtualFolderNode::getRowType(RowIndex_t rowIndex) const
         {
-            int64_t currentRow = 0;
+            RowIndex_t currentRow = 0;
             
             // First row is parent ".." if we have a parent
             if (hasParent())
@@ -178,7 +178,7 @@ namespace jucyaudio
             }
             
             // Next rows are child folders
-            int64_t childFolderCount = getChildFolderCount();
+            RowIndex_t childFolderCount = getChildFolderCount();
             if (childFolderCount > 0 && rowIndex < currentRow + childFolderCount)
             {
                 // spdlog::debug("VirtualFolderNode::getRowType - row {} is ChildFolder", rowIndex);

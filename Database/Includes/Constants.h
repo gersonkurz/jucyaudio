@@ -145,7 +145,7 @@ namespace jucyaudio
     namespace database
     {
         // Forward declarations
-        class INavigationNode;
+        struct INavigationNode;
         
         /**
          * @brief Normalization factor for volume calculations
