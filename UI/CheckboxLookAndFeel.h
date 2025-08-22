@@ -15,6 +15,7 @@ namespace jucyaudio
 
         public:
             static CheckboxLookAndFeel* getInstance();
+            static void releaseMemory();
 
         private:
             void drawToggleButton(juce::Graphics &g, juce::ToggleButton &button, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;

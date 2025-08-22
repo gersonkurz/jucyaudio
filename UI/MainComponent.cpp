@@ -450,6 +450,7 @@ namespace jucyaudio
             // to stop using our m_lookAndFeel object before it gets destroyed.
             setLookAndFeel(nullptr);
             juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
+            CheckboxLookAndFeel::releaseMemory();
 
             m_navigationPanel.releaseRootNode();
             m_navigationTree.releaseRootNode();

@@ -300,6 +300,7 @@ namespace jucyaudio
                     // 3. Create loggers
                     auto combined_logger = std::make_shared<spdlog::logger>("jucyaudio_logger", begin(sinks), end(sinks));
                     auto conf_logger = std::make_shared<spdlog::logger>("conf", sinks.begin(), sinks.end());
+                    conf_logger->set_level(spdlog::level::off); // Disable config logger by default
                     config::logger = conf_logger;
                     spdlog::register_logger(conf_logger);
                     spdlog::set_default_logger(combined_logger);

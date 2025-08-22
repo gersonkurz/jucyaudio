@@ -26,6 +26,14 @@ namespace jucyaudio
             return s_instance.get();
         }
 
+        void CheckboxLookAndFeel::releaseMemory()
+        {
+            if (s_instance)
+            {
+                s_instance.reset();
+            }
+        }
+
         void CheckboxLookAndFeel::drawToggleButton(
             juce::Graphics &g, juce::ToggleButton &button, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
         {
