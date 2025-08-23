@@ -7,7 +7,7 @@ namespace jucyaudio
     namespace ui
     {
         JucyAudioSplashScreen::JucyAudioSplashScreen()
-            : SplashScreen("JucyAudio", 400, 300, true /* use drop shadow */)
+            : SplashScreen{"JucyAudio", 400, 300, true /* use drop shadow */}
         {
             // Load the logo image
             m_logo = juce::ImageCache::getFromMemory(BinaryData::orangejucyaudiologo_png, BinaryData::orangejucyaudiologo_pngSize);

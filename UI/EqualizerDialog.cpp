@@ -9,10 +9,10 @@ namespace jucyaudio
         EqualizerDialog::EqualizerDialog(database::ITrackDatabase *trackDb,
             std::function<void(const audio::model::EQSettings &)> onSettingsChanged,
             const audio::model::EQSettings &initialSettings)
-            : SingletonDialog("Equalizer",
+            : SingletonDialog{"Equalizer",
                   juce::LookAndFeel::getDefaultLookAndFeel().findColour(juce::DialogWindow::backgroundColourId),
-                  true), // Has close button
-              m_onSettingsChanged(onSettingsChanged)
+                  true}, // Has close button
+              m_onSettingsChanged{onSettingsChanged}
         {
             // Create the equalizer component
             m_equalizerComponent = std::make_unique<EqualizerComponent>();
