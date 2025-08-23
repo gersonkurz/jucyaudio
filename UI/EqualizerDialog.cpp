@@ -2,120 +2,123 @@
 #include <Database/Sqlite/SqliteTrackDatabase.h>
 #include <spdlog/spdlog.h>
 
-namespace jucyaudio::ui
+namespace jucyaudio
 {
-    EqualizerDialog::EqualizerDialog(database::ITrackDatabase* trackDb,
-                                   std::function<void(const audio::model::EQSettings&)> onSettingsChanged,
-                                   const audio::model::EQSettings& initialSettings)
-        : SingletonDialog("Equalizer", 
-                         juce::LookAndFeel::getDefaultLookAndFeel().findColour(juce::DialogWindow::backgroundColourId),
-                         true), // Has close button
-          m_onSettingsChanged(onSettingsChanged)
+    namespace ui
     {
-        // Create the equalizer component
-        m_equalizerComponent = std::make_unique<EqualizerComponent>();
-        
-        // Load presets from database
-        if (auto* sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(trackDb))
+        EqualizerDialog::EqualizerDialog(database::ITrackDatabase *trackDb,
+            std::function<void(const audio::model::EQSettings &)> onSettingsChanged,
+            const audio::model::EQSettings &initialSettings)
+            : SingletonDialog("Equalizer",
+                  juce::LookAndFeel::getDefaultLookAndFeel().findColour(juce::DialogWindow::backgroundColourId),
+                  true), // Has close button
+              m_onSettingsChanged(onSettingsChanged)
         {
-            auto presets = sqliteDb->getEQPresetManager().getAllPresets();
-            m_equalizerComponent->loadPresets(presets);
-            
-            // Set up callbacks
-            m_equalizerComponent->onSettingsChanged = onSettingsChanged;
-            
-            m_equalizerComponent->onPresetSelected = [sqliteDb, this](int64_t presetId)
-            {
-                auto preset = sqliteDb->getEQPresetManager().getPreset(presetId);
-                if (preset.has_value())
-                {
-                    m_equalizerComponent->loadSettings(preset->settings);
-                }
-            };
-            
-            m_equalizerComponent->onSavePreset = [sqliteDb, this](const juce::String& name, const audio::model::EQSettings& settings)
-            {
-                if (sqliteDb->getEQPresetManager().savePreset(name, settings))
-                {
-                    auto presets = sqliteDb->getEQPresetManager().getAllPresets();
-                    m_equalizerComponent->loadPresets(presets);
-                    spdlog::info("Created EQ preset: {}", name.toStdString());
-                }
-            };
-            
-            m_equalizerComponent->onDeletePreset = [sqliteDb, this](int64_t presetId)
-            {
-                if (sqliteDb->getEQPresetManager().deletePreset(presetId))
-                {
-                    auto presets = sqliteDb->getEQPresetManager().getAllPresets();
-                    m_equalizerComponent->loadPresets(presets);
-                    spdlog::info("Deleted EQ preset {}", presetId);
-                }
-            };
-        }
-        
-        // Load initial settings
-        if (auto* content = m_equalizerComponent.get())
-        {
-            content->loadSettings(initialSettings);
-        }
-        
-        setContentOwned(m_equalizerComponent.release(), true);
-        setResizable(true, false);
-        setUsingNativeTitleBar(true);
-        centreWithSize(800, 600);
-    }
+            // Create the equalizer component
+            m_equalizerComponent = std::make_unique<EqualizerComponent>();
 
-    EqualizerDialog::~EqualizerDialog() = default;
-    
-    void EqualizerDialog::closeButtonPressed()
-    {
-        // Apply current settings before closing
-        if (m_onSettingsChanged)
-        {
-            m_onSettingsChanged(getCurrentSettings());
-        }
-        SingletonDialog::closeButtonPressed();
-    }
-    
-    bool EqualizerDialog::escapeKeyPressed()
-    {
-        // Apply current settings before closing
-        if (m_onSettingsChanged)
-        {
-            m_onSettingsChanged(getCurrentSettings());
-        }
-        return SingletonDialog::escapeKeyPressed();
-    }
-    
-    audio::model::EQSettings EqualizerDialog::getCurrentSettings() const
-    {
-        if (auto* content = getContentComponent())
-        {
-            if (auto* eqComp = dynamic_cast<EqualizerComponent*>(content))
+            // Load presets from database
+            if (auto *sqliteDb = dynamic_cast<database::SqliteTrackDatabase *>(trackDb))
             {
-                return eqComp->getCurrentSettings();
+                auto presets = sqliteDb->getEQPresetManager().getAllPresets();
+                m_equalizerComponent->loadPresets(presets);
+
+                // Set up callbacks
+                m_equalizerComponent->onSettingsChanged = onSettingsChanged;
+
+                m_equalizerComponent->onPresetSelected = [sqliteDb, this](int64_t presetId)
+                {
+                    auto preset = sqliteDb->getEQPresetManager().getPreset(presetId);
+                    if (preset.has_value())
+                    {
+                        m_equalizerComponent->loadSettings(preset->settings);
+                    }
+                };
+
+                m_equalizerComponent->onSavePreset = [sqliteDb, this](const juce::String &name, const audio::model::EQSettings &settings)
+                {
+                    if (sqliteDb->getEQPresetManager().savePreset(name, settings))
+                    {
+                        auto presets = sqliteDb->getEQPresetManager().getAllPresets();
+                        m_equalizerComponent->loadPresets(presets);
+                        spdlog::info("Created EQ preset: {}", name.toStdString());
+                    }
+                };
+
+                m_equalizerComponent->onDeletePreset = [sqliteDb, this](int64_t presetId)
+                {
+                    if (sqliteDb->getEQPresetManager().deletePreset(presetId))
+                    {
+                        auto presets = sqliteDb->getEQPresetManager().getAllPresets();
+                        m_equalizerComponent->loadPresets(presets);
+                        spdlog::info("Deleted EQ preset {}", presetId);
+                    }
+                };
+            }
+
+            // Load initial settings
+            if (auto *content = m_equalizerComponent.get())
+            {
+                content->loadSettings(initialSettings);
+            }
+
+            setContentOwned(m_equalizerComponent.release(), true);
+            setResizable(true, false);
+            setUsingNativeTitleBar(true);
+            centreWithSize(800, 600);
+        }
+
+        EqualizerDialog::~EqualizerDialog() = default;
+
+        void EqualizerDialog::closeButtonPressed()
+        {
+            // Apply current settings before closing
+            if (m_onSettingsChanged)
+            {
+                m_onSettingsChanged(getCurrentSettings());
+            }
+            SingletonDialog::closeButtonPressed();
+        }
+
+        bool EqualizerDialog::escapeKeyPressed()
+        {
+            // Apply current settings before closing
+            if (m_onSettingsChanged)
+            {
+                m_onSettingsChanged(getCurrentSettings());
+            }
+            return SingletonDialog::escapeKeyPressed();
+        }
+
+        audio::model::EQSettings EqualizerDialog::getCurrentSettings() const
+        {
+            if (auto *content = getContentComponent())
+            {
+                if (auto *eqComp = dynamic_cast<EqualizerComponent *>(content))
+                {
+                    return eqComp->getCurrentSettings();
+                }
+            }
+            return {};
+        }
+
+        void EqualizerDialog::loadSettings(const audio::model::EQSettings &settings)
+        {
+            if (auto *content = getContentComponent())
+            {
+                if (auto *eqComp = dynamic_cast<EqualizerComponent *>(content))
+                {
+                    eqComp->loadSettings(settings);
+                }
             }
         }
-        return {};
-    }
-    
-    void EqualizerDialog::loadSettings(const audio::model::EQSettings& settings)
-    {
-        if (auto* content = getContentComponent())
+
+        void EqualizerDialog::showEqualizerDialog(juce::Component *centreAroundComponent,
+            database::ITrackDatabase *trackDb,
+            std::function<void(const audio::model::EQSettings &)> onSettingsChanged,
+            const audio::model::EQSettings &initialSettings)
         {
-            if (auto* eqComp = dynamic_cast<EqualizerComponent*>(content))
-            {
-                eqComp->loadSettings(settings);
-            }
+            showSingletonDialog(centreAroundComponent, trackDb, onSettingsChanged, initialSettings);
         }
-    }
-    
-    void EqualizerDialog::showEqualizerDialog(juce::Component* centreAroundComponent,
-                                             database::ITrackDatabase* trackDb,
-                                             std::function<void(const audio::model::EQSettings&)> onSettingsChanged,
-                                             const audio::model::EQSettings& initialSettings)
-    {
-        showSingletonDialog(centreAroundComponent, trackDb, onSettingsChanged, initialSettings);
-    }
-}
+    } // namespace ui
+} // namespace jucyaudio

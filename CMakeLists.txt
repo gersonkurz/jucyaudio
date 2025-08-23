@@ -212,7 +212,6 @@ target_sources(jucyaudio PRIVATE
     Audio/Reverb.h
     Audio/Model/EQSettings.cpp
     Audio/Model/EQSettings.h
-    Audio/Model/ReverbSettings.cpp
     Audio/Model/ReverbSettings.h
     
     # Utils files

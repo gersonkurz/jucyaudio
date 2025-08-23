@@ -1,9 +1,9 @@
 #include "ReverbComponent.h"
-#include <spdlog/spdlog.h>
 #include <UI/CheckboxLookAndFeel.h>
+#include <spdlog/spdlog.h>
 
 namespace jucyaudio
-{   
+{
     namespace ui
     {
         ReverbComponent::ReverbComponent()
@@ -450,4 +450,4 @@ namespace jucyaudio
             return -1;
         }
     } // namespace ui
-} // namespace jucyaudio::ui
+} // namespace jucyaudio

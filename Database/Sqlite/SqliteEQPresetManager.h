@@ -2,11 +2,7 @@
 
 #include <Database/Includes/IEQPresetManager.h>
 #include <Database/Sqlite/SqliteDatabase.h>
-
-namespace jucyaudio::database
-{
-    class SqliteStatement;
-}
+#include <Database/Sqlite/SqliteStatement.h>
 
 namespace jucyaudio
 {
