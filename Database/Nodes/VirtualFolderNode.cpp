@@ -73,7 +73,7 @@ namespace jucyaudio
             for (const auto &childInfo : folderChildren)
             {
                 spdlog::debug("  -> Creating child node for '{}' (ID: {})", childInfo.name, childInfo.folderId);
-                outChildren.push_back(new VirtualFolderNode(this, childInfo));
+                outChildren.push_back(new VirtualFolderNode{this, childInfo});
             }
 
             return !folderChildren.empty();
@@ -356,7 +356,7 @@ namespace jucyaudio
                             if (parentInfo)
                             {
                                 result.type = RowActivationResultType::NavigateToNode;
-                                result.newNode = new VirtualFolderNode(getParent(), *parentInfo);
+                                result.newNode = new VirtualFolderNode{getParent(), *parentInfo};
                                 result.newNode->retain(); // Caller must release
                             }
                         }
@@ -394,7 +394,7 @@ namespace jucyaudio
                                 childFolder.name, childFolder.folderId);
                     result.type = RowActivationResultType::NavigateToNode;
                     // The parent of the child folder is THIS node, not our parent!
-                    result.newNode = new VirtualFolderNode(this, childFolder);
+                    result.newNode = new VirtualFolderNode{this, childFolder};
                     result.newNode->retain(); // Caller must release
                 }
                 else

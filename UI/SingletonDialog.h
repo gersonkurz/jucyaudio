@@ -36,7 +36,7 @@ namespace jucyaudio
                 }
 
                 // Create new instance but apply look and feel FIRST
-                auto *dialog = new Derived(std::forward<Args>(args)...);
+                auto *dialog = new Derived{std::forward<Args>(args)...};
                 setCurrentInstance(dialog);
 
                 // Apply the look and feel from the parent component BEFORE any children are created
@@ -278,7 +278,7 @@ namespace jucyaudio
                         }
                     };
 
-                    dialogWindow->enterModalState(true, new DialogCleanupCallback(dialogId), true);
+                    dialogWindow->enterModalState(true, new DialogCleanupCallback{dialogId}, true);
                 }
                 else
                 {
@@ -297,7 +297,7 @@ namespace jucyaudio
                             delete this; // The listener must delete itself.
                         }
                     };
-                    dialogWindow->addComponentListener(new DialogCleanupListener(dialogId));
+                    dialogWindow->addComponentListener(new DialogCleanupListener{dialogId});
                 }
             }
 

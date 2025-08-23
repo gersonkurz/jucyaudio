@@ -23,7 +23,6 @@ namespace jucyaudio
             explicit TypedContainerNode(INavigationNode *root,
                 std::string_view name,
                 ClientCreationMethod clientCreationMethod,
-                // new things start here);
                 std::string_view typeNameForSingleObject,
                 std::string_view typeNameForMultipleObjects)
                 : BaseNode{root, name, typeNameForSingleObject, typeNameForMultipleObjects},

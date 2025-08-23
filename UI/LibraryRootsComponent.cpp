@@ -494,7 +494,7 @@ namespace jucyaudio
 
             const bool force = m_forceRescanCheckbox.getToggleState();
             const bool shouldRemove = m_removeMissingFilesToggle.getToggleState();
-            auto *task = new ScanRootsTask(std::move(idsToScan), std::move(rootIdsToScan), force, shouldRemove, onScanCompleteCallback);
+            auto *task = new ScanRootsTask{std::move(idsToScan), std::move(rootIdsToScan), force, shouldRemove, onScanCompleteCallback};
 
             TaskDialog::launch("Scanning Library", task, 500, this);
         }

@@ -332,7 +332,7 @@ namespace jucyaudio
                 juce::TextButton m_cancelButton;
             };
 
-            auto *dialogComponent = new PresetNameDialog(&getLookAndFeel());
+            auto *dialogComponent = new PresetNameDialog{&getLookAndFeel()};
 
             juce::DialogWindow::LaunchOptions options;
             options.dialogTitle = "Save EQ Preset";

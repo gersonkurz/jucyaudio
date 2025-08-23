@@ -669,7 +669,7 @@ namespace jucyaudio
         {
             if (file.existsAsFile())
             {
-                m_thumbnail.setSource(new juce::FileInputSource(file));
+                m_thumbnail.setSource(new juce::FileInputSource{file});
                 m_fileLoaded = true;
                 m_playbackPosition = 0.0;
             }

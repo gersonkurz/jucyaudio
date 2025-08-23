@@ -26,7 +26,6 @@ namespace jucyaudio
         public:
             BaseNode(INavigationNode *parent,
                 std::string_view name,
-                // new things start here);
                 std::string_view typeNameForSingleObject,
                 std::string_view typeNameForMultipleObjects);
             ~BaseNode() override;

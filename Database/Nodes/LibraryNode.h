@@ -21,7 +21,6 @@ namespace jucyaudio
         public:
             LibraryNode(INavigationNode *root,
                 const std::string &name,
-                // new things start here);
                 std::string_view typeNameForSingleObject,
                 std::string_view typeNameForMultipleObjects);
             ~LibraryNode() override;

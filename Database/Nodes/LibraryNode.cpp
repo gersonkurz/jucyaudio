@@ -72,7 +72,6 @@ namespace jucyaudio
 
         LibraryNode::LibraryNode(INavigationNode *root,
             const std::string &name,
-            // new things start here);
             std::string_view typeNameForSingleObject,
             std::string_view typeNameForMultipleObjects)
             : BaseNode{root, name.empty() ? getLibraryRootNodeName() : name, typeNameForSingleObject, typeNameForMultipleObjects},

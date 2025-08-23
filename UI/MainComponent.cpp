@@ -1382,7 +1382,7 @@ namespace jucyaudio
                 return;
             }
 
-            auto *task = new background_tasks::BpmAnalysisTask(std::move(trackResult.trackInfos));
+            auto *task = new background_tasks::BpmAnalysisTask{std::move(trackResult.trackInfos)};
             TaskDialog::launch("BPM Analysis",
                 task,
                 500,
@@ -1476,7 +1476,7 @@ namespace jucyaudio
                 const WorkingSetId m_workingSetId;
             };
 
-            auto *task = new RemoveDuplicatesFromWorkingSet(workingSetId);
+            auto *task = new RemoveDuplicatesFromWorkingSet{workingSetId};
             TaskDialog::launch("Removing Duplicates",
                 task,
                 500,
@@ -1521,7 +1521,7 @@ namespace jucyaudio
                     std::format("Analyzing {} tracks ({} non-track items skipped)", trackResult.trackInfos.size(), trackResult.nonApplicableCount), false);
             }
 
-            auto *task = new background_tasks::BpmAnalysisTask(std::move(trackResult.trackInfos));
+            auto *task = new background_tasks::BpmAnalysisTask{std::move(trackResult.trackInfos)};
             TaskDialog::launch("BPM Analysis",
                 task,
                 500,
@@ -2486,12 +2486,12 @@ namespace jucyaudio
                 m_statusPanel.getStatusBar().postMessage("Not enough tracks selected to create a mix.", true);
                 return;
             }
-            auto *dialog = new ui::CreateMixDialogComponent(selectedTracks,
+            auto *dialog = new ui::CreateMixDialogComponent{selectedTracks,
                 source_ws_id,
                 [this](bool success, const MixInfo &mixInfo)
                 {
                     onMixCreatedCallback(success, mixInfo);
-                });
+                }};
 
             juce::DialogWindow::LaunchOptions launchOptions;
             launchOptions.escapeKeyTriggersCloseButton = true;
@@ -2643,7 +2643,7 @@ namespace jucyaudio
 
         bool MainComponent::onShowAboutDialog()
         {
-            auto *dialog = new AboutDialog();
+            auto *dialog = new AboutDialog{};
 
             juce::DialogWindow::LaunchOptions launchOptions;
             launchOptions.content.setOwned(dialog);
@@ -2697,7 +2697,7 @@ namespace jucyaudio
 
             const auto &availableCols = currentNode->getColumns();
 
-            auto* columnDialog = new ColumnConfigurationDialogComponent(
+            auto* columnDialog = new ColumnConfigurationDialogComponent{
     currentNodeName,
     availableCols,
     *pConfigSection,
@@ -2709,7 +2709,7 @@ namespace jucyaudio
             m_dataViewComponent.setCurrentNode(currentNode, true); // Refresh the current node
         }
     }
-);
+            };
             // Launch columnDialog modally
             juce::DialogWindow::LaunchOptions lo;
             lo.content.setOwned(columnDialog);
@@ -2804,7 +2804,7 @@ namespace jucyaudio
 
             // markerManager is a reference, so it's always valid
 
-            auto *dialog = new MarkerEditDialog();
+            auto *dialog = new MarkerEditDialog{};
 
             if (isNewMarker)
             {

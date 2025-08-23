@@ -695,9 +695,9 @@ namespace jucyaudio
             }
             
             // Show dialog to edit or delete marker
-            auto* dialog = new juce::AlertWindow("Edit Marker", 
+            auto* dialog = new juce::AlertWindow{"Edit Marker", 
                                                  "Edit or delete this marker", 
-                                                 juce::AlertWindow::NoIcon);
+                                                 juce::AlertWindow::NoIcon};
             
             dialog->addTextEditor("comment", marker->comment, "Comment:");
             dialog->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
@@ -736,12 +736,12 @@ namespace jucyaudio
                 return;
                 
             // Show dialog to get marker comment
-            auto* dialog = new juce::AlertWindow("Add Marker", 
+            auto* dialog = new juce::AlertWindow{"Add Marker", 
                                                  juce::String::formatted("Add marker at %d:%02d.%03d", 
                                                                         position.count() / 60000,
                                                                         (position.count() % 60000) / 1000,
                                                                         position.count() % 1000),
-                                                 juce::AlertWindow::NoIcon);
+                                                 juce::AlertWindow::NoIcon};
             
             dialog->addTextEditor("comment", "", "Comment:");
             dialog->addButton("Add", 1, juce::KeyPress(juce::KeyPress::returnKey));

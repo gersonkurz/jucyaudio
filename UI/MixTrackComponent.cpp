@@ -333,7 +333,7 @@ namespace jucyaudio
             }
 
             spdlog::info("Generating waveform for track {} from file: {}", m_trackInfo.trackId, pathToString(trackPath));
-            m_thumbnail.setSource(new juce::FileInputSource(juce::File(ui::jucePathFromFs(trackPath))));
+            m_thumbnail.setSource(new juce::FileInputSource{juce::File(ui::jucePathFromFs(trackPath))});
         }
 
         std::optional<size_t> MixTrackComponent::hitTestEnvelopePoint(juce::Point<int> mousePos) const

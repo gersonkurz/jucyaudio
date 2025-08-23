@@ -9,7 +9,7 @@ namespace jucyaudio
         {
             juce::String EQSettings::toJson() const
             {
-                juce::DynamicObject::Ptr json = new juce::DynamicObject();
+                juce::DynamicObject::Ptr json = new juce::DynamicObject{};
 
                 // Add master settings
                 json->setProperty("isActive", isActive);
@@ -19,7 +19,7 @@ namespace jucyaudio
                 juce::Array<juce::var> bandsArray;
                 for (const auto &band : bands)
                 {
-                    juce::DynamicObject::Ptr bandObj = new juce::DynamicObject();
+                    juce::DynamicObject::Ptr bandObj = new juce::DynamicObject{};
                     bandObj->setProperty("frequency", band.frequency);
                     bandObj->setProperty("gain", band.gainInDecibels);
                     bandObj->setProperty("q", band.quality);
