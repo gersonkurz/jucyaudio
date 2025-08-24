@@ -37,7 +37,10 @@ namespace jucyaudio
 
         extern std::string g_strConfigFilename;
 
-        class MainComponent : public juce::AudioAppComponent, public MenuPresenter, public juce::Timer, public juce::ChangeListener
+        class MainComponent : public juce::AudioAppComponent, 
+                              public MenuPresenter, 
+                              public juce::Timer, 
+                              public juce::ChangeListener
         {
         public:
             MainComponent(juce::ApplicationCommandManager &commandManager);
@@ -57,6 +60,9 @@ namespace jucyaudio
             void prepareToPlay(int samplesPerBlockExpected, double sampleRate) override;
             void getNextAudioBlock(const juce::AudioSourceChannelInfo &bufferToFill) override;
             void releaseResources() override;
+            
+            // Check and update audio device if needed
+            void checkAndUpdateAudioDevice();
 
             // Getter for DividerComponent to know initial nav panel width
             int getCurrentNavPanelWidth() const

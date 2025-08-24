@@ -447,6 +447,18 @@ namespace jucyaudio
 
             // Required for AudioAppComponent
             setAudioChannels(0, 2); // Output only
+            
+            // Enable automatic device switching when the default device changes
+            // deviceManager is inherited from AudioAppComponent
+            deviceManager.addChangeListener(this);
+            
+            // On Windows, explicitly enable following the default device
+            #if JUCE_WINDOWS
+            auto setup = deviceManager.getAudioDeviceSetup();
+            setup.useDefaultInputChannels = false;  // We don't use input
+            setup.useDefaultOutputChannels = true;  // Follow default output device
+            deviceManager.setAudioDeviceSetup(setup, true);
+            #endif
 
             // Setup the background service
             theBackgroundTaskService.start();
@@ -461,6 +473,11 @@ namespace jucyaudio
 
         MainComponent::~MainComponent()
         {
+            // Remove device change listener before shutting down
+            deviceManager.removeChangeListener(this);
+            
+            shutdownAudio();
+            
             theBackgroundTaskService.stop();
 #if JUCE_MAC
             juce::MenuBarModel::setMacMainMenu(nullptr);
@@ -538,6 +555,7 @@ namespace jucyaudio
                 }
                 else
                 {
+                    checkAndUpdateAudioDevice();
                     m_playbackController.play();
                 }
                 spdlog::info("[MainComponent] Media key: play/pause toggled");
@@ -630,6 +648,7 @@ namespace jucyaudio
                 }
                 else
                 {
+                    checkAndUpdateAudioDevice();
                     m_playbackController.play();
                 }
                 spdlog::info("[MainComponent] Space key: play/pause toggled");
@@ -1048,8 +1067,26 @@ namespace jucyaudio
         // --- juce::AudioAppComponent Overrides ---
         void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate)
         {
+            // Log device information when prepareToPlay is called
+            if (auto* currentDevice = deviceManager.getCurrentAudioDevice())
+            {
+                const auto deviceName = currentDevice->getName();
+                spdlog::info("PrepareToPlay called - Device: {}, Sample Rate: {}, Block Size: {}", 
+                            deviceName.toStdString(), sampleRate, samplesPerBlockExpected);
+                
+                m_statusPanel.getStatusBar().postMessage(
+                    juce::String::formatted("Audio device: %s (%.0f Hz)", 
+                                          deviceName.toRawUTF8(), sampleRate), 
+                    false);
+            }
+            else
+            {
+                spdlog::info("PrepareToPlay called - Sample Rate: {}, Block Size: {}", 
+                            sampleRate, samplesPerBlockExpected);
+                m_statusPanel.getStatusBar().postMessage("Audio device prepared.", false);
+            }
+            
             m_playbackController.prepareToPlay(samplesPerBlockExpected, sampleRate);
-            m_statusPanel.getStatusBar().postMessage("Audio device prepared.", false);
         }
 
         void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo &bufferToFill)
@@ -1063,6 +1100,50 @@ namespace jucyaudio
             m_playbackController.releaseResources();
             m_statusPanel.getStatusBar().postMessage("Audio resources released.", false);
         }
+        
+        void MainComponent::checkAndUpdateAudioDevice()
+        {
+            // Check if the current audio device setup needs updating
+            auto currentSetup = deviceManager.getAudioDeviceSetup();
+            
+            // Get the current default output device
+            auto* deviceType = deviceManager.getCurrentDeviceTypeObject();
+            if (deviceType)
+            {
+                const auto defaultOutputDevice = deviceType->getDefaultDeviceIndex(false);
+                const auto deviceNames = deviceType->getDeviceNames(false);
+                
+                if (defaultOutputDevice >= 0 && defaultOutputDevice < deviceNames.size())
+                {
+                    const auto defaultDeviceName = deviceNames[defaultOutputDevice];
+                    
+                    // Check if we need to switch to the default device
+                    if (currentSetup.outputDeviceName != defaultDeviceName)
+                    {
+                        spdlog::info("Switching to default audio device: {} (was: {})", 
+                                    defaultDeviceName.toStdString(),
+                                    currentSetup.outputDeviceName.toStdString());
+                        
+                        // Update to use the default device
+                        currentSetup.outputDeviceName = defaultDeviceName;
+                        currentSetup.useDefaultOutputChannels = true;
+                        
+                        // Apply the new setup
+                        auto result = deviceManager.setAudioDeviceSetup(currentSetup, true);
+                        if (result.isEmpty())
+                        {
+                            m_statusPanel.getStatusBar().postMessage(
+                                juce::String::formatted("Switched to: %s", defaultDeviceName.toRawUTF8()), 
+                                false);
+                        }
+                        else
+                        {
+                            spdlog::error("Failed to switch audio device: {}", result.toStdString());
+                        }
+                    }
+                }
+            }
+        }
 
         // --- juce::Timer Override ---
         void MainComponent::timerCallback()
@@ -1070,8 +1151,18 @@ namespace jucyaudio
             // Tick the timer multiplexer at 60Hz
             m_timerMultiplexer.tick();
 
-            // MainComponent's own UI updates can go here if needed
-            // (currently none required at 60Hz)
+            // Check for audio device changes periodically (every ~1 second at 60Hz)
+            static int deviceCheckCounter = 0;
+            if (++deviceCheckCounter >= 60)
+            {
+                deviceCheckCounter = 0;
+                
+                // Only check if we're playing
+                if (m_playbackController.isPlaying())
+                {
+                    checkAndUpdateAudioDevice();
+                }
+            }
         }
 
         // --- juce::ChangeListener Override ---
@@ -1085,6 +1176,23 @@ namespace jucyaudio
                     // Track just ended - auto-advance to next track
                     spdlog::info("[MainComponent] Track ended, auto-advancing to next");
                     playNextTrack();
+                }
+            }
+            else if (source == &deviceManager)
+            {
+                // Audio device has changed
+                spdlog::info("[MainComponent] Audio device change detected");
+                
+                // The AudioAppComponent will automatically handle the device switch,
+                // but we can add any additional handling here if needed
+                
+                if (auto* currentDevice = deviceManager.getCurrentAudioDevice())
+                {
+                    const auto deviceName = currentDevice->getName();
+                    spdlog::info("Switched to audio device: {}", deviceName.toStdString());
+                    m_statusPanel.getStatusBar().postMessage(
+                        juce::String::formatted("Audio device: %s", deviceName.toRawUTF8()), 
+                        false);
                 }
             }
             // else if (source == &m_playbackController) { /* Handle other
@@ -1637,6 +1745,7 @@ namespace jucyaudio
 
                 // uncomment this line, and you get the exceptio
                 m_statusPanel.getStatusBar().postMessage(getSafeDisplayText("Playing: " + audioFile.getFileName()), false);
+                checkAndUpdateAudioDevice();
                 if (!m_playbackController.loadAndPlayFile(audioFile))
                 {
                     m_statusPanel.getStatusBar().postMessage(getSafeDisplayText("Error playing: " + audioFile.getFileName()), true);
@@ -2565,6 +2674,7 @@ namespace jucyaudio
             if (m_playbackController.getState() == PlaybackController::PlayerState::TrackPaused ||
                 m_playbackController.getState() == PlaybackController::PlayerState::MixPaused)
             {
+                checkAndUpdateAudioDevice();
                 m_playbackController.play();
                 return;
             }
