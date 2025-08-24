@@ -51,6 +51,45 @@ public:
         bool selected{false};
         bool isVisible{false};  // Within viewport
     };
+
+    //==============================================================================
+    // Tiling System Data Structures
+    //==============================================================================
+    struct WaveformKey
+    {
+        TrackId trackId;
+        int zoomBucket;  // Quantized zoom level
+        int tileIndex;   // Horizontal tile index
+        
+        bool operator==(const WaveformKey& other) const
+        {
+            return trackId == other.trackId && 
+                   zoomBucket == other.zoomBucket && 
+                   tileIndex == other.tileIndex;
+        }
+    };
+    
+    struct WaveformKeyHash
+    {
+        std::size_t operator()(const WaveformKey& key) const
+        {
+            return std::hash<int>{}(key.trackId) ^ 
+                   (std::hash<int>{}(key.zoomBucket) << 1) ^ 
+                   (std::hash<int>{}(key.tileIndex) << 2);
+        }
+    };
+    
+    struct WaveformTile
+    {
+        juce::Image image;
+        std::atomic<bool> isReady{false};
+    };
+    
+    //==============================================================================
+    // Tiling System Classes
+    //==============================================================================
+    class WaveformTileCache;
+    class TileRenderQueue;
     
     //==============================================================================
     VirtualTimelineComponent(juce::AudioFormatManager& formatManager,
@@ -127,6 +166,12 @@ private:
     mutable PerfMetrics metrics_;
     int paintCount_{0};
     juce::uint32 metricsResetTime_{0};
+
+    // Waveform tiling system (Phase 3)
+    std::unique_ptr<WaveformTileCache> tileCache_;
+    std::unique_ptr<TileRenderQueue> tileRenderer_;
+    static constexpr int tileWidth_{256};  // Pixels per tile
+    static constexpr double sqrt2_{1.4142135623730951};
     
     // Helper methods
     void calculateTrackPositions();
@@ -137,6 +182,11 @@ private:
     double pixelsToSeconds(int pixels) const;
     juce::Rectangle<int> getVisibleArea() const;
     
+    // Tiling system helpers
+    int getZoomBucket() const;
+    void queueMissingTiles();
+    void onTileRendered(const WaveformKey& key, juce::Image&& image);
+
     // Rendering helpers
     void paintTracks(juce::Graphics& g);
     void paintTrack(juce::Graphics& g, const TrackRenderData& track);

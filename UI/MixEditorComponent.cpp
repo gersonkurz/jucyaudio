@@ -312,12 +312,14 @@ namespace jucyaudio
             
             // Notify the timeline that the viewport has resized
             const auto timelineStart = std::chrono::high_resolution_clock::now();
-            m_timeline.viewportResized();
-            
             if (m_useVirtualTimeline && m_virtualTimeline)
             {
                 const auto viewBounds = m_viewport.getViewArea();
                 m_virtualTimeline->setViewportBounds(viewBounds);
+            }
+            else
+            {
+                m_timeline.viewportResized();
             }
             
             const auto timelineEnd = std::chrono::high_resolution_clock::now();

@@ -9,7 +9,8 @@
       "Bash(cp:*)",
       "Bash(touch:*)",
       "Bash(grep:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Read(//Users/gersonkurz/NGBT/NGBT/ptraced-qt/**)"
     ],
     "deny": [],
     "ask": []
