@@ -1,6 +1,7 @@
 #include "VirtualTimelineComponent.h"
 #include <Database/Includes/Constants.h>
 #include <Database/TrackLibrary.h>
+#include <UI/CustomColourIds.h>
 #include <UI/Settings.h>
 #include <spdlog/spdlog.h>
 #include <chrono>
@@ -213,8 +214,9 @@ private:
 
         juce::Graphics g(tileImage);
         
-        // Use the track's color
-        g.setColour(request.trackColour);
+        // Use waveform color from theme (matching old implementation)
+        const auto& lf = juce::LookAndFeel::getDefaultLookAndFeel();
+        g.setColour(lf.findColour(jucyaudio::ui::waveformColourId).withAlpha(0.7f));
         
         // Check if we need stereo rendering
         const bool shouldDrawStereo = request.key.isStereo;
@@ -481,10 +483,8 @@ void VirtualTimelineComponent::loadMixProject(audio::MixProjectLoader* loader)
         data.componentStartTime = data.audioStartTime + mixTrack.cueStart;
         previousAudioStartTime = data.audioStartTime;
         
-        // Generate color
-        data.colour = juce::Colour::fromHSV(
-            static_cast<float>(i) / static_cast<float>(mixTracks.size()),
-            0.6f, 0.8f, 1.0f);
+        // Track color will be determined by theme during painting
+        data.colour = juce::Colour();  // Not used - we'll use theme colors
         
         // --- PHASE 3, STEP 1: Create and load AudioThumbnail ---
         if (data.trackInfo)
@@ -755,20 +755,41 @@ void VirtualTimelineComponent::paintTracks(juce::Graphics& g)
 
 void VirtualTimelineComponent::paintTrack(juce::Graphics& g, const TrackRenderData& track)
 {
-    // Track background
+    // Track background - matching the original MixTrackComponent style
+    const auto& lf = getLookAndFeel();
     if (track.selected)
     {
-        g.setColour(getLookAndFeel().findColour(juce::TextEditor::highlightColourId).withAlpha(0.3f));
-        g.fillRect(track.bounds);
+        // Selected track - brighter background with orange border
+        g.setColour(lf.findColour(juce::TextEditor::backgroundColourId).brighter(0.2f));
+        g.fillRoundedRectangle(track.bounds.toFloat(), 4.0f);
+        
+        // Orange border for selected track
+        g.setColour(juce::Colours::orange);
+        g.drawRoundedRectangle(track.bounds.toFloat().reduced(1), 4.0f, 2.0f);
     }
-    
-    // Track border
-    g.setColour(getLookAndFeel().findColour(juce::TextEditor::outlineColourId));
-    g.drawRect(track.bounds.toFloat(), 0.5f);
+    else
+    {
+        // Non-selected track - normal background
+        g.setColour(lf.findColour(juce::TextEditor::backgroundColourId));
+        g.fillRoundedRectangle(track.bounds.toFloat(), 4.0f);
+        
+        // Subtle border
+        g.setColour(lf.findColour(juce::TextEditor::outlineColourId).withAlpha(0.3f));
+        g.drawRoundedRectangle(track.bounds.toFloat(), 4.0f, 0.5f);
+    }
     
     // Paint waveform using tiles
     if (track.thumbnail && track.thumbnail->isFullyLoaded())
     {
+        // Add debug logging to see if we get here
+        static int waveformPaintCount = 0;
+        if (++waveformPaintCount % 100 == 0)
+        {
+            spdlog::info("Painting waveform for track {}, has thumbnail: {}, fully loaded: {}", 
+                        track.id, 
+                        track.thumbnail ? "yes" : "no",
+                        track.thumbnail ? (track.thumbnail->isFullyLoaded() ? "yes" : "no") : "n/a");
+        }
         // Get the visible portion of this track
         const auto visibleArea = getVisibleArea();
         const auto trackVisibleBounds = track.bounds.getIntersection(visibleArea);
@@ -792,26 +813,42 @@ void VirtualTimelineComponent::paintTrack(juce::Graphics& g, const TrackRenderDa
                 }
             }
             
-            bool allTilesReady = !tileKeys.empty();  // Start with true only if we have tiles
+            bool allTilesReady = false;  // Start with false, set to true only if all tiles are ready
             int tilesReady = 0;
             int tilesNotReady = 0;
             
             // Try to paint using cached tiles
-            for (const auto& key : tileKeys)
+            if (!tileKeys.empty())
             {
-                if (auto tile = tileCache_->getTile(key))
+                allTilesReady = true; // Assume true, will be set false if any tile is missing
+                for (const auto& key : tileKeys)
                 {
-                    if (tile->isReady)
+                    if (auto tile = tileCache_->getTile(key))
                     {
-                        tilesReady++;
-                        
-                        // Calculate where this tile should be drawn
-                        const auto destRect = getTileDestinationRect(track, key.startTimeSeconds, key.endTimeSeconds);
-                        
-                        // Draw the tile image
-                        g.setOpacity(1.0f);
-                        g.drawImage(tile->image, destRect.toFloat(),
-                                   juce::RectanglePlacement::stretchToFit);
+                        if (tile->isReady)
+                        {
+                            tilesReady++;
+                            
+                            // Calculate where this tile should be drawn
+                            const auto destRect = getTileDestinationRect(track, key.startTimeSeconds, key.endTimeSeconds);
+                            
+                            // Draw the tile image
+                            static int drawCount = 0;
+                            if (++drawCount % 100 == 0)
+                            {
+                                spdlog::info("[TILE_DRAW] Drawing tile at rect: x={}, y={}, w={}, h={}, image size: {}x{}",
+                                           destRect.getX(), destRect.getY(), destRect.getWidth(), destRect.getHeight(),
+                                           tile->image.getWidth(), tile->image.getHeight());
+                            }
+                            g.setOpacity(1.0f);
+                            g.drawImage(tile->image, destRect.toFloat(),
+                                       juce::RectanglePlacement::stretchToFit);
+                        }
+                        else
+                        {
+                            tilesNotReady++;
+                            allTilesReady = false;
+                        }
                     }
                     else
                     {
@@ -819,29 +856,38 @@ void VirtualTimelineComponent::paintTrack(juce::Graphics& g, const TrackRenderDa
                         allTilesReady = false;
                     }
                 }
-                else
-                {
-                    tilesNotReady++;
-                    allTilesReady = false;
-                }
             }
             
             // Log tile statistics periodically
-            static int fallbackCount = 0;
-            if (!allTilesReady && (++fallbackCount % 50 == 0))
+            static int tileStatsCount = 0;
+            if (++tileStatsCount % 50 == 0)
             {
-                spdlog::info("[TILE_FALLBACK] Track {} falling back to direct render. Tiles: {} ready, {} not ready", 
-                            track.id, tilesReady, tilesNotReady);
+                spdlog::info("[TILE_STATS] Track {} - Keys: {}, Ready: {}, NotReady: {}, AllReady: {}", 
+                            track.id, tileKeys.size(), tilesReady, tilesNotReady, allTilesReady);
             }
             
             // If not all tiles are ready, fill in missing parts with direct rendering
             if (!allTilesReady && tilesReady == 0)
             {
                 // Only do full direct render if NO tiles are ready
-                g.setColour(track.colour.withAlpha(0.7f)); // Slightly transparent to show it's temporary
-                const double thumbnailStartTime = std::chrono::duration<double>(
-                    std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
-                const double thumbnailEndTime = std::chrono::duration<double>(track.trackInfo->duration).count();
+                // Use waveform color from theme (matching tile rendering)
+                const auto& lf = getLookAndFeel();
+                g.setColour(lf.findColour(jucyaudio::ui::waveformColourId).withAlpha(0.7f));
+                
+                // Calculate time range for thumbnail drawing
+                double thumbnailStartTime = 0.0;
+                double thumbnailEndTime = track.effectiveDuration;
+                
+                if (track.mixTrack && track.trackInfo)
+                {
+                    thumbnailStartTime = std::chrono::duration<double>(
+                        std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
+                    thumbnailEndTime = std::chrono::duration<double>(track.trackInfo->duration).count();
+                }
+                else if (track.trackInfo)
+                {
+                    thumbnailEndTime = std::chrono::duration<double>(track.trackInfo->duration).count();
+                }
 
                 const bool drawStereo = config::theSettings.mixEditingSettings.drawStereoWaveforms.get();
 
@@ -863,32 +909,307 @@ void VirtualTimelineComponent::paintTrack(juce::Graphics& g, const TrackRenderDa
     else
     {
         // Fallback: placeholder for tracks without a thumbnail or if it's still loading
-        g.setColour(track.colour.withAlpha(0.5f));
+        static int fallbackPaintCount = 0;
+        if (++fallbackPaintCount % 50 == 0)
+        {
+            spdlog::info("Using fallback for track {}, has thumbnail: {}, fully loaded: {}", 
+                        track.id, 
+                        track.thumbnail ? "yes" : "no",
+                        track.thumbnail ? (track.thumbnail->isFullyLoaded() ? "yes" : "no") : "n/a");
+        }
+        
+        g.setColour(juce::Colours::darkgrey.withAlpha(0.3f));
         g.fillRect(track.waveformBounds);
         g.setColour(juce::Colours::black.withAlpha(0.2f));
         g.drawRect(track.waveformBounds);
     }
     
-    // Track name
+    // Track info text
     g.setColour(getLookAndFeel().findColour(juce::Label::textColourId));
     g.setFont(12.0f);
-    g.drawText(track.name, track.bounds.reduced(4, 2), 
-               juce::Justification::topLeft, true);
+    
+    // Build track label with all info
+    juce::String trackLabel;
+    
+    // Add artist, album, and title
+    if (track.trackInfo)
+    {
+        // Artist name
+        if (!track.trackInfo->artist_name.empty())
+        {
+            trackLabel += juce::String(track.trackInfo->artist_name);
+        }
+        
+        // Album title
+        if (!track.trackInfo->album_title.empty())
+        {
+            if (!trackLabel.isEmpty()) trackLabel += " - ";
+            trackLabel += juce::String(track.trackInfo->album_title);
+        }
+        
+        // Track title
+        if (!trackLabel.isEmpty()) trackLabel += " - ";
+        trackLabel += juce::String(track.trackInfo->title);
+        
+        // Duration info
+        const int totalSeconds = static_cast<int>(track.effectiveDuration);
+        const int mins = totalSeconds / 60;
+        const int secs = totalSeconds % 60;
+        trackLabel += juce::String::formatted(" [%d:%02d]", mins, secs);
+        
+        // BPM if available (stored as integer * 100, so divide by 100)
+        if (track.trackInfo->bpm.has_value() && track.trackInfo->bpm.value() > 0)
+        {
+            const double bpmValue = track.trackInfo->bpm.value() / 100.0;
+            trackLabel += juce::String::formatted(" %.1fbpm", bpmValue);
+        }
+    }
+    else
+    {
+        // Fallback to just the name if no track info
+        trackLabel = track.name;
+    }
+    
+    // Draw label text at the top-left of the track
+    const auto labelBounds = juce::Rectangle<int>(
+        track.bounds.getX() + 4,
+        track.bounds.getY() + 2,
+        track.bounds.getWidth() - 8,
+        20
+    );
+    g.drawText(trackLabel, labelBounds, juce::Justification::topLeft, true);
+    
+    // --- 4.1.5 Crossfade Visualization ---
+    
+    // Log envelope availability
+    static int envelopeCheckCount = 0;
+    if (++envelopeCheckCount % 50 == 0)
+    {
+        spdlog::info("[ENVELOPE_CHECK] Track {}: mixTrack={}, envelopePoints={}", 
+                    track.id, 
+                    track.mixTrack ? "yes" : "no",
+                    track.mixTrack ? track.mixTrack->envelopePoints.size() : 0);
+    }
+    
+    // Draw envelope if we have envelope points
+    if (track.mixTrack && !track.mixTrack->envelopePoints.empty())
+    {
+        // Log envelope information
+        static int envelopeLogCount = 0;
+        if (++envelopeLogCount % 10 == 0)  // More frequent logging
+        {
+            spdlog::info("[ENVELOPE] Track {} has {} envelope points", 
+                        track.id, track.mixTrack->envelopePoints.size());
+            for (size_t i = 0; i < std::min(size_t(3), track.mixTrack->envelopePoints.size()); ++i)
+            {
+                const auto& pt = track.mixTrack->envelopePoints[i];
+                spdlog::info("[ENVELOPE]   Point {}: time={:.3f}s, volume={:.3f}", 
+                            i, std::chrono::duration<double>(pt.time).count(), pt.volume);
+            }
+        }
+        
+        juce::Path envelopePath;
+        bool firstPoint = true;
+        
+        int pointIndex = 0;
+        for (const auto& point : track.mixTrack->envelopePoints)
+        {
+            // Convert envelope time (relative to audio start) to pixels
+            const double pointTimeInComponent = std::chrono::duration<double>(
+                track.audioStartTime + point.time).count();
+            const int x = track.bounds.getX() + static_cast<int>(
+                (pointTimeInComponent - std::chrono::duration<double>(track.componentStartTime).count()) 
+                * pixelsPerSecond_);
+            
+            // Volume: 1.0 = top of waveform area, 0.0 = bottom
+            // Volume_t is stored as integer where 1000 = 100% (1.0)
+            const float normalizedVolume = std::max(0.0f, std::min(1.0f, static_cast<float>(point.volume) / 1000.0f));
+            const int y = track.waveformBounds.getY() + 
+                         static_cast<int>((1.0f - normalizedVolume) * track.waveformBounds.getHeight());
+            
+            // Log first few points' coordinates
+            if (pointIndex < 3 && envelopeLogCount % 10 == 1)
+            {
+                spdlog::info("[ENVELOPE_COORD] Point {}: volume={:.3f}, normalized={:.3f}, x={}, y={} (bounds: x={}-{}, y={}-{})",
+                            pointIndex, point.volume, normalizedVolume, x, y, 
+                            track.bounds.getX(), track.bounds.getRight(),
+                            track.waveformBounds.getY(), track.waveformBounds.getBottom());
+            }
+            pointIndex++;
+            
+            if (firstPoint)
+            {
+                envelopePath.startNewSubPath(static_cast<float>(x), static_cast<float>(y));
+                firstPoint = false;
+            }
+            else
+            {
+                envelopePath.lineTo(static_cast<float>(x), static_cast<float>(y));
+            }
+        }
+        
+        // Draw the envelope curve with a more visible color for testing
+        g.setColour(juce::Colours::red.withAlpha(0.9f));  // Changed to red for visibility
+        g.strokePath(envelopePath, juce::PathStrokeType(3.0f));  // Thicker line
+        
+        // Draw envelope points as white circles for visibility
+        g.setColour(juce::Colours::white);  // Changed to white for visibility
+        for (const auto& point : track.mixTrack->envelopePoints)
+        {
+            const double pointTimeInComponent = std::chrono::duration<double>(
+                track.audioStartTime + point.time).count();
+            const int x = track.bounds.getX() + static_cast<int>(
+                (pointTimeInComponent - std::chrono::duration<double>(track.componentStartTime).count()) 
+                * pixelsPerSecond_);
+            // Volume_t is stored as integer where 1000 = 100% (1.0)
+            const float normalizedVolume = std::max(0.0f, std::min(1.0f, static_cast<float>(point.volume) / 1000.0f));
+            const int y = track.waveformBounds.getY() + 
+                         static_cast<int>((1.0f - normalizedVolume) * track.waveformBounds.getHeight());
+            
+            const float pointRadius = 6.0f;  // Larger radius for visibility
+            // Draw white circle with black outline
+            g.setColour(juce::Colours::black);
+            g.drawEllipse(static_cast<float>(x) - pointRadius, static_cast<float>(y) - pointRadius, 
+                         pointRadius * 2.0f, pointRadius * 2.0f, 2.0f);
+            g.setColour(juce::Colours::white);
+            g.fillEllipse(static_cast<float>(x) - pointRadius, static_cast<float>(y) - pointRadius, 
+                         pointRadius * 2.0f, pointRadius * 2.0f);
+        }
+    }
+    
+    // Draw attach points with more visible color
+    if (track.mixTrack)
+    {
+        const auto attachColor = juce::Colours::cyan;  // Changed to cyan for visibility
+        g.setColour(attachColor);
+        
+        // AttachFrom point (where this track attaches from the previous)
+        if (track.mixTrack->attachFrom.count() > 0)
+        {
+            const double attachFromTime = std::chrono::duration<double>(
+                track.audioStartTime + track.mixTrack->attachFrom).count();
+            const int attachFromX = track.bounds.getX() + static_cast<int>(
+                (attachFromTime - std::chrono::duration<double>(track.componentStartTime).count()) 
+                * pixelsPerSecond_);
+            
+            // Draw attach point as a vertical line with diamond
+            g.drawVerticalLine(attachFromX, 
+                              static_cast<float>(track.bounds.getY()), 
+                              static_cast<float>(track.bounds.getBottom()));
+            
+            // Draw diamond marker
+            juce::Path diamond;
+            diamond.addQuadrilateral(static_cast<float>(attachFromX - 4), static_cast<float>(track.bounds.getCentreY()),
+                                    static_cast<float>(attachFromX), static_cast<float>(track.bounds.getCentreY() - 4),
+                                    static_cast<float>(attachFromX + 4), static_cast<float>(track.bounds.getCentreY()),
+                                    static_cast<float>(attachFromX), static_cast<float>(track.bounds.getCentreY() + 4));
+            g.fillPath(diamond);
+        }
+        
+        // AttachTo point (where the next track will attach)
+        if (track.mixTrack->attachTo.count() > 0)
+        {
+            const double attachToTime = std::chrono::duration<double>(
+                track.audioStartTime + track.mixTrack->attachTo).count();
+            const int attachToX = track.bounds.getX() + static_cast<int>(
+                (attachToTime - std::chrono::duration<double>(track.componentStartTime).count()) 
+                * pixelsPerSecond_);
+            
+            // Draw attach point as a vertical line with circle
+            g.drawVerticalLine(attachToX, 
+                              static_cast<float>(track.bounds.getY()), 
+                              static_cast<float>(track.bounds.getBottom()));
+            
+            // Draw circle marker
+            g.fillEllipse(static_cast<float>(attachToX - 4), 
+                         static_cast<float>(track.bounds.getCentreY() - 4), 
+                         8.0f, 8.0f);
+        }
+    }
 }
 
 void VirtualTimelineComponent::paintGrid(juce::Graphics& g)
 {
-    // Draw time grid lines
-    g.setColour(getLookAndFeel().findColour(juce::TextEditor::outlineColourId).withAlpha(0.2f));
+    const auto clipBounds = g.getClipBounds();
     
-    const double secondsPerGridLine = 1.0; // 1 second grid for now
-    const int pixelsPerGridLine = secondsToPixels(secondsPerGridLine);
+    // --- 1. Draw ruler background ---
+    g.setColour(juce::Colours::darkgrey.withAlpha(0.3f));
+    g.fillRect(0, 0, clipBounds.getRight(), rulerHeight);
     
+    // Draw ruler bottom border
+    g.setColour(juce::Colours::grey);
+    g.drawHorizontalLine(rulerHeight - 1, 0.0f, static_cast<float>(clipBounds.getRight()));
+    
+    // --- 2. Calculate grid spacing based on zoom level ---
+    double gridIntervalSeconds;
+    if (pixelsPerSecond_ < 5)
+        gridIntervalSeconds = 60.0;  // 1 minute intervals when very zoomed out
+    else if (pixelsPerSecond_ < 20)
+        gridIntervalSeconds = 10.0;  // 10 second intervals
+    else if (pixelsPerSecond_ < 100)
+        gridIntervalSeconds = 1.0;   // 1 second intervals
+    else
+        gridIntervalSeconds = 0.1;   // 100ms intervals when very zoomed in
+    
+    const int pixelsPerGridLine = static_cast<int>(gridIntervalSeconds * pixelsPerSecond_);
+    
+    // --- 3. Draw grid lines and time labels ---
     if (pixelsPerGridLine > 5) // Only draw if grid lines are spaced enough
     {
-        for (int x = 0; x < getWidth(); x += pixelsPerGridLine)
+        // Calculate first visible grid line
+        const int firstVisiblePixel = clipBounds.getX();
+        const double firstVisibleSecond = pixelsToSeconds(firstVisiblePixel);
+        const int firstGridIndex = static_cast<int>(firstVisibleSecond / gridIntervalSeconds);
+        const double firstGridSecond = firstGridIndex * gridIntervalSeconds;
+        const int firstGridPixel = secondsToPixels(firstGridSecond);
+        
+        // Draw vertical grid lines and time labels
+        g.setFont(10.0f);
+        for (int x = firstGridPixel; x <= clipBounds.getRight(); x += pixelsPerGridLine)
         {
-            g.drawVerticalLine(x, 0.0f, static_cast<float>(getHeight()));
+            if (x < 0) continue;
+            
+            const double timeSeconds = pixelsToSeconds(x);
+            const int minutes = static_cast<int>(timeSeconds) / 60;
+            const int seconds = static_cast<int>(timeSeconds) % 60;
+            const int milliseconds = static_cast<int>((timeSeconds - static_cast<int>(timeSeconds)) * 1000);
+            
+            // Draw major grid lines (every minute or every 10 seconds)
+            const bool isMajorLine = (gridIntervalSeconds >= 10.0 && static_cast<int>(timeSeconds) % 60 == 0) ||
+                                    (gridIntervalSeconds < 10.0 && static_cast<int>(timeSeconds * 10) % 100 == 0);
+            
+            if (isMajorLine)
+            {
+                // Major grid line
+                g.setColour(juce::Colours::grey.withAlpha(0.5f));
+                g.drawVerticalLine(x, static_cast<float>(rulerHeight), static_cast<float>(clipBounds.getBottom()));
+                
+                // Ruler tick
+                g.drawLine(static_cast<float>(x), static_cast<float>(rulerHeight - 10), 
+                          static_cast<float>(x), static_cast<float>(rulerHeight), 1.0f);
+                
+                // Time label
+                juce::String timeStr;
+                if (gridIntervalSeconds >= 1.0)
+                    timeStr = juce::String::formatted("%d:%02d", minutes, seconds);
+                else
+                    timeStr = juce::String::formatted("%d:%02d.%03d", minutes, seconds, milliseconds);
+                
+                g.setColour(getLookAndFeel().findColour(juce::Label::textColourId));
+                g.setFont(10.0f);
+                g.drawText(timeStr, x - 30, 5, 60, 20, juce::Justification::centred);
+            }
+            else
+            {
+                // Minor grid line
+                g.setColour(juce::Colours::grey.withAlpha(0.2f));
+                g.drawVerticalLine(x, static_cast<float>(rulerHeight), static_cast<float>(clipBounds.getBottom()));
+                
+                // Ruler tick
+                g.setColour(juce::Colours::grey.withAlpha(0.5f));
+                g.drawLine(static_cast<float>(x), static_cast<float>(rulerHeight - 5), 
+                          static_cast<float>(x), static_cast<float>(rulerHeight), 0.5f);
+            }
         }
     }
 }
@@ -928,9 +1249,7 @@ void VirtualTimelineComponent::runPerfHarness(int numTracks)
         TrackRenderData track;
         track.id = i;
         track.name = juce::String::formatted("Track %d", i + 1);
-        track.colour = juce::Colour::fromHSV(
-            static_cast<float>(i) / static_cast<float>(numTracks),
-            0.6f, 0.8f, 1.0f);
+        track.colour = juce::Colour();  // Not used - we'll use theme colors
         // rowIndex no longer exists - tracks use laneIndex now
         
         // Simulate mix track data
@@ -1135,8 +1454,13 @@ juce::Rectangle<int> VirtualTimelineComponent::getTileDestinationRect(const Trac
 {
     // Convert tile's audio time back to component pixels
     const double componentStartTime = std::chrono::duration<double>(track.componentStartTime).count();
-    const double cueStartTime = std::chrono::duration<double>(
-        std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
+    
+    double cueStartTime = 0.0;
+    if (track.mixTrack)
+    {
+        cueStartTime = std::chrono::duration<double>(
+            std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
+    }
     
     // Convert from track audio time to component time
     const double componentTileStart = (tileStartTime - cueStartTime) + componentStartTime;
