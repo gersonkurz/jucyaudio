@@ -664,20 +664,36 @@ namespace jucyaudio
             // Draw the main background
             g.fillAll(getLookAndFeel().findColour(juce::TreeView::backgroundColourId));
 
-            // Draw the time grid
+            // OPTIMIZATION: Only draw grid lines that are visible in the viewport
+            // Get the clip bounds - this is the area that actually needs painting
+            auto clipBounds = g.getClipBounds();
+            const float clipLeft = static_cast<float>(clipBounds.getX());
+            const float clipRight = static_cast<float>(clipBounds.getRight());
+            
+            // Draw the time grid - but only for the visible area
             g.setColour(getLookAndFeel().findColour(juce::TextEditor::outlineColourId));
-            const int numMarkers = static_cast<int>(getWidth() / (30 * m_pixelsPerSecond));
-            for (int i = 0; i <= numMarkers; ++i)
+            
+            // Calculate the first and last visible grid lines
+            const float gridSpacing = 30.0f * m_pixelsPerSecond; // 30-second intervals
+            const int firstGridLine = std::max(0, static_cast<int>(clipLeft / gridSpacing));
+            const int lastGridLine = static_cast<int>(clipRight / gridSpacing) + 1;
+            
+            for (int i = firstGridLine; i <= lastGridLine; ++i)
             {
-                const float x = static_cast<float>(i * 30 * m_pixelsPerSecond);
-                g.drawVerticalLine(juce::roundToInt(x), 0.0f, static_cast<float>(getHeight()));
+                const float x = i * gridSpacing;
+                
+                // Only draw if actually in the clip region
+                if (x >= clipLeft - 1 && x <= clipRight + 1)
+                {
+                    g.drawVerticalLine(juce::roundToInt(x), 0.0f, static_cast<float>(getHeight()));
 
-                int minutes = (i * 30) / 60;
-                const int seconds = (i * 30) % 60;
-                const int hours = minutes / 60;
-                minutes %= 60;
-                juce::String time = juce::String::formatted("%d:%02d:%02d", hours, minutes, seconds);
-                g.drawText(time, juce::roundToInt(x) + 4, 4, 100, 20, juce::Justification::topLeft);
+                    int minutes = (i * 30) / 60;
+                    const int seconds = (i * 30) % 60;
+                    const int hours = minutes / 60;
+                    minutes %= 60;
+                    juce::String time = juce::String::formatted("%d:%02d:%02d", hours, minutes, seconds);
+                    g.drawText(time, juce::roundToInt(x) + 4, 4, 100, 20, juce::Justification::topLeft);
+                }
             }
         }
 
@@ -1197,6 +1213,11 @@ namespace jucyaudio
 
         void TimelineComponent::drawCrossfadeLines(juce::Graphics &g)
         {
+            // OPTIMIZATION: Only draw crossfade lines that are visible
+            auto clipBounds = g.getClipBounds();
+            const float clipLeft = static_cast<float>(clipBounds.getX());
+            const float clipRight = static_cast<float>(clipBounds.getRight());
+            
             // For each consecutive pair of tracks, draw the attach/crossfade region
             for (size_t i = 0; i < m_trackViews.size(); ++i)
             {
@@ -1204,22 +1225,24 @@ namespace jucyaudio
                     break; // No next track to crossfade with
 
                 const auto &currentView = m_trackViews[i];
-                //const auto &nextView = m_trackViews[i + 1];
-
                 const auto &currentTrack = *currentView.mixTrackData;
-                //const auto &nextTrack = *nextView.mixTrackData;
 
                 // The ATTACH point is calculated relative to the AUDIO start time, not the component start time.
                 const double currentAudioStart = std::chrono::duration<double>(currentView.audioStartTime).count();
                 const double attachToTime = currentAudioStart + std::chrono::duration<double>(currentTrack.attachTo).count();
 
                 const float attachX = static_cast<float>(attachToTime * m_pixelsPerSecond);
-                g.setColour(juce::Colours::orange.withAlpha(0.7f));
-                g.drawVerticalLine(juce::roundToInt(attachX), 0.0f, static_cast<float>(getHeight()));
-
-                g.setFont(10.0f);
-                g.setColour(juce::Colours::orange);
-                g.drawText("ATTACH", juce::roundToInt(attachX) - 20, 5, 40, 12, juce::Justification::centred);
+                
+                // Only draw if the line is visible
+                if (attachX >= clipLeft - 1 && attachX <= clipRight + 1)
+                {
+                    g.setColour(juce::Colours::orange.withAlpha(0.7f));
+                    g.drawVerticalLine(juce::roundToInt(attachX), 0.0f, static_cast<float>(getHeight()));
+                    
+                    g.setFont(10.0f);
+                    g.setColour(juce::Colours::orange);
+                    g.drawText("ATTACH", juce::roundToInt(attachX) - 20, 5, 40, 12, juce::Justification::centred);
+                }
             }
         }
     } // namespace ui
