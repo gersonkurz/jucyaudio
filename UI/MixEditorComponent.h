@@ -131,7 +131,7 @@ namespace jucyaudio
             database::MixNode *m_node{nullptr};
             
             // Virtual timeline toggle
-            bool m_useVirtualTimeline{false};
+            bool m_useVirtualTimeline{true};
             
             // Playback controller reference
             PlaybackController* m_playbackController{nullptr};

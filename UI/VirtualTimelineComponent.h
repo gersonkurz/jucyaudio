@@ -103,6 +103,7 @@ public:
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
+    void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override;
     
     // AsyncUpdater override - frame scheduler
     void handleAsyncUpdate() override;
@@ -155,7 +156,6 @@ private:
     static constexpr int waveformInset{4};
     
     // Cached layout
-    int cachedNumLanes_{-1};
     int calculatedWidth_{800};
     int calculatedHeight_{600};
     

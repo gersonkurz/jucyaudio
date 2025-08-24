@@ -103,6 +103,9 @@ public:
         juce::Rectangle<int> tileBoundsInComponent;
         double startTimeSecs;
         double endTimeSecs;
+        juce::Colour trackColour;
+        double cueStartSecs;
+        double trackDurationSecs;
     };
 
     TileRenderQueue() = default;
@@ -173,8 +176,46 @@ private:
             return tileImage;
 
         juce::Graphics g(tileImage);
-        g.setColour(juce::Colours::lightblue); // Or some other color
-        request.thumbnail->drawChannels(g, juce::Rectangle<int>(tileImage.getBounds()), request.startTimeSecs, request.endTimeSecs, 1.0f);
+        
+        // Determine LOD based on zoom bucket
+        // Higher zoom bucket = more zoomed out = less detail needed
+        const int lodLevel = std::max(0, std::min(4, request.key.zoomBucket));
+        
+        // Use the track's color
+        g.setColour(request.trackColour);
+        
+        // Check if we need stereo rendering
+        const bool drawStereo = config::theSettings.mixEditingSettings.drawStereoWaveforms.get();
+        const int numChannels = request.thumbnail->getNumChannels();
+        
+        // Calculate vertical zoom based on LOD level
+        // At higher LOD (zoomed out), we reduce detail to improve rendering speed
+        float verticalZoom = 1.0f;
+        switch(lodLevel)
+        {
+            case 0: verticalZoom = 1.0f; break;    // Maximum detail (very zoomed in)
+            case 1: verticalZoom = 0.9f; break;    // High detail
+            case 2: verticalZoom = 0.7f; break;    // Medium detail
+            case 3: verticalZoom = 0.5f; break;    // Low detail
+            case 4: verticalZoom = 0.3f; break;    // Minimum detail (very zoomed out)
+            default: verticalZoom = 0.3f; break;
+        }
+        
+        if (drawStereo && numChannels > 1)
+        {
+            // Split the tile vertically for stereo
+            auto topHalf = tileImage.getBounds().withHeight(tileImage.getHeight() / 2);
+            auto bottomHalf = tileImage.getBounds().withY(topHalf.getBottom()).withHeight(tileImage.getHeight() - topHalf.getHeight());
+            
+            request.thumbnail->drawChannel(g, topHalf, request.startTimeSecs, request.endTimeSecs, 0, verticalZoom);
+            request.thumbnail->drawChannel(g, bottomHalf, request.startTimeSecs, request.endTimeSecs, 1, verticalZoom);
+        }
+        else
+        {
+            // Mono or combined stereo rendering
+            request.thumbnail->drawChannels(g, tileImage.getBounds(), request.startTimeSecs, request.endTimeSecs, verticalZoom);
+        }
+        
         return tileImage;
     }
 
@@ -293,6 +334,35 @@ void VirtualTimelineComponent::mouseUp(const juce::MouseEvent& event)
 void VirtualTimelineComponent::mouseMove(const juce::MouseEvent& event)
 {
     // TODO: Update hover states, cursors
+}
+
+void VirtualTimelineComponent::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
+{
+    // Zoom constants (matching original TimelineComponent)
+    constexpr double ZOOM_FACTOR = 1.1;
+    constexpr double MIN_ZOOM = 1.0;    // 1 pixel per second (zoomed out)
+    constexpr double MAX_ZOOM = 2000.0; // 2000 pixels per second (zoomed in)
+    
+    // Get mouse position relative to timeline
+    const auto mousePos = event.getPosition();
+    
+    // Calculate time position at mouse cursor
+    const double timeAtMouse = mousePos.x / pixelsPerSecond_;
+    
+    // Calculate new zoom level
+    const double zoomDelta = wheel.deltaY > 0 ? ZOOM_FACTOR : (1.0 / ZOOM_FACTOR);
+    const double newZoom = juce::jlimit(MIN_ZOOM, MAX_ZOOM, pixelsPerSecond_ * zoomDelta);
+    
+    if (newZoom != pixelsPerSecond_)
+    {
+        pixelsPerSecond_ = newZoom;
+        calculateTrackPositions();
+        queueMissingTiles();
+        
+        // Notify the parent component about zoom change if needed
+        // This would typically trigger the onZoomChanged callback
+        scheduleFrame();
+    }
 }
 
 //==============================================================================
@@ -630,26 +700,89 @@ void VirtualTimelineComponent::paintTrack(juce::Graphics& g, const TrackRenderDa
     g.setColour(getLookAndFeel().findColour(juce::TextEditor::outlineColourId));
     g.drawRect(track.bounds.toFloat(), 0.5f);
     
-    // --- Reverted to direct drawing (Phase 3 simplified) ---
+    // --- Phase 3: Tile-based rendering ---
     if (track.thumbnail && track.thumbnail->isFullyLoaded())
     {
-        g.setColour(track.colour);
-        const double thumbnailStartTime = std::chrono::duration<double>(
-            std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
-        const double thumbnailEndTime = std::chrono::duration<double>(track.trackInfo->duration).count();
-
-        const bool drawStereo = config::theSettings.mixEditingSettings.drawStereoWaveforms.get();
-
-        if (drawStereo && track.thumbnail->getNumChannels() > 1)
+        const int currentZoomBucket = getZoomBucket();
+        const int firstTileX = (track.bounds.getX() / tileWidth_) * tileWidth_;
+        const int lastTileX = ((track.bounds.getRight() + tileWidth_ - 1) / tileWidth_) * tileWidth_;
+        
+        bool allTilesReady = true;
+#if JUCE_DEBUG
+        int tilesRequested = 0;
+        int tilesHit = 0;
+#endif
+        
+        // First pass: check if all tiles are ready and draw them if they are
+        for (int tileX = firstTileX; tileX < lastTileX; tileX += tileWidth_)
         {
-            auto topHalf = track.waveformBounds.withHeight(track.waveformBounds.getHeight() / 2);
-            auto bottomHalf = track.waveformBounds.withY(topHalf.getBottom());
-            track.thumbnail->drawChannel(g, topHalf, thumbnailStartTime, thumbnailEndTime, 0, 1.0f);
-            track.thumbnail->drawChannel(g, bottomHalf, thumbnailStartTime, thumbnailEndTime, 1, 1.0f);
+            const int tileIndex = tileX / tileWidth_;
+            WaveformKey key{track.id, currentZoomBucket, tileIndex};
+            
+#if JUCE_DEBUG
+            tilesRequested++;
+#endif
+            auto tile = tileCache_->getTile(key);
+            if (tile && tile->isReady)
+            {
+#if JUCE_DEBUG
+                tilesHit++;
+#endif
+                // Calculate the intersection of tile bounds with track bounds
+                juce::Rectangle<int> tileBounds(tileX, track.bounds.getY(), tileWidth_, track.bounds.getHeight());
+                auto clippedBounds = tileBounds.getIntersection(track.bounds);
+                
+                if (!clippedBounds.isEmpty())
+                {
+                    // Draw the tile image, clipped to track bounds
+                    const int sourceX = clippedBounds.getX() - tileX;
+                    const int sourceWidth = clippedBounds.getWidth();
+                    
+                    g.drawImage(tile->image,
+                               clippedBounds.getX(), clippedBounds.getY(), 
+                               clippedBounds.getWidth(), clippedBounds.getHeight(),
+                               sourceX, 0, sourceWidth, tile->image.getHeight());
+                }
+            }
+            else
+            {
+                allTilesReady = false;
+            }
         }
-        else
+        
+#if JUCE_DEBUG
+        if (tilesRequested > 0)
         {
-            track.thumbnail->drawChannel(g, track.waveformBounds, thumbnailStartTime, thumbnailEndTime, 0, 1.0f);
+            const float hitRate = static_cast<float>(tilesHit) / static_cast<float>(tilesRequested) * 100.0f;
+            if (hitRate < 100.0f)
+            {
+                spdlog::debug("[TILES] Track {} - Cache hit rate: {:.1f}% ({}/{})", 
+                            track.id, hitRate, tilesHit, tilesRequested);
+            }
+        }
+#endif
+        
+        // If not all tiles are ready, fall back to direct drawing
+        if (!allTilesReady)
+        {
+            g.setColour(track.colour);
+            const double thumbnailStartTime = std::chrono::duration<double>(
+                std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
+            const double thumbnailEndTime = std::chrono::duration<double>(track.trackInfo->duration).count();
+
+            const bool drawStereo = config::theSettings.mixEditingSettings.drawStereoWaveforms.get();
+
+            if (drawStereo && track.thumbnail->getNumChannels() > 1)
+            {
+                auto topHalf = track.waveformBounds.withHeight(track.waveformBounds.getHeight() / 2);
+                auto bottomHalf = track.waveformBounds.withY(topHalf.getBottom());
+                track.thumbnail->drawChannel(g, topHalf, thumbnailStartTime, thumbnailEndTime, 0, 1.0f);
+                track.thumbnail->drawChannel(g, bottomHalf, thumbnailStartTime, thumbnailEndTime, 1, 1.0f);
+            }
+            else
+            {
+                track.thumbnail->drawChannel(g, track.waveformBounds, thumbnailStartTime, thumbnailEndTime, 0, 1.0f);
+            }
         }
     }
     else
@@ -790,8 +923,19 @@ int VirtualTimelineComponent::getZoomBucket() const
 {
     if (pixelsPerSecond_ <= 0.0) 
         return 0;
-    // This is a simplified version. A more accurate implementation might need the sample rate.
-    return static_cast<int>(std::round(std::log2(100.0 / pixelsPerSecond_)));
+    
+    // Define zoom buckets based on pixels per second
+    // Higher bucket = more zoomed out = less detail needed
+    if (pixelsPerSecond_ >= 1000.0)  // Very zoomed in (> 1000 px/sec)
+        return 0;  // Maximum detail
+    else if (pixelsPerSecond_ >= 200.0)  // Zoomed in (200-1000 px/sec)
+        return 1;  // High detail
+    else if (pixelsPerSecond_ >= 50.0)   // Medium zoom (50-200 px/sec)
+        return 2;  // Medium detail
+    else if (pixelsPerSecond_ >= 10.0)   // Zoomed out (10-50 px/sec)
+        return 3;  // Low detail
+    else  // Very zoomed out (< 10 px/sec)
+        return 4;  // Minimum detail
 }
 
 void VirtualTimelineComponent::queueMissingTiles()
@@ -800,31 +944,64 @@ void VirtualTimelineComponent::queueMissingTiles()
         return;
 
     const auto visibleBounds = getVisibleArea();
+    
+    // Add prefetch margin (1 tile on each side for smooth scrolling)
+    const int prefetchMargin = tileWidth_;
+    auto prefetchBounds = visibleBounds.expanded(prefetchMargin, 0);
 
     for (const auto& track : tracks_)
     {
-        if (!track.isVisible || !track.thumbnail || !track.trackInfo)
+        // Check if track is visible or within prefetch area
+        const bool inPrefetchArea = track.bounds.intersects(prefetchBounds);
+        if (!inPrefetchArea || !track.thumbnail || !track.trackInfo)
             continue;
 
         const int currentZoomBucket = getZoomBucket();
-        const int firstTile = static_cast<int>(std::floor(visibleBounds.getX() / static_cast<float>(tileWidth_)));
-        const int lastTile = static_cast<int>(std::ceil(visibleBounds.getRight() / static_cast<float>(tileWidth_)));
+        
+        // Calculate which tiles overlap with this track's bounds
+        const int firstTileX = (track.bounds.getX() / tileWidth_) * tileWidth_;
+        const int lastTileX = ((track.bounds.getRight() + tileWidth_ - 1) / tileWidth_) * tileWidth_;
+        
+        // Queue tiles for prefetch area (not just visible area)
+        const int prefetchFirstTileX = std::max(firstTileX, (prefetchBounds.getX() / tileWidth_) * tileWidth_);
+        const int prefetchLastTileX = std::min(lastTileX, ((prefetchBounds.getRight() + tileWidth_ - 1) / tileWidth_) * tileWidth_);
 
-        for (int tileIndex = firstTile; tileIndex <= lastTile; ++tileIndex)
+        for (int tileX = prefetchFirstTileX; tileX < prefetchLastTileX; tileX += tileWidth_)
         {
+            const int tileIndex = tileX / tileWidth_;
             WaveformKey key{track.id, currentZoomBucket, tileIndex};
+            
             if (!tileCache_->getTile(key))
             {
-                const double tileStartTimeSecs = pixelsToSeconds(tileIndex * tileWidth_);
-                const double tileEndTimeSecs = pixelsToSeconds((tileIndex + 1) * tileWidth_);
+                // Calculate the time range for this tile within the track's audio
+                // We need to map from component space to track's audio time
+                const double componentStartSecs = std::chrono::duration<double>(track.componentStartTime).count();
+                const double cueStartSecs = std::chrono::duration<double>(
+                    std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
+                const double trackDurationSecs = std::chrono::duration<double>(track.trackInfo->duration).count();
+                
+                // Map tile X position to time in the track's audio
+                const double tileStartInComponentTime = pixelsToSeconds(tileX);
+                const double tileEndInComponentTime = pixelsToSeconds(tileX + tileWidth_);
+                
+                // Convert to track's audio time (accounting for cue start)
+                const double tileStartInTrackTime = (tileStartInComponentTime - componentStartSecs) + cueStartSecs;
+                const double tileEndInTrackTime = (tileEndInComponentTime - componentStartSecs) + cueStartSecs;
+                
+                // Clamp to track's audio bounds
+                const double clampedStartTime = std::max(0.0, std::min(trackDurationSecs, tileStartInTrackTime));
+                const double clampedEndTime = std::max(0.0, std::min(trackDurationSecs, tileEndInTrackTime));
 
-                juce::Rectangle<int> tileBounds(tileIndex * tileWidth_, track.bounds.getY(), tileWidth_, track.bounds.getHeight());
+                juce::Rectangle<int> tileBounds(0, 0, tileWidth_, track.bounds.getHeight());
 
                 tileRenderer_->requestTile({key,
                                           track.thumbnail,
                                           tileBounds,
-                                          tileStartTimeSecs,
-                                          tileEndTimeSecs});
+                                          clampedStartTime,
+                                          clampedEndTime,
+                                          track.colour,
+                                          cueStartSecs,
+                                          trackDurationSecs});
             }
         }
     }

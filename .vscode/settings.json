@@ -3,7 +3,7 @@
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
     ],
     "cmake.buildDirectory": "${workspaceFolder}/build",
-    "cmake.preferredGenerators": ["Ninja"],
+    "cmake.preferredGenerators": ["Unix Makefiles"],
     "cmake.useCMakePresets": "never",
     "cmake.configureOnOpen": false,
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
@@ -150,5 +150,5 @@
         "thread": "cpp"
     },
     "cmake.sourceDirectory": "${workspaceFolder}",
-    "cmake.generator": "Ninja"
+    "cmake.generator": "Unix Makefiles"
 }

@@ -2,17 +2,43 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug jucyaudio",
+            "name": "Debug JucyAudio",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/jucyaudio_artefacts/${command:cmake.buildType}/jucyaudio.app/Contents/MacOS/jucyaudio",
+            "program": "${workspaceFolder}/build/jucyaudio_artefacts/Debug/JucyAudio.app/Contents/MacOS/JucyAudio",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "externalConsole": false,
             "MIMode": "lldb",
-            "preLaunchTask": "CMake: Build"
+            "preLaunchTask": "Build Debug"
+        },
+        {
+            "name": "Run JucyAudio (RelWithDebInfo)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/jucyaudio_artefacts/RelWithDebInfo/JucyAudio.app/Contents/MacOS/JucyAudio",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "Build RelWithDebInfo"
+        },
+        {
+            "name": "Run JucyAudio (Release)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/jucyaudio_artefacts/Release/JucyAudio.app/Contents/MacOS/JucyAudio",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "Build Release"
         }
     ]
 }

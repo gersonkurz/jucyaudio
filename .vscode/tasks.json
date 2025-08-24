@@ -2,11 +2,12 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "CMake: Configure",
+            "label": "Configure Debug",
             "type": "shell",
             "command": "cmake",
             "args": [
                 "-B", "build",
+                "-DCMAKE_BUILD_TYPE=Debug",
                 "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
             ],
             "group": "build",
@@ -18,11 +19,64 @@
             }
         },
         {
-            "label": "CMake: Build",
+            "label": "Configure RelWithDebInfo",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B", "build",
+                "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Configure Release",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B", "build",
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Build Debug",
             "type": "shell",
             "command": "cmake",
             "args": [
                 "--build", "build",
+                "--config", "Debug",
+                "-j", "8"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "dependsOn": "Configure Debug"
+        },
+        {
+            "label": "Build RelWithDebInfo",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build", "build",
+                "--config", "RelWithDebInfo",
                 "-j", "8"
             ],
             "group": {
@@ -35,15 +89,64 @@
                 "focus": false,
                 "panel": "shared"
             },
-            "dependsOn": "CMake: Configure"
+            "dependsOn": "Configure RelWithDebInfo"
         },
         {
-            "label": "Run App",
-            "type": "shell", 
-            "command": "open",
-            "args": ["${workspaceFolder}/build/jucyaudio_artefacts/${command:cmake.buildType}/jucyaudio.app"],
+            "label": "Build Release",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build", "build",
+                "--config", "Release",
+                "-j", "8"
+            ],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "dependsOn": "Configure Release"
+        },
+        {
+            "label": "Clean Build",
+            "type": "shell",
+            "command": "just",
+            "args": ["clean"],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Just Build (Default)",
+            "type": "shell",
+            "command": "just",
+            "args": ["build"],
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Just Run",
+            "type": "shell",
+            "command": "just",
+            "args": ["run"],
             "group": "test",
-            "dependsOn": "CMake: Build"
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
         }
     ]
 }
