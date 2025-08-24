@@ -263,12 +263,14 @@ namespace jucyaudio
                 spdlog::error("[MixEditor] m_playbackController is null!");
             }
             
-            // Load mix into both timelines
-            m_timeline.populateFrom(&loader);
-            
+            // Load the mix into the correct timeline
             if (m_useVirtualTimeline && m_virtualTimeline)
             {
                 m_virtualTimeline->loadMixProject(&loader);
+            }
+            else
+            {
+                m_timeline.populateFrom(&loader);
             }
             
             // Calculate mix duration and set it on the ruler
@@ -917,8 +919,8 @@ namespace jucyaudio
         {
             spdlog::info("Setting up virtual timeline component");
             
-            // Create the virtual timeline
-            m_virtualTimeline = std::make_unique<VirtualTimelineComponent>();
+            // Create the virtual timeline with required dependencies
+            m_virtualTimeline = std::make_unique<VirtualTimelineComponent>(m_formatManager, m_thumbnailCache);
             
             // TODO: Wire up callbacks similar to m_timeline
             // For now, just create the component

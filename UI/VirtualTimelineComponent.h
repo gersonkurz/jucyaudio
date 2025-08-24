@@ -53,7 +53,8 @@ public:
     };
     
     //==============================================================================
-    VirtualTimelineComponent();
+    VirtualTimelineComponent(juce::AudioFormatManager& formatManager,
+                           juce::AudioThumbnailCache& thumbnailCache);
     ~VirtualTimelineComponent() override;
     
     // Component overrides
@@ -100,6 +101,8 @@ private:
     // Track management
     std::vector<TrackRenderData> tracks_;
     audio::MixProjectLoader* mixProjectLoader_{nullptr};
+    juce::AudioFormatManager& formatManager_;
+    juce::AudioThumbnailCache& thumbnailCache_;
     
     // View state
     double pixelsPerSecond_{100.0};  // Default zoom (inverse of secondsPerPixel)

@@ -148,6 +148,7 @@ namespace jucyaudio
                 TypedValue<bool> clearWorkingSetAfterExport{this, "ClearWorkingSetAfterExport", true};
                 TypedValue<EnumConfigValue<RemoveTrackOption>> removeTrackOption{this, "RemoveTrackOption", RemoveTrackOption::RemoveFromBoth};
                 TypedValue<bool> useVirtualTimeline{this, "UseVirtualTimeline", false};  // Default to old timeline for now
+                TypedValue<bool> drawStereoWaveforms{this, "DrawStereoWaveforms", false}; // Default to combined waveform view
 
             } mixEditingSettings{this};
 

@@ -1,12 +1,17 @@
 #include "VirtualTimelineComponent.h"
 #include <Database/Includes/Constants.h>
+#include <Database/TrackLibrary.h>
 #include <spdlog/spdlog.h>
 #include <chrono>
+#include <UI/Settings.h>
 
 namespace jucyaudio::ui {
 
 //==============================================================================
-VirtualTimelineComponent::VirtualTimelineComponent()
+VirtualTimelineComponent::VirtualTimelineComponent(juce::AudioFormatManager& formatManager,
+                                                   juce::AudioThumbnailCache& thumbnailCache)
+    : formatManager_(formatManager)
+    , thumbnailCache_(thumbnailCache)
 {
     setOpaque(true);  // Critical for performance - we paint the entire background
     metricsResetTime_ = juce::Time::getMillisecondCounter();
@@ -182,7 +187,41 @@ void VirtualTimelineComponent::loadMixProject(audio::MixProjectLoader* loader)
             static_cast<float>(i) / static_cast<float>(mixTracks.size()),
             0.6f, 0.8f, 1.0f);
         
-        // TODO: Create/cache AudioThumbnail
+        // --- PHASE 3, STEP 1: Create and load AudioThumbnail ---
+        if (data.trackInfo)
+        {
+            data.thumbnail = std::make_shared<juce::AudioThumbnail>(512, formatManager_, thumbnailCache_);
+            
+            std::vector<unsigned char> cachedWaveformVec;
+            auto& db = database::theTrackLibrary;
+            if (db.loadWaveform(data.trackInfo->trackId, cachedWaveformVec).isOk() && !cachedWaveformVec.empty())
+            {
+                juce::MemoryBlock mb{cachedWaveformVec.data(), cachedWaveformVec.size()};
+                juce::MemoryInputStream stream{mb, false};
+                if (data.thumbnail->loadFrom(stream))
+                {
+                    spdlog::info("[PHASE 3] Loaded waveform for track {} from DB cache.", data.trackInfo->trackId);
+                }
+                else
+                {
+                    spdlog::warn("[PHASE 3] FAILED to load cached waveform for track {}. Will try loading from file.", data.trackInfo->trackId);
+                    juce::File audioFile(data.trackInfo->reconstructFullPath().string());
+                    if (audioFile.existsAsFile())
+                    {
+                        data.thumbnail->setSource(new juce::FileInputSource(audioFile));
+                    }
+                }
+            }
+            else
+            {
+                spdlog::warn("[PHASE 3] No waveform in DB cache for track {}. Loading from file.", data.trackInfo->trackId);
+                juce::File audioFile(data.trackInfo->reconstructFullPath().string());
+                if (audioFile.existsAsFile())
+                {
+                    data.thumbnail->setSource(new juce::FileInputSource(audioFile));
+                }
+            }
+        }
         
         tracks_.push_back(std::move(data));
     }
@@ -426,23 +465,38 @@ void VirtualTimelineComponent::paintTrack(juce::Graphics& g, const TrackRenderDa
     g.setColour(getLookAndFeel().findColour(juce::TextEditor::outlineColourId));
     g.drawRect(track.bounds.toFloat(), 0.5f);
     
-    // Placeholder waveform (will be replaced with actual waveform rendering in Phase 3)
-    g.setColour(track.colour);
-    const auto waveformHeight = track.waveformBounds.getHeight() * 0.6f;
-    const auto centerY = track.waveformBounds.getCentreY();
-    
-    // Draw placeholder sine wave
-    juce::Path wave;
-    wave.startNewSubPath(static_cast<float>(track.waveformBounds.getX()), centerY);
-    
-    for (int x = track.waveformBounds.getX(); x <= track.waveformBounds.getRight(); x += 4)
+    // --- PHASE 3: Render waveform ---    
+    if (track.thumbnail && track.thumbnail->getNumChannels() > 0)
     {
-        const float phase = (x - track.waveformBounds.getX()) * 0.05f;
-        const float y = centerY + std::sin(phase) * waveformHeight * 0.5f;
-        wave.lineTo(static_cast<float>(x), y);
+        g.setColour(track.colour);
+        const double thumbnailStartTime = std::chrono::duration<double>(
+            std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
+        const double thumbnailEndTime = std::chrono::duration<double>(track.trackInfo->duration).count();
+
+        const bool drawStereo = config::theSettings.mixEditingSettings.drawStereoWaveforms;
+
+        if (drawStereo && track.thumbnail->getNumChannels() > 1)
+        {
+            // Draw stereo channels separately
+            auto topHalf = track.waveformBounds.withHeight(track.waveformBounds.getHeight() / 2);
+            auto bottomHalf = track.waveformBounds.withY(topHalf.getBottom());
+            track.thumbnail->drawChannel(g, topHalf, thumbnailStartTime, thumbnailEndTime, 0, 1.0f);
+            track.thumbnail->drawChannel(g, bottomHalf, thumbnailStartTime, thumbnailEndTime, 1, 1.0f);
+        }
+        else
+        {
+            // Draw combined or mono waveform (channel 0)
+            track.thumbnail->drawChannel(g, track.waveformBounds, thumbnailStartTime, thumbnailEndTime, 0, 1.0f);
+        }
     }
-    
-    g.strokePath(wave, juce::PathStrokeType(1.0f));
+    else
+    {
+        // Fallback: placeholder waveform
+        g.setColour(track.colour.withAlpha(0.5f));
+        g.fillRect(track.waveformBounds);
+        g.setColour(juce::Colours::black.withAlpha(0.2f));
+        g.drawRect(track.waveformBounds);
+    }
     
     // Track name
     g.setColour(getLookAndFeel().findColour(juce::Label::textColourId));
