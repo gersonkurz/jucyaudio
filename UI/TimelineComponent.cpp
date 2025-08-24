@@ -661,6 +661,20 @@ namespace jucyaudio
 
         void TimelineComponent::paint(juce::Graphics &g)
         {
+            // Track paint frequency
+            static int paintCount = 0;
+            static auto lastReportTime = std::chrono::high_resolution_clock::now();
+            paintCount++;
+            
+            auto now = std::chrono::high_resolution_clock::now();
+            auto timeSinceReport = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastReportTime);
+            if (timeSinceReport.count() >= 1000)
+            {
+                spdlog::info("TimelineComponent paint calls: {} in last second", paintCount);
+                paintCount = 0;
+                lastReportTime = now;
+            }
+            
             // Draw the main background
             g.fillAll(getLookAndFeel().findColour(juce::TreeView::backgroundColourId));
 
@@ -999,11 +1013,34 @@ namespace jucyaudio
 
         void TimelineComponent::viewportResized()
         {
-            resized();
+            // Only call resized if we actually need to recalculate
+            // This is just a notification that viewport changed, but our internal layout might not need updating
+            
+            // Check if height actually changed enough to affect lanes
+            const int rulerHeight = 30;
+            const int trackHeight = MixTrackComponent::TOTAL_COMPONENT_HEIGHT;
+            const int yGap = 5;
+            
+            if (auto *viewport = findParentComponentOfClass<juce::Viewport>())
+            {
+                const int viewportHeight = viewport->getHeight();
+                const int availableHeightForLanes = viewportHeight - rulerHeight;
+                const int numLanes = std::max(1, availableHeightForLanes / (trackHeight + yGap));
+                
+                // Only proceed if lanes would change or we haven't initialized yet
+                if (numLanes != m_cachedNumLanes || m_cachedNumLanes == -1)
+                {
+                    resized();
+                }
+                // Otherwise, skip the expensive resized() call entirely
+            }
         }
 
         void TimelineComponent::resized()
         {
+            // Performance logging
+            const auto startTime = std::chrono::high_resolution_clock::now();
+            
             //auto visibleArea = getParentComponent()->getLocalBounds();
             const int rulerHeight = 30;
             const int trackHeight = MixTrackComponent::TOTAL_COMPONENT_HEIGHT;
@@ -1024,30 +1061,77 @@ namespace jucyaudio
             // Calculate available height for lanes using the actual component height
             const int availableHeightForLanes = getHeight() - rulerHeight;
             int numLanes = std::max(1, availableHeightForLanes / (trackHeight + yGap));
+            
+            // OPTIMIZATION: Only recalculate track positions if the number of lanes changed
+            // This avoids expensive recalculation during continuous window resizing
+            if (numLanes == m_cachedNumLanes)
+            {
+                // Number of lanes hasn't changed, no need to recalculate all track positions
+                spdlog::debug("TimelineComponent::resized - Skipping (lanes unchanged: {})", numLanes);
+                return;
+            }
+            
+            spdlog::info("TimelineComponent::resized - Recalculating {} tracks for {} lanes (was {})", 
+                        m_trackViews.size(), numLanes, m_cachedNumLanes);
+            
+            // Cache the new lane count
+            m_cachedNumLanes = numLanes;
+            
             int currentLane = 0;
             int laneDirection = +1;
 
+            // Track statistics for performance analysis
+            int initialLayoutCount = 0;
+            int fastPathCount = 0;
+            int fullRecalcCount = 0;
+            
+            const auto loopStartTime = std::chrono::high_resolution_clock::now();
+            
+            // Process tracks in batches to improve cache locality
             for (const auto &view : m_trackViews)
             {
-                // The start position is now fully dynamic.
-                const double startTime = std::chrono::duration<double>(view.componentStartTime).count();
-                const int startX = static_cast<int>(startTime * m_pixelsPerSecond);
-
-                // The width is now fully dynamic, based on the effective duration from the model.
-                const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
-                const int width = static_cast<int>(effectiveDuration * m_pixelsPerSecond);
-
                 const int yPos = rulerHeight + (currentLane * (trackHeight + yGap));
                 
-                // CRITICAL OPTIMIZATION: Only call setBounds if the bounds actually changed
-                // This prevents unnecessary repaints of all track waveforms during window resize
+                // OPTIMIZATION: For pure vertical resize (most common), only Y position changes
+                // Skip expensive duration calculations if X and width won't change
                 auto currentBounds = view.component->getBounds();
-                if (currentBounds.getX() != startX || 
-                    currentBounds.getY() != yPos || 
-                    currentBounds.getWidth() != width || 
-                    currentBounds.getHeight() != trackHeight)
+                
+                // Check if this is initial layout (bounds would be 0,0,0,0)
+                if (currentBounds.isEmpty())
                 {
+                    initialLayoutCount++;
+                    // Initial layout - must calculate everything
+                    const double startTime = std::chrono::duration<double>(view.componentStartTime).count();
+                    const int startX = static_cast<int>(startTime * m_pixelsPerSecond);
+                    const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
+                    const int width = static_cast<int>(effectiveDuration * m_pixelsPerSecond);
                     view.component->setBounds(startX, yPos, width, trackHeight);
+                }
+                // Check if only Y position needs updating (common case for window resize)
+                else if (currentBounds.getY() != yPos && 
+                         currentBounds.getHeight() == trackHeight &&
+                         currentBounds.getWidth() > 0)
+                {
+                    fastPathCount++;
+                    // Fast path: just update Y position
+                    view.component->setTopLeftPosition(currentBounds.getX(), yPos);
+                }
+                else
+                {
+                    fullRecalcCount++;
+                    // Need to recalculate (zoom changed or size changed)
+                    const double startTime = std::chrono::duration<double>(view.componentStartTime).count();
+                    const int startX = static_cast<int>(startTime * m_pixelsPerSecond);
+                    const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
+                    const int width = static_cast<int>(effectiveDuration * m_pixelsPerSecond);
+                    
+                    if (currentBounds.getX() != startX || 
+                        currentBounds.getY() != yPos || 
+                        currentBounds.getWidth() != width ||
+                        currentBounds.getHeight() != trackHeight)
+                    {
+                        view.component->setBounds(startX, yPos, width, trackHeight);
+                    }
                 }
 
                 if ((currentLane + laneDirection) >= numLanes || (currentLane + laneDirection) < 0)
@@ -1057,6 +1141,22 @@ namespace jucyaudio
                 if (numLanes == 1)
                     currentLane = 0;
             }
+            
+            // Performance timing report
+            const auto loopEndTime = std::chrono::high_resolution_clock::now();
+            const auto totalEndTime = std::chrono::high_resolution_clock::now();
+            
+            const auto loopDuration = std::chrono::duration_cast<std::chrono::microseconds>(loopEndTime - loopStartTime);
+            const auto totalDuration = std::chrono::duration_cast<std::chrono::microseconds>(totalEndTime - startTime);
+            
+            spdlog::info("TimelineComponent::resized - Performance Report:");
+            spdlog::info("  Total tracks: {}", m_trackViews.size());
+            spdlog::info("  Initial layouts: {}, Fast path: {}, Full recalc: {}", 
+                        initialLayoutCount, fastPathCount, fullRecalcCount);
+            spdlog::info("  Track loop took: {} µs ({} µs/track)", 
+                        loopDuration.count(), 
+                        m_trackViews.empty() ? 0 : loopDuration.count() / m_trackViews.size());
+            spdlog::info("  Total resized() took: {} µs", totalDuration.count());
         }
 
         bool TimelineComponent::populateFrom(audio::MixProjectLoader *mixLoader)
@@ -1080,6 +1180,7 @@ namespace jucyaudio
             m_currentTimePosition = -1.0;
             m_trackViews.clear();
             removeAllChildren();
+            m_cachedNumLanes = -1; // Reset lane cache when repopulating
 
             spdlog::info("TimelineComponent::populateFrom - Starting with {} tracks", mixLoader->getMixTracks().size());
 

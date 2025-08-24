@@ -319,6 +319,9 @@ namespace jucyaudio
 
             /** @brief The calculated total height in pixels for the timeline component. */
             int m_calculatedHeight = 0;
+            
+            /** @brief Cached number of lanes to avoid unnecessary recalculations during resize */
+            int m_cachedNumLanes = -1;
 
             /** @brief A non-owning pointer to the currently selected MixTrackComponent. */
             MixTrackComponent *m_selectedTrack = nullptr;

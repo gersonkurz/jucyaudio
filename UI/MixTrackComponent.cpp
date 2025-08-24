@@ -74,6 +74,33 @@ namespace jucyaudio
 
         void MixTrackComponent::paint(juce::Graphics &g)
         {
+            // Track how many paints are happening and measure individual paint time
+            static int paintCallCount = 0;
+            static int visiblePaintCount = 0;
+            static int culledPaintCount = 0;
+            static auto lastReportTime = std::chrono::high_resolution_clock::now();
+            static long totalPaintMicros = 0;
+            
+            paintCallCount++;
+            
+            auto now = std::chrono::high_resolution_clock::now();
+            auto timeSinceReport = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastReportTime);
+            if (timeSinceReport.count() >= 1000) // Report every second
+            {
+                spdlog::info("MixTrackComponent paint stats:");
+                spdlog::info("  Total paint calls: {} (visible: {}, culled: {})", 
+                            paintCallCount, visiblePaintCount, culledPaintCount);
+                if (visiblePaintCount > 0)
+                {
+                    spdlog::info("  Avg paint time: {} µs/paint", totalPaintMicros / visiblePaintCount);
+                }
+                paintCallCount = 0;
+                visiblePaintCount = 0;
+                culledPaintCount = 0;
+                totalPaintMicros = 0;
+                lastReportTime = now;
+            }
+            
             // Viewport culling optimization: Check if this component is visible horizontally
             // Get the viewport bounds in our parent's coordinate space
             if (auto* viewport = findParentComponentOfClass<juce::Viewport>())
@@ -87,9 +114,12 @@ namespace jucyaudio
                     ourBoundsInParent.getX() > (viewArea.getRight() + margin))
                 {
                     // We're completely outside the viewport horizontally, skip painting
+                    culledPaintCount++;
                     return;
                 }
             }
+            
+            visiblePaintCount++;
             
             // --- 1. Basic Setup & Background ---
             auto &lf = getLookAndFeel();
@@ -287,6 +317,20 @@ namespace jucyaudio
 
         void MixTrackComponent::resized()
         {
+            // Track resized calls
+            static int resizedCallCount = 0;
+            static auto lastReportTime = std::chrono::high_resolution_clock::now();
+            resizedCallCount++;
+            
+            auto now = std::chrono::high_resolution_clock::now();
+            auto timeSinceReport = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastReportTime);
+            if (timeSinceReport.count() >= 1000)
+            {
+                spdlog::info("MixTrackComponent::resized called {} times in last second", resizedCallCount);
+                resizedCallCount = 0;
+                lastReportTime = now;
+            }
+            
             spdlog::debug("Track ID: {}, Component Width: {}", m_mixTrack.trackId, getWidth());
 
             auto bounds = getLocalBounds();

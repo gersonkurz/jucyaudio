@@ -235,19 +235,36 @@ namespace jucyaudio
 
         void MixEditorComponent::resized()
         {
+            const auto startTime = std::chrono::high_resolution_clock::now();
+            
             auto bounds = getLocalBounds();
             
             // Place the marker ruler at the top
             m_markerRuler.setBounds(bounds.removeFromTop(MarkerRulerComponent::RULER_HEIGHT));
             
             // The viewport fills the remaining area below the ruler
+            const auto viewportStart = std::chrono::high_resolution_clock::now();
             m_viewport.setBounds(bounds);
+            const auto viewportEnd = std::chrono::high_resolution_clock::now();
             
             // Position the playhead overlay to match the viewport's viewed area
             updatePlayheadOverlayPosition();
             
             // Notify the timeline that the viewport has resized
+            const auto timelineStart = std::chrono::high_resolution_clock::now();
             m_timeline.viewportResized();
+            const auto timelineEnd = std::chrono::high_resolution_clock::now();
+            
+            const auto endTime = std::chrono::high_resolution_clock::now();
+            
+            const auto viewportDuration = std::chrono::duration_cast<std::chrono::microseconds>(viewportEnd - viewportStart);
+            const auto timelineDuration = std::chrono::duration_cast<std::chrono::microseconds>(timelineEnd - timelineStart);
+            const auto totalDuration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
+            
+            spdlog::info("MixEditorComponent::resized - Performance:");
+            spdlog::info("  Viewport.setBounds: {} µs", viewportDuration.count());
+            spdlog::info("  Timeline.viewportResized: {} µs", timelineDuration.count());
+            spdlog::info("  Total: {} µs", totalDuration.count());
         }
 
         void MixEditorComponent::updateCueAttachInData(int orderInMix, const database::MixTrack& updatedTrack)

@@ -989,6 +989,23 @@ namespace jucyaudio
 
         void MainComponent::resized()
         {
+            // Track resize frequency
+            static int resizeCallCount = 0;
+            static auto lastReportTime = std::chrono::high_resolution_clock::now();
+            resizeCallCount++;
+            
+            const auto startTime = std::chrono::high_resolution_clock::now();
+            
+            // Report frequency every second
+            auto now = std::chrono::high_resolution_clock::now();
+            auto timeSinceReport = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastReportTime);
+            if (timeSinceReport.count() >= 1000)
+            {
+                spdlog::info("MainComponent::resized called {} times in last second", resizeCallCount);
+                resizeCallCount = 0;
+                lastReportTime = now;
+            }
+            
             auto bounds = getLocalBounds();
             // Get actual heights after components are potentially laid out once
             int toolbarHeight = m_dynamicToolbar.isVisible() ? m_dynamicToolbar.getHeight() : 0;
@@ -1035,7 +1052,19 @@ namespace jucyaudio
 
             // m_currentMainViewComponent->setBounds(dataViewX, centralArea.getY(), dataViewWidth, centralArea.getHeight());
             m_dataViewComponent.setBounds(dataViewX, centralArea.getY(), dataViewWidth, centralArea.getHeight());
+            
+            const auto mixEditorStart = std::chrono::high_resolution_clock::now();
             m_mixEditorComponent.setBounds(dataViewX, centralArea.getY(), dataViewWidth, centralArea.getHeight());
+            const auto mixEditorEnd = std::chrono::high_resolution_clock::now();
+            
+            const auto endTime = std::chrono::high_resolution_clock::now();
+            const auto mixEditorDuration = std::chrono::duration_cast<std::chrono::microseconds>(mixEditorEnd - mixEditorStart);
+            const auto totalDuration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
+            
+            // Always log to see what's happening
+            spdlog::info("MainComponent::resized Performance:");
+            spdlog::info("  MixEditor.setBounds: {} µs", mixEditorDuration.count());
+            spdlog::info("  Total: {} µs ({} ms)", totalDuration.count(), totalDuration.count() / 1000);
         }
 
         void MainComponent::adjustSplitterPosition([[maybe_unused]] int desiredNewNavPanelLeftEdge) // Or pass delta
