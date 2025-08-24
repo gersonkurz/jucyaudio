@@ -11,6 +11,10 @@
 *.o
 *.obj
 
+install/*
+install-test/*
+install-arm64/*
+
 # Precompiled Headers
 *.gch
 *.pch

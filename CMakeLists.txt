@@ -1,14 +1,25 @@
 cmake_minimum_required(VERSION 3.22)
 project(jucyaudio VERSION 0.7.0)
 
+# Enable export of compile commands for IDEs
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# ============================================================================
+# Build Configuration
+# ============================================================================
+
 # Enable debug info in Release builds for better debugging while maintaining performance
 if(MSVC)
-  # Visual Studio: Add debug info to Release builds
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi")
-  set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /DEBUG")
+    # Visual Studio: Add debug info to Release builds
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /DEBUG")
+    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "/O2 /Zi /DNDEBUG")
+    set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "/DEBUG")
 else()
-  # macOS/Linux: Enable RelWithDebInfo-like flags for Release builds
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2 -g1 -DNDEBUG")
+    # macOS/Linux: Enable optimized builds with debug info
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -flto")
+    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 endif()
 
 # Set default build type to RelWithDebInfo if not specified
@@ -22,6 +33,37 @@ endif()
 # C++20 requirement
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# ============================================================================
+# Architecture Detection and Output Directories
+# ============================================================================
+
+# Architecture detection for output directories
+if(APPLE)
+    if(CMAKE_OSX_ARCHITECTURES)
+        string(REPLACE ";" "_" ARCH_DIR "${CMAKE_OSX_ARCHITECTURES}")
+    else()
+        set(ARCH_DIR "${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(ARCH_DIR "x64")
+else()
+    set(ARCH_DIR "x86")
+endif()
+
+# Set output directories based on architecture and configuration
+if(CMAKE_CONFIGURATION_TYPES)
+    # Multi-config generator (Xcode, Visual Studio)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${ARCH_DIR}-$<CONFIG>")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${ARCH_DIR}-$<CONFIG>")
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${ARCH_DIR}-$<CONFIG>")
+else()
+    # Single-config generator (Unix Makefiles, Ninja)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${ARCH_DIR}-${CMAKE_BUILD_TYPE}")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${ARCH_DIR}-${CMAKE_BUILD_TYPE}")
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${ARCH_DIR}-${CMAKE_BUILD_TYPE}")
+endif()
 
 # Find or fetch JUCE
 include(FetchContent)
@@ -66,6 +108,23 @@ set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
 set(SPDLOG_INSTALL OFF CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog)
+
+# Global compile definitions
+add_compile_definitions(
+    SQLITE_ENABLE_FTS5
+    SQLITE_ENABLE_JSON1
+    SQLITE_ENABLE_STAT4
+    SQLITE_DQS=0
+    SPDLOG_COMPILED_LIB
+    SPDLOG_USE_STD_FORMAT
+)
+
+if(WIN32)
+    add_compile_definitions(
+        SPDLOG_MSVC_UTF8
+        TAGLIB_STATIC
+    )
+endif()
 
 # Platform-specific library paths and includes
 if(WIN32)
@@ -603,14 +662,6 @@ if(WIN32)
         JUCE_MODAL_LOOPS_PERMITTED=1
         JUCE_STRICT_REFCOUNTEDPOINTER=1
         JUCE_USE_MP3AUDIOFORMAT=1
-        SQLITE_ENABLE_FTS5
-        SQLITE_ENABLE_JSON1
-        SQLITE_ENABLE_STAT4
-        SQLITE_DQS=0
-        SPDLOG_COMPILED_LIB
-        SPDLOG_USE_STD_FORMAT
-        SPDLOG_MSVC_UTF8
-        TAGLIB_STATIC
         PROJECT_NAME="${PROJECT_NAME}"
         PROJECT_VERSION="${PROJECT_VERSION}"
     )
@@ -628,8 +679,6 @@ else()
         JUCE_MODAL_LOOPS_PERMITTED=1
         JUCE_STRICT_REFCOUNTEDPOINTER=1
         JUCE_USE_MP3AUDIOFORMAT=1
-        SPDLOG_COMPILED_LIB
-        TAGLIB_STATIC
         PROJECT_NAME="${PROJECT_NAME}"
         PROJECT_VERSION="${PROJECT_VERSION}"
     )
@@ -683,3 +732,96 @@ add_custom_command(
             "${THEMES_DEST_DIR}"   # Destination
     COMMENT "Copying themes to application bundle..."
 )
+
+# ============================================================================
+# Installation Rules
+# ============================================================================
+include(GNUInstallDirs)
+
+if(APPLE)
+    # macOS Bundle Installation
+    install(TARGETS jucyaudio BUNDLE DESTINATION .)
+    
+    # Install themes to the bundle
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes"
+            DESTINATION "jucyaudio.app/Contents/Resources")
+    
+    # Code signing support (optional)
+    if(DEFINED ENV{MACOS_CODESIGN_IDENTITY})
+        set(CODESIGN_IDENTITY "$ENV{MACOS_CODESIGN_IDENTITY}")
+        message(STATUS "Will sign with identity: ${CODESIGN_IDENTITY}")
+        
+        install(CODE "
+            execute_process(
+                COMMAND codesign --deep --force --verify --verbose 
+                        --sign \"${CODESIGN_IDENTITY}\"
+                        --options runtime
+                        \"\${CMAKE_INSTALL_PREFIX}/jucyaudio.app\"
+                RESULT_VARIABLE result
+                OUTPUT_VARIABLE output
+                ERROR_VARIABLE error
+            )
+            if(NOT result EQUAL 0)
+                message(WARNING \"Code signing failed: \${error}\")
+            else()
+                message(STATUS \"Code signing successful\")
+            endif()
+        ")
+    endif()
+    
+elseif(WIN32)
+    install(TARGETS jucyaudio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes" DESTINATION ${CMAKE_INSTALL_BINDIR})
+else()
+    install(TARGETS jucyaudio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes" DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+
+# ============================================================================
+# CPack Configuration - Creates DMG on macOS, ZIP on Windows
+# ============================================================================
+include(InstallRequiredSystemLibraries)
+include(CPack)
+
+set(CPACK_PACKAGE_NAME "JucyAudio")
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_VENDOR "P-nand-Q")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "JucyAudio - Professional Audio Curation & Mixing")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "JucyAudio")
+
+if(APPLE)
+    set(CPACK_GENERATOR "DragNDrop")
+    set(CPACK_DMG_VOLUME_NAME "JucyAudio ${PROJECT_VERSION}")
+    set(CPACK_DMG_FORMAT "UDZO")  # Compressed
+    
+    # Package filename includes architecture
+    if(CMAKE_OSX_ARCHITECTURES)
+        string(REPLACE ";" "_" ARCH_STRING "${CMAKE_OSX_ARCHITECTURES}")
+        set(CPACK_PACKAGE_FILE_NAME "JucyAudio-${PROJECT_VERSION}-macOS-${ARCH_STRING}")
+    else()
+        set(CPACK_PACKAGE_FILE_NAME "JucyAudio-${PROJECT_VERSION}-macOS-${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+    
+    # Optional: Custom DMG appearance
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Assets/dmg-background.png")
+        set(CPACK_DMG_BACKGROUND_IMAGE "${CMAKE_CURRENT_SOURCE_DIR}/Assets/dmg-background.png")
+    endif()
+elseif(WIN32)
+    set(CPACK_GENERATOR "ZIP")
+    set(CPACK_PACKAGE_FILE_NAME "JucyAudio-${PROJECT_VERSION}-Windows-${ARCH_DIR}")
+else()
+    set(CPACK_GENERATOR "TGZ")
+    set(CPACK_PACKAGE_FILE_NAME "JucyAudio-${PROJECT_VERSION}-Linux-${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+
+# ============================================================================
+# Status Messages
+# ============================================================================
+message(STATUS "=====================================")
+message(STATUS "Project: ${PROJECT_NAME} v${PROJECT_VERSION}")
+message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
+if(APPLE AND CMAKE_OSX_ARCHITECTURES)
+    message(STATUS "Target Architecture: ${CMAKE_OSX_ARCHITECTURES}")
+endif()
+message(STATUS "=====================================")

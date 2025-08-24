@@ -10,7 +10,13 @@
       "Bash(touch:*)",
       "Bash(grep:*)",
       "Bash(python:*)",
-      "Read(//Users/gersonkurz/NGBT/NGBT/ptraced-qt/**)"
+      "Read(//Users/gersonkurz/NGBT/NGBT/ptraced-qt/**)",
+      "Bash(just clean:*)",
+      "Bash(just build:*)",
+      "Bash(./build/jucyaudio_artefacts/RelWithDebInfo/JucyAudio.app/Contents/MacOS/JucyAudio:*)",
+      "Bash(cmake:*)",
+      "Bash(just package:*)",
+      "Bash(just info)"
     ],
     "deny": [],
     "ask": []

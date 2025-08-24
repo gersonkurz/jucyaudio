@@ -90,6 +90,25 @@
     - Resolved LookAndFeel lifetime issues that caused assertions in debug mode
     - Checkboxes now properly render in both light and dark themes
 
+### Session 18: Professional Build System Implementation
+*   **CMake Build System Overhaul:**
+    - Added architecture-aware output directories (arm64, x86_64, universal)
+    - Enabled `compile_commands.json` generation for IDE integration
+    - Improved build configurations with better optimization flags
+    - Added CPack configuration for DMG creation on macOS
+    - Implemented proper installation rules with optional code signing support
+*   **Build Automation with Just:**
+    - Created comprehensive `justfile` for build automation
+    - Added support for cross-compilation (Intel builds on Apple Silicon)
+    - Implemented universal binary builds (both architectures in one)
+    - Added `just publish` command for creating release DMGs for all architectures
+    - Integrated automatic DMG creation with proper naming conventions
+*   **Multi-Architecture Support:**
+    - Full support for Apple Silicon (arm64) native builds
+    - Cross-compilation support for Intel (x86_64) Macs
+    - Universal binary support for maximum compatibility
+    - Architecture-specific output organization
+
 ---
 
 ## Important Implementation Notes
@@ -98,7 +117,20 @@
 
 **Refcounting:** The navigation system uses manual retain/release with atomic reference counting. Works well - just remember to match retains with releases!
 
-**Build Instructions:** DO NOT BUILD - The human will handle all builds. Make code changes only.
+**Build Instructions:** 
+The project uses CMake and includes a `justfile` for build automation. Key commands:
+- `just build` - Build with default (RelWithDebInfo: optimized with debug symbols)
+- `just debug` - Build debug version (unoptimized, full debugging)
+- `just release` - Build release version (optimized, no debug symbols)
+- `just run` - Build and run the application
+- `just package` - Create a DMG for distribution (macOS)
+- `just build-intel` - Cross-compile for Intel Macs (on Apple Silicon)
+- `just build-universal` - Build universal binary (both architectures)
+- `just publish` - Create release DMGs for all architectures
+- `just info` - Show current build configuration
+- `just clean` - Clean build directory
+
+The build system supports multiple architectures (Apple Silicon, Intel, Universal) and automatically organizes outputs by architecture and configuration.
 
 ---
 
@@ -116,6 +148,7 @@
 ✅ Folder Navigation/Selection Support
 ✅ Fix Light-Theme Issues
 ✅ Implement Dynamic Log Level
+✅ MacOS: DMG Image Creation (with multi-architecture support)
 
 ### Known Bugs / Issues for 1.0:
 
@@ -187,9 +220,6 @@
    - mp3tag-like functionality for editing track metadata
    - Store all edits in database only (never modify source files)
    - UI for batch editing and tag management
-
-2. **MacOS: DMG Image Creation:**
-   - Create distributable DMG installer for macOS
 
 ### Long-term (Version 2.0):
 
