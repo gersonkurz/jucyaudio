@@ -147,6 +147,7 @@ namespace jucyaudio
                 TypedValue<bool> askBeforeRemovingFromWorkingSet{this, "AskBeforeRemovingFromWorkingSet", true};
                 TypedValue<bool> clearWorkingSetAfterExport{this, "ClearWorkingSetAfterExport", true};
                 TypedValue<EnumConfigValue<RemoveTrackOption>> removeTrackOption{this, "RemoveTrackOption", RemoveTrackOption::RemoveFromBoth};
+                TypedValue<bool> useVirtualTimeline{this, "UseVirtualTimeline", false};  // Default to old timeline for now
 
             } mixEditingSettings{this};
 

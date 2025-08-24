@@ -49,7 +49,23 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
-FetchContent_MakeAvailable(JUCE nlohmann_json tabulate)
+# Add spdlog with std::format support
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG v1.14.1
+    GIT_SHALLOW TRUE
+)
+
+# Configure spdlog to use std::format
+set(SPDLOG_USE_STD_FORMAT ON CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
+set(SPDLOG_INSTALL OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog)
 
 # Platform-specific library paths and includes
 if(WIN32)
@@ -57,8 +73,7 @@ if(WIN32)
 
     # Windows paths from jucer file
     set(AUBIO_LIB_PATH "${WIN32_DEPS_ROOT}/aubio/lib")
-    set(SPDLOG_LIB_PATH_DEBUG "${WIN32_DEPS_ROOT}/spdlog/out/install/x64-Debug/lib")
-    set(SPDLOG_LIB_PATH_RELEASE "${WIN32_DEPS_ROOT}/spdlog/out/install/x64-Release/lib")
+    # spdlog is now handled by FetchContent
     set(TAGLIB_LIB_PATH_DEBUG "${WIN32_DEPS_ROOT}/taglib/out/install/x64-Debug/lib")
     set(TAGLIB_LIB_PATH_RELEASE "${WIN32_DEPS_ROOT}/taglib/out/install/x64-Release/lib")
     set(LAME_LIB_PATH "${WIN32_DEPS_ROOT}/lame")
@@ -69,8 +84,7 @@ if(WIN32)
 
     
     set(AUBIO_INCLUDE_PATH "${WIN32_DEPS_ROOT}/aubio/include")
-    set(SPDLOG_INCLUDE_PATH_DEBUG "${WIN32_DEPS_ROOT}/spdlog/out/install/x64-Debug/include")
-    set(SPDLOG_INCLUDE_PATH_RELEASE "${WIN32_DEPS_ROOT}/spdlog/out/install/x64-Release/include")
+    # spdlog is now handled by FetchContent
     set(TAGLIB_INCLUDE_PATH_DEBUG "${WIN32_DEPS_ROOT}/taglib/out/install/x64-Debug/include")
     set(TAGLIB_INCLUDE_PATH_RELEASE "${WIN32_DEPS_ROOT}/taglib/out/install/x64-Release/include")
     set(LAME_INCLUDE_PATH "${WIN32_DEPS_ROOT}/lame/include")
@@ -85,22 +99,22 @@ if(WIN32)
     
     # Use debug or release paths based on build type
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set(SPDLOG_LIB_PATH ${SPDLOG_LIB_PATH_DEBUG})
+        # spdlog is now handled by FetchContent
         set(TAGLIB_LIB_PATH ${TAGLIB_LIB_PATH_DEBUG})
         set(ICU_LIB_PATH ${ICU_LIB_PATH_DEBUG}) 
-        set(SPDLOG_INCLUDE_PATH ${SPDLOG_INCLUDE_PATH_DEBUG})
+        # spdlog is now handled by FetchContent
         set(TAGLIB_INCLUDE_PATH ${TAGLIB_INCLUDE_PATH_DEBUG})
     else()
-        set(SPDLOG_LIB_PATH ${SPDLOG_LIB_PATH_RELEASE})
+        # spdlog is now handled by FetchContent
         set(TAGLIB_LIB_PATH ${TAGLIB_LIB_PATH_RELEASE})
         set(ICU_LIB_PATH ${ICU_LIB_PATH_RELEASE})
-        set(SPDLOG_INCLUDE_PATH ${SPDLOG_INCLUDE_PATH_RELEASE})
+        # spdlog is now handled by FetchContent
         set(TAGLIB_INCLUDE_PATH ${TAGLIB_INCLUDE_PATH_RELEASE})
     endif()
     
     # Find libraries on Windows
     find_library(AUBIO_LIBRARY aubio PATHS ${AUBIO_LIB_PATH} REQUIRED)
-    find_library(SPDLOG_LIBRARY spdlog PATHS ${SPDLOG_LIB_PATH} REQUIRED)
+    # spdlog is now handled by FetchContent
     find_library(TAGLIB_LIBRARY tag PATHS ${TAGLIB_LIB_PATH} REQUIRED)
     find_library(PTHREADS_LIBRARY pthreadVC2 PATHS ${PTHREADS_LIB_PATH} REQUIRED)
     find_library(LAME_LIBRARY mp3lame PATHS ${LAME_LIB_PATH} REQUIRED)
@@ -126,7 +140,7 @@ if(WIN32)
     # Windows external includes
     set(EXTERNAL_INCLUDES
         ${AUBIO_INCLUDE_PATH}
-        ${SPDLOG_INCLUDE_PATH}
+        # spdlog is now handled by FetchContent
         ${TAGLIB_INCLUDE_PATH}
         ${LAME_INCLUDE_PATH}
         ${TOMLPLUSPLUS_INCLUDE_PATH}
@@ -149,14 +163,14 @@ else()
     
     # macOS/Linux paths (original)
     find_library(AUBIO_LIBRARY aubio PATHS /Users/gersonkurz/development/aubio_install_macos/lib)
-    find_library(SPDLOG_LIBRARY spdlog PATHS /Users/gersonkurz/development/spdlog/build)
+    # spdlog is now handled by FetchContent
     find_library(TAGLIB_LIBRARY tag PATHS /Users/gersonkurz/development/taglib_install/lib)
     find_library(MP3LAME_LIBRARY mp3lame PATHS /opt/homebrew/lib)
     
     # macOS/Linux external includes
     set(EXTERNAL_INCLUDES
         /Users/gersonkurz/development/aubio_install_macos/include
-        /Users/gersonkurz/development/spdlog/include
+        # spdlog is now handled by FetchContent
         /Users/gersonkurz/development/taglib_install/include
         /Users/gersonkurz/development/tomlplusplus-master/include
         /opt/homebrew/include
@@ -402,6 +416,14 @@ target_sources(jucyaudio PRIVATE
     UI/MixTrackComponent.h
     UI/TimelineComponent.cpp
     UI/TimelineComponent.h
+    UI/VirtualTimelineComponent.cpp
+    UI/VirtualTimelineComponent.h
+    UI/OverlayComponent.cpp
+    UI/OverlayComponent.h
+    UI/TrackRenderer.cpp
+    UI/TrackRenderer.h
+    UI/PerfCounters.cpp
+    UI/PerfCounters.h
     UI/EditWorkingSetMetaDataDialog.cpp
     UI/EditWorkingSetMetaDataDialog.h
     UI/MarkerEditDialog.cpp
@@ -492,7 +514,7 @@ if(WIN32)
         
         # External libraries (Windows)
         ${AUBIO_LIBRARY}
-        ${SPDLOG_LIBRARY}
+        spdlog::spdlog
         ${TAGLIB_LIBRARY}
         ${PTHREADS_LIBRARY}
         ${LAME_LIBRARY}
@@ -529,7 +551,7 @@ else()
         
         # External libraries (macOS/Linux)
         ${AUBIO_LIBRARY}
-        ${SPDLOG_LIBRARY}
+        spdlog::spdlog
         ${TAGLIB_LIBRARY}
         ${MP3LAME_LIBRARY}
         
