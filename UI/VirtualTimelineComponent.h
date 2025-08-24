@@ -60,12 +60,14 @@ public:
         TrackId trackId;
         int zoomBucket;  // Quantized zoom level
         int tileIndex;   // Horizontal tile index
+        bool isStereo;  // Whether this is a stereo or mono render
         
         bool operator==(const WaveformKey& other) const
         {
             return trackId == other.trackId && 
                    zoomBucket == other.zoomBucket && 
-                   tileIndex == other.tileIndex;
+                   tileIndex == other.tileIndex &&
+                   isStereo == other.isStereo;
         }
     };
     
@@ -75,7 +77,8 @@ public:
         {
             return std::hash<int>{}(key.trackId) ^ 
                    (std::hash<int>{}(key.zoomBucket) << 1) ^ 
-                   (std::hash<int>{}(key.tileIndex) << 2);
+                   (std::hash<int>{}(key.tileIndex) << 2) ^
+                   (std::hash<bool>{}(key.isStereo) << 3);
         }
     };
     
@@ -145,7 +148,7 @@ private:
     juce::AudioThumbnailCache& thumbnailCache_;
     
     // View state
-    double pixelsPerSecond_{100.0};  // Default zoom (inverse of secondsPerPixel)
+    double pixelsPerSecond_{2.0};  // Default zoom - very zoomed out to see entire mix
     juce::Rectangle<int> viewportBounds_;
     double playheadSeconds_{0.0};
     

@@ -16,9 +16,13 @@
       "Bash(./build/jucyaudio_artefacts/RelWithDebInfo/JucyAudio.app/Contents/MacOS/JucyAudio:*)",
       "Bash(cmake:*)",
       "Bash(just package:*)",
-      "Bash(just info)"
+      "Bash(just info)",
+      "Read(//Users/gersonkurz/Library/jucyaudioApp_Dev/Logs/**)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "/Users/gersonkurz/Library/jucyaudioApp_Dev/Logs"
+    ]
   }
 }

@@ -153,40 +153,61 @@ MixEditorComponent
 
 ### Implementation Status (As of 2025-08-24)
 
-The initial refactoring to a virtual timeline is **complete**.
+## ✅ Phase 2 COMPLETE - Virtual Timeline (Basic Implementation)
 
-- A new `VirtualTimelineComponent` has been implemented and is now used by default.
-- It replaces the old one-component-per-track architecture with a modern, data-oriented design (`TrackRenderData` structs).
-- This single component now handles all track rendering, layout, and hit-testing.
-- The component correctly implements:
-  - Direct waveform rendering from the database cache.
-  - The original "zig-zag" track layout.
-  - Track selection and highlighting.
-  - A user-configurable setting for stereo vs. mono waveform display.
+The virtual timeline architecture is now **fully operational** with direct rendering.
 
-The primary goal of achieving a stable, functional, and feature-complete virtual timeline has been met. Performance is now acceptable and a significant improvement over the original architecture, but further optimization is required for large mixes.
+### Completed Features:
+- **Virtual Timeline Architecture** - Single component with data-oriented design (`TrackRenderData` structs)
+- **Direct Waveform Rendering** - Renders waveforms directly from AudioThumbnail on each paint
+- **Correct Stereo/Mono Display** - Single waveform view works correctly (using channel 0)
+- **Mouse Wheel Zoom** - Fully functional with proper waveform scaling
+- **Zig-zag Track Layout** - Maintains the original multi-lane layout system
+- **Track Selection** - Hit-testing and selection working correctly
 
-### Next Steps: Implementation Plan
+### Current Performance:
+- **Window Resizing**: Acceptable but slower with 200+ tracks (re-renders all visible waveforms)
+- **Scrolling**: Functional but can stutter with many tracks
+- **Zoom Operations**: Works correctly but requires full re-render
+- **Memory Usage**: Minimal (no caching)
+- **Scalability**: Limited - performance degrades linearly with track count
 
-The remaining work is now focused purely on performance optimization.
+## ❌ Phase 3 FAILED - Tiling System (Needs Complete Rewrite)
 
-#### Phase 1: Performance Optimization (Tiling & LOD)
+The tiling system implementation failed due to fundamental architectural issues:
 
-The current direct-rendering approach still re-draws the entire visible portion of a waveform on every frame, which can be slow when zoomed out. The next phase is to implement a tile-based caching and Level-of-Detail (LOD) system.
+### What Went Wrong:
+1. **Coordinate System Mismatch** - Tiles were calculated using timeline coordinates (which can be very large) instead of viewport coordinates
+2. **No Actual Tile Generation** - Background thread wasn't properly generating tiles
+3. **Cache Key Issues** - Tile keys didn't properly account for all parameters (stereo/mono, zoom level)
+4. **Broken Tile Mapping** - Tile boundaries didn't map correctly to track waveform regions
 
-- **Waveform Tile Cache**:
-  - Create an in-memory LRU cache (`WaveformTileCache`) to store pre-rendered waveform segments (tiles) as `juce::Image` objects.
-  - This avoids re-rendering the same waveform section repeatedly.
+### What Needs to Be Done for Phase 3:
+1. **Redesign Coordinate System**
+   - Use viewport-relative coordinates for tile calculations
+   - Properly transform between timeline space and screen space
+   - Account for horizontal scrolling offset
 
-- **Background Tile Rendering**:
-  - Implement a background thread (`TileRenderQueue`) to generate these tiles without blocking the message thread.
-  - The UI will draw a placeholder for tiles that are not yet in the cache and will be updated asynchronously when the tile is ready.
+2. **Fix Tile Generation**
+   - Actually implement background tile rendering in `TileRenderQueue`
+   - Ensure tiles are generated with correct time ranges
+   - Handle stereo/mono rendering in tiles
 
-- **Level of Detail (LOD)**:
-  - The background renderer will generate different versions of the tiles for different zoom levels ("zoom buckets").
-  - When zoomed far out, it will render a low-detail summary of the waveform.
-  - When zoomed far in, it will render the full-detail waveform.
-  - This ensures that the rendering work is proportional to the information visible on screen.
+3. **Implement Proper Cache Management**
+   - Include all necessary parameters in cache key (track ID, zoom, stereo mode, position)
+   - Invalidate tiles when settings change
+   - Implement proper LRU eviction
+
+4. **Add Level-of-Detail (LOD)**
+   - Generate different quality tiles for different zoom levels
+   - Use waveform decimation for zoomed-out views
+   - Balance quality vs. performance
+
+5. **Coordinate Tile Updates**
+   - Queue tiles when tracks become visible
+   - Prefetch adjacent tiles for smooth scrolling
+   - Update tiles when zoom changes
+
 
 ---
 

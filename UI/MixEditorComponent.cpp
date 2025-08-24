@@ -267,6 +267,12 @@ namespace jucyaudio
             if (m_useVirtualTimeline && m_virtualTimeline)
             {
                 m_virtualTimeline->loadMixProject(&loader);
+                // Set initial viewport bounds to ensure tiles are generated
+                const auto viewBounds = m_viewport.getViewArea();
+                if (!viewBounds.isEmpty())
+                {
+                    m_virtualTimeline->setViewportBounds(viewBounds);
+                }
             }
             else
             {

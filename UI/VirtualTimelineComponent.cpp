@@ -188,6 +188,9 @@ private:
         const bool drawStereo = config::theSettings.mixEditingSettings.drawStereoWaveforms.get();
         const int numChannels = request.thumbnail->getNumChannels();
         
+        spdlog::debug("[TILE_RENDER] Track {} tile {}: drawStereo={}, numChannels={}, zoom={}, keyStereo={}", 
+                     request.key.trackId, request.key.tileIndex, drawStereo, numChannels, request.key.zoomBucket, request.key.isStereo);
+        
         // Calculate vertical zoom based on LOD level
         // At higher LOD (zoomed out), we reduce detail to improve rendering speed
         float verticalZoom = 1.0f;
@@ -212,8 +215,9 @@ private:
         }
         else
         {
-            // Mono or combined stereo rendering
-            request.thumbnail->drawChannels(g, tileImage.getBounds(), request.startTimeSecs, request.endTimeSecs, verticalZoom);
+            // Single waveform view - draw channel 0 only (which shows mono or left channel)
+            // This gives us a single waveform regardless of channel count
+            request.thumbnail->drawChannel(g, tileImage.getBounds(), request.startTimeSecs, request.endTimeSecs, 0, verticalZoom);
         }
         
         return tileImage;
@@ -486,6 +490,8 @@ void VirtualTimelineComponent::loadMixProject(audio::MixProjectLoader* loader)
     
     metrics_.totalTracks = static_cast<int>(tracks_.size());
     calculateTrackPositions();
+    updateVisibleTracks();
+    queueMissingTiles();  // Start generating tiles immediately after loading
     scheduleFrame();
 }
 
@@ -700,89 +706,27 @@ void VirtualTimelineComponent::paintTrack(juce::Graphics& g, const TrackRenderDa
     g.setColour(getLookAndFeel().findColour(juce::TextEditor::outlineColourId));
     g.drawRect(track.bounds.toFloat(), 0.5f);
     
-    // --- Phase 3: Tile-based rendering ---
+    // --- Simplified: Direct rendering only (tiling disabled for now) ---
     if (track.thumbnail && track.thumbnail->isFullyLoaded())
     {
-        const int currentZoomBucket = getZoomBucket();
-        const int firstTileX = (track.bounds.getX() / tileWidth_) * tileWidth_;
-        const int lastTileX = ((track.bounds.getRight() + tileWidth_ - 1) / tileWidth_) * tileWidth_;
-        
-        bool allTilesReady = true;
-#if JUCE_DEBUG
-        int tilesRequested = 0;
-        int tilesHit = 0;
-#endif
-        
-        // First pass: check if all tiles are ready and draw them if they are
-        for (int tileX = firstTileX; tileX < lastTileX; tileX += tileWidth_)
-        {
-            const int tileIndex = tileX / tileWidth_;
-            WaveformKey key{track.id, currentZoomBucket, tileIndex};
-            
-#if JUCE_DEBUG
-            tilesRequested++;
-#endif
-            auto tile = tileCache_->getTile(key);
-            if (tile && tile->isReady)
-            {
-#if JUCE_DEBUG
-                tilesHit++;
-#endif
-                // Calculate the intersection of tile bounds with track bounds
-                juce::Rectangle<int> tileBounds(tileX, track.bounds.getY(), tileWidth_, track.bounds.getHeight());
-                auto clippedBounds = tileBounds.getIntersection(track.bounds);
-                
-                if (!clippedBounds.isEmpty())
-                {
-                    // Draw the tile image, clipped to track bounds
-                    const int sourceX = clippedBounds.getX() - tileX;
-                    const int sourceWidth = clippedBounds.getWidth();
-                    
-                    g.drawImage(tile->image,
-                               clippedBounds.getX(), clippedBounds.getY(), 
-                               clippedBounds.getWidth(), clippedBounds.getHeight(),
-                               sourceX, 0, sourceWidth, tile->image.getHeight());
-                }
-            }
-            else
-            {
-                allTilesReady = false;
-            }
-        }
-        
-#if JUCE_DEBUG
-        if (tilesRequested > 0)
-        {
-            const float hitRate = static_cast<float>(tilesHit) / static_cast<float>(tilesRequested) * 100.0f;
-            if (hitRate < 100.0f)
-            {
-                spdlog::debug("[TILES] Track {} - Cache hit rate: {:.1f}% ({}/{})", 
-                            track.id, hitRate, tilesHit, tilesRequested);
-            }
-        }
-#endif
-        
-        // If not all tiles are ready, fall back to direct drawing
-        if (!allTilesReady)
-        {
-            g.setColour(track.colour);
-            const double thumbnailStartTime = std::chrono::duration<double>(
-                std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
-            const double thumbnailEndTime = std::chrono::duration<double>(track.trackInfo->duration).count();
+        g.setColour(track.colour);
+        const double thumbnailStartTime = std::chrono::duration<double>(
+            std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
+        const double thumbnailEndTime = std::chrono::duration<double>(track.trackInfo->duration).count();
 
-            const bool drawStereo = config::theSettings.mixEditingSettings.drawStereoWaveforms.get();
+        const bool drawStereo = config::theSettings.mixEditingSettings.drawStereoWaveforms.get();
 
-            if (drawStereo && track.thumbnail->getNumChannels() > 1)
-            {
-                auto topHalf = track.waveformBounds.withHeight(track.waveformBounds.getHeight() / 2);
-                auto bottomHalf = track.waveformBounds.withY(topHalf.getBottom());
-                track.thumbnail->drawChannel(g, topHalf, thumbnailStartTime, thumbnailEndTime, 0, 1.0f);
-                track.thumbnail->drawChannel(g, bottomHalf, thumbnailStartTime, thumbnailEndTime, 1, 1.0f);
-            }
-            else
-            {
-                track.thumbnail->drawChannel(g, track.waveformBounds, thumbnailStartTime, thumbnailEndTime, 0, 1.0f);
-            }
+        if (drawStereo && track.thumbnail->getNumChannels() > 1)
+        {
+            auto topHalf = track.waveformBounds.withHeight(track.waveformBounds.getHeight() / 2);
+            auto bottomHalf = track.waveformBounds.withY(topHalf.getBottom());
+            track.thumbnail->drawChannel(g, topHalf, thumbnailStartTime, thumbnailEndTime, 0, 1.0f);
+            track.thumbnail->drawChannel(g, bottomHalf, thumbnailStartTime, thumbnailEndTime, 1, 1.0f);
+        }
+        else
+        {
+            // Single waveform - just draw channel 0 (mono or left channel)
+            track.thumbnail->drawChannel(g, track.waveformBounds, thumbnailStartTime, thumbnailEndTime, 0, 1.0f);
         }
     }
     else
@@ -966,10 +910,15 @@ void VirtualTimelineComponent::queueMissingTiles()
         const int prefetchFirstTileX = std::max(firstTileX, (prefetchBounds.getX() / tileWidth_) * tileWidth_);
         const int prefetchLastTileX = std::min(lastTileX, ((prefetchBounds.getRight() + tileWidth_ - 1) / tileWidth_) * tileWidth_);
 
+        // Get the current stereo setting for the key
+        const bool drawStereo = config::theSettings.mixEditingSettings.drawStereoWaveforms.get();
+        
+        spdlog::info("[QUEUE_TILES] Track {} queueing tiles: drawStereo={}", track.id, drawStereo);
+        
         for (int tileX = prefetchFirstTileX; tileX < prefetchLastTileX; tileX += tileWidth_)
         {
             const int tileIndex = tileX / tileWidth_;
-            WaveformKey key{track.id, currentZoomBucket, tileIndex};
+            WaveformKey key{track.id, currentZoomBucket, tileIndex, drawStereo};
             
             if (!tileCache_->getTile(key))
             {
