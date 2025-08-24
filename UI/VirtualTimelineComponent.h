@@ -58,14 +58,18 @@ public:
     struct WaveformKey
     {
         TrackId trackId;
-        int zoomBucket;  // Quantized zoom level
-        int tileIndex;   // Horizontal tile index
-        bool isStereo;  // Whether this is a stereo or mono render
+        int tileIndex;           // Global tile index (based on fixed grid)
+        bool isStereo;           // Whether this is a stereo or mono render
+        
+        // Store the actual time range for rendering
+        double startTimeSeconds;  // Start time in track's audio space
+        double endTimeSeconds;    // End time in track's audio space
         
         bool operator==(const WaveformKey& other) const
         {
+            // Only compare the key fields, not the time range
+            // Removed zoomLevel to reuse tiles across zoom levels
             return trackId == other.trackId && 
-                   zoomBucket == other.zoomBucket && 
                    tileIndex == other.tileIndex &&
                    isStereo == other.isStereo;
         }
@@ -76,9 +80,8 @@ public:
         std::size_t operator()(const WaveformKey& key) const
         {
             return std::hash<int>{}(key.trackId) ^ 
-                   (std::hash<int>{}(key.zoomBucket) << 1) ^ 
-                   (std::hash<int>{}(key.tileIndex) << 2) ^
-                   (std::hash<bool>{}(key.isStereo) << 3);
+                   (std::hash<int>{}(key.tileIndex) << 1) ^ 
+                   (std::hash<bool>{}(key.isStereo) << 2);
         }
     };
     
@@ -186,9 +189,12 @@ private:
     juce::Rectangle<int> getVisibleArea() const;
     
     // Tiling system helpers
-    int getZoomBucket() const;
-    void queueMissingTiles();
+    int getZoomLevel() const;
+    void queueVisibleTiles();
+    void queueTilesForTrack(const TrackRenderData& track, const juce::Rectangle<int>& visibleArea);
     void onTileRendered(const WaveformKey& key, juce::Image&& image);
+    std::vector<WaveformKey> getTileKeysForTrack(const TrackRenderData& track, const juce::Rectangle<int>& visibleArea) const;
+    juce::Rectangle<int> getTileDestinationRect(const TrackRenderData& track, double tileStartTime, double tileEndTime) const;
 
     // Rendering helpers
     void paintTracks(juce::Graphics& g);

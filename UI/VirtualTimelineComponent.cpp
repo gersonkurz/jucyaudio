@@ -29,6 +29,26 @@ public:
             touchTile(key);
             return it->second;
         }
+        
+        // Debug: log cache miss details
+        static int missCount = 0;
+        if (++missCount % 100 == 0)
+        {
+            spdlog::info("[CACHE_MISS] Looking for track {} tile={} stereo={}, cache size={}", 
+                        key.trackId, key.tileIndex, key.isStereo, cache_.size());
+            
+            // Show a few entries from cache for comparison
+            int shown = 0;
+            for (const auto& [cachedKey, tile] : cache_)
+            {
+                if (cachedKey.trackId == key.trackId && shown++ < 2)
+                {
+                    spdlog::info("[CACHE_HAS] Track {} tile={} stereo={}", 
+                                cachedKey.trackId, cachedKey.tileIndex, cachedKey.isStereo);
+                }
+            }
+        }
+        
         return nullptr;
     }
 
@@ -36,7 +56,10 @@ public:
     {
         std::lock_guard<std::mutex> lock(cacheMutex_);
         if (cache_.find(key) != cache_.end())
+        {
+            spdlog::debug("[CACHE] Tile already exists for track {}", key.trackId);
             return; // Already exists
+        }
 
         auto tile = std::make_shared<WaveformTile>();
         tile->image = std::move(image);
@@ -52,6 +75,14 @@ public:
         lruMap_[key] = lruList_.begin();
         currentMemoryBytes_ += memorySize;
         tile->isReady = true;
+        
+        // Log cache additions occasionally
+        static int addCount = 0;
+        if (++addCount % 50 == 0)
+        {
+            spdlog::info("[CACHE] Added tile for track {}: tile={}, size={}KB (total cache: {} tiles)", 
+                         key.trackId, key.tileIndex, memorySize / 1024, cache_.size());
+        }
     }
 
 private:
@@ -171,53 +202,53 @@ private:
 
     juce::Image renderWaveformTile(const RenderRequest& request)
     {
-        juce::Image tileImage(juce::Image::ARGB, request.tileBoundsInComponent.getWidth(), request.tileBoundsInComponent.getHeight(), true);
+        // Always render tiles at a fixed pixel width for consistency
+        // The tile will be stretched when drawn to match the actual zoom level
+        constexpr int TILE_RENDER_WIDTH = 512;  // Render at higher res for quality
+        const int tileHeight = request.tileBoundsInComponent.getHeight();
+        juce::Image tileImage(juce::Image::ARGB, TILE_RENDER_WIDTH, tileHeight, true);
+        
         if (!request.thumbnail)
             return tileImage;
 
         juce::Graphics g(tileImage);
         
-        // Determine LOD based on zoom bucket
-        // Higher zoom bucket = more zoomed out = less detail needed
-        const int lodLevel = std::max(0, std::min(4, request.key.zoomBucket));
-        
         // Use the track's color
         g.setColour(request.trackColour);
         
         // Check if we need stereo rendering
-        const bool drawStereo = config::theSettings.mixEditingSettings.drawStereoWaveforms.get();
+        const bool shouldDrawStereo = request.key.isStereo;
         const int numChannels = request.thumbnail->getNumChannels();
         
-        spdlog::debug("[TILE_RENDER] Track {} tile {}: drawStereo={}, numChannels={}, zoom={}, keyStereo={}", 
-                     request.key.trackId, request.key.tileIndex, drawStereo, numChannels, request.key.zoomBucket, request.key.isStereo);
+        // Use high quality rendering since tiles are now reused across zoom levels
+        float verticalZoom = 0.9f;  // Good quality that works well at all zoom levels
         
-        // Calculate vertical zoom based on LOD level
-        // At higher LOD (zoomed out), we reduce detail to improve rendering speed
-        float verticalZoom = 1.0f;
-        switch(lodLevel)
+        // Use the exact time range from the key
+        const double startTime = request.key.startTimeSeconds;
+        const double endTime = request.key.endTimeSeconds;
+        
+        // Log only occasionally to reduce overhead
+        static int renderCount = 0;
+        if (++renderCount % 100 == 0)
         {
-            case 0: verticalZoom = 1.0f; break;    // Maximum detail (very zoomed in)
-            case 1: verticalZoom = 0.9f; break;    // High detail
-            case 2: verticalZoom = 0.7f; break;    // Medium detail
-            case 3: verticalZoom = 0.5f; break;    // Low detail
-            case 4: verticalZoom = 0.3f; break;    // Minimum detail (very zoomed out)
-            default: verticalZoom = 0.3f; break;
+            spdlog::info("[TILE_RENDER] Rendering tile for track {}: idx={}, time={:.2f}-{:.2f}, size={}x{}", 
+                         request.key.trackId, request.key.tileIndex, startTime, endTime, TILE_RENDER_WIDTH, tileHeight);
         }
         
-        if (drawStereo && numChannels > 1)
+        if (shouldDrawStereo && numChannels > 1)
         {
             // Split the tile vertically for stereo
-            auto topHalf = tileImage.getBounds().withHeight(tileImage.getHeight() / 2);
-            auto bottomHalf = tileImage.getBounds().withY(topHalf.getBottom()).withHeight(tileImage.getHeight() - topHalf.getHeight());
+            const int halfHeight = tileHeight / 2;
+            auto topHalf = juce::Rectangle<int>(0, 0, TILE_RENDER_WIDTH, halfHeight);
+            auto bottomHalf = juce::Rectangle<int>(0, halfHeight, TILE_RENDER_WIDTH, tileHeight - halfHeight);
             
-            request.thumbnail->drawChannel(g, topHalf, request.startTimeSecs, request.endTimeSecs, 0, verticalZoom);
-            request.thumbnail->drawChannel(g, bottomHalf, request.startTimeSecs, request.endTimeSecs, 1, verticalZoom);
+            request.thumbnail->drawChannel(g, topHalf, startTime, endTime, 0, verticalZoom);
+            request.thumbnail->drawChannel(g, bottomHalf, startTime, endTime, 1, verticalZoom);
         }
         else
         {
-            // Single waveform view - draw channel 0 only (which shows mono or left channel)
-            // This gives us a single waveform regardless of channel count
-            request.thumbnail->drawChannel(g, tileImage.getBounds(), request.startTimeSecs, request.endTimeSecs, 0, verticalZoom);
+            // Single waveform view - draw channel 0 only
+            request.thumbnail->drawChannel(g, tileImage.getBounds(), startTime, endTime, 0, verticalZoom);
         }
         
         return tileImage;
@@ -240,7 +271,7 @@ VirtualTimelineComponent::VirtualTimelineComponent(juce::AudioFormatManager& for
     setOpaque(true);  // Critical for performance - we paint the entire background
     metricsResetTime_ = juce::Time::getMillisecondCounter();
 
-    tileCache_ = std::make_unique<WaveformTileCache>(256); // 256MB cache
+    tileCache_ = std::make_unique<WaveformTileCache>(512); // 512MB cache for more tiles
     tileRenderer_ = std::make_unique<TileRenderQueue>();
     tileRenderer_->onTileReady = [this](const WaveformKey& key, juce::Image&& image) {
         onTileRendered(key, std::move(image));
@@ -304,8 +335,13 @@ void VirtualTimelineComponent::paint(juce::Graphics& g)
 
 void VirtualTimelineComponent::resized()
 {
+    spdlog::info("VirtualTimelineComponent::resized() called - size: {}x{}", getWidth(), getHeight());
+    
+    // Recalculate track positions when window is resized
+    // This will re-layout tracks to use new available lanes
+    calculateTrackPositions();
     refreshLayout();
-    queueMissingTiles();
+    queueVisibleTiles();
     scheduleFrame();
 }
 
@@ -348,10 +384,11 @@ void VirtualTimelineComponent::mouseWheelMove(const juce::MouseEvent& event, con
     constexpr double MAX_ZOOM = 2000.0; // 2000 pixels per second (zoomed in)
     
     // Get mouse position relative to timeline
-    const auto mousePos = event.getPosition();
+    // const auto mousePos = event.getPosition();
     
     // Calculate time position at mouse cursor
-    const double timeAtMouse = mousePos.x / pixelsPerSecond_;
+    // const double timeAtMouse = mousePos.x / pixelsPerSecond_;
+    // TODO: Implement zoom centering around mouse position
     
     // Calculate new zoom level
     const double zoomDelta = wheel.deltaY > 0 ? ZOOM_FACTOR : (1.0 / ZOOM_FACTOR);
@@ -361,7 +398,7 @@ void VirtualTimelineComponent::mouseWheelMove(const juce::MouseEvent& event, con
     {
         pixelsPerSecond_ = newZoom;
         calculateTrackPositions();
-        queueMissingTiles();
+        queueVisibleTiles();
         
         // Notify the parent component about zoom change if needed
         // This would typically trigger the onZoomChanged callback
@@ -491,7 +528,7 @@ void VirtualTimelineComponent::loadMixProject(audio::MixProjectLoader* loader)
     metrics_.totalTracks = static_cast<int>(tracks_.size());
     calculateTrackPositions();
     updateVisibleTracks();
-    queueMissingTiles();  // Start generating tiles immediately after loading
+    queueVisibleTiles();  // Start generating tiles immediately after loading
     scheduleFrame();
 }
 
@@ -518,9 +555,22 @@ void VirtualTimelineComponent::setViewportBounds(const juce::Rectangle<int>& bou
 {
     if (bounds != viewportBounds_)
     {
+        const bool heightChanged = bounds.getHeight() != viewportBounds_.getHeight();
+        spdlog::info("VirtualTimelineComponent::setViewportBounds() - old: {}x{}, new: {}x{}, heightChanged: {}",
+                     viewportBounds_.getWidth(), viewportBounds_.getHeight(),
+                     bounds.getWidth(), bounds.getHeight(), heightChanged);
+        
         viewportBounds_ = bounds;
+        
+        // If height changed, recalculate track positions to adjust lanes
+        if (heightChanged && !tracks_.empty())
+        {
+            spdlog::info("  Recalculating track positions due to height change");
+            calculateTrackPositions();
+        }
+        
         updateVisibleTracks();
-        queueMissingTiles();
+        queueVisibleTiles();
         scheduleFrame();
     }
 }
@@ -588,8 +638,12 @@ void VirtualTimelineComponent::calculateTrackPositions()
     calculatedWidth_ = static_cast<int>(maxTimeSecs * pixelsPerSecond_) + 200; // Extra padding
 
     // --- 2. Calculate track layout and required height ---
+    // Use viewport bounds height to determine available lanes
     const int availableHeightForLanes = (viewportBounds_.getHeight() > 0 ? viewportBounds_.getHeight() : 600) - rulerHeight;
     const int numLanes = std::max(1, availableHeightForLanes / (trackHeight + yGap));
+    
+    spdlog::info("calculateTrackPositions: viewport height: {}, available height: {}, numLanes: {}",
+                 viewportBounds_.getHeight(), availableHeightForLanes, numLanes);
     
     int currentLane = 0;
     int laneDirection = 1;
@@ -616,6 +670,12 @@ void VirtualTimelineComponent::calculateTrackPositions()
     }
     
     calculatedHeight_ = maxYPos + trackHeight + yGap;
+    
+    // Ensure component is at least as tall as the viewport to allow for expansion
+    if (viewportBounds_.getHeight() > 0)
+    {
+        calculatedHeight_ = std::max(calculatedHeight_, viewportBounds_.getHeight());
+    }
 
     // --- 3. Set component size ---
     if (getWidth() != calculatedWidth_ || getHeight() != calculatedHeight_)
@@ -706,27 +766,98 @@ void VirtualTimelineComponent::paintTrack(juce::Graphics& g, const TrackRenderDa
     g.setColour(getLookAndFeel().findColour(juce::TextEditor::outlineColourId));
     g.drawRect(track.bounds.toFloat(), 0.5f);
     
-    // --- Simplified: Direct rendering only (tiling disabled for now) ---
+    // Paint waveform using tiles
     if (track.thumbnail && track.thumbnail->isFullyLoaded())
     {
-        g.setColour(track.colour);
-        const double thumbnailStartTime = std::chrono::duration<double>(
-            std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
-        const double thumbnailEndTime = std::chrono::duration<double>(track.trackInfo->duration).count();
-
-        const bool drawStereo = config::theSettings.mixEditingSettings.drawStereoWaveforms.get();
-
-        if (drawStereo && track.thumbnail->getNumChannels() > 1)
+        // Get the visible portion of this track
+        const auto visibleArea = getVisibleArea();
+        const auto trackVisibleBounds = track.bounds.getIntersection(visibleArea);
+        
+        if (!trackVisibleBounds.isEmpty())
         {
-            auto topHalf = track.waveformBounds.withHeight(track.waveformBounds.getHeight() / 2);
-            auto bottomHalf = track.waveformBounds.withY(topHalf.getBottom());
-            track.thumbnail->drawChannel(g, topHalf, thumbnailStartTime, thumbnailEndTime, 0, 1.0f);
-            track.thumbnail->drawChannel(g, bottomHalf, thumbnailStartTime, thumbnailEndTime, 1, 1.0f);
-        }
-        else
-        {
-            // Single waveform - just draw channel 0 (mono or left channel)
-            track.thumbnail->drawChannel(g, track.waveformBounds, thumbnailStartTime, thumbnailEndTime, 0, 1.0f);
+            // Save graphics state and clip to waveform bounds
+            juce::Graphics::ScopedSaveState state(g);
+            g.reduceClipRegion(track.waveformBounds);
+            
+            // Get all tile keys needed for this track's visible area
+            const auto tileKeys = getTileKeysForTrack(track, trackVisibleBounds);
+            
+            // Log if we're getting tile keys
+            if (tileKeys.empty())
+            {
+                static int emptyCount = 0;
+                if (++emptyCount % 20 == 0)
+                {
+                    spdlog::info("[TILE_KEYS] Track {} has NO tile keys for visible area", track.id);
+                }
+            }
+            
+            bool allTilesReady = !tileKeys.empty();  // Start with true only if we have tiles
+            int tilesReady = 0;
+            int tilesNotReady = 0;
+            
+            // Try to paint using cached tiles
+            for (const auto& key : tileKeys)
+            {
+                if (auto tile = tileCache_->getTile(key))
+                {
+                    if (tile->isReady)
+                    {
+                        tilesReady++;
+                        
+                        // Calculate where this tile should be drawn
+                        const auto destRect = getTileDestinationRect(track, key.startTimeSeconds, key.endTimeSeconds);
+                        
+                        // Draw the tile image
+                        g.setOpacity(1.0f);
+                        g.drawImage(tile->image, destRect.toFloat(),
+                                   juce::RectanglePlacement::stretchToFit);
+                    }
+                    else
+                    {
+                        tilesNotReady++;
+                        allTilesReady = false;
+                    }
+                }
+                else
+                {
+                    tilesNotReady++;
+                    allTilesReady = false;
+                }
+            }
+            
+            // Log tile statistics periodically
+            static int fallbackCount = 0;
+            if (!allTilesReady && (++fallbackCount % 50 == 0))
+            {
+                spdlog::info("[TILE_FALLBACK] Track {} falling back to direct render. Tiles: {} ready, {} not ready", 
+                            track.id, tilesReady, tilesNotReady);
+            }
+            
+            // If not all tiles are ready, fill in missing parts with direct rendering
+            if (!allTilesReady && tilesReady == 0)
+            {
+                // Only do full direct render if NO tiles are ready
+                g.setColour(track.colour.withAlpha(0.7f)); // Slightly transparent to show it's temporary
+                const double thumbnailStartTime = std::chrono::duration<double>(
+                    std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
+                const double thumbnailEndTime = std::chrono::duration<double>(track.trackInfo->duration).count();
+
+                const bool drawStereo = config::theSettings.mixEditingSettings.drawStereoWaveforms.get();
+
+                if (drawStereo && track.thumbnail->getNumChannels() > 1)
+                {
+                    auto topHalf = track.waveformBounds.withHeight(track.waveformBounds.getHeight() / 2);
+                    auto bottomHalf = track.waveformBounds.withY(topHalf.getBottom());
+                    track.thumbnail->drawChannel(g, topHalf, thumbnailStartTime, thumbnailEndTime, 0, 1.0f);
+                    track.thumbnail->drawChannel(g, bottomHalf, thumbnailStartTime, thumbnailEndTime, 1, 1.0f);
+                }
+                else
+                {
+                    track.thumbnail->drawChannel(g, track.waveformBounds, thumbnailStartTime, thumbnailEndTime, 0, 1.0f);
+                }
+            }
+            // If some tiles are ready, the missing ones will be queued and filled in soon
         }
     }
     else
@@ -863,7 +994,7 @@ void VirtualTimelineComponent::runPerfHarness(int numTracks)
 // Tiling System Implementation
 //==============================================================================
 
-int VirtualTimelineComponent::getZoomBucket() const
+int VirtualTimelineComponent::getZoomLevel() const
 {
     if (pixelsPerSecond_ <= 0.0) 
         return 0;
@@ -882,78 +1013,147 @@ int VirtualTimelineComponent::getZoomBucket() const
         return 4;  // Minimum detail
 }
 
-void VirtualTimelineComponent::queueMissingTiles()
+void VirtualTimelineComponent::queueVisibleTiles()
 {
     if (!mixProjectLoader_)
         return;
 
     const auto visibleBounds = getVisibleArea();
     
-    // Add prefetch margin (1 tile on each side for smooth scrolling)
-    const int prefetchMargin = tileWidth_;
+    // Add prefetch margin for smooth scrolling
+    const int prefetchMargin = tileWidth_ * 2;  // Prefetch 2 tiles on each side
     auto prefetchBounds = visibleBounds.expanded(prefetchMargin, 0);
 
     for (const auto& track : tracks_)
     {
-        // Check if track is visible or within prefetch area
-        const bool inPrefetchArea = track.bounds.intersects(prefetchBounds);
-        if (!inPrefetchArea || !track.thumbnail || !track.trackInfo)
+        // Check if track intersects with prefetch area
+        if (!track.bounds.intersects(prefetchBounds) || !track.thumbnail || !track.trackInfo)
             continue;
 
-        const int currentZoomBucket = getZoomBucket();
-        
-        // Calculate which tiles overlap with this track's bounds
-        const int firstTileX = (track.bounds.getX() / tileWidth_) * tileWidth_;
-        const int lastTileX = ((track.bounds.getRight() + tileWidth_ - 1) / tileWidth_) * tileWidth_;
-        
-        // Queue tiles for prefetch area (not just visible area)
-        const int prefetchFirstTileX = std::max(firstTileX, (prefetchBounds.getX() / tileWidth_) * tileWidth_);
-        const int prefetchLastTileX = std::min(lastTileX, ((prefetchBounds.getRight() + tileWidth_ - 1) / tileWidth_) * tileWidth_);
+        queueTilesForTrack(track, prefetchBounds);
+    }
+}
 
-        // Get the current stereo setting for the key
-        const bool drawStereo = config::theSettings.mixEditingSettings.drawStereoWaveforms.get();
-        
-        spdlog::info("[QUEUE_TILES] Track {} queueing tiles: drawStereo={}", track.id, drawStereo);
-        
-        for (int tileX = prefetchFirstTileX; tileX < prefetchLastTileX; tileX += tileWidth_)
+void VirtualTimelineComponent::queueTilesForTrack(const TrackRenderData& track, const juce::Rectangle<int>& visibleArea)
+{
+    const auto tileKeys = getTileKeysForTrack(track, visibleArea);
+    
+    for (const auto& key : tileKeys)
+    {
+        // Check if tile is already in cache
+        if (!tileCache_->getTile(key))
         {
-            const int tileIndex = tileX / tileWidth_;
-            WaveformKey key{track.id, currentZoomBucket, tileIndex, drawStereo};
+            // Create render request for this tile
+            const int tileHeight = track.waveformBounds.getHeight();
+            juce::Rectangle<int> tileBounds(0, 0, tileWidth_, tileHeight);
             
-            if (!tileCache_->getTile(key))
+            // Log only occasionally
+            static int queueCount = 0;
+            if (++queueCount % 100 == 0)
             {
-                // Calculate the time range for this tile within the track's audio
-                // We need to map from component space to track's audio time
-                const double componentStartSecs = std::chrono::duration<double>(track.componentStartTime).count();
-                const double cueStartSecs = std::chrono::duration<double>(
-                    std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
-                const double trackDurationSecs = std::chrono::duration<double>(track.trackInfo->duration).count();
-                
-                // Map tile X position to time in the track's audio
-                const double tileStartInComponentTime = pixelsToSeconds(tileX);
-                const double tileEndInComponentTime = pixelsToSeconds(tileX + tileWidth_);
-                
-                // Convert to track's audio time (accounting for cue start)
-                const double tileStartInTrackTime = (tileStartInComponentTime - componentStartSecs) + cueStartSecs;
-                const double tileEndInTrackTime = (tileEndInComponentTime - componentStartSecs) + cueStartSecs;
-                
-                // Clamp to track's audio bounds
-                const double clampedStartTime = std::max(0.0, std::min(trackDurationSecs, tileStartInTrackTime));
-                const double clampedEndTime = std::max(0.0, std::min(trackDurationSecs, tileEndInTrackTime));
+                spdlog::info("[TILE_QUEUE] Track {} queuing tile: idx={}, time={:.2f}-{:.2f}", 
+                             track.id, key.tileIndex, key.startTimeSeconds, key.endTimeSeconds);
+            }
+            
+            tileRenderer_->requestTile({
+                key,
+                track.thumbnail,
+                tileBounds,
+                key.startTimeSeconds,
+                key.endTimeSeconds,
+                track.colour,
+                0.0,  // Not used anymore since we pass exact times
+                0.0   // Not used anymore
+            });
+        }
+    }
+}
 
-                juce::Rectangle<int> tileBounds(0, 0, tileWidth_, track.bounds.getHeight());
-
-                tileRenderer_->requestTile({key,
-                                          track.thumbnail,
-                                          tileBounds,
-                                          clampedStartTime,
-                                          clampedEndTime,
-                                          track.colour,
-                                          cueStartSecs,
-                                          trackDurationSecs});
+std::vector<VirtualTimelineComponent::WaveformKey> 
+VirtualTimelineComponent::getTileKeysForTrack(const TrackRenderData& track, const juce::Rectangle<int>& visibleArea) const
+{
+    std::vector<WaveformKey> keys;
+    
+    // Get the intersection of track bounds with visible area
+    const auto trackVisibleBounds = track.bounds.getIntersection(visibleArea);
+    if (trackVisibleBounds.isEmpty())
+        return keys;
+    
+    const double cueStartTime = std::chrono::duration<double>(
+        std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
+    const double trackDuration = std::chrono::duration<double>(track.trackInfo->duration).count();
+    
+    // CRITICAL: Tile indices must be based on a FIXED time grid, independent of zoom!
+    // Each tile represents a fixed duration of audio
+    // Larger tiles = fewer cache entries needed, but less granular updates
+    constexpr double FIXED_SECONDS_PER_TILE = 30.0;  // Each tile = 30 seconds of audio (was 10)
+    
+    // Calculate which tile indices cover this track based on the fixed grid
+    const int firstTileIdx = static_cast<int>(std::floor(cueStartTime / FIXED_SECONDS_PER_TILE));
+    const int lastTileIdx = static_cast<int>(std::ceil((cueStartTime + track.effectiveDuration) / FIXED_SECONDS_PER_TILE));
+    
+    // Get current settings
+    const bool drawStereo = config::theSettings.mixEditingSettings.drawStereoWaveforms.get();
+    
+    // Generate keys for all tiles that might be visible
+    for (int tileIdx = firstTileIdx; tileIdx <= lastTileIdx; ++tileIdx)
+    {
+        const double tileStartTime = tileIdx * FIXED_SECONDS_PER_TILE;
+        const double tileEndTime = (tileIdx + 1) * FIXED_SECONDS_PER_TILE;
+        
+        // Clip to actual track bounds
+        const double actualStart = std::max(0.0, tileStartTime - cueStartTime);
+        const double actualEnd = std::min(trackDuration, tileEndTime - cueStartTime);
+        
+        if (actualStart < actualEnd && actualEnd > 0.0)
+        {
+            // Check if this tile is actually visible on screen
+            const double componentTileStart = (actualStart - cueStartTime) + std::chrono::duration<double>(track.componentStartTime).count();
+            const int tilePixelStart = secondsToPixels(componentTileStart);
+            const int tilePixelEnd = tilePixelStart + tileWidth_;
+            
+            if (tilePixelEnd >= trackVisibleBounds.getX() && tilePixelStart <= trackVisibleBounds.getRight())
+            {
+                WaveformKey key;
+                key.trackId = track.id;
+                key.tileIndex = tileIdx;
+                key.isStereo = drawStereo;
+                key.startTimeSeconds = actualStart;
+                key.endTimeSeconds = actualEnd;
+                
+                keys.push_back(key);
             }
         }
     }
+    
+    return keys;
+}
+
+juce::Rectangle<int> VirtualTimelineComponent::getTileDestinationRect(const TrackRenderData& track, 
+                                                                      double tileStartTime, 
+                                                                      double tileEndTime) const
+{
+    // Convert tile's audio time back to component pixels
+    const double componentStartTime = std::chrono::duration<double>(track.componentStartTime).count();
+    const double cueStartTime = std::chrono::duration<double>(
+        std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
+    
+    // Convert from track audio time to component time
+    const double componentTileStart = (tileStartTime - cueStartTime) + componentStartTime;
+    const double componentTileEnd = (tileEndTime - cueStartTime) + componentStartTime;
+    
+    // Convert to pixels based on current zoom
+    const int startX = secondsToPixels(componentTileStart);
+    const int endX = secondsToPixels(componentTileEnd);
+    
+    // Create destination rectangle within the track's waveform bounds
+    // The tile will be stretched to fit the actual pixel size at this zoom level
+    return juce::Rectangle<int>(
+        startX,
+        track.waveformBounds.getY(),
+        endX - startX,
+        track.waveformBounds.getHeight()
+    );
 }
 
 void VirtualTimelineComponent::onTileRendered(const WaveformKey& key, juce::Image&& image)
@@ -964,9 +1164,9 @@ void VirtualTimelineComponent::onTileRendered(const WaveformKey& key, juce::Imag
         tileCache_->putTile(key, std::move(image));
     }
 
-    // We need to trigger a repaint on the message thread.
+    // Trigger an immediate repaint on the message thread to show the new tile ASAP
     juce::MessageManager::callAsync([this] { 
-        scheduleFrame(); 
+        repaint();  // Immediate repaint instead of scheduled frame
     });
 }
 

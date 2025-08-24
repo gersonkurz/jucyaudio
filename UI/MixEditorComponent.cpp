@@ -321,7 +321,14 @@ namespace jucyaudio
             if (m_useVirtualTimeline && m_virtualTimeline)
             {
                 const auto viewBounds = m_viewport.getViewArea();
-                m_virtualTimeline->setViewportBounds(viewBounds);
+                // Use the actual viewport widget bounds for height, not the viewed component's size
+                const auto actualViewportBounds = juce::Rectangle<int>(
+                    viewBounds.getX(), 
+                    viewBounds.getY(),
+                    viewBounds.getWidth(),
+                    m_viewport.getHeight()  // Use the viewport widget's actual height
+                );
+                m_virtualTimeline->setViewportBounds(actualViewportBounds);
             }
             else
             {
