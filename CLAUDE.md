@@ -117,9 +117,29 @@
 ✅ Fix Light-Theme Issues
 ✅ Implement Dynamic Log Level
 
-### Known Bugs:
+### Known Bugs / Issues for 1.0:
 
-(Currently no known critical bugs)
+1. **Mix Waveform Loading Progress:**
+   - While loading the waveforms of a mix, show a progress dialog until all are loaded and cached
+   - Display percentage of waveforms loaded
+   
+2. **VU Meters During Mix Playback:**
+   - VU meters don't work while playing a mix (only work during single track playback)
+   
+3. **Mix Playback During Export:**
+   - If mix is playing, it doesn't stop when export starts
+   - Cannot stop mix playback during export even if desired
+   - Need to coordinate playback state between mix player and exporter
+   
+4. **Unmounted Mix Folders:**
+   - If not all mixes can be shown because a folder is unmounted, show them as disabled/grayed out
+   - When selected, show special screen: "Not available because [folder path] is not mounted"
+   - Preserve mix entries even when source folders are temporarily unavailable
+   
+5. **CRITICAL - Mix Editor Performance:**
+   - Major performance issues in the mix editor need analysis and optimization
+   - Likely related to waveform rendering or timeline updates
+   - Profile to identify bottlenecks
 
 ### Scheduled for 1.0 Release:
 

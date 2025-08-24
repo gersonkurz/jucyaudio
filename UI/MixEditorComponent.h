@@ -126,6 +126,10 @@ namespace jucyaudio
             // Playback controller reference
             PlaybackController* m_playbackController{nullptr};
             
+            // Scrolling detection to avoid update conflicts
+            int64_t m_lastScrollTime{0};
+            static constexpr int64_t SCROLL_PAUSE_DURATION_MS = 100; // Pause updates for 100ms after scroll
+            
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixEditorComponent)
         };
 

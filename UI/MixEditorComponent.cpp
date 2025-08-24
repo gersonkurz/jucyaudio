@@ -611,11 +611,39 @@ namespace jucyaudio
             {
                 if (m_playbackController->isPlaying())
                 {
+                    // Skip updates if we're actively scrolling or just finished scrolling
+                    const auto currentTime = juce::Time::currentTimeMillis();
+                    const auto timeSinceScroll = currentTime - m_lastScrollTime;
+                    if (timeSinceScroll < SCROLL_PAUSE_DURATION_MS)
+                    {
+                        // Still in the scroll pause period, skip this update
+                        return;
+                    }
+                    
                     const double positionSeconds = m_playbackController->getCurrentPositionSeconds();
                     
-                    // Update playhead position - now at 60Hz for smooth animation
-                    m_playheadOverlay.setPlayheadPosition(positionSeconds, m_timeline.getPixelsPerSecond());
-                    m_markerRuler.setPlaybackPosition(positionSeconds * 1000.0);
+                    // Calculate playhead position in pixels
+                    const double pixelsPerSecond = m_timeline.getPixelsPerSecond();
+                    const double playheadPixelPosition = positionSeconds * pixelsPerSecond;
+                    
+                    // Get the current viewport bounds
+                    const auto viewPos = m_viewport.getViewPosition();
+                    const auto viewWidth = m_viewport.getViewWidth();
+                    const auto visibleRangeStart = viewPos.x;
+                    const auto visibleRangeEnd = viewPos.x + viewWidth;
+                    
+                    // Only update if playhead is visible (with small margin for edge cases)
+                    const int margin = 100; // pixels margin to keep updating near edges
+                    const bool isPlayheadVisible = playheadPixelPosition >= (visibleRangeStart - margin) && 
+                                                  playheadPixelPosition <= (visibleRangeEnd + margin);
+                    
+                    if (isPlayheadVisible)
+                    {
+                        // Update playhead position - at 30Hz for balanced performance/smoothness
+                        m_playheadOverlay.setPlayheadPosition(positionSeconds, pixelsPerSecond);
+                        m_markerRuler.setPlaybackPosition(positionSeconds * 1000.0);
+                    }
+                    // If playhead is not visible, skip the expensive repaint operations
                     
                     // Check if we've reached the end
                     const double totalSeconds = m_playbackController->getLengthInSeconds();
@@ -623,7 +651,7 @@ namespace jucyaudio
                     {
                         spdlog::info("Playback reached end of mix");
                         m_playbackController->stop();
-                        m_playheadOverlay.setPlayheadPosition(-1.0, m_timeline.getPixelsPerSecond());
+                        m_playheadOverlay.setPlayheadPosition(-1.0, pixelsPerSecond);
                     }
                 }
                 else
@@ -654,6 +682,8 @@ namespace jucyaudio
         
         void MixEditorComponent::scrollBarMoved(juce::ScrollBar* /*scrollBar*/, double /*newRangeStart*/)
         {
+            // Track that we're scrolling
+            m_lastScrollTime = juce::Time::currentTimeMillis();
             updatePlayheadOverlayPosition();
         }
         

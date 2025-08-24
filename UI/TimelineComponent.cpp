@@ -934,8 +934,24 @@ namespace jucyaudio
         {
             if (m_currentTimePosition != timeInSeconds)
             {
+                // Dirty rectangle optimization: only repaint the old and new playhead positions
+                const int playheadWidth = 3; // Width of the playhead line plus margin
+                
+                // Repaint old position to clear it
+                if (m_currentTimePosition >= 0.0)
+                {
+                    const int oldX = static_cast<int>(m_currentTimePosition * m_pixelsPerSecond);
+                    repaint(oldX - playheadWidth, 0, playheadWidth * 2, getHeight());
+                }
+                
                 m_currentTimePosition = timeInSeconds;
-                repaint(); // Redraw playhead
+                
+                // Repaint new position to draw it
+                if (m_currentTimePosition >= 0.0)
+                {
+                    const int newX = static_cast<int>(m_currentTimePosition * m_pixelsPerSecond);
+                    repaint(newX - playheadWidth, 0, playheadWidth * 2, getHeight());
+                }
             }
         }
 
@@ -1006,7 +1022,17 @@ namespace jucyaudio
                 const int width = static_cast<int>(effectiveDuration * m_pixelsPerSecond);
 
                 const int yPos = rulerHeight + (currentLane * (trackHeight + yGap));
-                view.component->setBounds(startX, yPos, width, trackHeight);
+                
+                // CRITICAL OPTIMIZATION: Only call setBounds if the bounds actually changed
+                // This prevents unnecessary repaints of all track waveforms during window resize
+                auto currentBounds = view.component->getBounds();
+                if (currentBounds.getX() != startX || 
+                    currentBounds.getY() != yPos || 
+                    currentBounds.getWidth() != width || 
+                    currentBounds.getHeight() != trackHeight)
+                {
+                    view.component->setBounds(startX, yPos, width, trackHeight);
+                }
 
                 if ((currentLane + laneDirection) >= numLanes || (currentLane + laneDirection) < 0)
                     laneDirection *= -1;

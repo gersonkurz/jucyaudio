@@ -434,9 +434,10 @@ namespace jucyaudio
                     m_enhancedPlayer.updatePlaybackPosition();
                 });
 
-            // Register MixEditor playhead updates at 60Hz for smooth animation
+            // Register MixEditor playhead updates at 30Hz for better performance
+            // This reduces rendering load during playback while maintaining smooth enough visuals
             m_timerMultiplexer.registerClient(&m_mixEditorComponent,
-                60.0f,
+                30.0f,
                 [this]()
                 {
                     m_mixEditorComponent.updatePlayhead();

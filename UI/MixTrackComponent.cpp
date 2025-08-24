@@ -74,6 +74,23 @@ namespace jucyaudio
 
         void MixTrackComponent::paint(juce::Graphics &g)
         {
+            // Viewport culling optimization: Check if this component is visible horizontally
+            // Get the viewport bounds in our parent's coordinate space
+            if (auto* viewport = findParentComponentOfClass<juce::Viewport>())
+            {
+                auto viewArea = viewport->getViewArea();
+                auto ourBoundsInParent = getBoundsInParent();
+                
+                // Check if we're visible in the viewport horizontally (with small margin)
+                const int margin = 100; // Small margin to ensure smooth scrolling
+                if (ourBoundsInParent.getRight() < (viewArea.getX() - margin) ||
+                    ourBoundsInParent.getX() > (viewArea.getRight() + margin))
+                {
+                    // We're completely outside the viewport horizontally, skip painting
+                    return;
+                }
+            }
+            
             // --- 1. Basic Setup & Background ---
             auto &lf = getLookAndFeel();
             auto bounds = getLocalBounds();
