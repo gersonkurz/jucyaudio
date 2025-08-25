@@ -115,6 +115,10 @@ namespace jucyaudio
             void handleMarkerClick(MarkerId markerId);
             void handleMarkerAdd(std::chrono::milliseconds position);
             
+            // Waveform loading helpers  
+            std::vector<std::pair<int, bool>> collectWaveformRequests(audio::MixProjectLoader* loader);
+            void populateTimeline(audio::MixProjectLoader* loader);
+            
             // ScrollBar::Listener callbacks
             void scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) override;
             void updatePlayheadOverlayPosition();

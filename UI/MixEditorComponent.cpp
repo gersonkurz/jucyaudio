@@ -1,9 +1,11 @@
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Includes/IMixMarkerManager.h>
+#include <Database/BackgroundTasks/WaveformLoadingTask.h>
 #include <UI/MainComponent.h>
 #include <UI/MixEditorComponent.h>
 #include <UI/PlaybackController.h>
 #include <UI/Settings.h>
+#include <UI/TaskDialog.h>
 #include <UI/VirtualTimelineComponent.h>
 #include <Utils/StringWriter.h>
 #include <Utils/UiUtils.h>
@@ -252,7 +254,7 @@ namespace jucyaudio
             auto& loader = node->getMixProjectLoader();
             spdlog::info("[MixEditor] Loading mix with {} tracks into timeline", loader.getMixTracks().size());
             
-            // Load the mix into the playback controller
+            // Load the mix into the playback controller first
             if (m_playbackController)
             {
                 bool loadSuccess = m_playbackController->loadMix(&loader);
@@ -263,39 +265,76 @@ namespace jucyaudio
                 spdlog::error("[MixEditor] m_playbackController is null!");
             }
             
-            // Load the mix into the correct timeline
-            if (m_useVirtualTimeline && m_virtualTimeline)
+            // Check if waveform loading is enabled
+            bool preloadWaveforms = config::theSettings.mixEditingSettings.preloadWaveformsOnMixOpen;
+            
+            if (preloadWaveforms)
             {
-                m_virtualTimeline->loadMixProject(&loader);
-                // Set initial viewport bounds to ensure tiles are generated
-                const auto viewBounds = m_viewport.getViewArea();
-                if (!viewBounds.isEmpty())
+                // Collect waveform loading requirements
+                auto waveformStatus = collectWaveformRequests(&loader);
+                
+                // Build WaveformLoadingTask requests
+                std::vector<database::background_tasks::WaveformLoadingTask::WaveformRequest> waveformRequests;
+                bool hasWaveformsToLoad = false;
+                
+                for (const auto& [trackId, needsLoading] : waveformStatus)
                 {
-                    m_virtualTimeline->setViewportBounds(viewBounds);
+                    if (const auto* trackInfo = loader.getTrackInfoForId(trackId))
+                    {
+                        database::background_tasks::WaveformLoadingTask::WaveformRequest req;
+                        req.trackId = trackId;
+                        req.filePath = trackInfo->reconstructFullPath();
+                        req.needsLoading = needsLoading;
+                        req.trackName = trackInfo->title;
+                        waveformRequests.push_back(req);
+                        
+                        if (needsLoading)
+                            hasWaveformsToLoad = true;
+                    }
+                }
+                
+                if (hasWaveformsToLoad)
+                {
+                    spdlog::info("[MixEditor] Loading waveforms for {} tracks", waveformRequests.size());
+                    
+                    // Create and launch the waveform loading task
+                    auto* task = new database::background_tasks::WaveformLoadingTask(
+                        std::move(waveformRequests),
+                        m_formatManager,
+                        m_thumbnailCache);
+                    
+                    // Capture loader pointer for completion callback
+                    auto* loaderPtr = &loader;
+                    
+                    TaskDialog::launch(
+                        "Loading Waveforms",
+                        task,
+                        TaskDialog::AutoCloseMode::Immediate,  // Close immediately on success
+                        0,  // No delay needed
+                        this,
+                        [this, loaderPtr, task]() {
+                            // After loading completes (or user cancels)
+                            spdlog::info("[MixEditor] Waveform loading completed. Success: {}, Failed: {}", 
+                                       task->getSuccessCount(), task->getFailedTracks().size());
+                            
+                            // Now populate the timeline with loaded waveforms
+                            populateTimeline(loaderPtr);
+                        });
+                    
+                    task->release(REFCOUNT_DEBUG_ARGS);
+                }
+                else
+                {
+                    spdlog::info("[MixEditor] All waveforms already cached, populating timeline immediately");
+                    // All waveforms already cached, populate immediately
+                    populateTimeline(&loader);
                 }
             }
             else
             {
-                m_timeline.populateFrom(&loader);
-            }
-            
-            // Calculate mix duration and set it on the ruler
-            const auto mixDuration = loader.calculateMixDuration();
-            m_markerRuler.setMixDuration(mixDuration);
-            
-            // Load markers for this mix
-            loadMixMarkers();
-            
-            // Timer removed - now handled by TimerMultiplexer at 60Hz for smooth playhead
-            
-            // Ensure timeline has keyboard focus for playback controls
-            if (m_useVirtualTimeline && m_virtualTimeline)
-            {
-                m_virtualTimeline->grabKeyboardFocus();
-            }
-            else
-            {
-                m_timeline.grabKeyboardFocus();
+                spdlog::info("[MixEditor] Waveform preloading disabled, populating timeline immediately");
+                // Waveform preloading disabled, populate immediately
+                populateTimeline(&loader);
             }
         }
 
@@ -1212,6 +1251,68 @@ namespace jucyaudio
             {
                 handleRemoveFollowingTracks(afterOrder);
             };
+        }
+        
+        std::vector<std::pair<int, bool>> MixEditorComponent::collectWaveformRequests(audio::MixProjectLoader* loader)
+        {
+            std::vector<std::pair<int, bool>> requests;
+            
+            if (!loader)
+                return requests;
+                
+            for (const auto& mixTrack : loader->getMixTracks())
+            {
+                if (const auto* trackInfo = loader->getTrackInfoForId(mixTrack.trackId))
+                {
+                    // Check if already cached
+                    std::vector<unsigned char> cachedData;
+                    bool needsLoading = !database::theTrackLibrary.loadWaveform(trackInfo->trackId, cachedData).isOk() 
+                                     || cachedData.empty();
+                    
+                    requests.push_back({trackInfo->trackId, needsLoading});
+                }
+            }
+            
+            return requests;
+        }
+        
+        void MixEditorComponent::populateTimeline(audio::MixProjectLoader* loader)
+        {
+            if (!loader)
+                return;
+                
+            // Load the mix into the correct timeline
+            if (m_useVirtualTimeline && m_virtualTimeline)
+            {
+                m_virtualTimeline->loadMixProject(loader);
+                // Set initial viewport bounds to ensure tiles are generated
+                const auto viewBounds = m_viewport.getViewArea();
+                if (!viewBounds.isEmpty())
+                {
+                    m_virtualTimeline->setViewportBounds(viewBounds);
+                }
+            }
+            else
+            {
+                m_timeline.populateFrom(loader);
+            }
+            
+            // Calculate mix duration and set it on the ruler
+            const auto mixDuration = loader->calculateMixDuration();
+            m_markerRuler.setMixDuration(mixDuration);
+            
+            // Load markers for this mix
+            loadMixMarkers();
+            
+            // Ensure timeline has keyboard focus for playback controls
+            if (m_useVirtualTimeline && m_virtualTimeline)
+            {
+                m_virtualTimeline->grabKeyboardFocus();
+            }
+            else
+            {
+                m_timeline.grabKeyboardFocus();
+            }
         }
         
     } // namespace ui

@@ -315,6 +315,8 @@ target_sources(jucyaudio PRIVATE
     Database/BackgroundTasks/Mp3QuickCheck.h
     Database/BackgroundTasks/AudioAnalysis.cpp
     Database/BackgroundTasks/AudioAnalysis.h
+    Database/BackgroundTasks/WaveformLoadingTask.cpp
+    Database/BackgroundTasks/WaveformLoadingTask.h
     
     # Database includes
     UI/ILongRunningTask.h
