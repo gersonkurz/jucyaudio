@@ -17,6 +17,75 @@ namespace jucyaudio
             const int DEFAULT_DIALOG_HEIGHT = 180;
         } // namespace
 
+        // New constructor with AutoCloseMode for clearer API
+        TaskDialog::TaskDialog(ILongRunningTask *task,
+                               std::function<void()> onCompletion,
+                               AutoCloseMode closeMode,
+                               int delayMs)
+            : m_task{task}, // Store raw pointer
+              m_onCompletion{std::move(onCompletion)},
+              // Convert AutoCloseMode to optional<int> for internal use
+              m_autoCloseOnSuccessDelayMs{
+                  closeMode == AutoCloseMode::NoAutoClose ? std::nullopt :
+                  closeMode == AutoCloseMode::Immediate ? std::optional<int>(0) :
+                  std::optional<int>(delayMs)
+              },
+              m_lastProgressInPercent{-1},
+              m_lastStatusMessage{},
+              // Use taskName from the task object for the title label
+              m_titleLabel{"title", task ? juce::String(task->m_taskName) : "Processing Task"},
+              m_statusLabel{"status", "Initializing..."},
+              m_progressValue{0.0},
+              m_progressBar{m_progressValue},
+              // Use isCancellable from the task object for the button text
+              m_actionButton{task && task->m_isCancellable ? "Cancel" : "Close"}
+        {
+            theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
+
+            if (m_task)
+            {
+                m_task->retain(REFCOUNT_DEBUG_ARGS);
+            }
+            else
+            {
+                jassertfalse; // Task should not be null
+                // Fallback if task is null, though this is an error condition
+                m_titleLabel.setText("Error: No Task", juce::dontSendNotification);
+                m_actionButton.setButtonText("Close");
+            }
+
+            // UI Element Setup (addAndMakeVisible, fonts, justifications)
+            addAndMakeVisible(m_titleLabel);
+            m_titleLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(24.0f)}.boldened());
+            m_titleLabel.setJustificationType(juce::Justification::left);
+
+            addAndMakeVisible(m_statusLabel);
+            m_statusLabel.setJustificationType(juce::Justification::centredLeft);
+            m_statusLabel.setMinimumHorizontalScale(0.5f);
+
+            addAndMakeVisible(m_progressBar);
+            m_progressBar.setPercentageDisplay(false); // Default to indeterminate look
+
+            addAndMakeVisible(m_actionButton);
+            m_actionButton.addListener(this);
+            m_actionButton.setWantsKeyboardFocus(true);
+
+            setSize(DEFAULT_DIALOG_WIDTH, DEFAULT_DIALOG_HEIGHT);
+
+            if (m_task)
+            {
+                startTask();
+            }
+            else
+            {
+                m_statusLabel.setText("Critical Error: Task object is null.", juce::dontSendNotification);
+                m_progressBar.setVisible(false);
+                m_actionButton.setEnabled(true); // Ensure "Close" button is clickable
+            }
+            startTimer(TIMER_INTERVAL_MS); // Timer is mainly for UI responsiveness checks or indeterminate animation
+        }
+
+        // Backward compatibility constructor (deprecated)
         TaskDialog::TaskDialog(ILongRunningTask *task, std::function<void()> onCompletion, std::optional<int> autoCloseOnSuccessDelayMs)
             : m_task{task}, // Store raw pointer
               m_onCompletion{std::move(onCompletion)},
@@ -398,7 +467,50 @@ namespace jucyaudio
             }
         }
 
-        // Static launcher method in TaskDialog.cpp
+        // New static launcher with AutoCloseMode
+        void TaskDialog::launch(const juce::String &windowTitle,
+                               ILongRunningTask *taskToRun,
+                               AutoCloseMode closeMode,
+                               int delayMs,
+                               juce::Component *parentToCenterOn,
+                               std::function<void()> onCompletion)
+        {
+            spdlog::info("TaskDialog::launch called with title '{}', taskToRun: {}, closeMode: {}, delayMs: {}, parent: {}",
+                windowTitle.toStdString(),
+                taskToRun ? taskToRun->m_taskName : "nullptr",
+                static_cast<int>(closeMode),
+                delayMs,
+                parentToCenterOn ? juce::String(parentToCenterOn->getName()).toStdString() : "nullptr");
+
+            if (!taskToRun)
+            {
+                spdlog::error("TaskDialog::launch: ERROR - taskToRun is nullptr.");
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Task Error", "Cannot start task: no task provided.");
+                return;
+            }
+
+            auto *dialogComp = new TaskDialog{taskToRun, std::move(onCompletion), closeMode, delayMs};
+
+            juce::DialogWindow::LaunchOptions optionsToUse;
+
+            // Apply defaults and critical settings
+            optionsToUse.content.setOwned(dialogComp);
+            optionsToUse.dialogTitle = windowTitle.isNotEmpty() ? windowTitle : juce::String(dialogComp->m_task->m_taskName);
+            if (parentToCenterOn)
+            {
+                optionsToUse.componentToCentreAround = parentToCenterOn;
+            }
+            optionsToUse.resizable = false; // Default for task dialogs
+
+            // Default escape key behavior based on our dialog's button
+            bool allowEscapeBasedOnButton = (dialogComp->m_actionButton.getButtonText() == "Close");
+            optionsToUse.escapeKeyTriggersCloseButton = allowEscapeBasedOnButton;
+
+            // Launch the dialog asynchronously
+            optionsToUse.launchAsync();
+        }
+
+        // Backward compatibility launcher (deprecated)
         void TaskDialog::launch(const juce::String &windowTitle,
             ILongRunningTask *taskToRun,
             std::optional<int> autoCloseOnSuccessDelayMs,

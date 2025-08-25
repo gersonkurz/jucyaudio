@@ -1662,7 +1662,8 @@ namespace jucyaudio
             auto *task = new background_tasks::BpmAnalysisTask{std::move(trackResult.trackInfos)};
             TaskDialog::launch("BPM Analysis",
                 task,
-                500,
+                TaskDialog::AutoCloseMode::WithDelay,
+                500,  // Show success briefly
                 this,
                 [this, task]()
                 {

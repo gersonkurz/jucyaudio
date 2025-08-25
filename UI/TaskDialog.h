@@ -15,10 +15,26 @@ namespace jucyaudio
         class TaskDialog : public juce::Component, public juce::Button::Listener, public juce::Timer
         {
         public:
-            // TaskDialog will retain the task. Caller should release if they also held a ref.
-            TaskDialog(database::ILongRunningTask *task, // Takes a raw pointer, will retain
+            // Auto-close behavior options for clearer API
+            enum class AutoCloseMode
+            {
+                NoAutoClose,      // Dialog stays open, user must click Close
+                Immediate,        // Close immediately on success (0ms delay)
+                WithDelay         // Close after specified delay
+            };
+            
+            // New constructor with clearer auto-close semantics
+            TaskDialog(database::ILongRunningTask *task,
                        std::function<void()> onCompletion = nullptr,
-                       std::optional<int> autoCloseOnSuccessDelayMs = std::nullopt);
+                       AutoCloseMode closeMode = AutoCloseMode::NoAutoClose,
+                       int delayMs = 500);  // Default delay when using WithDelay
+            
+            // Keep old constructor for backward compatibility (deprecated)
+            [[deprecated("Use new constructor with AutoCloseMode for clearer intent")]]
+            TaskDialog(database::ILongRunningTask *task, // Takes a raw pointer, will retain
+                       std::function<void()> onCompletion,
+                       std::optional<int> autoCloseOnSuccessDelayMs);
+            
             ~TaskDialog() override;
 
             void paint(juce::Graphics &g) override;
@@ -27,11 +43,20 @@ namespace jucyaudio
             void buttonClicked(juce::Button *button) override;
             void timerCallback() override;
 
-            // Static launcher method
-            // The dialog will manage the lifetime of the task pointer via retain/release
+            // Enhanced static launcher with clearer API
+            static void launch(const juce::String &windowTitle,
+                              database::ILongRunningTask *taskToRun,
+                              AutoCloseMode closeMode = AutoCloseMode::NoAutoClose,
+                              int delayMs = 500,
+                              juce::Component *parentToCenterOn = nullptr,
+                              std::function<void()> onCompletion = nullptr);
+            
+            // Keep old launcher for backward compatibility (deprecated)
+            [[deprecated("Use new launch() with AutoCloseMode for clearer intent")]]
             static void launch(const juce::String &windowTitle,
                                database::ILongRunningTask *taskToRun, // Caller ensures task exists, dialog retains
-                               std::optional<int> autoCloseOnSuccessDelayMs = std::nullopt, juce::Component *parentToCenterOn = nullptr,
+                               std::optional<int> autoCloseOnSuccessDelayMs,
+                               juce::Component *parentToCenterOn = nullptr,
                                std::function<void()> onCompletion = nullptr);
 
         private:
