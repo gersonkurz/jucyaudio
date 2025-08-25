@@ -21,7 +21,8 @@ namespace jucyaudio::ui {
     virtual rendering approach.
 */
 class VirtualTimelineComponent : public juce::Component,
-                                 public juce::AsyncUpdater
+                                 public juce::AsyncUpdater,
+                                 public juce::ChangeListener
 {
 public:
     using TrackId = int;
@@ -113,6 +114,7 @@ public:
     
     // AsyncUpdater override - frame scheduler
     void handleAsyncUpdate() override;
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
     
     // Public API
     void loadMixProject(audio::MixProjectLoader* loader);
@@ -143,6 +145,20 @@ public:
     // Performance testing
     void runPerfHarness(int numTracks);
     
+    // Callbacks for changes (similar to old TimelineComponent)
+    std::function<void(int orderInMix, const database::MixTrack&)> onCueAttachChanged;
+    std::function<void(int orderInMix, const std::vector<database::EnvelopePoint>&)> onEnvelopeChanged;
+    std::function<void(int orderInMix, jucyaudio::Duration_t cueStart, jucyaudio::Duration_t cueEnd)> onCuePointsChanged;
+    std::function<void(double)> onMixPlaybackRequested;  // For keyboard shortcuts (toggles)
+    std::function<void(double)> onMixPlaybackAlwaysRequested;  // For double-clicks (always plays)
+    std::function<void(double)> onSeekRequested;
+    std::function<void()> onDeleteTracksRequested;  // For delete key
+    std::function<void(const std::vector<database::MixTrack>&, int position, bool before)> onPasteTracksRequested;
+    std::function<void(int afterOrder)> onRemoveFollowingTracksRequested;
+    
+    // Keyboard handling
+    bool keyPressed(const juce::KeyPress& key) override;
+    
 private:
     // Track management
     std::vector<TrackRenderData> tracks_;
@@ -153,7 +169,8 @@ private:
     // View state
     double pixelsPerSecond_{2.0};  // Default zoom - very zoomed out to see entire mix
     juce::Rectangle<int> viewportBounds_;
-    double playheadSeconds_{0.0};
+    double playheadSeconds_{-1.0};  // Playback position (-1 means not playing)
+    double clickedTimePosition_{-1.0};  // Last clicked position (-1 means never clicked)
     
     // Layout constants (matching original timeline)
     static constexpr int rulerHeight{30};
@@ -167,6 +184,28 @@ private:
     
     // Selection state
     std::set<TrackId> selectedTracks_;
+    
+    // Clipboard state for copy/paste
+    std::vector<database::MixTrack> clipboardTracks_;
+    
+    // Drag state for attach points and cue points
+    struct DragState {
+        bool isDragging{false};
+        enum class DragType {
+            None,
+            AttachFrom,
+            AttachTo,
+            EnvelopePoint,
+            CueStart,
+            CueEnd
+        } dragType{DragType::None};
+        TrackId trackId{0};
+        juce::Point<int> dragStartPoint;
+        int draggedPointIndex{-1};  // For envelope points
+        double originalTime{0.0};    // Original time value being dragged
+        double currentTime{0.0};     // Current drag position in time
+    };
+    DragState dragState_;
     
     // Performance tracking
     mutable PerfMetrics metrics_;
@@ -188,6 +227,23 @@ private:
     double pixelsToSeconds(int pixels) const;
     juce::Rectangle<int> getVisibleArea() const;
     
+    // Hit testing for interactive elements
+    enum class HitTestResult {
+        None,
+        Track,
+        AttachFrom,
+        AttachTo,
+        EnvelopePoint,
+        CueStart,
+        CueEnd
+    };
+    struct HitTestInfo {
+        HitTestResult type{HitTestResult::None};
+        TrackRenderData* track{nullptr};
+        int pointIndex{-1};  // For envelope points
+    };
+    HitTestInfo hitTest(juce::Point<int> point) const;
+    
     // Tiling system helpers
     int getZoomLevel() const;
     void queueVisibleTiles();
@@ -201,6 +257,15 @@ private:
     void paintTrack(juce::Graphics& g, const TrackRenderData& track);
     void paintGrid(juce::Graphics& g);
     void paintPlayhead(juce::Graphics& g);
+    
+    // Context menu helpers
+    void showContextMenu(juce::Point<int> position);
+    void handleContextMenuResult(int result);
+    void copySelectedTracks();
+    void deleteSelectedTracks();
+    void pasteTracksBeforeSelection();
+    void pasteTracksAfterSelection();
+    void removeAllFollowingTracks();
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VirtualTimelineComponent)
 };

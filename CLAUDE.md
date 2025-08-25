@@ -132,6 +132,12 @@ The project uses CMake and includes a `justfile` for build automation. Key comma
 
 The build system supports multiple architectures (Apple Silicon, Intel, Universal) and automatically organizes outputs by architecture and configuration.
 
+**IMPORTANT FOR AI ASSISTANTS:** 
+- Always BUILD (`just build`) to verify code changes compile correctly
+- NEVER attempt to RUN the application - it's a GUI app that requires human interaction
+- After building, wait for human feedback on testing results
+- The human will test UI features and report back any issues
+
 ---
 
 ## Next Major Tasks

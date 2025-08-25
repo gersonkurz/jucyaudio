@@ -99,11 +99,14 @@ namespace jucyaudio
             // Playback is now handled by PlaybackController
 
             void handleDeleteSelectedTrack();
+            void handlePasteTracks(const std::vector<database::MixTrack>& tracks, int position, bool before);
+            void handleRemoveFollowingTracks(int afterOrder);
             void updatePlayhead();
 
         private:
             void updateCueAttachInData(int orderInMix, const database::MixTrack& updatedTrack);
             void updateEnvelopeInData(int orderInMix, const std::vector<database::EnvelopePoint>& points);
+            void updateCuePointsInData(int orderInMix, jucyaudio::Duration_t cueStart, jucyaudio::Duration_t cueEnd);
             void saveMixChanges();
             void handleMixPlayback(double startTime, bool alwaysPlay = false);
             // Called by TimerMultiplexer for smooth playhead updates

@@ -5,6 +5,8 @@
 #include <UI/Settings.h>
 #include <spdlog/spdlog.h>
 #include <chrono>
+#include <algorithm>
+#include <limits>
 
 namespace jucyaudio::ui {
 
@@ -271,6 +273,7 @@ VirtualTimelineComponent::VirtualTimelineComponent(juce::AudioFormatManager& for
     , thumbnailCache_(thumbnailCache)
 {
     setOpaque(true);  // Critical for performance - we paint the entire background
+    setWantsKeyboardFocus(true);  // Enable keyboard shortcuts
     metricsResetTime_ = juce::Time::getMillisecondCounter();
 
     tileCache_ = std::make_unique<WaveformTileCache>(512); // 512MB cache for more tiles
@@ -283,6 +286,15 @@ VirtualTimelineComponent::VirtualTimelineComponent(juce::AudioFormatManager& for
 
 VirtualTimelineComponent::~VirtualTimelineComponent()
 {
+    // Remove change listeners from all thumbnails
+    for (auto& track : tracks_)
+    {
+        if (track.thumbnail)
+        {
+            track.thumbnail->removeChangeListener(this);
+        }
+    }
+    
     tileRenderer_->stop();
     cancelPendingUpdate();
 }
@@ -350,61 +362,489 @@ void VirtualTimelineComponent::resized()
 //==============================================================================
 void VirtualTimelineComponent::mouseDown(const juce::MouseEvent& event)
 {
-    if (auto* track = getTrackAt(event.position.toInt()))
+    // Always grab keyboard focus when clicked
+    grabKeyboardFocus();
+    
+    // Handle right-click for context menu
+    if (event.mods.isRightButtonDown())
+    {
+        const auto hitInfo = hitTest(event.position.toInt());
+        
+        // Select the track if we right-clicked on one
+        if (hitInfo.track)
+        {
+            const bool addToSelection = event.mods.isShiftDown() || event.mods.isCommandDown();
+            selectTrack(hitInfo.track->id, addToSelection);
+            scheduleFrame();
+        }
+        
+        // Show context menu
+        showContextMenu(event.position.toInt());
+        return;
+    }
+    
+    // Handle double-click for playback positioning
+    if (event.mods.isLeftButtonDown())
+    {
+        // Convert pixel position to time
+        const double clickTime = event.position.x / pixelsPerSecond_;
+        
+        spdlog::info("[VirtualTimeline] Click at time: {:.2f}s (x={}, pixelsPerSecond={}, clicks={})", 
+                    clickTime, event.position.x, pixelsPerSecond_, event.getNumberOfClicks());
+        
+        // Store the clicked position (stays visible until next click)
+        clickedTimePosition_ = clickTime;
+        
+        // Handle double-click to start playback (always plays)
+        if (event.getNumberOfClicks() == 2)
+        {
+            spdlog::info("[VirtualTimeline] Double-click detected - starting playback at {:.2f}s", clickTime);
+            if (onMixPlaybackAlwaysRequested)
+            {
+                onMixPlaybackAlwaysRequested(clickTime);
+            }
+        }
+        else if (event.getNumberOfClicks() == 1)
+        {
+            // Single click - just seek (but keep position visible)
+            if (onSeekRequested)
+            {
+                onSeekRequested(clickTime);
+            }
+        }
+        
+        // Repaint to show the clicked position
+        repaint();
+    }
+    
+    const auto hitInfo = hitTest(event.position.toInt());
+    
+    if (hitInfo.track)
     {
         const bool addToSelection = event.mods.isShiftDown() || event.mods.isCommandDown();
-        selectTrack(track->id, addToSelection);
+        
+        // Check what we're clicking on
+        if (hitInfo.type == HitTestResult::AttachFrom || 
+            hitInfo.type == HitTestResult::AttachTo ||
+            hitInfo.type == HitTestResult::EnvelopePoint ||
+            hitInfo.type == HitTestResult::CueStart ||
+            hitInfo.type == HitTestResult::CueEnd)
+        {
+            // Start dragging an attach point, envelope point, or cue point
+            dragState_.isDragging = false;  // Will be set true in mouseDrag
+            dragState_.trackId = hitInfo.track->id;
+            dragState_.dragStartPoint = event.position.toInt();
+            
+            if (hitInfo.type == HitTestResult::CueStart)
+            {
+                dragState_.dragType = DragState::DragType::CueStart;
+                if (hitInfo.track->mixTrack)
+                {
+                    dragState_.originalTime = std::chrono::duration<double>(
+                        hitInfo.track->mixTrack->cueStart).count();
+                }
+            }
+            else if (hitInfo.type == HitTestResult::CueEnd)
+            {
+                dragState_.dragType = DragState::DragType::CueEnd;
+                if (hitInfo.track->mixTrack && hitInfo.track->trackInfo)
+                {
+                    dragState_.originalTime = std::chrono::duration<double>(
+                        hitInfo.track->mixTrack->getCueEndActual(hitInfo.track->trackInfo->duration)).count();
+                }
+            }
+            else if (hitInfo.type == HitTestResult::AttachFrom)
+            {
+                dragState_.dragType = DragState::DragType::AttachFrom;
+                if (hitInfo.track->mixTrack)
+                {
+                    dragState_.originalTime = std::chrono::duration<double>(
+                        hitInfo.track->mixTrack->attachFrom).count();
+                }
+            }
+            else if (hitInfo.type == HitTestResult::AttachTo)
+            {
+                dragState_.dragType = DragState::DragType::AttachTo;
+                if (hitInfo.track->mixTrack)
+                {
+                    dragState_.originalTime = std::chrono::duration<double>(
+                        hitInfo.track->mixTrack->attachTo).count();
+                }
+            }
+            else if (hitInfo.type == HitTestResult::EnvelopePoint)
+            {
+                dragState_.dragType = DragState::DragType::EnvelopePoint;
+                dragState_.draggedPointIndex = hitInfo.pointIndex;
+                if (hitInfo.track->mixTrack && hitInfo.pointIndex >= 0 && 
+                    hitInfo.pointIndex < static_cast<int>(hitInfo.track->mixTrack->envelopePoints.size()))
+                {
+                    dragState_.originalTime = std::chrono::duration<double>(
+                        hitInfo.track->mixTrack->envelopePoints[hitInfo.pointIndex].time).count();
+                }
+            }
+        }
+        
+        selectTrack(hitInfo.track->id, addToSelection);
         scheduleFrame();
     }
     else if (!event.mods.isShiftDown())
     {
         clearSelection();
+        dragState_ = {};  // Reset drag state
         scheduleFrame();
     }
 }
 
 void VirtualTimelineComponent::mouseDrag(const juce::MouseEvent& event)
 {
-    // TODO: Implement drag selection, cue point dragging, etc.
+    // Check if we should start dragging
+    if (!dragState_.isDragging && dragState_.dragType != DragState::DragType::None)
+    {
+        // Start drag after moving a minimum distance (8 pixels to avoid accidental drags)
+        const auto distance = event.position.toInt().getDistanceFrom(dragState_.dragStartPoint);
+        if (distance > 8.0f)
+        {
+            dragState_.isDragging = true;
+            setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+            
+            spdlog::info("[DRAG_START] Starting drag: type={}, trackId={}, startPoint=({},{}), currentPoint=({},{})",
+                        static_cast<int>(dragState_.dragType),
+                        dragState_.trackId,
+                        dragState_.dragStartPoint.x, dragState_.dragStartPoint.y,
+                        event.position.toInt().x, event.position.toInt().y);
+        }
+    }
+    
+    if (dragState_.isDragging)
+    {
+        // Calculate new time position based on horizontal mouse movement
+        const int deltaX = event.position.toInt().x - dragState_.dragStartPoint.x;
+        const double deltaTime = deltaX / pixelsPerSecond_;
+        dragState_.currentTime = dragState_.originalTime + deltaTime;
+        
+        // Find the track being edited
+        TrackRenderData* track = nullptr;
+        for (auto& t : tracks_)
+        {
+            if (t.id == dragState_.trackId)
+            {
+                track = &t;
+                break;
+            }
+        }
+        
+        if (track && track->mixTrack)
+        {
+            // Clamp the time to valid range based on what we're dragging
+            if (dragState_.dragType == DragState::DragType::CueStart)
+            {
+                // For cue start, we're dragging the left edge of the track
+                // Calculate what the new cue start should be based on mouse position
+                const double mouseTime = pixelsToSeconds(event.position.toInt().x);
+                const double audioStartTime = std::chrono::duration<double>(track->audioStartTime).count();
+                
+                // The new cue start is the difference between where the mouse is and where the audio starts
+                const double newCueStart = mouseTime - audioStartTime;
+                
+                // Constrain cue start
+                const double minCueStart = -60.0; // Allow up to 60 seconds of silence before
+                const double maxCueStart = std::chrono::duration<double>(track->trackInfo->duration).count() - 1.0; // Leave at least 1 second
+                const double clampedCueStart = juce::jlimit(minCueStart, maxCueStart, newCueStart);
+                
+                // Update the cue start
+                track->mixTrack->cueStart = jucyaudio::Duration_t(
+                    static_cast<int64_t>(clampedCueStart * 1000));
+                
+                // Update component start time and effective duration
+                track->componentStartTime = track->audioStartTime + track->mixTrack->cueStart;
+                track->effectiveDuration = std::chrono::duration<double>(
+                    track->mixTrack->getEffectiveDuration(track->trackInfo->duration)).count();
+                    
+                // Recalculate track bounds
+                const double startTime = std::chrono::duration<double>(track->componentStartTime).count();
+                const int startX = static_cast<int>(startTime * pixelsPerSecond_);
+                const int width = static_cast<int>(track->effectiveDuration * pixelsPerSecond_);
+                track->bounds = juce::Rectangle<int>(startX, track->bounds.getY(), width, track->bounds.getHeight());
+                track->waveformBounds = track->bounds.reduced(waveformInset);
+                
+                // Schedule repaint
+                scheduleFrame();
+            }
+            else if (dragState_.dragType == DragState::DragType::CueEnd)
+            {
+                // For cue end, we're dragging the right edge of the track
+                // Calculate what the new effective duration should be based on mouse position
+                const double mouseTime = pixelsToSeconds(event.position.toInt().x);
+                const double componentStart = std::chrono::duration<double>(track->componentStartTime).count();
+                const double newEffectiveDuration = mouseTime - componentStart;
+                
+                // Calculate what cueEnd should be to achieve this effective duration
+                // effectiveDuration = (cueEnd - cueStart) where cueEnd is the actual end position
+                // So: actualCueEnd = effectiveDuration + cueStart
+                // And: cueEnd (offset from track end) = actualCueEnd - trackDuration
+                const double actualCueEnd = newEffectiveDuration + std::chrono::duration<double>(track->mixTrack->cueStart).count();
+                const double newCueEnd = actualCueEnd - std::chrono::duration<double>(track->trackInfo->duration).count();
+                
+                // Constrain cue end
+                const double minCueEnd = -std::chrono::duration<double>(track->trackInfo->duration).count() + 1.0; // At least 1 second
+                const double maxCueEnd = 60.0; // Allow up to 60 seconds of silence after
+                const double clampedCueEnd = juce::jlimit(minCueEnd, maxCueEnd, newCueEnd);
+                
+                // Update the cue end
+                track->mixTrack->cueEnd = jucyaudio::Duration_t(
+                    static_cast<int64_t>(clampedCueEnd * 1000));
+                
+                // Update effective duration
+                track->effectiveDuration = std::chrono::duration<double>(
+                    track->mixTrack->getEffectiveDuration(track->trackInfo->duration)).count();
+                    
+                // Recalculate track bounds (only width changes for cue end)
+                const int width = static_cast<int>(track->effectiveDuration * pixelsPerSecond_);
+                track->bounds = juce::Rectangle<int>(track->bounds.getX(), track->bounds.getY(), width, track->bounds.getHeight());
+                track->waveformBounds = track->bounds.reduced(waveformInset);
+                
+                // Schedule repaint
+                scheduleFrame();
+            }
+            else if (dragState_.dragType == DragState::DragType::AttachFrom)
+            {
+                // AttachFrom must be within track bounds
+                const double minTime = std::chrono::duration<double>(track->mixTrack->cueStart).count();
+                const double maxTime = std::chrono::duration<double>(
+                    track->mixTrack->getCueEndActual(track->trackInfo->duration)).count();
+                dragState_.currentTime = juce::jlimit(minTime, maxTime, dragState_.currentTime);
+                
+                // Update the attach point (temporarily for preview)
+                // Convert seconds to milliseconds (Duration_t is std::chrono::milliseconds)
+                track->mixTrack->attachFrom = jucyaudio::Duration_t(
+                    static_cast<int64_t>(dragState_.currentTime * 1000));
+            }
+            else if (dragState_.dragType == DragState::DragType::AttachTo)
+            {
+                // AttachTo must be within track bounds
+                const double minTime = std::chrono::duration<double>(track->mixTrack->cueStart).count();
+                const double maxTime = std::chrono::duration<double>(
+                    track->mixTrack->getCueEndActual(track->trackInfo->duration)).count();
+                dragState_.currentTime = juce::jlimit(minTime, maxTime, dragState_.currentTime);
+                
+                // Update the attach point (temporarily for preview)
+                // Convert seconds to milliseconds (Duration_t is std::chrono::milliseconds)
+                track->mixTrack->attachTo = jucyaudio::Duration_t(
+                    static_cast<int64_t>(dragState_.currentTime * 1000));
+            }
+            else if (dragState_.dragType == DragState::DragType::EnvelopePoint)
+            {
+                // Update envelope point time and volume
+                if (dragState_.draggedPointIndex >= 0 && 
+                    dragState_.draggedPointIndex < static_cast<int>(track->mixTrack->envelopePoints.size()))
+                {
+                    // Get the current envelope point's original values
+                    const double originalPointTime = std::chrono::duration<double>(
+                        track->mixTrack->envelopePoints[dragState_.draggedPointIndex].time).count();
+                    const float originalVolume = static_cast<float>(
+                        track->mixTrack->envelopePoints[dragState_.draggedPointIndex].volume) / 1000.0f;
+                    
+                    // HORIZONTAL: Update time based on X position
+                    // Convert mouse X position to timeline time
+                    const double timelineTime = event.position.x / pixelsPerSecond_;
+                    
+                    // Convert timeline time to track-local time (relative to audio start)
+                    const double trackLocalTime = timelineTime - std::chrono::duration<double>(track->audioStartTime).count();
+                    
+                    // Envelope points are relative to the track's audio, and must be within cue bounds
+                    const double minTime = std::chrono::duration<double>(track->mixTrack->cueStart).count();
+                    const double maxTime = std::chrono::duration<double>(
+                        track->mixTrack->getCueEndActual(track->trackInfo->duration)).count();
+                    const double clampedTime = juce::jlimit(minTime, maxTime, trackLocalTime);
+                    
+                    // VERTICAL: Update volume based on Y position
+                    // Calculate normalized volume from mouse Y position (1.0 = top, 0.0 = bottom)
+                    const float relativeY = event.position.y - track->waveformBounds.getY();
+                    const float normalizedY = relativeY / static_cast<float>(track->waveformBounds.getHeight());
+                    const float newVolume = juce::jlimit(0.0f, 1.0f, 1.0f - normalizedY);
+                    
+                    // Log detailed info for debugging
+                    spdlog::info("[ENVELOPE_DRAG] Point {}: mousePos=({:.1f},{:.1f}), time: {:.3f}s -> {:.3f}s, volume: {:.3f} -> {:.3f}",
+                                dragState_.draggedPointIndex,
+                                event.position.x, event.position.y,
+                                originalPointTime, clampedTime,
+                                originalVolume, newVolume);
+                    
+                    // Store the clamped time for the log message in mouseUp
+                    dragState_.currentTime = clampedTime;
+                    
+                    // Update the envelope point
+                    // Convert seconds to milliseconds (Duration_t is std::chrono::milliseconds)
+                    track->mixTrack->envelopePoints[dragState_.draggedPointIndex].time = 
+                        jucyaudio::Duration_t(static_cast<int64_t>(clampedTime * 1000));
+                    
+                    // Convert normalized volume to Volume_t (integer where 1000 = 1.0)
+                    track->mixTrack->envelopePoints[dragState_.draggedPointIndex].volume = 
+                        static_cast<jucyaudio::Volume_t>(newVolume * 1000);
+                }
+            }
+        }
+        
+        repaint();
+    }
 }
 
 void VirtualTimelineComponent::mouseUp(const juce::MouseEvent& event)
 {
-    // TODO: Complete drag operations
+    if (dragState_.isDragging)
+    {
+        // Find the track that was modified
+        TrackRenderData* modifiedTrack = nullptr;
+        for (auto& track : tracks_)
+        {
+            if (track.id == dragState_.trackId)
+            {
+                modifiedTrack = &track;
+                break;
+            }
+        }
+        
+        if (modifiedTrack && modifiedTrack->mixTrack)
+        {
+            // Notify about changes through callbacks
+            if (dragState_.dragType == DragState::DragType::CueStart || 
+                dragState_.dragType == DragState::DragType::CueEnd)
+            {
+                spdlog::info("Cue point ({}) moved to {:.3f}s for track {}", 
+                            dragState_.dragType == DragState::DragType::CueStart ? "start" : "end",
+                            dragState_.currentTime, dragState_.trackId);
+                
+                // Recalculate track positions after cue change
+                calculateTrackPositions();
+                
+                // Notify about the cue point change
+                if (onCuePointsChanged)
+                {
+                    onCuePointsChanged(modifiedTrack->mixTrack->orderInMix,
+                                     modifiedTrack->mixTrack->cueStart,
+                                     modifiedTrack->mixTrack->cueEnd);
+                }
+            }
+            else if (dragState_.dragType == DragState::DragType::AttachFrom || 
+                     dragState_.dragType == DragState::DragType::AttachTo)
+            {
+                spdlog::info("Attach point moved to {:.3f}s for track {}", 
+                            dragState_.currentTime, dragState_.trackId);
+                
+                // Recalculate track positions first
+                calculateTrackPositions();
+                
+                // Notify about the change
+                if (onCueAttachChanged)
+                {
+                    onCueAttachChanged(modifiedTrack->mixTrack->orderInMix, *modifiedTrack->mixTrack);
+                }
+            }
+            else if (dragState_.dragType == DragState::DragType::EnvelopePoint)
+            {
+                spdlog::info("Envelope point {} moved to {:.3f}s for track {}", 
+                            dragState_.draggedPointIndex, dragState_.currentTime, dragState_.trackId);
+                
+                // Notify about envelope change
+                if (onEnvelopeChanged)
+                {
+                    onEnvelopeChanged(modifiedTrack->mixTrack->orderInMix, modifiedTrack->mixTrack->envelopePoints);
+                }
+            }
+        }
+    }
+    
+    // Reset drag state
+    dragState_ = {};
+    setMouseCursor(juce::MouseCursor::NormalCursor);
+    repaint();
 }
 
 void VirtualTimelineComponent::mouseMove(const juce::MouseEvent& event)
 {
-    // TODO: Update hover states, cursors
+    // Update cursor based on what we're hovering over
+    const auto hitInfo = hitTest(event.position.toInt());
+    
+    if (hitInfo.type == HitTestResult::CueStart || 
+        hitInfo.type == HitTestResult::CueEnd)
+    {
+        // Use resize cursor for cue point dragging (track edge dragging)
+        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    }
+    else if (hitInfo.type == HitTestResult::AttachFrom || 
+             hitInfo.type == HitTestResult::AttachTo ||
+             hitInfo.type == HitTestResult::EnvelopePoint)
+    {
+        setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    }
+    else
+    {
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+    }
 }
 
 void VirtualTimelineComponent::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
 {
-    // Zoom constants (matching original TimelineComponent)
-    constexpr double ZOOM_FACTOR = 1.1;
-    constexpr double MIN_ZOOM = 1.0;    // 1 pixel per second (zoomed out)
-    constexpr double MAX_ZOOM = 2000.0; // 2000 pixels per second (zoomed in)
+    // Check if Ctrl/Cmd is held for zooming
+    const bool isZooming = event.mods.isCommandDown() || event.mods.isCtrlDown();
     
-    // Get mouse position relative to timeline
-    // const auto mousePos = event.getPosition();
-    
-    // Calculate time position at mouse cursor
-    // const double timeAtMouse = mousePos.x / pixelsPerSecond_;
-    // TODO: Implement zoom centering around mouse position
-    
-    // Calculate new zoom level
-    const double zoomDelta = wheel.deltaY > 0 ? ZOOM_FACTOR : (1.0 / ZOOM_FACTOR);
-    const double newZoom = juce::jlimit(MIN_ZOOM, MAX_ZOOM, pixelsPerSecond_ * zoomDelta);
-    
-    if (newZoom != pixelsPerSecond_)
+    if (isZooming)
     {
-        pixelsPerSecond_ = newZoom;
-        calculateTrackPositions();
-        queueVisibleTiles();
+        // Zoom behavior with Ctrl/Cmd held
+        constexpr double ZOOM_FACTOR = 1.1;
+        constexpr double MIN_ZOOM = 1.0;    // 1 pixel per second (zoomed out)
+        constexpr double MAX_ZOOM = 2000.0; // 2000 pixels per second (zoomed in)
         
-        // Notify the parent component about zoom change if needed
-        // This would typically trigger the onZoomChanged callback
-        scheduleFrame();
+        // Calculate new zoom level
+        const double zoomDelta = wheel.deltaY > 0 ? ZOOM_FACTOR : (1.0 / ZOOM_FACTOR);
+        const double newZoom = juce::jlimit(MIN_ZOOM, MAX_ZOOM, pixelsPerSecond_ * zoomDelta);
+        
+        if (newZoom != pixelsPerSecond_)
+        {
+            if (auto* viewport = findParentComponentOfClass<juce::Viewport>())
+            {
+                // Always use the center of the viewport as the zoom anchor point
+                const int viewportCenterX = viewport->getViewPositionX() + viewport->getWidth() / 2;
+                const double centerTime = pixelsToSeconds(viewportCenterX);
+                
+                // Update zoom level
+                pixelsPerSecond_ = newZoom;
+                calculateTrackPositions();
+                
+                // Calculate where the center time is now in pixels after zoom
+                const int newCenterPixel = secondsToPixels(centerTime);
+                
+                // Adjust viewport to keep the center time at the center of the viewport
+                const int newViewportX = newCenterPixel - viewport->getWidth() / 2;
+                
+                // Clamp to valid range
+                const int maxScrollX = juce::jmax(0, getWidth() - viewport->getWidth());
+                viewport->setViewPosition(juce::jlimit(0, maxScrollX, newViewportX), viewport->getViewPositionY());
+            }
+            else
+            {
+                // Fallback if no viewport
+                pixelsPerSecond_ = newZoom;
+                calculateTrackPositions();
+            }
+            
+            queueVisibleTiles();
+            scheduleFrame();
+        }
+    }
+    else
+    {
+        // Horizontal scrolling behavior (default)
+        if (auto* viewport = findParentComponentOfClass<juce::Viewport>())
+        {
+            // Scroll horizontally with the mouse wheel
+            // Use deltaY for horizontal scrolling (most common for horizontal timeline scrolling)
+            const int scrollAmount = static_cast<int>(wheel.deltaY * -50); // Negative to match natural scrolling
+            const int currentX = viewport->getViewPositionX();
+            const int newX = juce::jmax(0, currentX + scrollAmount);
+            
+            viewport->setViewPosition(newX, viewport->getViewPositionY());
+        }
     }
 }
 
@@ -415,15 +855,143 @@ void VirtualTimelineComponent::handleAsyncUpdate()
     repaint();
 }
 
+void VirtualTimelineComponent::changeListenerCallback(juce::ChangeBroadcaster* source)
+{
+    // Called when a thumbnail finishes loading
+    // Check if it's one of our thumbnails
+    for (const auto& track : tracks_)
+    {
+        if (track.thumbnail.get() == source)
+        {
+            auto* thumbnail = static_cast<juce::AudioThumbnail*>(source);
+            if (thumbnail->isFullyLoaded())
+            {
+                spdlog::info("Waveform loaded for track {}, queuing tiles for generation", track.id);
+                
+                // Queue tiles for this track now that the waveform is loaded
+                queueVisibleTiles();
+                
+                // Trigger a repaint to show the newly loaded waveform
+                scheduleFrame();
+                
+                // Save the waveform to cache for next time
+                if (track.trackInfo)
+                {
+                    juce::MemoryOutputStream stream;
+                    thumbnail->saveTo(stream);
+                    
+                    if (stream.getDataSize() > 0)
+                    {
+                        const auto* data = static_cast<const unsigned char*>(stream.getData());
+                        std::vector<unsigned char> waveformData(data, data + stream.getDataSize());
+                        database::theTrackLibrary.saveWaveform(track.trackInfo->trackId, waveformData);
+                        spdlog::info("Saved waveform to cache for track {}", track.trackInfo->trackId);
+                    }
+                }
+            }
+            break;
+        }
+    }
+}
+
 void VirtualTimelineComponent::scheduleFrame()
 {
     // Coalesce repaint requests via AsyncUpdater
     triggerAsyncUpdate();
 }
 
+bool VirtualTimelineComponent::keyPressed(const juce::KeyPress& key)
+{
+    spdlog::info("VirtualTimelineComponent::keyPressed - key code: {}", key.getKeyCode());
+    
+    if (key == juce::KeyPress::spaceKey)
+    {
+        spdlog::info("Space key pressed - toggling playback");
+        // Play/pause from clicked position (or current playhead, or 0 as fallback)
+        if (onMixPlaybackRequested)
+        {
+            double playPosition = 0.0;
+            if (clickedTimePosition_ >= 0.0)
+            {
+                playPosition = clickedTimePosition_;  // Use last clicked position
+            }
+            else if (playheadSeconds_ >= 0.0)
+            {
+                playPosition = playheadSeconds_;  // Or current playhead position
+            }
+            spdlog::info("Starting playback from position: {:.2f}s", playPosition);
+            onMixPlaybackRequested(playPosition);
+        }
+        return true;
+    }
+    else if (key == juce::KeyPress::escapeKey)
+    {
+        spdlog::info("Escape key pressed - stopping playback");
+        // Stop playback
+        if (onMixPlaybackRequested)
+        {
+            onMixPlaybackRequested(-1.0); // Special value to indicate stop
+        }
+        return true;
+    }
+    else if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
+    {
+        spdlog::info("Delete/Backspace key pressed");
+        if (!selectedTracks_.empty())
+        {
+            spdlog::info("Requesting deletion of {} selected track(s)", selectedTracks_.size());
+            if (onDeleteTracksRequested)
+            {
+                onDeleteTracksRequested();
+            }
+        }
+        return true;
+    }
+    else if (key == juce::KeyPress('x', juce::ModifierKeys::commandModifier, 0))
+    {
+        spdlog::info("Cmd+X (cut) pressed");
+        if (!selectedTracks_.empty())
+        {
+            copySelectedTracks();
+            deleteSelectedTracks();
+        }
+        return true;
+    }
+    else if (key == juce::KeyPress('c', juce::ModifierKeys::commandModifier, 0))
+    {
+        spdlog::info("Cmd+C (copy) pressed");
+        if (!selectedTracks_.empty())
+        {
+            copySelectedTracks();
+        }
+        return true;
+    }
+    else if (key == juce::KeyPress('v', juce::ModifierKeys::commandModifier, 0))
+    {
+        spdlog::info("Cmd+V (paste) pressed");
+        if (!clipboardTracks_.empty() && !selectedTracks_.empty())
+        {
+            // Paste after the first selected track
+            pasteTracksAfterSelection();
+        }
+        return true;
+    }
+    
+    return false; // Let parent handle other keys
+}
+
 //==============================================================================
 void VirtualTimelineComponent::loadMixProject(audio::MixProjectLoader* loader)
 {
+    // Remove change listeners from existing thumbnails before clearing
+    for (auto& track : tracks_)
+    {
+        if (track.thumbnail)
+        {
+            track.thumbnail->removeChangeListener(this);
+        }
+    }
+    
     mixProjectLoader_ = loader;
     tracks_.clear();
     selectedTracks_.clear();
@@ -508,6 +1076,8 @@ void VirtualTimelineComponent::loadMixProject(audio::MixProjectLoader* loader)
                     if (audioFile.existsAsFile())
                     {
                         data.thumbnail->setSource(new juce::FileInputSource(audioFile));
+                        data.thumbnail->addChangeListener(this);  // Get notified when loading completes
+                        spdlog::info("[PHASE 3] Loading waveform from file for track {} (async)", data.trackInfo->trackId);
                     }
                 }
             }
@@ -518,6 +1088,8 @@ void VirtualTimelineComponent::loadMixProject(audio::MixProjectLoader* loader)
                 if (audioFile.existsAsFile())
                 {
                     data.thumbnail->setSource(new juce::FileInputSource(audioFile));
+                    data.thumbnail->addChangeListener(this);  // Get notified when loading completes
+                    spdlog::info("[PHASE 3] Loading waveform from file for track {} (async)", data.trackInfo->trackId);
                 }
             }
         }
@@ -605,6 +1177,9 @@ void VirtualTimelineComponent::selectTrack(TrackId id, bool addToSelection)
     {
         track.selected = selectedTracks_.count(track.id) > 0;
     }
+    
+    // Trigger repaint to show selection
+    repaint();
 }
 
 void VirtualTimelineComponent::clearSelection()
@@ -614,11 +1189,205 @@ void VirtualTimelineComponent::clearSelection()
     {
         track.selected = false;
     }
+    
+    // Trigger repaint to clear selection
+    repaint();
 }
 
 std::vector<VirtualTimelineComponent::TrackId> VirtualTimelineComponent::getSelectedTracks() const
 {
     return std::vector<TrackId>(selectedTracks_.begin(), selectedTracks_.end());
+}
+
+void VirtualTimelineComponent::showContextMenu(juce::Point<int> position)
+{
+    juce::PopupMenu menu;
+    
+    const bool hasSelection = !selectedTracks_.empty();
+    const bool hasClipboard = !clipboardTracks_.empty();
+    
+    // Build the menu
+    menu.addItem(1, "Cut", hasSelection);
+    menu.addItem(2, "Copy", hasSelection);
+    menu.addSeparator();
+    menu.addItem(3, "Paste Before", hasClipboard && hasSelection);
+    menu.addItem(4, "Paste After", hasClipboard && hasSelection);
+    menu.addSeparator();
+    menu.addItem(5, "Delete", hasSelection);
+    menu.addItem(6, "Remove All Following Tracks", hasSelection);
+    
+    // Convert the local position to screen coordinates
+    const auto screenPos = localPointToGlobal(position);
+    
+    // Show the menu and handle the result
+    menu.showMenuAsync(juce::PopupMenu::Options()
+                        .withTargetComponent(this)
+                        .withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
+                      [this](int result)
+    {
+        handleContextMenuResult(result);
+    });
+}
+
+void VirtualTimelineComponent::handleContextMenuResult(int result)
+{
+    switch (result)
+    {
+        case 1: // Cut
+            copySelectedTracks();
+            deleteSelectedTracks();
+            break;
+            
+        case 2: // Copy
+            copySelectedTracks();
+            break;
+            
+        case 3: // Paste Before
+            pasteTracksBeforeSelection();
+            break;
+            
+        case 4: // Paste After
+            pasteTracksAfterSelection();
+            break;
+            
+        case 5: // Delete
+            deleteSelectedTracks();
+            break;
+            
+        case 6: // Remove All Following Tracks
+            removeAllFollowingTracks();
+            break;
+    }
+}
+
+void VirtualTimelineComponent::copySelectedTracks()
+{
+    clipboardTracks_.clear();
+    
+    for (const auto& trackId : selectedTracks_)
+    {
+        // Find the track data
+        for (const auto& track : tracks_)
+        {
+            if (track.id == trackId && track.mixTrack)
+            {
+                // Store a copy of the MixTrack data
+                clipboardTracks_.push_back(*track.mixTrack);
+                break;
+            }
+        }
+    }
+    
+    spdlog::info("Copied {} tracks to clipboard", clipboardTracks_.size());
+}
+
+void VirtualTimelineComponent::deleteSelectedTracks()
+{
+    if (selectedTracks_.empty())
+        return;
+    
+    // Collect the tracks to delete
+    std::vector<int> ordersToDelete;
+    for (const auto& trackId : selectedTracks_)
+    {
+        for (const auto& track : tracks_)
+        {
+            if (track.id == trackId && track.mixTrack)
+            {
+                ordersToDelete.push_back(track.mixTrack->orderInMix);
+                break;
+            }
+        }
+    }
+    
+    // Sort in reverse order so we delete from the end first
+    std::sort(ordersToDelete.rbegin(), ordersToDelete.rend());
+    
+    // Delete tracks via the callback
+    if (onDeleteTracksRequested)
+    {
+        onDeleteTracksRequested();
+    }
+    
+    clearSelection();
+}
+
+void VirtualTimelineComponent::pasteTracksBeforeSelection()
+{
+    if (clipboardTracks_.empty() || selectedTracks_.empty())
+        return;
+    
+    // Find the minimum orderInMix of selected tracks
+    int minOrder = std::numeric_limits<int>::max();
+    for (const auto& trackId : selectedTracks_)
+    {
+        for (const auto& track : tracks_)
+        {
+            if (track.id == trackId && track.mixTrack)
+            {
+                minOrder = std::min(minOrder, track.mixTrack->orderInMix);
+                break;
+            }
+        }
+    }
+    
+    // Notify parent to insert tracks before this position
+    if (onPasteTracksRequested)
+    {
+        onPasteTracksRequested(clipboardTracks_, minOrder, true);
+    }
+}
+
+void VirtualTimelineComponent::pasteTracksAfterSelection()
+{
+    if (clipboardTracks_.empty() || selectedTracks_.empty())
+        return;
+    
+    // Find the maximum orderInMix of selected tracks
+    int maxOrder = -1;
+    for (const auto& trackId : selectedTracks_)
+    {
+        for (const auto& track : tracks_)
+        {
+            if (track.id == trackId && track.mixTrack)
+            {
+                maxOrder = std::max(maxOrder, track.mixTrack->orderInMix);
+                break;
+            }
+        }
+    }
+    
+    // Notify parent to insert tracks after this position
+    if (onPasteTracksRequested)
+    {
+        onPasteTracksRequested(clipboardTracks_, maxOrder + 1, false);
+    }
+}
+
+void VirtualTimelineComponent::removeAllFollowingTracks()
+{
+    if (selectedTracks_.empty())
+        return;
+    
+    // Find the minimum orderInMix of selected tracks
+    int minOrder = std::numeric_limits<int>::max();
+    for (const auto& trackId : selectedTracks_)
+    {
+        for (const auto& track : tracks_)
+        {
+            if (track.id == trackId && track.mixTrack)
+            {
+                minOrder = std::min(minOrder, track.mixTrack->orderInMix);
+                break;
+            }
+        }
+    }
+    
+    // Notify parent to remove all tracks after this position
+    if (onRemoveFollowingTracksRequested)
+    {
+        onRemoveFollowingTracksRequested(minOrder);
+    }
 }
 
 //==============================================================================
@@ -721,6 +1490,94 @@ VirtualTimelineComponent::TrackRenderData* VirtualTimelineComponent::getTrackAt(
     return nullptr;
 }
 
+VirtualTimelineComponent::HitTestInfo VirtualTimelineComponent::hitTest(juce::Point<int> point) const
+{
+    HitTestInfo info;
+    
+    // First check if we're over a track
+    for (auto& track : tracks_)
+    {
+        if (track.bounds.contains(point))
+        {
+            info.track = const_cast<TrackRenderData*>(&track);
+            info.type = HitTestResult::Track;
+            
+            if (track.mixTrack)
+            {
+                // Check for cue points and attach points (within 8 pixels)
+                const int hitRadius = 8;
+                
+                // Check cue start (left edge of track)
+                if (std::abs(point.x - track.bounds.getX()) < hitRadius)
+                {
+                    info.type = HitTestResult::CueStart;
+                    return info;
+                }
+                
+                // Check cue end (right edge of track)  
+                if (std::abs(point.x - track.bounds.getRight()) < hitRadius)
+                {
+                    info.type = HitTestResult::CueEnd;
+                    return info;
+                }
+                
+                // AttachFrom point
+                const double attachFromTime = std::chrono::duration<double>(
+                    track.audioStartTime + track.mixTrack->attachFrom).count();
+                const int attachFromX = track.bounds.getX() + static_cast<int>(
+                    (attachFromTime - std::chrono::duration<double>(track.componentStartTime).count()) 
+                    * pixelsPerSecond_);
+                
+                if (std::abs(point.x - attachFromX) < hitRadius)
+                {
+                    info.type = HitTestResult::AttachFrom;
+                    return info;
+                }
+                
+                // AttachTo point
+                const double attachToTime = std::chrono::duration<double>(
+                    track.audioStartTime + track.mixTrack->attachTo).count();
+                const int attachToX = track.bounds.getX() + static_cast<int>(
+                    (attachToTime - std::chrono::duration<double>(track.componentStartTime).count()) 
+                    * pixelsPerSecond_);
+                
+                if (std::abs(point.x - attachToX) < hitRadius)
+                {
+                    info.type = HitTestResult::AttachTo;
+                    return info;
+                }
+                
+                // Check envelope points
+                int pointIndex = 0;
+                for (const auto& envPoint : track.mixTrack->envelopePoints)
+                {
+                    const double pointTimeInComponent = std::chrono::duration<double>(
+                        track.audioStartTime + envPoint.time).count();
+                    const int x = track.bounds.getX() + static_cast<int>(
+                        (pointTimeInComponent - std::chrono::duration<double>(track.componentStartTime).count()) 
+                        * pixelsPerSecond_);
+                    
+                    const float normalizedVolume = static_cast<float>(envPoint.volume) / 1000.0f;
+                    const int y = track.waveformBounds.getY() + 
+                                 static_cast<int>((1.0f - normalizedVolume) * track.waveformBounds.getHeight());
+                    
+                    if (point.getDistanceFrom(juce::Point<int>(x, y)) < hitRadius)
+                    {
+                        info.type = HitTestResult::EnvelopePoint;
+                        info.pointIndex = pointIndex;
+                        return info;
+                    }
+                    pointIndex++;
+                }
+            }
+            
+            return info;
+        }
+    }
+    
+    return info;
+}
+
 int VirtualTimelineComponent::secondsToPixels(double seconds) const
 {
     return static_cast<int>(seconds * pixelsPerSecond_);
@@ -759,13 +1616,9 @@ void VirtualTimelineComponent::paintTrack(juce::Graphics& g, const TrackRenderDa
     const auto& lf = getLookAndFeel();
     if (track.selected)
     {
-        // Selected track - brighter background with orange border
+        // Selected track - brighter background (no border)
         g.setColour(lf.findColour(juce::TextEditor::backgroundColourId).brighter(0.2f));
         g.fillRoundedRectangle(track.bounds.toFloat(), 4.0f);
-        
-        // Orange border for selected track
-        g.setColour(juce::Colours::orange);
-        g.drawRoundedRectangle(track.bounds.toFloat().reduced(1), 4.0f, 2.0f);
     }
     else
     {
@@ -773,7 +1626,7 @@ void VirtualTimelineComponent::paintTrack(juce::Graphics& g, const TrackRenderDa
         g.setColour(lf.findColour(juce::TextEditor::backgroundColourId));
         g.fillRoundedRectangle(track.bounds.toFloat(), 4.0f);
         
-        // Subtle border
+        // Subtle border (only for non-selected tracks)
         g.setColour(lf.findColour(juce::TextEditor::outlineColourId).withAlpha(0.3f));
         g.drawRoundedRectangle(track.bounds.toFloat(), 4.0f, 0.5f);
     }
@@ -840,6 +1693,8 @@ void VirtualTimelineComponent::paintTrack(juce::Graphics& g, const TrackRenderDa
                                            destRect.getX(), destRect.getY(), destRect.getWidth(), destRect.getHeight(),
                                            tile->image.getWidth(), tile->image.getHeight());
                             }
+                            
+                            // Draw the tile image
                             g.setOpacity(1.0f);
                             g.drawImage(tile->image, destRect.toFloat(),
                                        juce::RectanglePlacement::stretchToFit);
@@ -872,7 +1727,16 @@ void VirtualTimelineComponent::paintTrack(juce::Graphics& g, const TrackRenderDa
                 // Only do full direct render if NO tiles are ready
                 // Use waveform color from theme (matching tile rendering)
                 const auto& lf = getLookAndFeel();
-                g.setColour(lf.findColour(jucyaudio::ui::waveformColourId).withAlpha(0.7f));
+                
+                // Use accent color for selected tracks, normal color otherwise
+                if (track.selected)
+                {
+                    g.setColour(lf.findColour(juce::TextButton::buttonOnColourId).withAlpha(0.7f));
+                }
+                else
+                {
+                    g.setColour(lf.findColour(jucyaudio::ui::waveformColourId).withAlpha(0.7f));
+                }
                 
                 // Calculate time range for thumbnail drawing
                 double thumbnailStartTime = 0.0;
@@ -922,6 +1786,14 @@ void VirtualTimelineComponent::paintTrack(juce::Graphics& g, const TrackRenderDa
         g.fillRect(track.waveformBounds);
         g.setColour(juce::Colours::black.withAlpha(0.2f));
         g.drawRect(track.waveformBounds);
+    }
+    
+    // Apply accent color overlay to waveform area if track is selected
+    if (track.selected)
+    {
+        const auto& lf = getLookAndFeel();
+        g.setColour(lf.findColour(juce::TextButton::buttonOnColourId).withAlpha(0.2f));
+        g.fillRect(track.waveformBounds);
     }
     
     // Track info text
@@ -1077,6 +1949,7 @@ void VirtualTimelineComponent::paintTrack(juce::Graphics& g, const TrackRenderDa
         }
     }
     
+    // No visual cue point markers needed - the track edges themselves are the cue points
     // Draw attach points with more visible color
     if (track.mixTrack)
     {
@@ -1216,19 +2089,36 @@ void VirtualTimelineComponent::paintGrid(juce::Graphics& g)
 
 void VirtualTimelineComponent::paintPlayhead(juce::Graphics& g)
 {
-    const int playheadX = secondsToPixels(playheadSeconds_);
-    
-    if (playheadX >= 0 && playheadX < getWidth())
+    // Draw clicked position (accent color line) - stays visible after click
+    if (clickedTimePosition_ >= 0.0)
     {
-        g.setColour(juce::Colours::red);
-        g.drawVerticalLine(playheadX, 0.0f, static_cast<float>(getHeight()));
+        const int clickX = secondsToPixels(clickedTimePosition_);
+        if (clickX >= 0 && clickX < getWidth())
+        {
+            // Use the theme's accent color (orange)
+            const auto& lf = getLookAndFeel();
+            g.setColour(lf.findColour(juce::TextButton::buttonOnColourId).withAlpha(0.8f));
+            g.drawVerticalLine(clickX, 0.0f, static_cast<float>(getHeight()));
+        }
+    }
+    
+    // Draw playback position (red line) - only visible during playback
+    if (playheadSeconds_ >= 0.0)
+    {
+        const int playheadX = secondsToPixels(playheadSeconds_);
         
-        // Draw playhead triangle at top
-        juce::Path triangle;
-        triangle.addTriangle(static_cast<float>(playheadX - 5), 0.0f,
-                           static_cast<float>(playheadX + 5), 0.0f,
-                           static_cast<float>(playheadX), 10.0f);
-        g.fillPath(triangle);
+        if (playheadX >= 0 && playheadX < getWidth())
+        {
+            g.setColour(juce::Colours::red);
+            g.drawVerticalLine(playheadX, 0.0f, static_cast<float>(getHeight()));
+            
+            // Draw playhead triangle at top
+            juce::Path triangle;
+            triangle.addTriangle(static_cast<float>(playheadX - 5), 0.0f,
+                               static_cast<float>(playheadX + 5), 0.0f,
+                               static_cast<float>(playheadX), 10.0f);
+            g.fillPath(triangle);
+        }
     }
 }
 

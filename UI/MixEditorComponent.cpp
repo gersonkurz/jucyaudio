@@ -408,6 +408,43 @@ namespace jucyaudio
             }
         }
         
+        void MixEditorComponent::updateCuePointsInData(int orderInMix, jucyaudio::Duration_t cueStart, jucyaudio::Duration_t cueEnd)
+        {
+            if (!m_node)
+            {
+                spdlog::error("MixEditorComponent::updateCuePointsInData - No mix node loaded");
+                return;
+            }
+            
+            spdlog::info("Updating cue points for track at position {}: cueStart={}, cueEnd={}", 
+                        orderInMix, cueStart.count(), cueEnd.count());
+            
+            // Get access to the mix tracks
+            auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
+            
+            // Find and update the track by orderInMix
+            for (auto& track : mixTracks)
+            {
+                if (track.orderInMix == orderInMix)
+                {
+                    track.cueStart = cueStart;
+                    track.cueEnd = cueEnd;
+                    
+                    // Save changes to database
+                    if (theTrackLibrary.getMixManager().updateMixTrack(m_node->getMixProjectLoader().getMixId(), track))
+                    {
+                        spdlog::info("Successfully updated cue points in database for track {}", track.trackId);
+                    }
+                    else
+                    {
+                        spdlog::error("Failed to update cue points in database for track {}", track.trackId);
+                    }
+                    
+                    break;
+                }
+            }
+        }
+
         void MixEditorComponent::updateEnvelopeInData(int orderInMix, const std::vector<database::EnvelopePoint>& points)
         {
             if (!m_node)
@@ -479,7 +516,7 @@ namespace jucyaudio
         
         void MixEditorComponent::handleMixPlayback(double startTime, bool alwaysPlay)
         {
-            spdlog::info("[MixEditor] handleMixPlayback called - startTime: {}", startTime);
+            spdlog::info("[MixEditor] handleMixPlayback called - startTime: {}, alwaysPlay: {}", startTime, alwaysPlay);
             
             // Special case: negative value means stop
             if (startTime < 0)
@@ -501,6 +538,15 @@ namespace jucyaudio
             if (!m_playbackController)
             {
                 spdlog::error("[MixEditor] m_playbackController is null!");
+                return;
+            }
+            
+            // Check if we should toggle playback (for keyboard shortcuts)
+            if (!alwaysPlay && m_playbackController->isPlaying())
+            {
+                // We're playing and not forced to play - pause/stop
+                spdlog::info("[MixEditor] Pausing playback");
+                m_playbackController->pause();
                 return;
             }
             
@@ -738,6 +784,158 @@ namespace jucyaudio
             spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Exit");
         }
         
+        void MixEditorComponent::handlePasteTracks(const std::vector<database::MixTrack>& tracks, int position, bool before)
+        {
+            if (!m_node || tracks.empty())
+                return;
+            
+            spdlog::info("Pasting {} tracks at position {}, before={}", tracks.size(), position, before);
+            
+            auto& mixLoader = m_node->getMixProjectLoader();
+            auto& currentTracks = mixLoader.getMixTracks();
+            
+            // Create a new vector with all tracks
+            std::vector<database::MixTrack> newTracks;
+            newTracks.reserve(currentTracks.size() + tracks.size());
+            
+            // Calculate the insertion position
+            const int insertPosition = before ? position : position + 1;
+            
+            // Copy tracks before the insertion point
+            for (const auto& track : currentTracks)
+            {
+                if (track.orderInMix < insertPosition)
+                {
+                    newTracks.push_back(track);
+                }
+            }
+            
+            // Insert the pasted tracks with new orderInMix values
+            for (const auto& track : tracks)
+            {
+                database::MixTrack newTrack = track;
+                newTrack.orderInMix = static_cast<int>(newTracks.size());
+                // Keep the same trackId as we're duplicating the same track
+                newTracks.push_back(newTrack);
+            }
+            
+            // Copy remaining tracks after the insertion point, renumbering them
+            for (const auto& track : currentTracks)
+            {
+                if (track.orderInMix >= insertPosition)
+                {
+                    database::MixTrack adjustedTrack = track;
+                    adjustedTrack.orderInMix = static_cast<int>(newTracks.size());
+                    newTracks.push_back(adjustedTrack);
+                }
+            }
+            
+            // Replace the mix tracks with our new ordering
+            currentTracks = std::move(newTracks);
+            
+            // Save to database
+            if (mixLoader.saveMix(theTrackLibrary.getMixManager()))
+            {
+                spdlog::info("Successfully pasted {} tracks at position {}", tracks.size(), insertPosition);
+                
+                // Reload from database to ensure consistency
+                mixLoader.reloadFromDatabase();
+                
+                // Refresh the timeline
+                if (m_useVirtualTimeline && m_virtualTimeline)
+                {
+                    m_virtualTimeline->loadMixProject(&mixLoader);
+                }
+                else
+                {
+                    m_timeline.populateFrom(&mixLoader);
+                }
+            }
+            else
+            {
+                spdlog::error("Failed to save mix after pasting tracks");
+            }
+        }
+        
+        void MixEditorComponent::handleRemoveFollowingTracks(int afterOrder)
+        {
+            if (!m_node)
+                return;
+            
+            spdlog::info("Removing all tracks after orderInMix {}", afterOrder);
+            
+            auto& mixLoader = m_node->getMixProjectLoader();
+            auto& mixTracks = mixLoader.getMixTracks();
+            
+            // Count tracks to remove
+            int tracksToRemove = 0;
+            for (const auto& track : mixTracks)
+            {
+                if (track.orderInMix > afterOrder)
+                {
+                    tracksToRemove++;
+                }
+            }
+            
+            if (tracksToRemove == 0)
+            {
+                spdlog::info("No tracks to remove after position {}", afterOrder);
+                return;
+            }
+            
+            // Confirm with user
+            const auto result = juce::AlertWindow::showOkCancelBox(
+                juce::AlertWindow::QuestionIcon,
+                "Remove Following Tracks",
+                juce::String::formatted("Remove %d tracks after this position?", tracksToRemove),
+                "Remove",
+                "Cancel");
+            
+            if (!result)
+                return;
+            
+            // Create new track list with only tracks up to and including afterOrder
+            std::vector<database::MixTrack> newTracks;
+            for (const auto& track : mixTracks)
+            {
+                if (track.orderInMix <= afterOrder)
+                {
+                    newTracks.push_back(track);
+                }
+            }
+            
+            // Replace the mix tracks
+            mixTracks = std::move(newTracks);
+            
+            // Save to database
+            if (mixLoader.saveMix(theTrackLibrary.getMixManager()))
+            {
+                spdlog::info("Successfully removed {} tracks after position {}", tracksToRemove, afterOrder);
+                
+                // Reload from database to ensure consistency
+                mixLoader.reloadFromDatabase();
+                
+                // Refresh the timeline
+                if (m_useVirtualTimeline && m_virtualTimeline)
+                {
+                    m_virtualTimeline->loadMixProject(&mixLoader);
+                }
+                else
+                {
+                    m_timeline.populateFrom(&mixLoader);
+                }
+            }
+            else
+            {
+                spdlog::error("Failed to save mix after removing tracks");
+            }
+            
+            if (m_useVirtualTimeline && m_virtualTimeline)
+            {
+                m_virtualTimeline->loadMixProject(&mixLoader);
+            }
+        }
+        
         void MixEditorComponent::updatePlayhead()
         {
             if (m_playbackController && m_playbackController->isMixMode())
@@ -773,7 +971,14 @@ namespace jucyaudio
                     if (isPlayheadVisible)
                     {
                         // Update playhead position - at 30Hz for balanced performance/smoothness
-                        m_playheadOverlay.setPlayheadPosition(positionSeconds, pixelsPerSecond);
+                        if (m_useVirtualTimeline && m_virtualTimeline)
+                        {
+                            m_virtualTimeline->setPlayheadPosition(positionSeconds);
+                        }
+                        else
+                        {
+                            m_playheadOverlay.setPlayheadPosition(positionSeconds, pixelsPerSecond);
+                        }
                         m_markerRuler.setPlaybackPosition(positionSeconds * 1000.0);
                     }
                     // If playhead is not visible, skip the expensive repaint operations
@@ -784,19 +989,40 @@ namespace jucyaudio
                     {
                         spdlog::info("Playback reached end of mix");
                         m_playbackController->stop();
-                        m_playheadOverlay.setPlayheadPosition(-1.0, pixelsPerSecond);
+                        if (m_useVirtualTimeline && m_virtualTimeline)
+                        {
+                            m_virtualTimeline->setPlayheadPosition(-1.0);
+                        }
+                        else
+                        {
+                            m_playheadOverlay.setPlayheadPosition(-1.0, pixelsPerSecond);
+                        }
                     }
                 }
                 else
                 {
                     // Not playing - hide playhead
-                    m_playheadOverlay.setPlayheadPosition(-1.0, m_timeline.getPixelsPerSecond());
+                    if (m_useVirtualTimeline && m_virtualTimeline)
+                    {
+                        m_virtualTimeline->setPlayheadPosition(-1.0);
+                    }
+                    else
+                    {
+                        m_playheadOverlay.setPlayheadPosition(-1.0, m_timeline.getPixelsPerSecond());
+                    }
                 }
             }
             else
             {
                 // Not in mix mode - hide playhead
-                m_playheadOverlay.setPlayheadPosition(-1.0, m_timeline.getPixelsPerSecond());
+                if (m_useVirtualTimeline && m_virtualTimeline)
+                {
+                    m_virtualTimeline->setPlayheadPosition(-1.0);
+                }
+                else
+                {
+                    m_playheadOverlay.setPlayheadPosition(-1.0, m_timeline.getPixelsPerSecond());
+                }
             }
         }
         
@@ -937,8 +1163,55 @@ namespace jucyaudio
             // Create the virtual timeline with required dependencies
             m_virtualTimeline = std::make_unique<VirtualTimelineComponent>(m_formatManager, m_thumbnailCache);
             
-            // TODO: Wire up callbacks similar to m_timeline
-            // For now, just create the component
+            // Wire up callbacks for database updates
+            m_virtualTimeline->onCueAttachChanged = [this](int orderInMix, const database::MixTrack& updatedTrack)
+            {
+                updateCueAttachInData(orderInMix, updatedTrack);
+            };
+            
+            m_virtualTimeline->onEnvelopeChanged = [this](int orderInMix, const std::vector<database::EnvelopePoint>& points)
+            {
+                updateEnvelopeInData(orderInMix, points);
+            };
+            
+            m_virtualTimeline->onCuePointsChanged = [this](int orderInMix, jucyaudio::Duration_t cueStart, jucyaudio::Duration_t cueEnd)
+            {
+                updateCuePointsInData(orderInMix, cueStart, cueEnd);
+            };
+            
+            // Wire up playback callbacks
+            m_virtualTimeline->onMixPlaybackRequested = [this](double startTime)
+            {
+                handleMixPlayback(startTime, false);  // Toggle play/pause
+            };
+            
+            m_virtualTimeline->onMixPlaybackAlwaysRequested = [this](double startTime)
+            {
+                handleMixPlayback(startTime, true);  // Always play
+            };
+            
+            m_virtualTimeline->onSeekRequested = [this](double timePosition)
+            {
+                if (m_playbackController)
+                {
+                    m_playbackController->seek(timePosition);
+                }
+            };
+            
+            m_virtualTimeline->onDeleteTracksRequested = [this]()
+            {
+                handleDeleteSelectedTrack();
+            };
+            
+            m_virtualTimeline->onPasteTracksRequested = [this](const std::vector<database::MixTrack>& tracks, int position, bool before)
+            {
+                handlePasteTracks(tracks, position, before);
+            };
+            
+            m_virtualTimeline->onRemoveFollowingTracksRequested = [this](int afterOrder)
+            {
+                handleRemoveFollowingTracks(afterOrder);
+            };
         }
         
     } // namespace ui
