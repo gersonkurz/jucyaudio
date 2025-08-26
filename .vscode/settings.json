@@ -147,7 +147,8 @@
         "stdfloat": "cpp",
         "stop_token": "cpp",
         "text_encoding": "cpp",
-        "thread": "cpp"
+        "thread": "cpp",
+        "__config": "cpp"
     },
     "cmake.sourceDirectory": "${workspaceFolder}",
     "cmake.generator": "Unix Makefiles"

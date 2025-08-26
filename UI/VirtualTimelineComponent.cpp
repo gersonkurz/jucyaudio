@@ -1028,6 +1028,15 @@ void VirtualTimelineComponent::loadMixProject(audio::MixProjectLoader* loader)
     tracks_.clear();
     selectedTracks_.clear();
     
+    // CRITICAL: Clear tile cache when loading a new mix to prevent stale tiles
+    // from showing wrong waveforms for reused track positions
+    if (tileCache_)
+    {
+        spdlog::info("[TILE_CACHE] Clearing tile cache before loading new mix");
+        tileCache_.reset();
+        tileCache_ = std::make_unique<WaveformTileCache>(100); // 100MB cache
+    }
+    
     if (!loader)
     {
         metrics_.totalTracks = 0;
@@ -1049,6 +1058,9 @@ void VirtualTimelineComponent::loadMixProject(audio::MixProjectLoader* loader)
     
     jucyaudio::Duration_t previousAudioStartTime{0};
     
+    // Map to share thumbnails between tracks that use the same audio file
+    std::unordered_map<int, std::shared_ptr<juce::AudioThumbnail>> trackThumbnails;
+    
     for (size_t i = 0; i < mixTracks.size(); ++i)
     {
         const auto& mixTrack = mixTracks[i];
@@ -1066,11 +1078,15 @@ void VirtualTimelineComponent::loadMixProject(audio::MixProjectLoader* loader)
             data.name = juce::String(data.trackInfo->title);
             data.effectiveDuration = std::chrono::duration<double>(
                 mixTrack.getEffectiveDuration(data.trackInfo->duration)).count();
+            spdlog::info("[LOAD_MIX] Track[{}]: Loading waveform for trackId={}, title={}, path={}", 
+                        i, mixTrack.trackId, data.trackInfo->title, 
+                        data.trackInfo->reconstructFullPath().string());
         }
         else
         {
             data.name = juce::String("Track ") + juce::String(static_cast<int>(i) + 1);
             data.effectiveDuration = 180.0; // Default 3 minutes
+            spdlog::warn("[LOAD_MIX] Track[{}]: No track info found for trackId={}", i, mixTrack.trackId);
         }
         
         // Calculate time positions using Mix Flow algorithm (matching original timeline)
@@ -1091,41 +1107,71 @@ void VirtualTimelineComponent::loadMixProject(audio::MixProjectLoader* loader)
         data.colour = juce::Colour();  // Not used - we'll use theme colors
         
         // --- PHASE 3, STEP 1: Create and load AudioThumbnail ---
+        // Share thumbnails between tracks that use the same audio file
         if (data.trackInfo)
         {
-            data.thumbnail = std::make_shared<juce::AudioThumbnail>(512, formatManager_, thumbnailCache_);
+            const int trackId = data.trackInfo->trackId;
             
-            std::vector<unsigned char> cachedWaveformVec;
-            auto& db = database::theTrackLibrary;
-            if (db.loadWaveform(data.trackInfo->trackId, cachedWaveformVec).isOk() && !cachedWaveformVec.empty())
+            // Check if we already have a thumbnail for this trackId
+            auto it = trackThumbnails.find(trackId);
+            if (it != trackThumbnails.end())
             {
-                juce::MemoryBlock mb{cachedWaveformVec.data(), cachedWaveformVec.size()};
-                juce::MemoryInputStream stream{mb, false};
-                if (data.thumbnail->loadFrom(stream))
+                // Reuse existing thumbnail for this audio file
+                data.thumbnail = it->second;
+                spdlog::info("[THUMBNAIL_REUSE] Track[{}] reusing thumbnail for trackId={}", i, trackId);
+            }
+            else
+            {
+                // Create new thumbnail for this trackId
+                // IMPORTANT: Don't use the shared thumbnailCache_ for DB-loaded waveforms to avoid caching conflicts
+                // The thumbnailCache_ can cause issues when multiple thumbnails load from memory streams
+                static juce::AudioThumbnailCache dummyCache(1); // Minimal cache that won't interfere
+                data.thumbnail = std::make_shared<juce::AudioThumbnail>(512, formatManager_, dummyCache);
+                trackThumbnails[trackId] = data.thumbnail;
+                spdlog::info("[THUMBNAIL_CREATE] Track[{}] creating new thumbnail for trackId={}", i, trackId);
+                
+                std::vector<unsigned char> cachedWaveformVec;
+                auto& db = database::theTrackLibrary;
+                if (db.loadWaveform(trackId, cachedWaveformVec).isOk() && !cachedWaveformVec.empty())
                 {
-                    spdlog::info("[PHASE 3] Loaded waveform for track {} from DB cache.", data.trackInfo->trackId);
+                    // Calculate a simple checksum of the waveform data for debugging
+                    uint32_t checksum = 0;
+                    for (size_t j = 0; j < std::min(size_t(100), cachedWaveformVec.size()); ++j) {
+                        checksum = (checksum << 1) ^ cachedWaveformVec[j];
+                    }
+                    spdlog::info("[WAVEFORM_CACHE] Track[{}] loading cached waveform for trackId={}, title={}, size={} bytes, checksum={:08x}", 
+                                i, trackId, data.trackInfo->title, cachedWaveformVec.size(), checksum);
+                    juce::MemoryBlock mb{cachedWaveformVec.data(), cachedWaveformVec.size()};
+                    juce::MemoryInputStream stream{mb, false};
+                    if (data.thumbnail->loadFrom(stream))
+                    {
+                        spdlog::info("[PHASE 3] Track[{}] successfully loaded waveform for trackId={} from DB cache.", 
+                                    i, trackId);
+                    }
+                    else
+                    {
+                        spdlog::warn("[PHASE 3] Track[{}] FAILED to load cached waveform for trackId={}. Will try loading from file.", 
+                                    i, trackId);
+                        juce::File audioFile(data.trackInfo->reconstructFullPath().string());
+                        if (audioFile.existsAsFile())
+                        {
+                            data.thumbnail->setSource(new juce::FileInputSource(audioFile));
+                            data.thumbnail->addChangeListener(this);  // Get notified when loading completes
+                            spdlog::info("[PHASE 3] Track[{}] loading waveform from file for trackId={} (async)", 
+                                        i, trackId);
+                        }
+                    }
                 }
                 else
                 {
-                    spdlog::warn("[PHASE 3] FAILED to load cached waveform for track {}. Will try loading from file.", data.trackInfo->trackId);
+                    spdlog::warn("[PHASE 3] No waveform in DB cache for track {}. Loading from file.", trackId);
                     juce::File audioFile(data.trackInfo->reconstructFullPath().string());
                     if (audioFile.existsAsFile())
                     {
                         data.thumbnail->setSource(new juce::FileInputSource(audioFile));
                         data.thumbnail->addChangeListener(this);  // Get notified when loading completes
-                        spdlog::info("[PHASE 3] Loading waveform from file for track {} (async)", data.trackInfo->trackId);
+                        spdlog::info("[PHASE 3] Loading waveform from file for track {} (async)", trackId);
                     }
-                }
-            }
-            else
-            {
-                spdlog::warn("[PHASE 3] No waveform in DB cache for track {}. Loading from file.", data.trackInfo->trackId);
-                juce::File audioFile(data.trackInfo->reconstructFullPath().string());
-                if (audioFile.existsAsFile())
-                {
-                    data.thumbnail->setSource(new juce::FileInputSource(audioFile));
-                    data.thumbnail->addChangeListener(this);  // Get notified when loading completes
-                    spdlog::info("[PHASE 3] Loading waveform from file for track {} (async)", data.trackInfo->trackId);
                 }
             }
         }
@@ -2698,6 +2744,14 @@ void VirtualTimelineComponent::queueTilesForTrack(const TrackRenderData& track, 
             {
                 spdlog::info("[TILE_QUEUE] Track {} queuing tile: idx={}, time={:.2f}-{:.2f}", 
                              track.id, key.tileIndex, key.startTimeSeconds, key.endTimeSeconds);
+            }
+            
+            // Enhanced debug logging for tile requests
+            if (track.trackInfo)
+            {
+                spdlog::info("[TILE_REQUEST] Track[{}] (trackId={}, title={}) requesting tile: idx={}, time={:.2f}-{:.2f}", 
+                            track.id, track.mixTrack->trackId, track.trackInfo->title,
+                            key.tileIndex, key.startTimeSeconds, key.endTimeSeconds);
             }
             
             tileRenderer_->requestTile({

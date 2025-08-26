@@ -163,15 +163,71 @@ namespace jucyaudio
                 
                 if (undoManager.canUndo(mixId))
                 {
-                    undoManager.undo(mixId, [this]() {
+                    // Check if we're currently playing and store the position
+                    bool wasPlaying = false;
+                    double playbackPosition = 0.0;
+                    if (m_playbackController && m_playbackController->isMixMode() && m_playbackController->isPlaying())
+                    {
+                        wasPlaying = true;
+                        playbackPosition = m_playbackController->getCurrentPositionSeconds();
+                        spdlog::debug("[UNDO] Stopping playback before undo operation");
+                        m_playbackController->stop();
+                    }
+                    
+                    undoManager.undo(mixId, [this, wasPlaying, playbackPosition]() {
                         // Refresh the mix after undo
                         if (m_node)
                         {
                             spdlog::info("Refreshing mix after undo");
                             m_node->refreshCache(true);  // Force a complete refresh
-                            m_timeline.populateFrom(&(m_node->getMixProjectLoader()));
-                            m_timeline.repaint();
-                            m_viewport.repaint();
+                            
+                            // Use thread-safe lock to ensure mix data is updated atomically
+                            if (m_playbackController)
+                            {
+                                m_playbackController->withMixEngineLock([this, wasPlaying, playbackPosition]() {
+                                    // Reload the mix in the playback controller
+                                    auto& mixLoader = m_node->getMixProjectLoader();
+                                    if (m_playbackController)
+                                    {
+                                        spdlog::debug("[UNDO] Reloading mix in playback controller");
+                                        m_playbackController->loadMix(&mixLoader);
+                                    }
+                                    
+                                    // Refresh the appropriate timeline
+                                    if (m_useVirtualTimeline && m_virtualTimeline)
+                                    {
+                                        m_virtualTimeline->loadMixProject(&mixLoader);
+                                    }
+                                    else
+                                    {
+                                        m_timeline.populateFrom(&mixLoader);
+                                        m_timeline.repaint();
+                                    }
+                                    m_viewport.repaint();
+                                    
+                                    // Resume playback if it was playing (inside the lock)
+                                    if (wasPlaying && m_playbackController)
+                                    {
+                                        spdlog::debug("[UNDO] Resuming playback at position {}", playbackPosition);
+                                        m_playbackController->playMixFrom(playbackPosition);
+                                    }
+                                });
+                            }
+                            else
+                            {
+                                // No playback controller, just refresh timeline
+                                auto& mixLoader = m_node->getMixProjectLoader();
+                                if (m_useVirtualTimeline && m_virtualTimeline)
+                                {
+                                    m_virtualTimeline->loadMixProject(&mixLoader);
+                                }
+                                else
+                                {
+                                    m_timeline.populateFrom(&mixLoader);
+                                    m_timeline.repaint();
+                                }
+                                m_viewport.repaint();
+                            }
                         }
                     });
                 }
@@ -181,8 +237,9 @@ namespace jucyaudio
                 }
                 return true;
             }
-            // Ctrl+Y for redo
-            else if (key == juce::KeyPress('y', juce::ModifierKeys::commandModifier, 0))
+            // Ctrl+Y or Cmd+Shift+Z for redo
+            else if (key == juce::KeyPress('y', juce::ModifierKeys::commandModifier, 0) ||
+                     key == juce::KeyPress('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 0))
             {
                 spdlog::info("MixEditorComponent: Redo requested");
                 
@@ -191,15 +248,71 @@ namespace jucyaudio
                 
                 if (undoManager.canRedo(mixId))
                 {
-                    undoManager.redo(mixId, [this]() {
+                    // Check if we're currently playing and store the position
+                    bool wasPlaying = false;
+                    double playbackPosition = 0.0;
+                    if (m_playbackController && m_playbackController->isMixMode() && m_playbackController->isPlaying())
+                    {
+                        wasPlaying = true;
+                        playbackPosition = m_playbackController->getCurrentPositionSeconds();
+                        spdlog::debug("[REDO] Stopping playback before redo operation");
+                        m_playbackController->stop();
+                    }
+                    
+                    undoManager.redo(mixId, [this, wasPlaying, playbackPosition]() {
                         // Refresh the mix after redo
                         if (m_node)
                         {
                             spdlog::info("Refreshing mix after redo");
                             m_node->refreshCache(true);  // Force a complete refresh
-                            m_timeline.populateFrom(&(m_node->getMixProjectLoader()));
-                            m_timeline.repaint();
-                            m_viewport.repaint();
+                            
+                            // Use thread-safe lock to ensure mix data is updated atomically
+                            if (m_playbackController)
+                            {
+                                m_playbackController->withMixEngineLock([this, wasPlaying, playbackPosition]() {
+                                    // Reload the mix in the playback controller
+                                    auto& mixLoader = m_node->getMixProjectLoader();
+                                    if (m_playbackController)
+                                    {
+                                        spdlog::debug("[REDO] Reloading mix in playback controller");
+                                        m_playbackController->loadMix(&mixLoader);
+                                    }
+                                    
+                                    // Refresh the appropriate timeline
+                                    if (m_useVirtualTimeline && m_virtualTimeline)
+                                    {
+                                        m_virtualTimeline->loadMixProject(&mixLoader);
+                                    }
+                                    else
+                                    {
+                                        m_timeline.populateFrom(&mixLoader);
+                                        m_timeline.repaint();
+                                    }
+                                    m_viewport.repaint();
+                                    
+                                    // Resume playback if it was playing (inside the lock)
+                                    if (wasPlaying && m_playbackController)
+                                    {
+                                        spdlog::debug("[REDO] Resuming playback at position {}", playbackPosition);
+                                        m_playbackController->playMixFrom(playbackPosition);
+                                    }
+                                });
+                            }
+                            else
+                            {
+                                // No playback controller, just refresh timeline
+                                auto& mixLoader = m_node->getMixProjectLoader();
+                                if (m_useVirtualTimeline && m_virtualTimeline)
+                                {
+                                    m_virtualTimeline->loadMixProject(&mixLoader);
+                                }
+                                else
+                                {
+                                    m_timeline.populateFrom(&mixLoader);
+                                    m_timeline.repaint();
+                                }
+                                m_viewport.repaint();
+                            }
                         }
                     });
                 }
