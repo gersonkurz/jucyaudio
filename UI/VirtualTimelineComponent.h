@@ -156,6 +156,7 @@ public:
     std::function<void()> onDeleteTracksRequested;  // For delete key
     std::function<void(const std::vector<database::MixTrack>&, int position, bool before)> onPasteTracksRequested;
     std::function<void(int afterOrder)> onRemoveFollowingTracksRequested;
+    std::function<void(int orderInMix, float newGain, bool saveToDatabase)> onGainAdjustmentChanged;
     
     // Keyboard handling
     bool keyPressed(const juce::KeyPress& key) override;
@@ -267,6 +268,8 @@ private:
     void pasteTracksBeforeSelection();
     void pasteTracksAfterSelection();
     void removeAllFollowingTracks();
+    void showGainAdjustment();
+    void showTrackProperties();
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VirtualTimelineComponent)
 };

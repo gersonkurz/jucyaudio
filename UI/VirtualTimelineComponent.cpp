@@ -1287,6 +1287,9 @@ void VirtualTimelineComponent::showContextMenu(juce::Point<int> position)
     menu.addSeparator();
     menu.addItem(5, "Delete", hasSelection);
     menu.addItem(6, "Remove All Following Tracks", hasSelection);
+    menu.addSeparator();
+    menu.addItem(7, "Adjust Gain...", hasSelection);
+    menu.addItem(8, "Track Properties...", hasSelection);
     
     // Convert the local position to screen coordinates
     const auto screenPos = localPointToGlobal(position);
@@ -1328,6 +1331,14 @@ void VirtualTimelineComponent::handleContextMenuResult(int result)
             
         case 6: // Remove All Following Tracks
             removeAllFollowingTracks();
+            break;
+            
+        case 7: // Adjust Gain
+            showGainAdjustment();
+            break;
+            
+        case 8: // Track Properties
+            showTrackProperties();
             break;
     }
 }
@@ -1493,6 +1504,271 @@ void VirtualTimelineComponent::removeAllFollowingTracks()
     {
         onRemoveFollowingTracksRequested(minOrder);
     }
+}
+
+void VirtualTimelineComponent::showGainAdjustment()
+{
+    if (selectedTracks_.empty())
+        return;
+    
+    // Get the first selected track
+    TrackRenderData* selectedTrack = nullptr;
+    for (auto& track : tracks_)
+    {
+        if (selectedTracks_.count(track.id) > 0)
+        {
+            selectedTrack = &track;
+            break;
+        }
+    }
+    
+    if (!selectedTrack || !selectedTrack->mixTrack)
+        return;
+    
+    // Create a simple component with a slider
+    class GainAdjustmentComponent : public juce::Component
+    {
+    public:
+        GainAdjustmentComponent(float initialGain, 
+                               std::function<void(float, bool)> onGainChanged)  // bool = save to database
+            : gainChangedCallback(onGainChanged), originalGain(initialGain)
+        {
+            // Setup slider
+            gainSlider.setRange(0.0, 4.0, 0.01);
+            gainSlider.setValue(initialGain, juce::dontSendNotification);
+            gainSlider.setTextValueSuffix("x");
+            gainSlider.setDoubleClickReturnValue(true, 1.0);
+            gainSlider.onValueChange = [this]() {
+                currentGain = static_cast<float>(gainSlider.getValue());
+                gainLabel.setText(juce::String(currentGain, 2) + "x (" + 
+                                juce::String(20.0f * std::log10(currentGain), 1) + " dB)", 
+                                juce::dontSendNotification);
+                // Apply gain immediately for real-time preview
+                if (gainChangedCallback)
+                    gainChangedCallback(currentGain, false);  // false = preview only, don't save
+            };
+            addAndMakeVisible(gainSlider);
+            
+            // Setup label
+            gainLabel.setText(juce::String(initialGain, 2) + "x (" + 
+                            juce::String(20.0f * std::log10(initialGain), 1) + " dB)", 
+                            juce::dontSendNotification);
+            gainLabel.setJustificationType(juce::Justification::centred);
+            addAndMakeVisible(gainLabel);
+            
+            // Setup reset button
+            resetButton.setButtonText("Reset to 1.0");
+            resetButton.onClick = [this]() {
+                gainSlider.setValue(1.0, juce::sendNotification);
+            };
+            addAndMakeVisible(resetButton);
+            
+            // Setup OK button
+            okButton.setButtonText("OK");
+            okButton.onClick = [this]() {
+                if (gainChangedCallback)
+                    gainChangedCallback(currentGain, true);  // true = save to database
+                if (auto* dialogWindow = findParentComponentOfClass<juce::DialogWindow>())
+                    dialogWindow->closeButtonPressed();
+            };
+            addAndMakeVisible(okButton);
+            
+            // Setup Cancel button
+            cancelButton.setButtonText("Cancel");
+            cancelButton.onClick = [this]() {
+                // Restore original gain on cancel
+                if (gainChangedCallback)
+                    gainChangedCallback(originalGain, false);  // Restore but don't save
+                if (auto* dialogWindow = findParentComponentOfClass<juce::DialogWindow>())
+                    dialogWindow->closeButtonPressed();
+            };
+            addAndMakeVisible(cancelButton);
+            
+            setSize(400, 200);
+        }
+        
+        void resized() override
+        {
+            auto bounds = getLocalBounds().reduced(20);
+            
+            gainLabel.setBounds(bounds.removeFromTop(30));
+            bounds.removeFromTop(10);
+            
+            gainSlider.setBounds(bounds.removeFromTop(40));
+            bounds.removeFromTop(10);
+            
+            resetButton.setBounds(bounds.removeFromTop(30));
+            bounds.removeFromTop(20);
+            
+            auto buttonArea = bounds.removeFromTop(30);
+            const int buttonWidth = 80;
+            const int gap = 10;
+            
+            cancelButton.setBounds(buttonArea.removeFromRight(buttonWidth));
+            buttonArea.removeFromRight(gap);
+            okButton.setBounds(buttonArea.removeFromRight(buttonWidth));
+        }
+        
+    private:
+        juce::Slider gainSlider{juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight};
+        juce::Label gainLabel;
+        juce::TextButton resetButton;
+        juce::TextButton okButton;
+        juce::TextButton cancelButton;
+        float currentGain{1.0f};
+        float originalGain{1.0f};
+        std::function<void(float, bool)> gainChangedCallback;
+    };
+    
+    // Create the gain adjustment component
+    const float currentGain = selectedTrack->mixTrack->gainAdjustment;
+    auto* gainComponent = new GainAdjustmentComponent(currentGain, 
+        [this, orderInMix = selectedTrack->mixTrack->orderInMix](float newGain, bool saveToDatabase)
+        {
+            // Update gain through the callback
+            if (onGainAdjustmentChanged)
+            {
+                onGainAdjustmentChanged(orderInMix, newGain, saveToDatabase);
+            }
+        });
+    
+    // Show in a dialog
+    juce::DialogWindow::LaunchOptions options;
+    options.dialogTitle = "Adjust Gain - " + selectedTrack->name;
+    options.content.setOwned(gainComponent);
+    options.componentToCentreAround = this;
+    options.escapeKeyTriggersCloseButton = true;
+    options.useNativeTitleBar = true;
+    options.resizable = false;
+    options.dialogBackgroundColour = getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId);
+    
+    options.launchAsync();
+}
+
+void VirtualTimelineComponent::showTrackProperties()
+{
+    if (selectedTracks_.empty())
+        return;
+    
+    // Get the first selected track
+    TrackRenderData* selectedTrack = nullptr;
+    for (auto& track : tracks_)
+    {
+        if (selectedTracks_.count(track.id) > 0)
+        {
+            selectedTrack = &track;
+            break;
+        }
+    }
+    
+    if (!selectedTrack || !selectedTrack->mixTrack || !selectedTrack->trackInfo)
+        return;
+    
+    // Build detailed track information string
+    juce::String info;
+    info << "=== TRACK PROPERTIES ===" << "\n\n";
+    
+    // Basic Info
+    info << "Track Name: " << selectedTrack->name << "\n";
+    info << "Database Track ID: " << selectedTrack->mixTrack->trackId << "\n";
+    info << "Order in Mix: " << selectedTrack->mixTrack->orderInMix << "\n";
+    info << "File Path: " << selectedTrack->trackInfo->reconstructFullPath().string() << "\n";
+    info << "\n";
+    
+    // Audio File Info
+    info << "--- Audio File ---" << "\n";
+    info << "Duration: " << std::chrono::duration<double>(selectedTrack->trackInfo->duration).count() << " seconds\n";
+    info << "Sample Rate: " << selectedTrack->trackInfo->samplerate << " Hz\n";
+    info << "Bitrate: " << selectedTrack->trackInfo->bitrate << " kbps\n";
+    info << "File Size: " << selectedTrack->trackInfo->filesize_bytes << " bytes\n";
+    info << "Codec: " << selectedTrack->trackInfo->codec_name << "\n";
+    info << "Channels: " << (selectedTrack->trackInfo->channels == 2 ? "Stereo" : "Mono") << "\n";
+    info << "\n";
+    
+    // Cue Points
+    info << "--- Cue Points ---" << "\n";
+    const auto cueStartSecs = std::chrono::duration<double>(selectedTrack->mixTrack->cueStart).count();
+    const auto cueEndSecs = std::chrono::duration<double>(selectedTrack->mixTrack->cueEnd).count();
+    info << "Cue Start: " << cueStartSecs << " seconds";
+    if (cueStartSecs < 0) info << " (adds " << -cueStartSecs << "s silence before)";
+    else if (cueStartSecs > 0) info << " (skips first " << cueStartSecs << "s)";
+    info << "\n";
+    
+    info << "Cue End: " << cueEndSecs << " seconds";
+    if (cueEndSecs > 0) info << " (adds " << cueEndSecs << "s silence after)";
+    else if (cueEndSecs < 0) info << " (cuts last " << -cueEndSecs << "s)";
+    info << "\n";
+    
+    const auto effectiveDur = selectedTrack->mixTrack->getEffectiveDuration(selectedTrack->trackInfo->duration);
+    info << "Effective Duration: " << std::chrono::duration<double>(effectiveDur).count() << " seconds\n";
+    info << "\n";
+    
+    // Attach Points
+    info << "--- Attach Points ---" << "\n";
+    info << "Attach From: " << std::chrono::duration<double>(selectedTrack->mixTrack->attachFrom).count() << " seconds\n";
+    info << "Attach To: " << std::chrono::duration<double>(selectedTrack->mixTrack->attachTo).count() << " seconds\n";
+    info << "\n";
+    
+    // Volume & Effects
+    info << "--- Volume & Effects ---" << "\n";
+    info << "Gain Adjustment: " << selectedTrack->mixTrack->gainAdjustment << "x\n";
+    info << "Envelope Points: " << selectedTrack->mixTrack->envelopePoints.size() << "\n";
+    if (!selectedTrack->mixTrack->envelopePoints.empty())
+    {
+        for (size_t i = 0; i < selectedTrack->mixTrack->envelopePoints.size(); ++i)
+        {
+            const auto& point = selectedTrack->mixTrack->envelopePoints[i];
+            info << "  Point " << (i + 1) << ": time=" 
+                 << std::chrono::duration<double>(point.time).count() << "s, "
+                 << "volume=" << (point.volume / 1000.0f) << "\n";
+        }
+    }
+    info << "\n";
+    
+    // Metadata
+    if (selectedTrack->trackInfo->bpm.has_value() || !selectedTrack->trackInfo->key_string.empty())
+    {
+        info << "--- Music Analysis ---" << "\n";
+        if (selectedTrack->trackInfo->bpm.has_value())
+            info << "BPM: " << selectedTrack->trackInfo->bpm.value() << "\n";
+        if (!selectedTrack->trackInfo->key_string.empty())
+            info << "Key: " << selectedTrack->trackInfo->key_string << "\n";
+        if (selectedTrack->trackInfo->intro_end.has_value())
+            info << "Intro End: " << std::chrono::duration<double>(selectedTrack->trackInfo->intro_end.value()).count() << " seconds\n";
+        if (selectedTrack->trackInfo->outro_start.has_value())
+            info << "Outro Start: " << std::chrono::duration<double>(selectedTrack->trackInfo->outro_start.value()).count() << " seconds\n";
+        info << "\n";
+    }
+    
+    // Position in Mix
+    info << "--- Position in Mix ---" << "\n";
+    const auto componentStart = std::chrono::duration<double>(selectedTrack->componentStartTime).count();
+    const auto audioStart = std::chrono::duration<double>(selectedTrack->audioStartTime).count();
+    info << "Component Start Time: " << componentStart << " seconds\n";
+    info << "Audio Start Time: " << audioStart << " seconds\n";
+    info << "Visual Width: " << selectedTrack->bounds.getWidth() << " pixels\n";
+    info << "Lane: " << ((selectedTrack->bounds.getY() - 30) / 85) << "\n";  // Approximate lane calculation
+    
+    // Create a simple dialog with a text editor
+    auto* textEditor = new juce::TextEditor();
+    textEditor->setMultiLine(true);
+    textEditor->setReadOnly(true);
+    textEditor->setScrollbarsShown(true);
+    textEditor->setCaretVisible(false);
+    textEditor->setText(info);
+    textEditor->setSize(600, 500);
+    
+    // Use DialogWindow to show it
+    juce::DialogWindow::LaunchOptions options;
+    options.dialogTitle = "Track Properties - " + selectedTrack->name;
+    options.content.setOwned(textEditor);
+    options.componentToCentreAround = this;
+    options.escapeKeyTriggersCloseButton = true;
+    options.useNativeTitleBar = true;
+    options.resizable = true;
+    options.dialogBackgroundColour = getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId);
+    
+    options.launchAsync();
 }
 
 //==============================================================================

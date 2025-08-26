@@ -106,6 +106,7 @@ namespace jucyaudio
         private:
             void updateCueAttachInData(int orderInMix, const database::MixTrack& updatedTrack);
             void updateEnvelopeInData(int orderInMix, const std::vector<database::EnvelopePoint>& points);
+            void updateGainAdjustmentInData(int orderInMix, float newGain, bool saveToDatabase);
             void updateCuePointsInData(int orderInMix, jucyaudio::Duration_t cueStart, jucyaudio::Duration_t cueEnd);
             void saveMixChanges();
             void handleMixPlayback(double startTime, bool alwaysPlay = false);

@@ -522,6 +522,60 @@ namespace jucyaudio
                 spdlog::error("MixEditorComponent::updateEnvelopeInData - No playback controller available");
             }
         }
+        
+        void MixEditorComponent::updateGainAdjustmentInData(int orderInMix, float newGain, bool saveToDatabase)
+        {
+            if (!m_node)
+            {
+                spdlog::error("MixEditorComponent::updateGainAdjustmentInData - No mix node loaded");
+                return;
+            }
+            
+            spdlog::info("Updating gain adjustment for track at position {} to {} (save: {})", 
+                        orderInMix, newGain, saveToDatabase);
+            
+            // Use thread-safe locking when modifying gain that the audio thread reads
+            if (m_playbackController)
+            {
+                m_playbackController->withMixEngineLock([&]()
+                {
+                    // Get access to the mix tracks
+                    auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
+                    
+                    // Find and update the track by orderInMix
+                    for (auto& track : mixTracks)
+                    {
+                        if (track.orderInMix == orderInMix)
+                        {
+                            track.gainAdjustment = newGain;
+                            spdlog::info("Updated gain adjustment for track {} at position {} to {}", 
+                                       track.trackId, orderInMix, newGain);
+                            
+                            // Only save to database if requested (i.e., when OK is clicked)
+                            if (saveToDatabase)
+                            {
+                                saveMixChanges();
+                                
+                                // Update the virtual timeline's internal data after saving
+                                if (m_virtualTimeline)
+                                {
+                                    auto& mixLoader = m_node->getMixProjectLoader();
+                                    m_virtualTimeline->loadMixProject(&mixLoader);
+                                }
+                            }
+                            // For preview (dragging), we just need to update the playback engine
+                            // The change is already applied above by modifying track.gainAdjustment
+                            
+                            break;
+                        }
+                    }
+                });
+            }
+            else
+            {
+                spdlog::error("MixEditorComponent::updateGainAdjustmentInData - No playback controller available");
+            }
+        }
 
         void MixEditorComponent::saveMixChanges()
         {
@@ -1336,6 +1390,11 @@ namespace jucyaudio
             m_virtualTimeline->onRemoveFollowingTracksRequested = [this](int afterOrder)
             {
                 handleRemoveFollowingTracks(afterOrder);
+            };
+            
+            m_virtualTimeline->onGainAdjustmentChanged = [this](int orderInMix, float newGain, bool saveToDatabase)
+            {
+                updateGainAdjustmentInData(orderInMix, newGain, saveToDatabase);
             };
         }
         
