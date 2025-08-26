@@ -127,6 +127,7 @@ public:
     void selectTrack(TrackId id, bool addToSelection = false);
     void clearSelection();
     std::vector<TrackId> getSelectedTracks() const;
+    std::vector<int> getSelectedDatabaseTrackIds() const;  // Returns actual database track IDs
     
     // Performance metrics
     struct PerfMetrics

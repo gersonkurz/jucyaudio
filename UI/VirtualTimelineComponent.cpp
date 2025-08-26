@@ -547,7 +547,7 @@ void VirtualTimelineComponent::mouseDrag(const juce::MouseEvent& event)
                 const double newCueStart = mouseTime - audioStartTime;
                 
                 // Constrain cue start
-                const double minCueStart = -60.0; // Allow up to 60 seconds of silence before
+                const double minCueStart = -600.0; // Allow up to 10 minutes of silence before (was 60 seconds)
                 const double maxCueStart = std::chrono::duration<double>(track->trackInfo->duration).count() - 1.0; // Leave at least 1 second
                 const double clampedCueStart = juce::jlimit(minCueStart, maxCueStart, newCueStart);
                 
@@ -587,7 +587,7 @@ void VirtualTimelineComponent::mouseDrag(const juce::MouseEvent& event)
                 
                 // Constrain cue end
                 const double minCueEnd = -std::chrono::duration<double>(track->trackInfo->duration).count() + 1.0; // At least 1 second
-                const double maxCueEnd = 60.0; // Allow up to 60 seconds of silence after
+                const double maxCueEnd = 600.0; // Allow up to 10 minutes of silence after (was 60 seconds)
                 const double clampedCueEnd = juce::jlimit(minCueEnd, maxCueEnd, newCueEnd);
                 
                 // Update the cue end
@@ -902,7 +902,13 @@ void VirtualTimelineComponent::scheduleFrame()
 
 bool VirtualTimelineComponent::keyPressed(const juce::KeyPress& key)
 {
-    spdlog::info("VirtualTimelineComponent::keyPressed - key code: {}", key.getKeyCode());
+    spdlog::info("[KEYBOARD] VirtualTimelineComponent::keyPressed - key code: {}, text: '{}', modifiers: cmd={} shift={} alt={} ctrl={}", 
+                 key.getKeyCode(), 
+                 key.getTextDescription().toStdString(),
+                 key.getModifiers().isCommandDown(),
+                 key.getModifiers().isShiftDown(),
+                 key.getModifiers().isAltDown(),
+                 key.getModifiers().isCtrlDown());
     
     if (key == juce::KeyPress::spaceKey)
     {
@@ -959,20 +965,46 @@ bool VirtualTimelineComponent::keyPressed(const juce::KeyPress& key)
     }
     else if (key == juce::KeyPress('c', juce::ModifierKeys::commandModifier, 0))
     {
-        spdlog::info("Cmd+C (copy) pressed");
+        spdlog::info("[KEYBOARD] Cmd+C (copy) detected - selected tracks: {}", selectedTracks_.size());
         if (!selectedTracks_.empty())
         {
+            spdlog::info("[KEYBOARD] Calling copySelectedTracks()");
             copySelectedTracks();
+        }
+        else
+        {
+            spdlog::warn("[KEYBOARD] No tracks selected for copy");
+        }
+        return true;
+    }
+    else if (key == juce::KeyPress('x', juce::ModifierKeys::commandModifier, 0))
+    {
+        spdlog::info("[KEYBOARD] Cmd+X (cut) detected - selected tracks: {}", selectedTracks_.size());
+        if (!selectedTracks_.empty())
+        {
+            spdlog::info("[KEYBOARD] Calling copySelectedTracks() then deleteSelectedTracks()");
+            copySelectedTracks();
+            deleteSelectedTracks();
+        }
+        else
+        {
+            spdlog::warn("[KEYBOARD] No tracks selected for cut");
         }
         return true;
     }
     else if (key == juce::KeyPress('v', juce::ModifierKeys::commandModifier, 0))
     {
-        spdlog::info("Cmd+V (paste) pressed");
+        spdlog::info("[KEYBOARD] Cmd+V (paste) detected - clipboard has {} tracks, {} tracks selected", 
+                    clipboardTracks_.size(), selectedTracks_.size());
         if (!clipboardTracks_.empty() && !selectedTracks_.empty())
         {
-            // Paste after the first selected track
+            spdlog::info("[KEYBOARD] Calling pasteTracksAfterSelection()");
             pasteTracksAfterSelection();
+        }
+        else
+        {
+            spdlog::warn("[KEYBOARD] Cannot paste - clipboard empty: {}, no selection: {}",
+                        clipboardTracks_.empty(), selectedTracks_.empty());
         }
         return true;
     }
@@ -1005,6 +1037,7 @@ void VirtualTimelineComponent::loadMixProject(audio::MixProjectLoader* loader)
     
     // Convert MixTracks to TrackRenderData using the Mix Flow algorithm
     auto& mixTracks = loader->getMixTracks();
+    spdlog::info("[VIRTUAL_TIMELINE] Loading {} mix tracks into virtual timeline", mixTracks.size());
     tracks_.reserve(mixTracks.size());
     
     // Calculate global offset from first track's cueStart (matching original timeline)
@@ -1020,7 +1053,10 @@ void VirtualTimelineComponent::loadMixProject(audio::MixProjectLoader* loader)
     {
         const auto& mixTrack = mixTracks[i];
         TrackRenderData data;
-        data.id = mixTrack.trackId;
+        // Use the index in the tracks_ vector as the unique ID. This provides a stable
+        // identifier that doesn't change when tracks are reordered in the database.
+        // The index corresponds to the visual order in the timeline.
+        data.id = static_cast<int>(i);
         data.mixTrack = std::make_shared<database::MixTrack>(mixTrack);
         
         // Get track info
@@ -1097,11 +1133,28 @@ void VirtualTimelineComponent::loadMixProject(audio::MixProjectLoader* loader)
         tracks_.push_back(std::move(data));
     }
     
+    spdlog::info("[VIRTUAL_TIMELINE] Created {} TrackRenderData entries", tracks_.size());
+    for (size_t i = 0; i < std::min(size_t(5), tracks_.size()); ++i)
+    {
+        spdlog::info("[VIRTUAL_TIMELINE]   Track[{}]: id={}, trackId={}, orderInMix={}", 
+                    i, tracks_[i].id, 
+                    tracks_[i].mixTrack ? tracks_[i].mixTrack->trackId : -1,
+                    tracks_[i].mixTrack ? tracks_[i].mixTrack->orderInMix : -1);
+    }
+    if (tracks_.size() > 5)
+    {
+        spdlog::info("[VIRTUAL_TIMELINE]   ... and {} more tracks", tracks_.size() - 5);
+    }
+    
     metrics_.totalTracks = static_cast<int>(tracks_.size());
     calculateTrackPositions();
     updateVisibleTracks();
     queueVisibleTiles();  // Start generating tiles immediately after loading
     scheduleFrame();
+    
+    // Force immediate repaint after loading new tracks
+    // This ensures the timeline updates visually after paste operations
+    repaint();
 }
 
 void VirtualTimelineComponent::setZoomLevel(double secondsPerPixel)
@@ -1199,6 +1252,25 @@ std::vector<VirtualTimelineComponent::TrackId> VirtualTimelineComponent::getSele
     return std::vector<TrackId>(selectedTracks_.begin(), selectedTracks_.end());
 }
 
+std::vector<int> VirtualTimelineComponent::getSelectedDatabaseTrackIds() const
+{
+    std::vector<int> databaseTrackIds;
+    
+    for (const auto& internalId : selectedTracks_)
+    {
+        for (const auto& track : tracks_)
+        {
+            if (track.id == internalId && track.trackInfo)
+            {
+                databaseTrackIds.push_back(track.trackInfo->trackId);
+                break;
+            }
+        }
+    }
+    
+    return databaseTrackIds;
+}
+
 void VirtualTimelineComponent::showContextMenu(juce::Point<int> position)
 {
     juce::PopupMenu menu;
@@ -1262,23 +1334,32 @@ void VirtualTimelineComponent::handleContextMenuResult(int result)
 
 void VirtualTimelineComponent::copySelectedTracks()
 {
+    spdlog::info("[COPY] copySelectedTracks() called - {} tracks selected", selectedTracks_.size());
     clipboardTracks_.clear();
     
     for (const auto& trackId : selectedTracks_)
     {
+        spdlog::info("[COPY] Looking for track with ID {}", trackId);
         // Find the track data
+        bool found = false;
         for (const auto& track : tracks_)
         {
             if (track.id == trackId && track.mixTrack)
             {
                 // Store a copy of the MixTrack data
                 clipboardTracks_.push_back(*track.mixTrack);
+                spdlog::info("[COPY] Found and copied track {} (order {})", trackId, track.mixTrack->orderInMix);
+                found = true;
                 break;
             }
         }
+        if (!found)
+        {
+            spdlog::warn("[COPY] Could not find track {} in tracks list", trackId);
+        }
     }
     
-    spdlog::info("Copied {} tracks to clipboard", clipboardTracks_.size());
+    spdlog::info("[COPY] Copied {} tracks to clipboard (from {} selected)", clipboardTracks_.size(), selectedTracks_.size());
 }
 
 void VirtualTimelineComponent::deleteSelectedTracks()
@@ -1340,8 +1421,15 @@ void VirtualTimelineComponent::pasteTracksBeforeSelection()
 
 void VirtualTimelineComponent::pasteTracksAfterSelection()
 {
+    spdlog::info("[PASTE] pasteTracksAfterSelection() called - clipboard: {} tracks, selection: {} tracks",
+                clipboardTracks_.size(), selectedTracks_.size());
+    
     if (clipboardTracks_.empty() || selectedTracks_.empty())
+    {
+        spdlog::warn("[PASTE] Cannot paste - clipboard empty: {}, no selection: {}",
+                    clipboardTracks_.empty(), selectedTracks_.empty());
         return;
+    }
     
     // Find the maximum orderInMix of selected tracks
     int maxOrder = -1;
@@ -1358,9 +1446,26 @@ void VirtualTimelineComponent::pasteTracksAfterSelection()
     }
     
     // Notify parent to insert tracks after this position
+    spdlog::info("[PASTE] Will paste {} tracks after position {}", clipboardTracks_.size(), maxOrder);
+    
     if (onPasteTracksRequested)
     {
-        onPasteTracksRequested(clipboardTracks_, maxOrder + 1, false);
+        spdlog::info("[PASTE] Calling onPasteTracksRequested callback");
+        // Pass maxOrder directly since we're using orderInMix (0-based) as track IDs
+        onPasteTracksRequested(clipboardTracks_, maxOrder, false);
+        
+        // After paste, select the newly pasted track(s)
+        // The pasted tracks will be at positions maxOrder+1 through maxOrder+clipboardTracks_.size()
+        clearSelection();
+        for (size_t i = 0; i < clipboardTracks_.size(); ++i)
+        {
+            selectTrack(maxOrder + 1 + static_cast<int>(i), true);
+        }
+        spdlog::info("[PASTE] Selected newly pasted track(s) starting at position {}", maxOrder + 1);
+    }
+    else
+    {
+        spdlog::error("[PASTE] onPasteTracksRequested callback is not set!");
     }
 }
 
@@ -1469,13 +1574,25 @@ void VirtualTimelineComponent::updateVisibleTracks()
     const auto visibleArea = getVisibleArea();
     int visibleCount = 0;
     
+    spdlog::info("[VIRTUAL_TIMELINE] Updating visible tracks - visible area: x={}, y={}, w={}, h={}",
+                visibleArea.getX(), visibleArea.getY(), visibleArea.getWidth(), visibleArea.getHeight());
+    
     for (auto& track : tracks_)
     {
         track.isVisible = track.bounds.intersects(visibleArea);
         if (track.isVisible)
+        {
             visibleCount++;
+            if (visibleCount <= 5)
+            {
+                spdlog::info("[VIRTUAL_TIMELINE]   Track {} is visible (bounds: x={}, y={}, w={}, h={})",
+                            track.id, track.bounds.getX(), track.bounds.getY(), 
+                            track.bounds.getWidth(), track.bounds.getHeight());
+            }
+        }
     }
     
+    spdlog::info("[VIRTUAL_TIMELINE] {} tracks visible out of {} total", visibleCount, tracks_.size());
     metrics_.visibleTracks = visibleCount;
 }
 
@@ -1612,23 +1729,66 @@ void VirtualTimelineComponent::paintTracks(juce::Graphics& g)
 
 void VirtualTimelineComponent::paintTrack(juce::Graphics& g, const TrackRenderData& track)
 {
-    // Track background - matching the original MixTrackComponent style
+    // Log what we're painting for debugging
+    if (track.mixTrack)
+    {
+        spdlog::info("[PAINT] Painting track id={}, trackId={}, orderInMix={}, bounds=({},{},{},{}), name={}",
+                    track.id, track.mixTrack->trackId, track.mixTrack->orderInMix,
+                    track.bounds.getX(), track.bounds.getY(), 
+                    track.bounds.getWidth(), track.bounds.getHeight(),
+                    track.name.toStdString());
+    }
+    
+    // Track background - make it subtly different from the main editor background
     const auto& lf = getLookAndFeel();
+    auto baseColour = lf.findColour(juce::TextEditor::backgroundColourId);
+    
+    // Determine if we're in a dark or light theme
+    const bool isDarkTheme = baseColour.getBrightness() < 0.5f;
+    
     if (track.selected)
     {
-        // Selected track - brighter background (no border)
-        g.setColour(lf.findColour(juce::TextEditor::backgroundColourId).brighter(0.2f));
+        // Selected track - more prominent with accent color tint
+        auto selectedColour = baseColour;
+        // Add subtle accent color tint and make it brighter/darker based on theme
+        auto accentColour = lf.findColour(juce::TextButton::buttonColourId);
+        selectedColour = selectedColour.interpolatedWith(accentColour, 0.08f);
+        
+        if (isDarkTheme)
+            selectedColour = selectedColour.brighter(0.15f);
+        else
+            selectedColour = selectedColour.darker(0.06f);
+            
+        g.setColour(selectedColour);
         g.fillRoundedRectangle(track.bounds.toFloat(), 4.0f);
     }
     else
     {
-        // Non-selected track - normal background
-        g.setColour(lf.findColour(juce::TextEditor::backgroundColourId));
+        // Non-selected track - subtly different from main background for visibility
+        auto trackColour = baseColour;
+        
+        if (isDarkTheme)
+        {
+            // Dark theme: make tracks slightly brighter with very subtle warmth
+            trackColour = trackColour.brighter(0.06f);
+            // Add tiny bit of warmth to distinguish from pure grey
+            trackColour = trackColour.interpolatedWith(juce::Colour(255, 248, 240), 0.02f);
+        }
+        else
+        {
+            // Light theme: make tracks slightly darker/greyer
+            trackColour = trackColour.darker(0.03f);
+            // Add tiny bit of coolness to distinguish from pure white
+            trackColour = trackColour.interpolatedWith(juce::Colour(240, 243, 248), 0.04f);
+        }
+        
+        // Apply with very slight transparency for depth
+        g.setColour(trackColour.withAlpha(0.97f));
         g.fillRoundedRectangle(track.bounds.toFloat(), 4.0f);
         
-        // Subtle border (only for non-selected tracks)
-        g.setColour(lf.findColour(juce::TextEditor::outlineColourId).withAlpha(0.3f));
-        g.drawRoundedRectangle(track.bounds.toFloat(), 4.0f, 0.5f);
+        // Subtle border (only for non-selected tracks) - slightly more visible
+        g.setColour(lf.findColour(juce::TextEditor::outlineColourId).withAlpha(0.25f));
+        g.drawRoundedRectangle(track.bounds.toFloat(), 4.0f, 0.7f);
     }
     
     // Paint waveform using tiles
@@ -2288,8 +2448,8 @@ VirtualTimelineComponent::getTileKeysForTrack(const TrackRenderData& track, cons
     if (trackVisibleBounds.isEmpty())
         return keys;
     
-    const double cueStartTime = std::chrono::duration<double>(
-        std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
+    // Get the actual cueStart (can be negative if adding silence before)
+    const double cueStartTime = std::chrono::duration<double>(track.mixTrack->cueStart).count();
     const double trackDuration = std::chrono::duration<double>(track.trackInfo->duration).count();
     
     // CRITICAL: Tile indices must be based on a FIXED time grid, independent of zoom!
@@ -2297,9 +2457,10 @@ VirtualTimelineComponent::getTileKeysForTrack(const TrackRenderData& track, cons
     // Larger tiles = fewer cache entries needed, but less granular updates
     constexpr double FIXED_SECONDS_PER_TILE = 30.0;  // Each tile = 30 seconds of audio (was 10)
     
-    // Calculate which tile indices cover this track based on the fixed grid
-    const int firstTileIdx = static_cast<int>(std::floor(cueStartTime / FIXED_SECONDS_PER_TILE));
-    const int lastTileIdx = static_cast<int>(std::ceil((cueStartTime + track.effectiveDuration) / FIXED_SECONDS_PER_TILE));
+    // Tiles are always based on actual audio time (0 to trackDuration)
+    // We don't tile silence - only the actual audio content
+    const int firstTileIdx = 0;  // Always start from beginning of actual audio
+    const int lastTileIdx = static_cast<int>(std::ceil(trackDuration / FIXED_SECONDS_PER_TILE));
     
     // Get current settings
     const bool drawStereo = config::theSettings.mixEditingSettings.drawStereoWaveforms.get();
@@ -2310,16 +2471,18 @@ VirtualTimelineComponent::getTileKeysForTrack(const TrackRenderData& track, cons
         const double tileStartTime = tileIdx * FIXED_SECONDS_PER_TILE;
         const double tileEndTime = (tileIdx + 1) * FIXED_SECONDS_PER_TILE;
         
-        // Clip to actual track bounds
-        const double actualStart = std::max(0.0, tileStartTime - cueStartTime);
-        const double actualEnd = std::min(trackDuration, tileEndTime - cueStartTime);
+        // Clip to actual track bounds (audio time, not component time)
+        const double actualStart = std::max(0.0, tileStartTime);
+        const double actualEnd = std::min(trackDuration, tileEndTime);
         
-        if (actualStart < actualEnd && actualEnd > 0.0)
+        if (actualStart < actualEnd)
         {
             // Check if this tile is actually visible on screen
-            const double componentTileStart = (actualStart - cueStartTime) + std::chrono::duration<double>(track.componentStartTime).count();
+            // When cueStart is negative, audio starts later in the component
+            const double audioOffsetInComponent = std::max(0.0, -cueStartTime);
+            const double componentTileStart = actualStart + audioOffsetInComponent + std::chrono::duration<double>(track.componentStartTime).count();
             const int tilePixelStart = secondsToPixels(componentTileStart);
-            const int tilePixelEnd = tilePixelStart + tileWidth_;
+            const int tilePixelEnd = secondsToPixels(componentTileStart + (actualEnd - actualStart));
             
             if (tilePixelEnd >= trackVisibleBounds.getX() && tilePixelStart <= trackVisibleBounds.getRight())
             {
@@ -2327,8 +2490,8 @@ VirtualTimelineComponent::getTileKeysForTrack(const TrackRenderData& track, cons
                 key.trackId = track.id;
                 key.tileIndex = tileIdx;
                 key.isStereo = drawStereo;
-                key.startTimeSeconds = actualStart;
-                key.endTimeSeconds = actualEnd;
+                key.startTimeSeconds = actualStart;  // Always in audio time (0-based)
+                key.endTimeSeconds = actualEnd;       // Always in audio time
                 
                 keys.push_back(key);
             }
@@ -2345,16 +2508,21 @@ juce::Rectangle<int> VirtualTimelineComponent::getTileDestinationRect(const Trac
     // Convert tile's audio time back to component pixels
     const double componentStartTime = std::chrono::duration<double>(track.componentStartTime).count();
     
+    // Get the actual cueStart (can be negative if adding silence before)
     double cueStartTime = 0.0;
     if (track.mixTrack)
     {
-        cueStartTime = std::chrono::duration<double>(
-            std::max(jucyaudio::Duration_t{0}, track.mixTrack->cueStart)).count();
+        cueStartTime = std::chrono::duration<double>(track.mixTrack->cueStart).count();
     }
     
+    // When cueStart is negative, the audio starts later in the component
+    // When cueStart is positive, the audio starts earlier (some is cut off)
+    const double audioOffsetInComponent = std::max(0.0, -cueStartTime);
+    
     // Convert from track audio time to component time
-    const double componentTileStart = (tileStartTime - cueStartTime) + componentStartTime;
-    const double componentTileEnd = (tileEndTime - cueStartTime) + componentStartTime;
+    // tileStartTime and tileEndTime are in audio time (0-based), not component time
+    const double componentTileStart = tileStartTime + audioOffsetInComponent + componentStartTime;
+    const double componentTileEnd = tileEndTime + audioOffsetInComponent + componentStartTime;
     
     // Convert to pixels based on current zoom
     const int startX = secondsToPixels(componentTileStart);

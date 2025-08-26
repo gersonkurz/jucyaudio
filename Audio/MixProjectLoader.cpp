@@ -27,7 +27,18 @@ namespace jucyaudio
                 return false; // No mix found
             }
             m_mixTracks = theTrackLibrary.getMixManager().getMixTracks(m_mixId);
-            spdlog::info("MixProjectLoader: Loaded {} tracks for mix ID {}", m_mixTracks.size(), m_mixId);
+            spdlog::info("[RELOAD] MixProjectLoader::loadMix - Loaded {} tracks for mix ID {} from database", m_mixTracks.size(), m_mixId);
+            
+            // Log first few tracks for debugging
+            if (!m_mixTracks.empty())
+            {
+                spdlog::info("[RELOAD] First few tracks loaded:");
+                for (size_t i = 0; i < std::min(size_t(3), m_mixTracks.size()); ++i)
+                {
+                    const auto& track = m_mixTracks[i];
+                    spdlog::info("[RELOAD]   - Track {} at position {}", track.trackId, track.orderInMix);
+                }
+            }
             m_trackInfos = theTrackLibrary.getTracks(getMixTrackQueryArgs(m_mixId));
             spdlog::info("MixProjectLoader: Loaded {} track infos for mix ID {}", m_trackInfos.size(), m_mixId);
 
@@ -294,9 +305,28 @@ namespace jucyaudio
 
         bool MixProjectLoader::saveMix(const IMixManager &mixManager)
         {
+            spdlog::info("[SAVE_MIX] MixProjectLoader::saveMix() called, m_mixTracks.size() = {}", m_mixTracks.size());
+            
+            // Log first few tracks in m_mixTracks for debugging
+            if (!m_mixTracks.empty())
+            {
+                spdlog::info("[SAVE_MIX] First few tracks in m_mixTracks:");
+                for (size_t i = 0; i < std::min(size_t(5), m_mixTracks.size()); ++i)
+                {
+                    const auto& track = m_mixTracks[i];
+                    spdlog::info("[SAVE_MIX]   - Track {} at position {}", track.trackId, track.orderInMix);
+                }
+                if (m_mixTracks.size() > 5)
+                {
+                    spdlog::info("[SAVE_MIX]   ... and {} more tracks", m_mixTracks.size() - 5);
+                }
+            }
+            
             // Create a copy of mix info and tracks to pass to the manager
             std::vector<MixTrack> mixTracksCopy = m_mixTracks;
             m_mixInfo.totalDuration = calculateMixDuration();
+            
+            spdlog::info("[SAVE_MIX] Passing {} tracks to createOrUpdateMix", mixTracksCopy.size());
 
             // Save to database - actually, might also create it
             if (mixManager.createOrUpdateMix(m_mixInfo, mixTracksCopy))

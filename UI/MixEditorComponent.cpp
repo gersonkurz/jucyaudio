@@ -614,7 +614,7 @@ namespace jucyaudio
             
             if (m_useVirtualTimeline && m_virtualTimeline)
             {
-                const auto selectedTracks = m_virtualTimeline->getSelectedTracks();
+                const auto selectedTracks = m_virtualTimeline->getSelectedDatabaseTrackIds();
                 if (selectedTracks.empty())
                 {
                     spdlog::warn("handleDeleteSelectedTrack called but no track selected (virtual timeline).");
@@ -825,27 +825,52 @@ namespace jucyaudio
         
         void MixEditorComponent::handlePasteTracks(const std::vector<database::MixTrack>& tracks, int position, bool before)
         {
-            if (!m_node || tracks.empty())
-                return;
+            spdlog::info("[PASTE] handlePasteTracks called with {} tracks, position={}, before={}", 
+                        tracks.size(), position, before);
             
-            spdlog::info("Pasting {} tracks at position {}, before={}", tracks.size(), position, before);
+            if (!m_node || tracks.empty())
+            {
+                spdlog::warn("[PASTE] Aborting paste: m_node={}, tracks.empty()={}", 
+                            m_node != nullptr, tracks.empty());
+                return;
+            }
+            
+            // Stop playback to avoid race conditions when modifying tracks
+            const bool wasPlaying = m_playbackController && m_playbackController->isPlaying();
+            double playbackPosition = 0.0;
+            
+            if (wasPlaying)
+            {
+                playbackPosition = m_playbackController->getCurrentPositionSeconds();
+                spdlog::debug("[PASTE] Stopping playback before paste operation");
+                m_playbackController->stop();
+            }
+            
+            spdlog::info("[PASTE] Pasting {} tracks at position {}, before={}", tracks.size(), position, before);
             
             auto& mixLoader = m_node->getMixProjectLoader();
             auto& currentTracks = mixLoader.getMixTracks();
+            
+            spdlog::info("[PASTE] Current mix has {} tracks", currentTracks.size());
             
             // Create a new vector with all tracks
             std::vector<database::MixTrack> newTracks;
             newTracks.reserve(currentTracks.size() + tracks.size());
             
-            // Calculate the insertion position
+            // Calculate the insertion position  
+            // position is the orderInMix of the selected track, not an array index
             const int insertPosition = before ? position : position + 1;
+            spdlog::info("[PASTE] Will insert at orderInMix position {}", insertPosition);
             
             // Copy tracks before the insertion point
             for (const auto& track : currentTracks)
             {
                 if (track.orderInMix < insertPosition)
                 {
-                    newTracks.push_back(track);
+                    database::MixTrack newTrack = track;
+                    newTrack.orderInMix = static_cast<int>(newTracks.size());
+                    newTracks.push_back(newTrack);
+                    spdlog::info("[PASTE] Copied track {} to position {}", track.trackId, newTrack.orderInMix);
                 }
             }
             
@@ -856,6 +881,7 @@ namespace jucyaudio
                 newTrack.orderInMix = static_cast<int>(newTracks.size());
                 // Keep the same trackId as we're duplicating the same track
                 newTracks.push_back(newTrack);
+                spdlog::info("[PASTE] Inserted pasted track {} at position {}", newTrack.trackId, newTrack.orderInMix);
             }
             
             // Copy remaining tracks after the insertion point, renumbering them
@@ -866,33 +892,73 @@ namespace jucyaudio
                     database::MixTrack adjustedTrack = track;
                     adjustedTrack.orderInMix = static_cast<int>(newTracks.size());
                     newTracks.push_back(adjustedTrack);
+                    spdlog::info("[PASTE] Moved track {} to position {}", track.trackId, adjustedTrack.orderInMix);
                 }
             }
+            
+            // Store the original count before we move
+            const auto originalTrackCount = currentTracks.size();
+            const auto expectedNewCount = originalTrackCount + tracks.size();
             
             // Replace the mix tracks with our new ordering
             currentTracks = std::move(newTracks);
             
+            // Verify the move was successful
+            spdlog::info("[PASTE_DB] After move: currentTracks.size() = {}, expected = {}", 
+                        currentTracks.size(), expectedNewCount);
+            
             // Save to database
+            spdlog::info("[PASTE_DB] Attempting to save mix after paste...");
+            spdlog::info("[PASTE_DB] Mix now has {} tracks (was {} before paste)", 
+                        currentTracks.size(), originalTrackCount);
+            
+            // Log the actual tracks being saved
+            spdlog::info("[PASTE_DB] Tracks to save:");
+            for (const auto& track : currentTracks)
+            {
+                spdlog::info("[PASTE_DB]   - Track {} at position {}", track.trackId, track.orderInMix);
+            }
+            
             if (mixLoader.saveMix(theTrackLibrary.getMixManager()))
             {
-                spdlog::info("Successfully pasted {} tracks at position {}", tracks.size(), insertPosition);
+                spdlog::info("[PASTE_DB] Successfully saved mix with {} tracks to database", currentTracks.size());
+                spdlog::info("[PASTE_DB] Successfully pasted {} tracks at position {}", tracks.size(), insertPosition);
                 
                 // Reload from database to ensure consistency
+                spdlog::info("[PASTE_DB] Reloading mix from database...");
                 mixLoader.reloadFromDatabase();
+                spdlog::info("[PASTE_DB] Mix reloaded, now has {} tracks", mixLoader.getMixTracks().size());
+                
+                // Reload in playback controller if it was playing
+                if (m_playbackController && wasPlaying)
+                {
+                    spdlog::debug("[PASTE] Reloading mix in playback controller");
+                    m_playbackController->loadMix(&mixLoader);
+                }
                 
                 // Refresh the timeline
                 if (m_useVirtualTimeline && m_virtualTimeline)
                 {
+                    spdlog::info("[PASTE_DB] Refreshing virtual timeline with updated mix");
                     m_virtualTimeline->loadMixProject(&mixLoader);
                 }
                 else
                 {
+                    spdlog::info("[PASTE_DB] Refreshing regular timeline with updated mix");
                     m_timeline.populateFrom(&mixLoader);
                 }
+                
+                // Resume playback if it was playing
+                if (wasPlaying)
+                {
+                    spdlog::debug("[PASTE] Resuming playback at position {}", playbackPosition);
+                    m_playbackController->playMixFrom(playbackPosition);
+                }
+                spdlog::info("[PASTE_DB] Timeline refresh complete");
             }
             else
             {
-                spdlog::error("Failed to save mix after pasting tracks");
+                spdlog::error("[PASTE_DB] Failed to save mix after pasting tracks - database operation failed");
             }
         }
         
@@ -902,6 +968,17 @@ namespace jucyaudio
                 return;
             
             spdlog::info("Removing all tracks after orderInMix {}", afterOrder);
+            
+            // Stop playback to avoid race conditions when modifying tracks
+            const bool wasPlaying = m_playbackController && m_playbackController->isPlaying();
+            double playbackPosition = 0.0;
+            
+            if (wasPlaying)
+            {
+                playbackPosition = m_playbackController->getCurrentPositionSeconds();
+                spdlog::debug("[REMOVE] Stopping playback before removing tracks");
+                m_playbackController->stop();
+            }
             
             auto& mixLoader = m_node->getMixProjectLoader();
             auto& mixTracks = mixLoader.getMixTracks();
@@ -954,6 +1031,13 @@ namespace jucyaudio
                 // Reload from database to ensure consistency
                 mixLoader.reloadFromDatabase();
                 
+                // Reload in playback controller if it was playing
+                if (m_playbackController && wasPlaying)
+                {
+                    spdlog::debug("[REMOVE] Reloading mix in playback controller");
+                    m_playbackController->loadMix(&mixLoader);
+                }
+                
                 // Refresh the timeline
                 if (m_useVirtualTimeline && m_virtualTimeline)
                 {
@@ -963,15 +1047,17 @@ namespace jucyaudio
                 {
                     m_timeline.populateFrom(&mixLoader);
                 }
+                
+                // Resume playback if it was playing
+                if (wasPlaying)
+                {
+                    spdlog::debug("[REMOVE] Resuming playback at position {}", playbackPosition);
+                    m_playbackController->playMixFrom(playbackPosition);
+                }
             }
             else
             {
                 spdlog::error("Failed to save mix after removing tracks");
-            }
-            
-            if (m_useVirtualTimeline && m_virtualTimeline)
-            {
-                m_virtualTimeline->loadMixProject(&mixLoader);
             }
         }
         
