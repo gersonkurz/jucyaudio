@@ -207,7 +207,7 @@ private:
     {
         // Always render tiles at a fixed pixel width for consistency
         // The tile will be stretched when drawn to match the actual zoom level
-        constexpr int TILE_RENDER_WIDTH = 512;  // Render at higher res for quality
+        const int TILE_RENDER_WIDTH = config::theSettings.tileRenderingSettings.tileRenderWidth;
         const int tileHeight = request.tileBoundsInComponent.getHeight();
         juce::Image tileImage(juce::Image::ARGB, TILE_RENDER_WIDTH, tileHeight, true);
         
@@ -225,7 +225,7 @@ private:
         const int numChannels = request.thumbnail->getNumChannels();
         
         // Use high quality rendering since tiles are now reused across zoom levels
-        float verticalZoom = 0.9f;  // Good quality that works well at all zoom levels
+        const float verticalZoom = config::theSettings.tileRenderingSettings.waveformVerticalZoomPercent / 100.0f;
         
         // Use the exact time range from the key
         const double startTime = request.key.startTimeSeconds;
@@ -271,12 +271,14 @@ VirtualTimelineComponent::VirtualTimelineComponent(juce::AudioFormatManager& for
                                                    juce::AudioThumbnailCache& thumbnailCache)
     : formatManager_(formatManager)
     , thumbnailCache_(thumbnailCache)
+    , tileWidth_(config::theSettings.tileRenderingSettings.tileWidthPixels)
 {
     setOpaque(true);  // Critical for performance - we paint the entire background
     setWantsKeyboardFocus(true);  // Enable keyboard shortcuts
     metricsResetTime_ = juce::Time::getMillisecondCounter();
 
-    tileCache_ = std::make_unique<WaveformTileCache>(512); // 512MB cache for more tiles
+    const auto cacheSizeMB = config::theSettings.tileRenderingSettings.tileCacheSizeMB;
+    tileCache_ = std::make_unique<WaveformTileCache>(cacheSizeMB);
     tileRenderer_ = std::make_unique<TileRenderQueue>();
     tileRenderer_->onTileReady = [this](const WaveformKey& key, juce::Image&& image) {
         onTileRendered(key, std::move(image));
@@ -1034,7 +1036,8 @@ void VirtualTimelineComponent::loadMixProject(audio::MixProjectLoader* loader)
     {
         spdlog::info("[TILE_CACHE] Clearing tile cache before loading new mix");
         tileCache_.reset();
-        tileCache_ = std::make_unique<WaveformTileCache>(100); // 100MB cache
+        const auto cacheSizeMB = config::theSettings.tileRenderingSettings.tileCacheSizeMB;
+        tileCache_ = std::make_unique<WaveformTileCache>(cacheSizeMB);
     }
     
     if (!loader)
@@ -2712,7 +2715,8 @@ void VirtualTimelineComponent::queueVisibleTiles()
     const auto visibleBounds = getVisibleArea();
     
     // Add prefetch margin for smooth scrolling
-    const int prefetchMargin = tileWidth_ * 2;  // Prefetch 2 tiles on each side
+    const int prefetchCount = config::theSettings.tileRenderingSettings.prefetchTileCount;
+    const int prefetchMargin = tileWidth_ * prefetchCount;
     auto prefetchBounds = visibleBounds.expanded(prefetchMargin, 0);
 
     for (const auto& track : tracks_)
@@ -2785,7 +2789,7 @@ VirtualTimelineComponent::getTileKeysForTrack(const TrackRenderData& track, cons
     // CRITICAL: Tile indices must be based on a FIXED time grid, independent of zoom!
     // Each tile represents a fixed duration of audio
     // Larger tiles = fewer cache entries needed, but less granular updates
-    constexpr double FIXED_SECONDS_PER_TILE = 30.0;  // Each tile = 30 seconds of audio (was 10)
+    const double FIXED_SECONDS_PER_TILE = config::theSettings.tileRenderingSettings.tileDurationSeconds;
     
     // Tiles are always based on actual audio time (0 to trackDuration)
     // We don't tile silence - only the actual audio content

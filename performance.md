@@ -340,7 +340,7 @@ void paintTrack() {
 - **Attach Point Dragging**: ✅ DONE - With track position recalculation
 - **Track Selection**: ✅ DONE - Single and multi-track selection with Shift/Cmd modifiers
 - **Visual Feedback**: ✅ DONE - Theme-aware selection highlighting and click position indicators
-- **Cue Point Dragging**: ❌ TODO - Drag cueStart/cueEnd markers to adjust track boundaries
+- **Cue Point Dragging**: ✅ DONE - Drag cueStart/cueEnd markers to adjust track boundaries
 
 #### 4.2.2 Keyboard Shortcuts ✅ COMPLETE
 - **Space**: ✅ DONE - Play/pause mix from current position (toggles)
@@ -360,7 +360,7 @@ void paintTrack() {
 #### 4.2.4 Database Integration ✅ COMPLETE
 - **onCueAttachChanged**: ✅ DONE - Persists attach point changes to database
 - **onEnvelopeChanged**: ✅ DONE - Persists envelope point changes to database
-- **onGainAdjustmentChanged**: ❌ TODO - Gain adjustment UI not yet implemented
+- **onGainAdjustmentChanged**: ✅ DONE - Gain adjustment UI not yet implemented
 - All critical callbacks wired up and functional
 
 #### 4.2.5 Playback Integration ✅ COMPLETE

@@ -217,7 +217,7 @@ private:
     // Waveform tiling system (Phase 3)
     std::unique_ptr<WaveformTileCache> tileCache_;
     std::unique_ptr<TileRenderQueue> tileRenderer_;
-    static constexpr int tileWidth_{256};  // Pixels per tile
+    int tileWidth_;  // Pixels per tile - initialized from config
     static constexpr double sqrt2_{1.4142135623730951};
     
     // Helper methods

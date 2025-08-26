@@ -197,6 +197,24 @@ namespace jucyaudio
                 TypedValue<bool> reverbBypassed{this, "ReverbBypassed", true};        // Default to bypassed (disabled)
 
             } audioSettings{this};
+            
+            struct TileRenderingSettings : public Section
+            {
+                TileRenderingSettings(Section *parent)
+                    : Section{parent, "TileRendering"}
+                {
+                }
+
+                TypedValue<int> tileCacheSizeMB{this, "TileCacheSizeMB", 512};              // Memory limit for tile cache in MB
+                TypedValue<int> tileWidthPixels{this, "TileWidthPixels", 256};              // Width of each rendered tile in pixels
+                TypedValue<int> tileDurationSeconds{this, "TileDurationSeconds", 30};       // Duration of audio each tile represents
+                TypedValue<int> tileRenderWidth{this, "TileRenderWidth", 512};              // Render resolution for quality
+                TypedValue<int> prefetchTileCount{this, "PrefetchTileCount", 2};            // Number of tiles to prefetch on each side
+                TypedValue<int> waveformVerticalZoomPercent{this, "WaveformVerticalZoomPercent", 90}; // Vertical zoom as percent (0-100)
+                TypedValue<bool> enableTileCache{this, "EnableTileCache", true};            // Enable/disable tile caching
+                TypedValue<bool> debugTileRendering{this, "DebugTileRendering", false};     // Show tile boundaries for debugging
+
+            } tileRenderingSettings{this};
         };
 
         extern RootSettings theSettings;
