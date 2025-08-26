@@ -1,10 +1,10 @@
 #pragma once
 
-#include <juce_gui_basics/juce_gui_basics.h>
-#include <juce_graphics/juce_graphics.h>
 #include <Database/Includes/ILongRunningTask.h> // Your updated, IRefCounted interface
 #include <atomic>
 #include <functional> // For std::function
+#include <juce_graphics/juce_graphics.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 #include <optional>
 #include <thread>
 
@@ -18,23 +18,18 @@ namespace jucyaudio
             // Auto-close behavior options for clearer API
             enum class AutoCloseMode
             {
-                NoAutoClose,      // Dialog stays open, user must click Close
-                Immediate,        // Close immediately on success (0ms delay)
-                WithDelay         // Close after specified delay
+                NoAutoClose, // Dialog stays open, user must click Close
+                Immediate,   // Close immediately on success (0ms delay)
+                WithDelay    // Close after specified delay
             };
-            
+
             // New constructor with clearer auto-close semantics
             TaskDialog(database::ILongRunningTask *task,
-                       std::function<void()> onCompletion = nullptr,
-                       AutoCloseMode closeMode = AutoCloseMode::NoAutoClose,
-                       int delayMs = 500);  // Default delay when using WithDelay
-            
-            // Keep old constructor for backward compatibility (deprecated)
-            [[deprecated("Use new constructor with AutoCloseMode for clearer intent")]]
-            TaskDialog(database::ILongRunningTask *task, // Takes a raw pointer, will retain
-                       std::function<void()> onCompletion,
-                       std::optional<int> autoCloseOnSuccessDelayMs);
-            
+                std::function<void()> onCompletion = nullptr,
+                AutoCloseMode closeMode = AutoCloseMode::NoAutoClose,
+                int delayMs = 500); // Default delay when using WithDelay
+
+
             ~TaskDialog() override;
 
             void paint(juce::Graphics &g) override;
@@ -45,24 +40,16 @@ namespace jucyaudio
 
             // Enhanced static launcher with clearer API
             static void launch(const juce::String &windowTitle,
-                              database::ILongRunningTask *taskToRun,
-                              AutoCloseMode closeMode = AutoCloseMode::NoAutoClose,
-                              int delayMs = 500,
-                              juce::Component *parentToCenterOn = nullptr,
-                              std::function<void()> onCompletion = nullptr);
-            
-            // Keep old launcher for backward compatibility (deprecated)
-            [[deprecated("Use new launch() with AutoCloseMode for clearer intent")]]
-            static void launch(const juce::String &windowTitle,
-                               database::ILongRunningTask *taskToRun, // Caller ensures task exists, dialog retains
-                               std::optional<int> autoCloseOnSuccessDelayMs,
-                               juce::Component *parentToCenterOn = nullptr,
-                               std::function<void()> onCompletion = nullptr);
+                database::ILongRunningTask *taskToRun,
+                AutoCloseMode closeMode = AutoCloseMode::NoAutoClose,
+                int delayMs = 500,
+                juce::Component *parentToCenterOn = nullptr,
+                std::function<void()> onCompletion = nullptr);
 
         private:
             void startTask();
-            void handleTaskCompleted(bool success, const std::string& resultMessage);
-            void handleProgressUpdate(int progressPercent, const std::string& statusMessage);
+            void handleTaskCompleted(bool success, const std::string &resultMessage);
+            void handleProgressUpdate(int progressPercent, const std::string &statusMessage);
             void closeDialog(int modalReturnValue);
 
             database::ILongRunningTask *m_task; // Retained pointer

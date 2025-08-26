@@ -87,12 +87,9 @@ private:
     
     // Paint timing
     std::chrono::high_resolution_clock::time_point paintStartTime_;
-    int paintCount_{0};
-    double paintTimeAccumulator_{0.0};
     
     // FPS tracking
     std::chrono::high_resolution_clock::time_point lastFpsUpdate_;
-    int frameCount_{0};
     
     // Update intervals
     static constexpr int metricsUpdateIntervalMs{1000};
@@ -102,34 +99,6 @@ private:
     void updateAverages();
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PerfCounters)
-};
-
-//==============================================================================
-/**
-    RAII helper for timing paint operations
-*/
-class ScopedPaintTimer
-{
-public:
-    explicit ScopedPaintTimer(PerfCounters* counters)
-        : counters_(counters)
-    {
-#if JUCE_DEBUG
-        if (counters_)
-            counters_->beginPaint();
-#endif
-    }
-    
-    ~ScopedPaintTimer()
-    {
-#if JUCE_DEBUG
-        if (counters_)
-            counters_->endPaint();
-#endif
-    }
-    
-private:
-    PerfCounters* counters_;
 };
 
 } // namespace jucyaudio::ui

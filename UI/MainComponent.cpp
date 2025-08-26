@@ -1523,8 +1523,7 @@ namespace jucyaudio
             auto *task = new background_tasks::BpmAnalysisTask{std::move(trackResult.trackInfos)};
             TaskDialog::launch("BPM Analysis",
                 task,
-                500,
-                this,
+                TaskDialog::AutoCloseMode::NoAutoClose, 500, this,
                 [this, task]()
                 {
                     m_dataViewComponent.refreshView();
@@ -1617,8 +1616,7 @@ namespace jucyaudio
             auto *task = new RemoveDuplicatesFromWorkingSet{workingSetId};
             TaskDialog::launch("Removing Duplicates",
                 task,
-                500,
-                this,
+                TaskDialog::AutoCloseMode::NoAutoClose, 500, this,
                 [this]()
                 {
                     m_dataViewComponent.refreshView();
@@ -2302,7 +2300,7 @@ namespace jucyaudio
             spdlog::info("Finalizing and exporting mix ID: {} (Name: '{}') to: {}", mixInfo.mixId, mixInfo.name, pathToString(settings.outputPath));
 
             auto *task = new FinalizeAndExportTask{mixInfo, m_audioLibrary.getMixExporter(), settings};
-            TaskDialog::launch("Finalize & Export", task, std::nullopt, this);
+            TaskDialog::launch("Finalize & Export", task, TaskDialog::AutoCloseMode::NoAutoClose, 500, this);
             task->release(REFCOUNT_DEBUG_ARGS);
             // Note: tags will be deleted by FinalizeAndExportTask destructor
         }
@@ -2647,29 +2645,38 @@ namespace jucyaudio
             if (success)
             {
                 m_statusPanel.getStatusBar().postMessage("Mix '" + mixInfo.name + "' created or updated successfully.", false);
-                m_navigationTree.onMixCreated(mixInfo.mixId);
-
-                // After creating/updating the mix, check if it's the one currently being viewed.
-                // If so, we need to force a refresh of the view to show the new tracks.
+                
+                // Check if this mix was already selected BEFORE we call onMixCreated
+                bool wasAlreadySelected = false;
                 if (m_currentNode)
                 {
                     if (auto *mixNode = dynamic_cast<MixNode *>(m_currentNode))
                     {
-                        if (mixNode->getUniqueId() == mixInfo.mixId)
+                        wasAlreadySelected = (mixNode->getUniqueId() == mixInfo.mixId);
+                    }
+                }
+                
+                // This will select the node if it's new, or just refresh the tree if it exists
+                m_navigationTree.onMixCreated(mixInfo.mixId);
+
+                // Only force a refresh if the mix was ALREADY selected (meaning it's an update, not a new creation)
+                // If it wasn't selected before, onMixCreated->selectNode will handle loading it
+                if (wasAlreadySelected)
+                {
+                    if (auto *mixNode = dynamic_cast<MixNode *>(m_currentNode))
+                    {
+                        spdlog::info("Currently selected mix (ID: {}) was updated, forcing view refresh.", mixInfo.mixId);
+
+                        // Invalidate the node's internal cache to pick up the new tracks
+                        mixNode->refreshCache(true);
+
+                        if (m_currentMainView == MainViewType::MixEditor)
                         {
-                            spdlog::info("Currently viewed mix (ID: {}) was updated, forcing view refresh.", mixInfo.mixId);
-
-                            // Invalidate the node's internal cache to pick up the new tracks
-                            mixNode->refreshCache(true);
-
-                            if (m_currentMainView == MainViewType::MixEditor)
-                            {
-                                m_mixEditorComponent.loadMix(mixNode);
-                            }
-                            else // DataView showing the mix's tracks
-                            {
-                                m_dataViewComponent.refreshView();
-                            }
+                            m_mixEditorComponent.loadMix(mixNode);
+                        }
+                        else // DataView showing the mix's tracks
+                        {
+                            m_dataViewComponent.refreshView();
                         }
                     }
                 }
@@ -2934,7 +2941,7 @@ namespace jucyaudio
             };
 
             auto *task = new DatabaseMaintenanceTask{};
-            TaskDialog::launch("Database Maintenance", task, {}, this);
+            TaskDialog::launch("Database Maintenance", task, TaskDialog::AutoCloseMode::NoAutoClose, 500, this);
             task->release(REFCOUNT_DEBUG_ARGS);
             return true;
         }

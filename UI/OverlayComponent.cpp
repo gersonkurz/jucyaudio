@@ -53,7 +53,6 @@ void OverlayComponent::setPlayheadPosition(double seconds)
     if (seconds != playheadSeconds_)
     {
         // Calculate old and new positions
-        const int oldX = secondsToPixels(playheadSeconds_);
         const int newX = secondsToPixels(seconds);
         
         playheadSeconds_ = seconds;
