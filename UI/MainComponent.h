@@ -140,6 +140,7 @@ namespace jucyaudio
 
             void onEditWorkingSetMetadata(INavigationNode *node);
             void onEditMixMetadata(INavigationNode *node);
+            void onUnlockMixForEditing(INavigationNode *node);
             void onShowInFolder(RowIndex_t rowIndex);
 
             // Equalizer management

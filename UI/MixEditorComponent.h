@@ -141,6 +141,9 @@ namespace jucyaudio
             // Virtual timeline toggle
             bool m_useVirtualTimeline{true};
             
+            // Read-only mode for exported mixes
+            bool m_isReadOnly{false};
+            
             // Playback controller reference
             PlaybackController* m_playbackController{nullptr};
             

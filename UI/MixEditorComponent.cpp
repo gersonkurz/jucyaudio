@@ -146,6 +146,26 @@ namespace jucyaudio
         void MixEditorComponent::paint(juce::Graphics &g)
         {
             g.fillAll(getLookAndFeel().findColour(juce::ListBox::backgroundColourId).darker());
+            
+            // Draw read-only indicator if mix is locked/exported
+            if (m_isReadOnly)
+            {
+                g.setColour(juce::Colours::orange.withAlpha(0.8f));
+                g.setFont(14.0f);
+                const auto text = "🔒 Mix is Read-Only (Exported) - Right-click in tree to unlock";
+                const auto textWidth = g.getCurrentFont().getStringWidth(text);
+                const auto x = getWidth() - textWidth - 10;
+                const auto y = 5;
+                
+                // Draw background for better readability
+                g.setColour(juce::Colours::black.withAlpha(0.7f));
+                g.fillRoundedRectangle(static_cast<float>(x - 5), static_cast<float>(y - 2), 
+                                      static_cast<float>(textWidth + 10), 20.0f, 3.0f);
+                
+                // Draw text
+                g.setColour(juce::Colours::orange);
+                g.drawText(text, x, y, textWidth, 16, juce::Justification::left);
+            }
         }
 
         bool MixEditorComponent::keyPressed(const juce::KeyPress &key)
@@ -363,6 +383,25 @@ namespace jucyaudio
             m_node = node; // Take ownership of the new node
             node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid
             node->refreshCache(false);
+            
+            // Check if mix is exported and set read-only mode
+            const auto& mixManager = database::theTrackLibrary.getMixManager();
+            auto mixInfo = mixManager.getMix(node->getMixInfo().mixId);
+            m_isReadOnly = (mixInfo.status == "Exported" || mixInfo.status == "Locked");
+            
+            if (m_isReadOnly)
+            {
+                spdlog::info("[MixEditor] Mix {} is in read-only mode (status: {})", 
+                            node->getMixInfo().mixId, mixInfo.status);
+            }
+            
+            // Configure timeline for read-only mode
+            m_timeline.setReadOnly(m_isReadOnly);
+            if (m_virtualTimeline)
+            {
+                // If we add setReadOnly to VirtualTimelineComponent later
+                // m_virtualTimeline->setReadOnly(m_isReadOnly);
+            }
             
             auto& loader = node->getMixProjectLoader();
             spdlog::info("[MixEditor] Loading mix with {} tracks into timeline", loader.getMixTracks().size());
@@ -1527,7 +1566,7 @@ namespace jucyaudio
                     bool needsLoading = !database::theTrackLibrary.loadWaveform(trackInfo->trackId, cachedData).isOk() 
                                      || cachedData.empty();
                     
-                    requests.push_back({trackInfo->trackId, needsLoading});
+                    requests.push_back({static_cast<int>(trackInfo->trackId), needsLoading});
                 }
             }
             

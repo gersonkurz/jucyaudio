@@ -326,6 +326,13 @@ namespace jucyaudio
             }
             return result;
         }
+        
+        bool SqliteMixManagerWithUndo::setMixStatus(MixId mixId, std::string_view status) const
+        {
+            // Setting status doesn't need undo support since it's primarily for 
+            // marking export state, not user-driven mix edits
+            return m_wrappedManager.setMixStatus(mixId, status);
+        }
 
     } // namespace database
 } // namespace jucyaudio

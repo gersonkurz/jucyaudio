@@ -18,7 +18,7 @@ namespace jucyaudio
             MixTrack &mixTrack, const TrackInfo &trackInfo, juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache)
             : m_mixTrack{mixTrack},
               m_trackInfo{trackInfo},
-              m_thumbnail{512, formatManager, thumbnailCache}
+              m_thumbnail{2048, formatManager, thumbnailCache}
         {
             m_thumbnail.addChangeListener(this);
 
@@ -171,7 +171,12 @@ namespace jucyaudio
                                           ? lf.findColour(juce::TreeView::selectedItemBackgroundColourId).withAlpha(0.5f)
                                           : lf.findColour(jucyaudio::ui::waveformColourId).withAlpha(0.7f);
                 g.setColour(waveformColour);
-                
+
+                // Log zoom-related info for debugging
+                spdlog::info("MixTrackComponent paint - track {}: component width={}, waveformDrawRect width={}, pixelsPerSecond={}, bounds=({},{},{},{})",
+                             m_mixTrack.orderInMix, getWidth(), waveformDrawRect.getWidth(), m_pixelsPerSecond,
+                             getBounds().getX(), getBounds().getY(), getBounds().getWidth(), getBounds().getHeight());
+
                 // Draw the waveform from the source file into its designated sub-rectangle.
                 m_thumbnail.drawChannel(g,
                     waveformDrawRect.reduced(2),

@@ -45,8 +45,11 @@ namespace jucyaudio
 
         private:
             const DataActions &getNodeActions() const override;
+            void buildDynamicActions();
+            
             MixInfo m_mixInfo;
             mutable audio::MixProjectLoader m_mixProjectLoader;
+            mutable DataActions m_dynamicActions;
         };
     } // namespace database
 } // namespace jucyaudio

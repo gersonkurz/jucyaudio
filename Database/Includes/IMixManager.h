@@ -103,6 +103,12 @@ namespace jucyaudio
             // @param updatedTrack The MixTrack object containing the updated data.
             // @return True if the track was successfully updated, false otherwise.
             virtual bool updateMixTrack(MixId mixId, const MixTrack& updatedTrack) const = 0;
+            
+            // @brief Set the status of a mix (e.g., "New", "Modified", "Exported", "Locked")
+            // @param mixId The ID of the mix to update.
+            // @param status The new status string.
+            // @return True if the status was successfully updated, false otherwise.
+            virtual bool setMixStatus(MixId mixId, std::string_view status) const = 0;
         };
 
     } // namespace database

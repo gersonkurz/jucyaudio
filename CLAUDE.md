@@ -109,6 +109,22 @@
     - Universal binary support for maximum compatibility
     - Architecture-specific output organization
 
+### Session 19: Timeline Settings & Dialog Fixes
+*   **Timeline Configuration:**
+    - Made timeline settings configurable via Settings dialog
+    - Added virtual timeline preference to MixEditingSettings
+    - MixEditorComponent now checks config for virtual timeline mode
+*   **Critical Dialog Fix:**
+    - Fixed dual-dialog issue preventing dialogs from reopening
+    - Removed excess logging for cleaner operation
+*   **Track Editing Enhancements:**
+    - Fixed track rendering issues on copy/paste operations
+    - Added track info and gain editor functionality
+*   **Waveform System Redesign:**
+    - Completed major waveform reloading redesign
+    - Improved TaskDialog autoclose handling
+    - Better waveform caching and loading performance
+
 ---
 
 ## Important Implementation Notes
@@ -118,7 +134,9 @@
 **Refcounting:** The navigation system uses manual retain/release with atomic reference counting. Works well - just remember to match retains with releases!
 
 **Build Instructions:** 
-The project uses CMake and includes a `justfile` for build automation. Key commands:
+The project uses CMake and includes a `justfile` for build automation (macOS). For Windows, use CMake directly:
+
+**macOS (with just):**
 - `just build` - Build with default (RelWithDebInfo: optimized with debug symbols)
 - `just debug` - Build debug version (unoptimized, full debugging)
 - `just release` - Build release version (optimized, no debug symbols)
@@ -130,10 +148,16 @@ The project uses CMake and includes a `justfile` for build automation. Key comma
 - `just info` - Show current build configuration
 - `just clean` - Clean build directory
 
-The build system supports multiple architectures (Apple Silicon, Intel, Universal) and automatically organizes outputs by architecture and configuration.
+**Windows:**
+- `cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo` - Configure
+- `cmake --build build` - Build
+- Build outputs are in `build\x64-{Debug|Release|RelWithDebInfo}\`
+
+The build system supports multiple architectures (Apple Silicon, Intel, Universal on macOS) and automatically organizes outputs by architecture and configuration.
 
 **IMPORTANT FOR AI ASSISTANTS:** 
-- Always BUILD (`just build`) to verify code changes compile correctly
+- On macOS: Always BUILD (`just build`) to verify code changes compile correctly
+- On Windows: Use `cmake --build build` to verify code changes
 - NEVER attempt to RUN the application - it's a GUI app that requires human interaction
 - After building, wait for human feedback on testing results
 - The human will test UI features and report back any issues

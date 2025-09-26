@@ -1465,6 +1465,9 @@ namespace jucyaudio
             case DataAction::ShowReverb:
                 toggleReverbWindow();
                 break;
+            case DataAction::UnlockMixForEditing:
+                onUnlockMixForEditing(node);
+                break;
             default:
                 spdlog::error("Unsupported action '{}' for node '{}' in MainComponent::handleNodeActionFromNavigationPanel. This should not happen.",
                     dataActionToString(action, m_currentNode).toStdString(),
@@ -2366,6 +2369,47 @@ namespace jucyaudio
             {
                 // Handle other node types here if needed in the future
                 m_statusPanel.getStatusBar().postMessage("Details not available for this item.", true);
+            }
+        }
+        
+        void MainComponent::onUnlockMixForEditing(INavigationNode *node)
+        {
+            if (auto *mixNode = dynamic_cast<MixNode *>(node))
+            {
+                const auto mixInfo = mixNode->getMixInfo();
+                
+                // Show confirmation dialog
+                const auto options = juce::MessageBoxOptions()
+                    .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                    .withTitle("Unlock Mix for Editing")
+                    .withMessage("This mix has been exported. Do you want to unlock it for editing?\n\nNote: This will change its status from 'Exported' to 'Modified'.")
+                    .withButton("Unlock")
+                    .withButton("Cancel");
+                    
+                juce::AlertWindow::showAsync(options, [mixNode, mixInfo, this](int result)
+                {
+                    if (result == 1) // User clicked "Unlock"
+                    {
+                        const auto& mixManager = database::theTrackLibrary.getMixManager();
+                        if (mixManager.setMixStatus(mixInfo.mixId, "Modified"))
+                        {
+                            spdlog::info("Unlocked mix {} for editing", mixInfo.mixId);
+                            m_statusPanel.getStatusBar().postMessage("Mix unlocked for editing", false);
+                            
+                            // If the mix is currently loaded in the editor, reload it to update read-only state
+                            if (m_mixEditorComponent.getCurrentMixNode() && 
+                                m_mixEditorComponent.getCurrentMixNode()->getMixInfo().mixId == mixInfo.mixId)
+                            {
+                                m_mixEditorComponent.forceRefresh();
+                            }
+                        }
+                        else
+                        {
+                            spdlog::error("Failed to unlock mix {} for editing", mixInfo.mixId);
+                            m_statusPanel.getStatusBar().postMessage("Failed to unlock mix", true);
+                        }
+                    }
+                });
             }
         }
 

@@ -59,11 +59,15 @@ namespace jucyaudio
             }
             else if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
             {
-                if (m_selectedTrack)
+                if (!m_isReadOnly && m_selectedTrack)
                 {
                     // This now calls the corrected method below
                     deleteSelectedTrack();
                     return true; 
+                }
+                else if (m_isReadOnly)
+                {
+                    spdlog::info("Cannot delete track - mix is read-only (exported/locked)");
                 }
             }
 
@@ -242,6 +246,12 @@ namespace jucyaudio
 
         void TimelineComponent::cutSelectedTrackToClipboard()
         {
+            if (m_isReadOnly)
+            {
+                spdlog::info("Cannot cut track - mix is read-only (exported/locked)");
+                return;
+            }
+            
             if (!m_selectedTrack || !m_mixLoader)
             {
                 spdlog::warn("cutSelectedTrackToClipboard: No track selected or no mix loaded");
@@ -264,6 +274,12 @@ namespace jucyaudio
 
         void TimelineComponent::pasteFromClipboard(bool insertBefore)
         {
+            if (m_isReadOnly)
+            {
+                spdlog::info("Cannot paste track - mix is read-only (exported/locked)");
+                return;
+            }
+            
             if (!m_clipboard.isValid || !m_mixLoader)
             {
                 spdlog::warn("pasteFromClipboard: No valid clipboard data or no mix loaded");
@@ -743,6 +759,9 @@ namespace jucyaudio
 
         void TimelineComponent::refreshLayout()
         {
+            // Set flag to force resized() to recalculate track bounds
+            m_zoomHasChanged = true;
+
             double maxTimeSecs = 0.0;
             for (const auto &view : m_trackViews)
             {
@@ -754,6 +773,9 @@ namespace jucyaudio
 
                 const double endTime = startTime + effectiveDuration;
                 maxTimeSecs = std::max(maxTimeSecs, endTime);
+
+                // Update the zoom level in each track component
+                view.component->setPixelsPerSecond(m_pixelsPerSecond);
             }
 
             m_calculatedWidth = static_cast<int>(maxTimeSecs * m_pixelsPerSecond) + 200;
@@ -1064,12 +1086,16 @@ namespace jucyaudio
             
             // OPTIMIZATION: Only recalculate track positions if the number of lanes changed
             // This avoids expensive recalculation during continuous window resizing
-            if (numLanes == m_cachedNumLanes)
+            // BUT: We must always recalculate if zoom has changed (m_zoomHasChanged flag)
+            if (numLanes == m_cachedNumLanes && !m_zoomHasChanged)
             {
-                // Number of lanes hasn't changed, no need to recalculate all track positions
-                spdlog::debug("TimelineComponent::resized - Skipping (lanes unchanged: {})", numLanes);
+                // Number of lanes hasn't changed and zoom hasn't changed, no need to recalculate all track positions
+                spdlog::debug("TimelineComponent::resized - Skipping (lanes unchanged: {}, zoom unchanged)", numLanes);
                 return;
             }
+
+            // Clear zoom change flag if it was set
+            m_zoomHasChanged = false;
             
             spdlog::info("TimelineComponent::resized - Recalculating {} tracks for {} lanes (was {})", 
                         m_trackViews.size(), numLanes, m_cachedNumLanes);
@@ -1105,6 +1131,8 @@ namespace jucyaudio
                     const int startX = static_cast<int>(startTime * m_pixelsPerSecond);
                     const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
                     const int width = static_cast<int>(effectiveDuration * m_pixelsPerSecond);
+                    spdlog::info("TimelineComponent::resized - setting bounds for track {}: x={}, width={}, pixelsPerSecond={}",
+                                 view.mixTrackData->orderInMix, startX, width, m_pixelsPerSecond);
                     view.component->setBounds(startX, yPos, width, trackHeight);
                 }
                 // Check if only Y position needs updating (common case for window resize)
@@ -1198,19 +1226,36 @@ namespace jucyaudio
                     view.componentStartTime = Duration_t{0};
 
                     view.component = std::make_unique<MixTrackComponent>(*view.mixTrackData, *view.trackInfoData, m_formatManager, m_thumbnailCache);
+                    view.component->setPixelsPerSecond(m_pixelsPerSecond);
 
                     view.component->onCueAttachChanged = [this](int orderInMix, const database::MixTrack &updatedTrack)
                     {
+                        if (m_isReadOnly)
+                        {
+                            spdlog::info("Cannot modify cue/attach points - mix is read-only");
+                            return;
+                        }
                         if (!m_isPopulating && onCueAttachChanged)
                             onCueAttachChanged(orderInMix, updatedTrack);
                     };
                     view.component->onEnvelopeChanged = [this](int orderInMix, const std::vector<database::EnvelopePoint> &points)
                     {
+                        if (m_isReadOnly)
+                        {
+                            spdlog::info("Cannot modify envelope - mix is read-only");
+                            return;
+                        }
                         if (!m_isPopulating && onEnvelopeChanged)
                             onEnvelopeChanged(orderInMix, points);
                     };
                     view.component->onGainAdjustmentChanged = [this](int orderInMix, float newGain)
                     {
+                        if (m_isReadOnly)
+                        {
+                            spdlog::info("Cannot modify gain - mix is read-only");
+                            return;
+                        }
+                        
                         // Find the MixTrack in the loader's vector
                         MixTrack* targetMixTrack = nullptr;
                         auto& mixTracks = m_mixLoader->getMixTracks(); // Get mutable reference to the vector

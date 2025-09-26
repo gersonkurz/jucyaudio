@@ -56,6 +56,7 @@ namespace jucyaudio
             bool finalizeMix(MixId mixId) const override;
             bool clearMixWorkingSetId(MixId mixId) const override;
             bool updateMixTrack(MixId mixId, const MixTrack& updatedTrack) const override;
+            bool setMixStatus(MixId mixId, std::string_view status) const override;
 
         private:
             IMixManager& m_wrappedManager;

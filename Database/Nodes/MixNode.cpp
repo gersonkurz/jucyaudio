@@ -8,13 +8,32 @@ namespace jucyaudio
 {
     namespace database
     {
-        // Careful: these are actions for the *MixNode*, not the tracks shown in the mix.
-        const DataActions MixNodeActions{DataAction::ShowMixEditor, DataAction::ShowTrackEditor, DataAction::Separator, DataAction::EditMixMetadata, DataAction::Delete, DataAction::ExportMix};
         MixNode::MixNode(INavigationNode *parent, const MixInfo &mixInfo)
             : LibraryNode{parent, mixInfo.name, "Mix", "Mixes"},
               m_mixInfo{mixInfo}
         {
             m_queryArgs.mixId = mixInfo.mixId;
+            buildDynamicActions();
+        }
+        
+        void MixNode::buildDynamicActions()
+        {
+            // Build dynamic action list based on mix status
+            m_dynamicActions.clear();
+            m_dynamicActions.push_back(DataAction::ShowMixEditor);
+            m_dynamicActions.push_back(DataAction::ShowTrackEditor);
+            m_dynamicActions.push_back(DataAction::Separator);
+            
+            // Add unlock option if mix is exported or locked
+            if (m_mixInfo.status == "Exported" || m_mixInfo.status == "Locked")
+            {
+                m_dynamicActions.push_back(DataAction::UnlockMixForEditing);
+                m_dynamicActions.push_back(DataAction::Separator);
+            }
+            
+            m_dynamicActions.push_back(DataAction::EditMixMetadata);
+            m_dynamicActions.push_back(DataAction::Delete);
+            m_dynamicActions.push_back(DataAction::ExportMix);
         }
         void MixNode::rename(std::string_view newName)
         {
@@ -23,7 +42,7 @@ namespace jucyaudio
         }
         const DataActions &MixNode::getNodeActions() const
         {
-            return MixNodeActions;
+            return m_dynamicActions;
         }
 
         bool MixNode::deleteThisObject()

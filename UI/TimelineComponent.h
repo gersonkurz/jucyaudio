@@ -153,6 +153,10 @@ namespace jucyaudio
              */
             bool deleteSelectedTrack();
             
+            // Read-only mode for exported/locked mixes
+            void setReadOnly(bool readOnly) { m_isReadOnly = readOnly; }
+            bool isReadOnly() const { return m_isReadOnly; }
+            
             // Clipboard operations
             void copySelectedTrackToClipboard();
             void cutSelectedTrackToClipboard();
@@ -323,8 +327,14 @@ namespace jucyaudio
             /** @brief Cached number of lanes to avoid unnecessary recalculations during resize */
             int m_cachedNumLanes = -1;
 
+            /** @brief Flag to indicate zoom has changed and track bounds need recalculation */
+            bool m_zoomHasChanged = false;
+
             /** @brief A non-owning pointer to the currently selected MixTrackComponent. */
             MixTrackComponent *m_selectedTrack = nullptr;
+            
+            /** @brief Read-only mode flag for exported/locked mixes */
+            bool m_isReadOnly = false;
 
             /** @brief The current position of the user-controlled playhead (the white line), in seconds. A value of -1.0 indicates it is not set. */
             double m_currentTimePosition = -1.0;

@@ -573,6 +573,22 @@ FROM Mixes m
             }
             return false;
         }
+        
+        bool SqliteMixManager::setMixStatus(MixId mixId, std::string_view status) const
+        {
+            SqliteStatement stmt{m_db, "UPDATE Mixes SET status = ? WHERE mix_id = ?;"};
+            stmt.addParam(std::string(status));
+            stmt.addParam(mixId);
+            
+            if (!stmt.execute())
+            {
+                spdlog::error("Failed to set status '{}' for mix {}", status, mixId);
+                return false;
+            }
+            
+            spdlog::info("Successfully set status '{}' for mix {}", status, mixId);
+            return true;
+        }
 
         bool SqliteMixManager::createAndSaveAutoMix(const std::vector<TrackInfo> &trackInfos,
             /*in/out*/ MixInfo &mixInfo,

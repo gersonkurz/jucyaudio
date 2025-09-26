@@ -5,6 +5,7 @@
 #include <Database/TrackLibrary.h>
 #include <juce_audio_utils/juce_audio_utils.h> // For AudioThumbnail
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <spdlog/spdlog.h>
 
 namespace jucyaudio
 {
@@ -92,6 +93,22 @@ namespace jucyaudio
             int getOrderInMix() const
             {
                 return m_mixTrack.orderInMix;
+            }
+
+            /**
+             * @brief Sets the pixels per second zoom level for proper waveform rendering.
+             *
+             * @param pixelsPerSecond The current zoom level in pixels per second.
+             */
+            void setPixelsPerSecond(double pixelsPerSecond)
+            {
+                if (m_pixelsPerSecond != pixelsPerSecond)
+                {
+                    spdlog::info("MixTrackComponent::setPixelsPerSecond - track {}: changing from {} to {}",
+                                 m_mixTrack.orderInMix, m_pixelsPerSecond, pixelsPerSecond);
+                    m_pixelsPerSecond = pixelsPerSecond;
+                    repaint();
+                }
             }
 
         private:
@@ -366,9 +383,12 @@ namespace jucyaudio
             
             /** @brief JUCE component for generating and caching the audio waveform visualization */
             juce::AudioThumbnail m_thumbnail;
-            
+
             /** @brief Label displaying track title and mix position in the top section */
             juce::Label m_infoLabel;
+
+            /** @brief Current zoom level in pixels per second for waveform rendering */
+            double m_pixelsPerSecond = 50.0;
             
             /** @brief Slider for per-track gain adjustment */
             juce::Slider m_gainSlider;

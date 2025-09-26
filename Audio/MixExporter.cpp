@@ -17,6 +17,7 @@
 #include <Database/Includes/IMixManager.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
+#include <Database/TrackLibrary.h>
 #include <Utils/AssortedUtils.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -63,6 +64,15 @@ namespace jucyaudio
             spdlog::info("MTE: Initializing export for mix {} -> {}", mixId, pathToString(settings.outputPath));
             const auto success{implementation->run()};
             delete implementation; // Clean up the implementation
+            
+            // Mark the mix as exported if successful
+            if (success)
+            {
+                const auto& mixManager = database::theTrackLibrary.getMixManager();
+                mixManager.setMixStatus(mixId, "Exported");
+                spdlog::info("Marked mix {} as Exported", mixId);
+            }
+            
             return success;
         }
     } // namespace audio
