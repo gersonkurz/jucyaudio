@@ -147,7 +147,7 @@ namespace jucyaudio
 
         std::string LibraryNode::getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const
         {
-            const auto track{LibraryNode::getTrackInfoForRow(rowIndex)};
+            const auto track{getTrackInfoForRow(rowIndex)};  // Use virtual dispatch
             if (track == nullptr)
             {
                 return {};

@@ -72,6 +72,20 @@ namespace jucyaudio
                     return lastKnownViewType;
                 }
             }
+
+            // Check if this is a MixNode anywhere in the tree (including under Exported)
+            // MixNodes should always be able to show in MixEditor
+            if (node)
+            {
+                // Try to cast to MixNode to check if this is a mix
+                const auto* mixNode = dynamic_cast<const database::MixNode*>(node);
+                if (mixNode)
+                {
+                    lastKnownViewType = lastKnownViewTypeForMixes;
+                    return lastKnownViewType;
+                }
+            }
+
             // Add more types as needed
             lastKnownViewType = MainViewType::DataView; // Default to DataView if no specific type matches
             return lastKnownViewType;

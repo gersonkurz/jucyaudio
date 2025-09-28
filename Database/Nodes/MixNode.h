@@ -31,6 +31,7 @@ namespace jucyaudio
             bool deleteThisObject() override;
             void rename(std::string_view newName) override;
             const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;
+            bool getNumberOfRows(int64_t &outCount) const override;
             void refreshCache(bool flushCache) const override;
             static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
 

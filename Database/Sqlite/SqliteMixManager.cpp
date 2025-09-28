@@ -97,6 +97,23 @@ namespace jucyaudio
 {
     namespace database
     {
+        MixInfo SqliteMixManager::getMix(MixId mixId) const
+        {
+            // Direct query without export_folder filtering - need to load any mix regardless of export status
+            SqliteStatement stmt{m_db, R"SQL(SELECT
+                mix_id, name, timestamp, track_count, total_length, source_ws_id, status, exported_at, export_folder
+                FROM Mixes WHERE mix_id = ?;)SQL"};
+
+            stmt.addParam(mixId);
+
+            if (stmt.getNextResult())
+            {
+                return mixInfoFromStatement(stmt);
+            }
+
+            return MixInfo{}; // Return empty if not found
+        }
+
         std::vector<MixInfo> SqliteMixManager::getMixes(const TrackQueryArgs &args) const
         {
             // Check if we need to filter offline mixes

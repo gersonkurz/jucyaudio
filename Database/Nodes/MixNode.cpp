@@ -74,6 +74,16 @@ namespace jucyaudio
             return m_mixProjectLoader.getTrackInfoForRow(rowIndex);
         }
 
+        bool MixNode::getNumberOfRows(int64_t &outCount) const
+        {
+            if (!m_bCacheInitialized)
+            {
+                refreshCache(false);
+            }
+            outCount = static_cast<int64_t>(m_mixProjectLoader.getMixTracks().size());
+            return true;
+        }
+
         void MixNode::refreshCache(bool flushCache) const
         {
             // if the cache is invalid, or the rowIndex is out of bounds, we need to retrieve the rows
