@@ -58,7 +58,7 @@ namespace jucyaudio
             case DataAction::ShowReverb:
                 return "Reverb";
             case DataAction::UnlockMixForEditing:
-                return "🔓 Unlock for Editing";
+                return "Unlock for Editing";
             default:
                 return "dataActionToString()?";
             }
