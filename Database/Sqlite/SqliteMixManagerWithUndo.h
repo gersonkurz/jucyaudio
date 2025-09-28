@@ -58,6 +58,14 @@ namespace jucyaudio
             bool updateMixTrack(MixId mixId, const MixTrack& updatedTrack) const override;
             bool setMixStatus(MixId mixId, std::string_view status) const override;
 
+            // Export Organization System methods
+            bool setMixExported(MixId mixId, std::string_view exportFolder) const override;
+            bool moveBackToMixes(MixId mixId) const override;
+            bool isExported(MixId mixId) const override;
+            std::vector<ExportFolderInfo> getExportFolders() const override;
+            bool createExportFolder(std::string_view name, std::string_view description = "") const override;
+            std::vector<MixInfo> getMixesByLocation(std::optional<std::string_view> exportFolder = std::nullopt) const override;
+
         private:
             IMixManager& m_wrappedManager;
             IUndoManager& m_undoManager;

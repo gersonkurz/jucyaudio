@@ -125,6 +125,27 @@
     - Improved TaskDialog autoclose handling
     - Better waveform caching and loading performance
 
+### Session 20: Export Organization System (Phases 1-2 Complete)
+*   **Database Schema v19:**
+    - Added `exported_at` and `export_folder` columns to Mixes table
+    - Created ExportFolders table for managing export categories
+    - Implemented migration from schema v15 to v19
+*   **Core Logic Implementation:**
+    - Extended IMixManager with 6 new export-related methods
+    - Full implementation in SqliteMixManager and SqliteMixManagerWithUndo
+    - MixInfo struct now includes optional export fields
+*   **Export Dialog Enhancement:**
+    - Added folder selection dropdown and "New Folder" button
+    - Integrated folder selection into export workflow
+    - MixExporter now calls `setMixExported()` to move mix to export folder
+*   **Location-Based State Design:**
+    - Mixes with NULL export_folder are editable in "Mixes" node
+    - Mixes with non-NULL export_folder are read-only in "Exported" tree
+    - No separate lock flag - location determines editability
+*   **Next Steps:**
+    - Phase 3: Create navigation tree nodes for Exported hierarchy
+    - Phase 4: Implement read-only mode in MixEditorComponent
+
 ---
 
 ## Important Implementation Notes

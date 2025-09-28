@@ -8,6 +8,7 @@
 #include <Utils/StringWriter.h>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
+#include <chrono>
 #include <algorithm>
 
 using json = nlohmann::json;
@@ -17,48 +18,6 @@ namespace
     using namespace jucyaudio;
     using namespace jucyaudio::database;
 
-    /*
-    // to_json
-    void envelopePointToJson(json &j, const EnvelopePoint &ep)
-    {
-        j = json{{"time_ms", ep.time.count()}, // store as integer (milliseconds)
-            {"volume", ep.volume}};
-    }
-
-    // from_json
-    void envelopePointFromJson(const json &j, EnvelopePoint &ep)
-    {
-        ep.time = Duration_t{j.at("time_ms").get<int64_t>()};
-        ep.volume = j.at("volume").get<Volume_t>();
-    }
-*/
-    /*std::string envelopePointsToJson(const std::vector<EnvelopePoint> &points)
-    {
-        json j;
-        for (const auto &point : points)
-        {
-            json pointJson;
-            envelopePointToJson(pointJson, point);
-            j.push_back(pointJson);
-        }
-        return j.dump(); // Convert to JSON string
-    }
-
-    std::vector<EnvelopePoint> envelopePointsFromJson(const std::string &jsonString)
-    {
-        std::vector<EnvelopePoint> points;
-        if (jsonString.empty())
-            return points; // Return empty vector if input is empty
-        json j = json::parse(jsonString);
-        for (const auto &pointJson : j)
-        {
-            EnvelopePoint point;
-            envelopePointFromJson(pointJson, point);
-            points.push_back(point);
-        }
-        return points;
-    }
-*/
     MixInfo mixInfoFromStatement(const SqliteStatement &stmt)
     {
         MixInfo info{};
@@ -74,6 +33,21 @@ namespace
         if (!stmt.isNull(col))
             info.status = stmt.getText(col);
         col++;
+
+        // Check if we have the export fields (they might not be present in all queries)
+        if (stmt.getNumberOfColumns() > col)
+        {
+            if (!stmt.isNull(col))
+                info.exportedAt = timestampFromInt64(stmt.getInt64(col));
+            col++;
+        }
+        if (stmt.getNumberOfColumns() > col)
+        {
+            if (!stmt.isNull(col))
+                info.exportFolder = stmt.getText(col);
+            col++;
+        }
+
         return info;
     }
 
@@ -139,31 +113,37 @@ namespace jucyaudio
             std::string BASE_STMT;
             if (filterOffline && tempTableExists)
             {
-                // Filter out offline mixes
-                BASE_STMT = R"SQL(SELECT 
+                // Filter out offline mixes and exported mixes
+                BASE_STMT = R"SQL(SELECT
     m.mix_id,
     m.name,
     m.timestamp as created,
     m.track_count,
     m.total_length,
     m.source_ws_id,
-    m.status
+    m.status,
+    m.exported_at,
+    m.export_folder
 FROM Mixes m
 WHERE m.mix_id NOT IN (SELECT mix_id FROM temp.OfflineMixes)
+AND m.export_folder IS NULL
 )SQL";
             }
             else
             {
-                // Show all mixes
-                BASE_STMT = R"SQL(SELECT 
+                // Show all non-exported mixes
+                BASE_STMT = R"SQL(SELECT
     m.mix_id,
     m.name,
     m.timestamp as created,
     m.track_count,
     m.total_length,
     m.source_ws_id,
-    m.status
+    m.status,
+    m.exported_at,
+    m.export_folder
 FROM Mixes m
+WHERE m.export_folder IS NULL
 )SQL";
             }
 
@@ -172,15 +152,8 @@ FROM Mixes m
             bool first = true;
             if (!args.searchTerms.empty())
             {
-                // Check if we already have a WHERE clause (from offline filtering)
-                if (filterOffline && tempTableExists)
-                {
-                    output.append(" AND ");
-                }
-                else
-                {
-                    output.append(" WHERE ");
-                }
+                // We now always have a WHERE clause (for export_folder IS NULL)
+                output.append(" AND ");
                 for (const auto &searchTerm : args.searchTerms)
                 {
                     if (first)
@@ -198,15 +171,8 @@ FROM Mixes m
             }
             if (args.mixId)
             {
-                if (first && !(filterOffline && tempTableExists))
-                {
-                    output.append(" WHERE ");
-                    first = false;
-                }
-                else
-                {
-                    output.append(" AND ");
-                }
+                // We now always have a WHERE clause (for export_folder IS NULL)
+                output.append(" AND ");
                 output.append("m.mix_id = ");
                 output.append(std::to_string(args.mixId));
             }
@@ -756,6 +722,170 @@ FROM Mixes m
                 return transaction.commit();
             }
             return false;
+        }
+
+        bool SqliteMixManager::setMixExported(MixId mixId, std::string_view exportFolder) const
+        {
+            const auto now = std::chrono::system_clock::now();
+
+            SqliteStatement stmt{m_db,
+                "UPDATE Mixes SET export_folder = ?, exported_at = ?, status = 'Exported' WHERE mix_id = ?;"};
+            stmt.addParam(std::string{exportFolder});
+            stmt.addParam(timestampToInt64(now));
+            stmt.addParam(mixId);
+
+            if (!stmt.execute())
+            {
+                spdlog::error("Failed to set mix {} as exported to folder '{}'", mixId, exportFolder);
+                return false;
+            }
+
+            spdlog::info("Successfully marked mix {} as exported to folder '{}'", mixId, exportFolder);
+            return true;
+        }
+
+        bool SqliteMixManager::moveBackToMixes(MixId mixId) const
+        {
+            SqliteStatement stmt{m_db,
+                "UPDATE Mixes SET export_folder = NULL, status = 'Modified' WHERE mix_id = ?;"};
+            stmt.addParam(mixId);
+
+            if (!stmt.execute())
+            {
+                spdlog::error("Failed to move mix {} back to Mixes", mixId);
+                return false;
+            }
+
+            spdlog::info("Successfully moved mix {} back to Mixes for editing", mixId);
+            return true;
+        }
+
+        bool SqliteMixManager::isExported(MixId mixId) const
+        {
+            SqliteStatement stmt{m_db, "SELECT export_folder FROM Mixes WHERE mix_id = ?;"};
+            stmt.addParam(mixId);
+
+            if (stmt.getNextResult())
+            {
+                return !stmt.isNull(0);  // If export_folder is not NULL, mix is exported
+            }
+
+            spdlog::warn("Mix {} not found when checking export status", mixId);
+            return false;
+        }
+
+        std::vector<ExportFolderInfo> SqliteMixManager::getExportFolders() const
+        {
+            std::vector<ExportFolderInfo> folders;
+
+            SqliteStatement stmt{m_db,
+                "SELECT folder_id, name, display_order, created_at, description "
+                "FROM ExportFolders ORDER BY display_order, name;"};
+
+            while (stmt.getNextResult())
+            {
+                ExportFolderInfo info;
+                info.folderId = stmt.getInt32(0);
+                info.name = stmt.getText(1);
+                info.displayOrder = stmt.getInt32(2);
+                const auto timestamp = stmt.getInt64(3);
+                info.createdAt = std::chrono::system_clock::time_point(
+                    std::chrono::system_clock::duration(timestamp));
+                if (!stmt.isNull(4))
+                    info.description = stmt.getText(4);
+
+                folders.push_back(info);
+            }
+
+            return folders;
+        }
+
+        bool SqliteMixManager::createExportFolder(std::string_view name, std::string_view description) const
+        {
+            const auto now = std::chrono::system_clock::now().time_since_epoch().count();
+
+            // Get the next display_order value
+            SqliteStatement orderStmt{m_db, "SELECT COALESCE(MAX(display_order), 0) + 1 FROM ExportFolders;"};
+            int displayOrder = 1;
+            if (orderStmt.getNextResult())
+            {
+                displayOrder = static_cast<int>(orderStmt.getInt64(0));
+            }
+
+            SqliteStatement stmt{m_db,
+                "INSERT INTO ExportFolders (name, display_order, created_at, description) VALUES (?, ?, ?, ?);"};
+            stmt.addParam(name);
+            stmt.addParam(displayOrder);
+            stmt.addParam(static_cast<int64_t>(now));
+            if (description.empty())
+                stmt.addNullParam();
+            else
+                stmt.addParam(description);
+
+            if (!stmt.execute())
+            {
+                spdlog::error("Failed to create export folder '{}': {}", name, m_db.getLastError());
+                return false;
+            }
+
+            spdlog::info("Successfully created export folder '{}'", name);
+            return true;
+        }
+
+        std::vector<MixInfo> SqliteMixManager::getMixesByLocation(std::optional<std::string_view> exportFolder) const
+        {
+            std::vector<MixInfo> mixes;
+
+            std::string query;
+            if (exportFolder.has_value())
+            {
+                // Get mixes in a specific export folder
+                query = "SELECT mix_id, name, timestamp, track_count, total_length, source_ws_id, status, "
+                       "exported_at, export_folder FROM Mixes WHERE export_folder = ? ORDER BY exported_at DESC;";
+            }
+            else
+            {
+                // Get editable mixes (not exported)
+                query = "SELECT mix_id, name, timestamp, track_count, total_length, source_ws_id, status, "
+                       "exported_at, export_folder FROM Mixes WHERE export_folder IS NULL ORDER BY timestamp DESC;";
+            }
+
+            SqliteStatement stmt{m_db, query};
+            if (exportFolder.has_value())
+            {
+                stmt.addParam(std::string(*exportFolder));
+            }
+
+            while (stmt.getNextResult())
+            {
+                MixInfo mix;
+                mix.mixId = stmt.getInt64(0);
+                mix.name = stmt.getText(1);
+                mix.timestamp = timestampFromInt64(stmt.getInt64(2));
+                mix.numberOfTracks = stmt.getInt64(3);
+                mix.totalDuration = Duration_t{stmt.getInt64(4)};
+
+                if (!stmt.isNull(5))
+                {
+                    mix.source_ws_id = stmt.getInt64(5);
+                }
+
+                mix.status = stmt.getText(6);
+
+                if (!stmt.isNull(7))
+                {
+                    mix.exportedAt = timestampFromInt64(stmt.getInt64(7));
+                }
+
+                if (!stmt.isNull(8))
+                {
+                    mix.exportFolder = stmt.getText(8);
+                }
+
+                mixes.push_back(mix);
+            }
+
+            return mixes;
         }
 
 

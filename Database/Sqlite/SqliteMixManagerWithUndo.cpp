@@ -329,9 +329,42 @@ namespace jucyaudio
         
         bool SqliteMixManagerWithUndo::setMixStatus(MixId mixId, std::string_view status) const
         {
-            // Setting status doesn't need undo support since it's primarily for 
+            // Setting status doesn't need undo support since it's primarily for
             // marking export state, not user-driven mix edits
             return m_wrappedManager.setMixStatus(mixId, status);
+        }
+
+        // Export Organization System methods - these don't need undo support
+        // as they're administrative operations, not creative mix editing
+
+        bool SqliteMixManagerWithUndo::setMixExported(MixId mixId, std::string_view exportFolder) const
+        {
+            return m_wrappedManager.setMixExported(mixId, exportFolder);
+        }
+
+        bool SqliteMixManagerWithUndo::moveBackToMixes(MixId mixId) const
+        {
+            return m_wrappedManager.moveBackToMixes(mixId);
+        }
+
+        bool SqliteMixManagerWithUndo::isExported(MixId mixId) const
+        {
+            return m_wrappedManager.isExported(mixId);
+        }
+
+        std::vector<ExportFolderInfo> SqliteMixManagerWithUndo::getExportFolders() const
+        {
+            return m_wrappedManager.getExportFolders();
+        }
+
+        bool SqliteMixManagerWithUndo::createExportFolder(std::string_view name, std::string_view description) const
+        {
+            return m_wrappedManager.createExportFolder(name, description);
+        }
+
+        std::vector<MixInfo> SqliteMixManagerWithUndo::getMixesByLocation(std::optional<std::string_view> exportFolder) const
+        {
+            return m_wrappedManager.getMixesByLocation(exportFolder);
         }
 
     } // namespace database

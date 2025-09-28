@@ -39,6 +39,8 @@ namespace jucyaudio
         private:
             void updateTagFieldsVisibility();
             void loadDefaultTags();
+            void populateExportFolders();
+            void handleNewFolder();
             void handleExport();
             void handleCancel();
             void closeDialog(bool success);
@@ -53,6 +55,11 @@ namespace jucyaudio
             // File selection
             juce::Label m_fileLabel;
             std::unique_ptr<juce::FilenameComponent> m_filenameComponent;
+
+            // Export folder selection
+            juce::Label m_exportFolderLabel;
+            juce::ComboBox m_exportFolderCombo;
+            juce::TextButton m_newFolderButton;
             
             // ID3 tag fields (only visible for MP3)
             juce::Label m_tagsHeaderLabel;

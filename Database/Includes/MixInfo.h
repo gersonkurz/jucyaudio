@@ -53,6 +53,10 @@ namespace jucyaudio
             Duration_t totalDuration{0}; // Total duration of the mix, including crossfades
             WorkingSetId source_ws_id = 0;
             std::string status{"New"};
+
+            // Export Organization fields
+            std::optional<Timestamp_t> exportedAt;  // When the mix was exported
+            std::optional<std::string> exportFolder; // Which export folder it's in (NULL = editable)
         };
 
         /**

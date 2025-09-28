@@ -387,12 +387,12 @@ namespace jucyaudio
             // Check if mix is exported and set read-only mode
             const auto& mixManager = database::theTrackLibrary.getMixManager();
             auto mixInfo = mixManager.getMix(node->getMixInfo().mixId);
-            m_isReadOnly = (mixInfo.status == "Exported" || mixInfo.status == "Locked");
-            
+            m_isReadOnly = mixInfo.exportFolder.has_value() && !mixInfo.exportFolder->empty();
+
             if (m_isReadOnly)
             {
-                spdlog::info("[MixEditor] Mix {} is in read-only mode (status: {})", 
-                            node->getMixInfo().mixId, mixInfo.status);
+                spdlog::info("[MixEditor] Mix {} is in read-only mode (exported to folder: {})",
+                            node->getMixInfo().mixId, mixInfo.exportFolder.value_or(""));
             }
             
             // Configure timeline for read-only mode
@@ -547,7 +547,14 @@ namespace jucyaudio
                 spdlog::error("MixEditorComponent::updateCueAttachInData - No mix node loaded");
                 return;
             }
-            
+
+            // Check if mix is read-only
+            if (m_isReadOnly)
+            {
+                showMoveBackDialog();
+                return;
+            }
+
             spdlog::info("Updating cue/attach points for track at position {}", orderInMix);
             
             // Get access to the mix tracks
@@ -643,7 +650,14 @@ namespace jucyaudio
                 spdlog::error("MixEditorComponent::updateEnvelopeInData - No mix node loaded");
                 return;
             }
-            
+
+            // Check if mix is read-only
+            if (m_isReadOnly)
+            {
+                showMoveBackDialog();
+                return;
+            }
+
             spdlog::info("Updating envelope for track at position {} with {} points", orderInMix, points.size());
             
             // Use thread-safe locking when modifying envelope points that the audio thread reads
@@ -1486,7 +1500,51 @@ namespace jucyaudio
                     delete dialog;
                 }));
         }
-        
+
+        void MixEditorComponent::showMoveBackDialog()
+        {
+            if (!m_node)
+                return;
+
+            const auto& mixInfo = m_node->getMixInfo();
+            const auto exportFolder = mixInfo.exportFolder.value_or("");
+
+            auto result = juce::AlertWindow::showOkCancelBox(
+                juce::AlertWindow::InfoIcon,
+                "Mix is Read-Only",
+                juce::String::formatted("This mix was exported to the '%s' folder and is now read-only.\n\n"
+                                       "To edit this mix, you need to move it back to the Mixes folder.\n\n"
+                                       "Move mix back to Mixes for editing?",
+                                       exportFolder.c_str()),
+                "Move Back",
+                "Cancel");
+
+            if (result)
+            {
+                auto& mixManager = database::theTrackLibrary.getMixManager();
+                if (mixManager.moveBackToMixes(mixInfo.mixId))
+                {
+                    // Refresh the node to update its status
+                    m_node->refreshCache(false);
+
+                    // Reload the mix to update read-only status
+                    loadMix(m_node);
+
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::InfoIcon,
+                        "Mix Moved",
+                        "The mix has been moved back to Mixes and can now be edited.");
+                }
+                else
+                {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon,
+                        "Move Failed",
+                        "Failed to move the mix back to Mixes folder.");
+                }
+            }
+        }
+
         void MixEditorComponent::setupVirtualTimeline()
         {
             spdlog::info("Setting up virtual timeline component");

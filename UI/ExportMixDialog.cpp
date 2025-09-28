@@ -1,6 +1,7 @@
 #include <UI/ExportMixDialog.h>
 #include <UI/Settings.h>
 #include <UI/ThemeManager.h>
+#include <Database/TrackLibrary.h>
 #include <format>
 #include <spdlog/spdlog.h>
 
@@ -13,6 +14,8 @@ namespace jucyaudio
               m_callback{callback},
               m_titleLabel{"titleLabel", std::format("Export Mix: {}", mixInfo.name)},
               m_fileLabel{"fileLabel", "Output File:"},
+              m_exportFolderLabel{"exportFolderLabel", "Export To Folder:"},
+              m_newFolderButton{"New Folder..."},
               m_tagsHeaderLabel{"tagsHeader", "ID3 Tags (MP3 only):"},
               m_artistLabel{"artistLabel", "Artist:"},
               m_albumLabel{"albumLabel", "Album:"},
@@ -29,6 +32,18 @@ namespace jucyaudio
             addAndMakeVisible(m_titleLabel);
             m_titleLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(20.0f)}.boldened());
             m_titleLabel.setJustificationType(juce::Justification::left);
+
+            // Export folder selection (MUST come before file selection)
+            addAndMakeVisible(m_exportFolderLabel);
+            addAndMakeVisible(m_exportFolderCombo);
+            m_exportFolderCombo.setTextWhenNothingSelected("Select export folder...");
+            m_exportFolderCombo.setTextWhenNoChoicesAvailable("No folders available");
+
+            addAndMakeVisible(m_newFolderButton);
+            m_newFolderButton.addListener(this);
+
+            // Populate the folder list
+            populateExportFolders();
 
             // File selection
             addAndMakeVisible(m_fileLabel);
@@ -94,8 +109,8 @@ namespace jucyaudio
             // Set initial visibility based on file extension
             updateTagFieldsVisibility();
             
-            // Set size after all components are created
-            setSize(600, 500);
+            // Set size after all components are created (increased for folder selection)
+            setSize(600, 550);
 
             // Set initial focus
             juce::MessageManager::callAsync(
@@ -125,6 +140,15 @@ namespace jucyaudio
             // Title
             m_titleLabel.setBounds(area.removeFromTop(30));
             area.removeFromTop(10);
+
+            // Export folder selection
+            m_exportFolderLabel.setBounds(area.removeFromTop(20));
+            area.removeFromTop(5);
+            auto folderRow = area.removeFromTop(25);
+            m_newFolderButton.setBounds(folderRow.removeFromRight(100));
+            folderRow.removeFromRight(10); // spacing
+            m_exportFolderCombo.setBounds(folderRow);
+            area.removeFromTop(15);
 
             // File selection
             m_fileLabel.setBounds(area.removeFromTop(20));
@@ -192,6 +216,10 @@ namespace jucyaudio
             else if (button == &m_cancelButton)
             {
                 handleCancel();
+            }
+            else if (button == &m_newFolderButton)
+            {
+                handleNewFolder();
             }
         }
 
@@ -266,6 +294,66 @@ namespace jucyaudio
             }
         }
 
+        void ExportMixDialog::populateExportFolders()
+        {
+            m_exportFolderCombo.clear();
+
+            // Get export folders from database
+            const auto &mixManager = database::theTrackLibrary.getMixManager();
+            const auto folders = mixManager.getExportFolders();
+
+            // Add each folder to the combo box
+            int id = 1;
+            for (const auto &folder : folders)
+            {
+                m_exportFolderCombo.addItem(folder.name, id++);
+            }
+
+            // Select first folder if available
+            if (m_exportFolderCombo.getNumItems() > 0)
+            {
+                m_exportFolderCombo.setSelectedId(1);
+            }
+        }
+
+        void ExportMixDialog::handleNewFolder()
+        {
+            juce::AlertWindow dialog("Create Export Folder", "Enter name for new export folder:", juce::AlertWindow::NoIcon);
+            dialog.addTextEditor("name", "", "Folder Name:");
+            dialog.addButton("Create", 1, juce::KeyPress(juce::KeyPress::returnKey));
+            dialog.addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+            if (dialog.runModalLoop() == 1)
+            {
+                const auto folderName = dialog.getTextEditorContents("name").trim();
+                if (folderName.isNotEmpty())
+                {
+                    const auto &mixManager = database::theTrackLibrary.getMixManager();
+                    if (mixManager.createExportFolder(folderName.toStdString()))
+                    {
+                        // Refresh the list and select the new folder
+                        populateExportFolders();
+
+                        // Find and select the new folder
+                        for (int i = 0; i < m_exportFolderCombo.getNumItems(); ++i)
+                        {
+                            if (m_exportFolderCombo.getItemText(i) == folderName)
+                            {
+                                m_exportFolderCombo.setSelectedItemIndex(i);
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                            "Failed to Create Folder",
+                            "Could not create export folder. It may already exist.");
+                    }
+                }
+            }
+        }
+
         void ExportMixDialog::loadDefaultTags()
         {
             // Load defaults from settings
@@ -289,6 +377,15 @@ namespace jucyaudio
 
         void ExportMixDialog::handleExport()
         {
+            // Check export folder selection
+            if (m_exportFolderCombo.getSelectedId() == 0)
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                    "No Export Folder Selected",
+                    "Please select an export folder or create a new one.");
+                return;
+            }
+
             const auto file = m_filenameComponent->getCurrentFile();
 
             if (file == juce::File{})
@@ -310,8 +407,10 @@ namespace jucyaudio
             }
 
             m_settings.outputPath = file.getFullPathName().toStdString();
+            m_settings.exportFolder = m_exportFolderCombo.getText().toStdString();
 
-            spdlog::info("Exporting mix '{}' to: {}", m_mixInfo.name, m_settings.outputPath.string());
+            spdlog::info("Exporting mix '{}' to: {} (Folder: '{}')",
+                m_mixInfo.name, m_settings.outputPath.string(), m_settings.exportFolder);
             if (file.hasFileExtension(".mp3"))
             {
                 spdlog::info("ID3 tags - Artist: '{}', Album: '{}', Title: '{}', Year: '{}', Genre: '{}', Comment: '{}'",

@@ -9,6 +9,7 @@ namespace jucyaudio
         struct ActiveExportSettings
         {
             std::filesystem::path outputPath;
+            std::string exportFolder; // Which export folder this belongs to
 
             // ID3 tags for MP3 export
             std::string artist;

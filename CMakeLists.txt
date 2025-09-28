@@ -340,6 +340,7 @@ target_sources(jucyaudio PRIVATE
     Database/Includes/ITrackInfoScanner.h
     Database/Includes/IWorkingSetManager.h
     Database/Includes/MixInfo.h
+    Database/Includes/ExportFolderInfo.h
     Database/Includes/TrackInfo.h
     Database/Includes/TrackMarker.h
     Database/Includes/MixMarker.h
@@ -395,6 +396,10 @@ target_sources(jucyaudio PRIVATE
     Database/Nodes/MixNode.cpp
     Database/Nodes/RootNode.cpp
     Database/Nodes/WorkingSetNode.cpp
+    Database/Nodes/ExportedRootNode.cpp
+    Database/Nodes/ExportFolderNode.cpp
+    Database/Nodes/ExportYearNode.cpp
+    Database/Nodes/ExportMonthNode.cpp
     Database/Nodes/TypedItemsOverview.h
     Database/Nodes/TypedOverviewNode.h
     Database/Nodes/WorkingSetsOverview.h
@@ -408,6 +413,10 @@ target_sources(jucyaudio PRIVATE
     Database/Nodes/RootNode.h
     Database/Nodes/TypedContainerNode.h
     Database/Nodes/WorkingSetNode.h
+    Database/Nodes/ExportedRootNode.h
+    Database/Nodes/ExportFolderNode.h
+    Database/Nodes/ExportYearNode.h
+    Database/Nodes/ExportMonthNode.h
     
     # Database Scanners
     Database/Scanners/AubioScanner.cpp

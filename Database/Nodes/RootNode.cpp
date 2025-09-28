@@ -9,6 +9,7 @@
 #include <Database/Nodes/WorkingSetNode.h>
 #include <Database/Nodes/WorkingSetsOverview.h>
 #include <Database/Nodes/AlbumsNode.h>
+#include <Database/Nodes/ExportedRootNode.h>
 #include <Utils/AssortedUtils.h>
 #include <cassert>
 #include <spdlog/spdlog.h>
@@ -65,6 +66,7 @@ namespace jucyaudio
                 this, getWorkingSetsRootNodeName(), &WorkingSetNode::createChildren, "Working Set", "Working Sets"});
             m_children.emplace_back(
                 new TypedOverviewNode<MixInfo, MixNode>{this, getMixesRootNodeName(), &MixNode::createChildren, "Mix", "Mixes"});
+            m_children.emplace_back(new ExportedRootNode{this});
         }
 
         bool RootNode::expand(std::vector<INavigationNode *> &outChildren)

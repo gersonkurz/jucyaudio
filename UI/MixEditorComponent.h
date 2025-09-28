@@ -115,7 +115,8 @@ namespace jucyaudio
             void saveMixMarker(const database::MixMarker& marker);
             void handleMarkerClick(MarkerId markerId);
             void handleMarkerAdd(std::chrono::milliseconds position);
-            
+            void showMoveBackDialog();
+
             // Waveform loading helpers  
             std::vector<std::pair<int, bool>> collectWaveformRequests(audio::MixProjectLoader* loader);
             void populateTimeline(audio::MixProjectLoader* loader);

@@ -2,6 +2,7 @@
 
 #include <Database/Includes/Constants.h>
 #include <Database/Includes/MixInfo.h>
+#include <Database/Includes/ExportFolderInfo.h>
 #include <Database/Includes/TrackQueryArgs.h>
 #include <optional>
 #include <string>
@@ -109,6 +110,39 @@ namespace jucyaudio
             // @param status The new status string.
             // @return True if the status was successfully updated, false otherwise.
             virtual bool setMixStatus(MixId mixId, std::string_view status) const = 0;
+
+            // Export Organization System methods
+
+            // @brief Mark a mix as exported to a specific folder
+            // @param mixId The ID of the mix to mark as exported
+            // @param exportFolder The export folder name (e.g., "Noise", "Techno")
+            // @return True if the mix was successfully marked as exported, false otherwise
+            virtual bool setMixExported(MixId mixId, std::string_view exportFolder) const = 0;
+
+            // @brief Move a mix back to the Mixes area for editing
+            // @param mixId The ID of the mix to move back
+            // @return True if the mix was successfully moved back, false otherwise
+            virtual bool moveBackToMixes(MixId mixId) const = 0;
+
+            // @brief Check if a mix is exported (and thus read-only)
+            // @param mixId The ID of the mix to check
+            // @return True if the mix is exported, false otherwise
+            virtual bool isExported(MixId mixId) const = 0;
+
+            // @brief Get all export folders
+            // @return A vector of export folder names
+            virtual std::vector<ExportFolderInfo> getExportFolders() const = 0;
+
+            // @brief Create a new export folder
+            // @param name The name of the export folder
+            // @param description Optional description for the folder
+            // @return True if the folder was successfully created, false otherwise
+            virtual bool createExportFolder(std::string_view name, std::string_view description = "") const = 0;
+
+            // @brief Get mixes by location (export folder or editable)
+            // @param exportFolder If provided, get mixes in this export folder. If empty, get editable mixes
+            // @return A vector of MixInfo objects matching the criteria
+            virtual std::vector<MixInfo> getMixesByLocation(std::optional<std::string_view> exportFolder = std::nullopt) const = 0;
         };
 
     } // namespace database

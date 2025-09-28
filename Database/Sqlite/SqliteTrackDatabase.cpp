@@ -645,7 +645,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 15;
+            const int latestSchemaVersion = 19;
 
             if (currentVersion == 0)
             {
@@ -2004,6 +2004,82 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 18;
+            }
+
+            // Migration to version 19: Export Organization System
+            if (currentVersion < 19)
+            {
+                spdlog::info("Migrating database from version 18 to 19 (Export Organization)...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Add new columns to Mixes table for export tracking
+                    if (!m_db.execute("ALTER TABLE Mixes ADD COLUMN exported_at INTEGER;"))
+                    {
+                        transaction.rollback();
+                        spdlog::error("Failed to add exported_at column to Mixes table: {}", m_db.getLastError());
+                        return DbResult::failure(DbResultStatus::ErrorDB,
+                            "Failed to add exported_at column: " + m_db.getLastError());
+                    }
+
+                    if (!m_db.execute("ALTER TABLE Mixes ADD COLUMN export_folder TEXT;"))
+                    {
+                        transaction.rollback();
+                        spdlog::error("Failed to add export_folder column to Mixes table: {}", m_db.getLastError());
+                        return DbResult::failure(DbResultStatus::ErrorDB,
+                            "Failed to add export_folder column: " + m_db.getLastError());
+                    }
+
+                    // Create ExportFolders table
+                    const char* createExportFoldersTable = R"SQL(
+                        CREATE TABLE IF NOT EXISTS ExportFolders (
+                            folder_id INTEGER PRIMARY KEY,
+                            name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                            display_order INTEGER,
+                            created_at INTEGER NOT NULL,
+                            description TEXT
+                        );
+                    )SQL";
+
+                    if (!m_db.execute(createExportFoldersTable))
+                    {
+                        transaction.rollback();
+                        spdlog::error("Failed to create ExportFolders table: {}", m_db.getLastError());
+                        return DbResult::failure(DbResultStatus::ErrorDB,
+                            "Failed to create ExportFolders table: " + m_db.getLastError());
+                    }
+
+                    // Create index for sorting
+                    if (!m_db.execute("CREATE INDEX idx_export_folders_order ON ExportFolders(display_order);"))
+                    {
+                        transaction.rollback();
+                        spdlog::error("Failed to create ExportFolders index: {}", m_db.getLastError());
+                        return DbResult::failure(DbResultStatus::ErrorDB,
+                            "Failed to create ExportFolders index: " + m_db.getLastError());
+                    }
+
+                    // Update schema version
+                    if (auto result = setDBSchemaVersion(19); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 19.");
+                    }
+
+                    if (transaction.commit())
+                    {
+                        spdlog::info("Successfully migrated to version 19 (Export Organization).");
+                    }
+                    else
+                    {
+                        const auto error{m_db.getLastError()};
+                        spdlog::error("Failed to commit migration transaction: {}", error);
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration: " + error);
+                    }
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 19;
             }
 
             return DbResult::success();

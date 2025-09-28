@@ -66,11 +66,18 @@ namespace jucyaudio
             delete implementation; // Clean up the implementation
             
             // Mark the mix as exported if successful
-            if (success)
+            if (success && !settings.exportFolder.empty())
             {
                 const auto& mixManager = database::theTrackLibrary.getMixManager();
+                mixManager.setMixExported(mixId, settings.exportFolder);
+                spdlog::info("Marked mix {} as Exported to folder '{}'", mixId, settings.exportFolder);
+            }
+            else if (success)
+            {
+                // Legacy: If no folder specified, just mark as exported
+                const auto& mixManager = database::theTrackLibrary.getMixManager();
                 mixManager.setMixStatus(mixId, "Exported");
-                spdlog::info("Marked mix {} as Exported", mixId);
+                spdlog::info("Marked mix {} as Exported (no folder)", mixId);
             }
             
             return success;
