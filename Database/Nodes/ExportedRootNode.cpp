@@ -35,9 +35,30 @@ namespace jucyaudio
             return true;
         }
 
+        void ExportedRootNode::refreshChildren()
+        {
+            spdlog::debug("ExportedRootNode::refreshChildren - forcing reload");
+
+            // Store the old children temporarily
+            auto oldChildren = std::move(m_children);
+            m_children.clear();
+
+            // Force reload
+            m_foldersLoaded = false;
+            loadExportFolders();
+            m_foldersLoaded = true;
+
+            // Now release the old children after we've created the new ones
+            // This ensures any UI references remain valid during the transition
+            for (const auto& child : oldChildren)
+            {
+                child->release(REFCOUNT_DEBUG_ARGS);
+            }
+        }
+
         void ExportedRootNode::loadExportFolders()
         {
-            m_children.clear();
+            // Don't clear children here - let refreshChildren handle that
 
             auto& mixManager{ database::theTrackLibrary.getMixManager() };
             auto folders = mixManager.getExportFolders();

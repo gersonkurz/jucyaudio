@@ -24,8 +24,8 @@ namespace jucyaudio
             m_dynamicActions.push_back(DataAction::ShowTrackEditor);
             m_dynamicActions.push_back(DataAction::Separator);
             
-            // Add unlock option if mix is exported or locked
-            if (m_mixInfo.status == "Exported" || m_mixInfo.status == "Locked")
+            // Add unlock option if mix is exported (has export folder)
+            if (m_mixInfo.exportFolder.has_value() && !m_mixInfo.exportFolder->empty())
             {
                 m_dynamicActions.push_back(DataAction::UnlockMixForEditing);
                 m_dynamicActions.push_back(DataAction::Separator);
@@ -95,6 +95,20 @@ namespace jucyaudio
                 // Clear the cached row count so it gets recalculated
                 m_cachedRowCount = -1;
             }
+        }
+
+        void MixNode::refreshMixInfo()
+        {
+            // Refresh the mix info from database
+            const auto& mixManager = database::theTrackLibrary.getMixManager();
+            m_mixInfo = mixManager.getMix(m_mixInfo.mixId);
+
+            // Rebuild dynamic actions since they depend on mix status
+            buildDynamicActions();
+
+            spdlog::info("[MixNode] Refreshed mix info for mix {}, exportFolder: {}",
+                        m_mixInfo.mixId,
+                        m_mixInfo.exportFolder.has_value() ? *m_mixInfo.exportFolder : "NULL");
         }
         
         DeletionAnalysisResult MixNode::analyzeDeletionRequest(const std::vector<RowIndex_t>& selectedRows) const

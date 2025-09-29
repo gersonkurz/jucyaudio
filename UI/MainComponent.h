@@ -141,6 +141,8 @@ namespace jucyaudio
             void onEditWorkingSetMetadata(INavigationNode *node);
             void onEditMixMetadata(INavigationNode *node);
             void onUnlockMixForEditing(INavigationNode *node);
+            void handleCloneMix(const database::MixInfo& mixInfo);
+            juce::String generateCloneName(const std::string& originalName);
             void onShowInFolder(RowIndex_t rowIndex);
 
             // Equalizer management

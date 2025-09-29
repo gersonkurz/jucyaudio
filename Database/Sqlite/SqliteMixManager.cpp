@@ -816,7 +816,7 @@ WHERE m.export_folder IS NULL
 
             return folders;
         }
-
+         
         bool SqliteMixManager::createExportFolder(std::string_view name, std::string_view description) const
         {
             const auto now = std::chrono::system_clock::now().time_since_epoch().count();

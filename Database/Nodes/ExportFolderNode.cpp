@@ -38,9 +38,29 @@ namespace jucyaudio
             return true;
         }
 
+        void ExportFolderNode::refreshChildren()
+        {
+            spdlog::debug("ExportFolderNode::refreshChildren for folder '{}'", m_folderInfo.name);
+
+            // Store the old children temporarily
+            auto oldChildren = std::move(m_children);
+            m_children.clear();
+
+            // Force reload
+            m_yearsLoaded = false;
+            loadYearNodes();
+            m_yearsLoaded = true;
+
+            // Now release the old children after we've created the new ones
+            // This ensures any UI references remain valid during the transition
+            for (const auto& child : oldChildren)
+            {
+                child->release(REFCOUNT_DEBUG_ARGS);
+            }
+        }
+
         void ExportFolderNode::loadYearNodes()
         {
-            m_children.clear();
 
             auto &mixManager{database::theTrackLibrary.getMixManager()};
             // Get all mixes in this export folder

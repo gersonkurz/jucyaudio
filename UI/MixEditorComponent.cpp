@@ -133,6 +133,28 @@ namespace jucyaudio
 
         void MixEditorComponent::forceRefresh()
         {
+            // Reload the read-only state from database if we have a node
+            if (m_node)
+            {
+                const auto& mixManager = database::theTrackLibrary.getMixManager();
+                auto mixInfo = mixManager.getMix(m_node->getMixInfo().mixId);
+                bool wasReadOnly = m_isReadOnly;
+                m_isReadOnly = mixInfo.exportFolder.has_value() && !mixInfo.exportFolder->empty();
+
+                // If read-only state changed, update the timeline
+                if (wasReadOnly != m_isReadOnly)
+                {
+                    spdlog::info("[MixEditor] Read-only state changed from {} to {} for mix {}",
+                                wasReadOnly, m_isReadOnly, m_node->getMixInfo().mixId);
+                    m_timeline.setReadOnly(m_isReadOnly);
+                    if (m_virtualTimeline)
+                    {
+                        // If we add setReadOnly to VirtualTimelineComponent later
+                        // m_virtualTimeline->setReadOnly(m_isReadOnly);
+                    }
+                }
+            }
+
             m_timeline.repaint();
             m_viewport.repaint();
             resized(); // Recalculate viewport content
@@ -1526,6 +1548,12 @@ namespace jucyaudio
                 {
                     // Refresh the node to update its status
                     m_node->refreshCache(false);
+
+                    // Notify parent component to refresh navigation tree
+                    if (m_onMixExportStatusChanged)
+                    {
+                        m_onMixExportStatusChanged();
+                    }
 
                     // Reload the mix to update read-only status
                     loadMix(m_node);

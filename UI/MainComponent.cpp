@@ -131,6 +131,12 @@ namespace jucyaudio
             // Set up mix editor to use the unified playback controller
             m_mixEditorComponent.setPlaybackController(&m_playbackController);
 
+            // Set up callback for navigation tree refresh when mix export status changes
+            m_mixEditorComponent.setOnMixExportStatusChangedCallback([this]()
+            {
+                m_navigationTree.onMixExportStatusChanged();
+            });
+
             // --- Add and make visible all child components ---
             addAndMakeVisible(m_dynamicToolbar);
             addAndMakeVisible(m_navigationPanel);
@@ -2317,7 +2323,12 @@ namespace jucyaudio
             spdlog::info("Finalizing and exporting mix ID: {} (Name: '{}') to: {}", mixInfo.mixId, mixInfo.name, pathToString(settings.outputPath));
 
             auto *task = new FinalizeAndExportTask{mixInfo, m_audioLibrary.getMixExporter(), settings};
-            TaskDialog::launch("Finalize & Export", task, TaskDialog::AutoCloseMode::NoAutoClose, 500, this);
+            TaskDialog::launch("Finalize & Export", task, TaskDialog::AutoCloseMode::NoAutoClose, 500, this,
+                [this]()
+                {
+                    // Refresh navigation tree after export completes
+                    m_navigationTree.onMixExportStatusChanged();
+                });
             task->release(REFCOUNT_DEBUG_ARGS);
             // Note: tags will be deleted by FinalizeAndExportTask destructor
         }
@@ -2391,27 +2402,34 @@ namespace jucyaudio
             if (auto *mixNode = dynamic_cast<MixNode *>(node))
             {
                 const auto mixInfo = mixNode->getMixInfo();
-                
-                // Show confirmation dialog
+
+                // Show dialog with three options
                 const auto options = juce::MessageBoxOptions()
                     .withIconType(juce::MessageBoxIconType::QuestionIcon)
-                    .withTitle("Unlock Mix for Editing")
-                    .withMessage("This mix has been exported. Do you want to unlock it for editing?\n\nNote: This will change its status from 'Exported' to 'Modified'.")
-                    .withButton("Unlock")
+                    .withTitle("Edit Exported Mix")
+                    .withMessage("This mix has been exported. How would you like to edit it?")
+                    .withButton("Move Back to Mixes")
+                    .withButton("Clone as New Mix")
                     .withButton("Cancel");
-                    
+
                 juce::AlertWindow::showAsync(options, [mixNode, mixInfo, this](int result)
                 {
-                    if (result == 1) // User clicked "Unlock"
+                    if (result == 1) // Move Back to Mixes
                     {
                         const auto& mixManager = database::theTrackLibrary.getMixManager();
-                        if (mixManager.setMixStatus(mixInfo.mixId, "Modified"))
+                        if (mixManager.moveBackToMixes(mixInfo.mixId))
                         {
                             spdlog::info("Unlocked mix {} for editing", mixInfo.mixId);
-                            m_statusPanel.getStatusBar().postMessage("Mix unlocked for editing", false);
-                            
+                            m_statusPanel.getStatusBar().postMessage("Mix moved back to Mixes for editing", false);
+
+                            // Refresh the MixNode to update its cached MixInfo
+                            mixNode->refreshMixInfo();
+
+                            // Refresh navigation tree to show the change immediately
+                            m_navigationTree.onMixExportStatusChanged();
+
                             // If the mix is currently loaded in the editor, reload it to update read-only state
-                            if (m_mixEditorComponent.getCurrentMixNode() && 
+                            if (m_mixEditorComponent.getCurrentMixNode() &&
                                 m_mixEditorComponent.getCurrentMixNode()->getMixInfo().mixId == mixInfo.mixId)
                             {
                                 m_mixEditorComponent.forceRefresh();
@@ -2423,8 +2441,108 @@ namespace jucyaudio
                             m_statusPanel.getStatusBar().postMessage("Failed to unlock mix", true);
                         }
                     }
+                    else if (result == 2) // Clone as New Mix
+                    {
+                        this->handleCloneMix(mixInfo);
+                    }
                 });
             }
+        }
+
+        juce::String MainComponent::generateCloneName(const std::string& originalName)
+        {
+            // Generate a clone name similar to CreateMixDialogComponent style
+            auto now = std::time(nullptr);
+#ifdef _MSC_VER // Use localtime_s on Windows
+            std::tm tm_s;
+            localtime_s(&tm_s, &now);
+            auto tm = tm_s;
+#else // Use localtime on other platforms
+            auto tm = *std::localtime(&now);
+#endif
+
+            std::ostringstream oss;
+            oss << originalName << " (Copy " << std::put_time(&tm, "%Y-%m-%d %H-%M-%S") << ")";
+            return juce::String(oss.str());
+        }
+
+        void MainComponent::handleCloneMix(const database::MixInfo& mixInfo)
+        {
+            // Get all tracks from the original mix
+            const auto& mixManager = database::theTrackLibrary.getMixManager();
+            const auto mixTracks = mixManager.getMixTracks(mixInfo.mixId);
+
+            if (mixTracks.empty())
+            {
+                m_statusPanel.getStatusBar().postMessage("Cannot clone empty mix", true);
+                return;
+            }
+
+            // Show dialog to let user customize the clone name
+            auto defaultCloneName = generateCloneName(mixInfo.name);
+
+            // Use AlertWindow directly for more control over the text input
+            std::unique_ptr<juce::AlertWindow> alertWindow = std::make_unique<juce::AlertWindow>(
+                "Clone Mix",
+                "Enter name for the cloned mix:",
+                juce::MessageBoxIconType::QuestionIcon);
+
+            alertWindow->addTextEditor("cloneName", defaultCloneName, "Mix Name:");
+            alertWindow->addButton("Create Clone", 1, juce::KeyPress(juce::KeyPress::returnKey));
+            alertWindow->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+            alertWindow->getTextEditor("cloneName")->selectAll();
+
+            alertWindow->enterModalState(true,
+                juce::ModalCallbackFunction::create([this, mixInfo, mixTracks](int result)
+                {
+                    if (result != 1) return; // User cancelled
+
+                    auto* alertWindow = dynamic_cast<juce::AlertWindow*>(
+                        juce::Component::getCurrentlyModalComponent(0));
+
+                    if (!alertWindow) return;
+
+                    auto cloneName = alertWindow->getTextEditorContents("cloneName");
+                    if (cloneName.trim().isEmpty())
+                    {
+                        m_statusPanel.getStatusBar().postMessage("Clone name cannot be empty", true);
+                        return;
+                    }
+
+                    // Create new MixInfo for the clone
+                    database::MixInfo cloneMixInfo;
+                    cloneMixInfo.mixId = -1; // New mix
+                    cloneMixInfo.name = cloneName.toStdString();
+                    cloneMixInfo.status = "New"; // Clone starts as editable
+                    cloneMixInfo.source_ws_id = 0; // No source working set
+                    cloneMixInfo.exportFolder = {}; // Not exported
+
+                    // Create a mutable copy of the tracks (removing the mixId references)
+                    auto cloneTracks = mixTracks;
+                    for (auto& track : cloneTracks)
+                    {
+                        track.mixId = -1; // Will be set by createOrUpdateMix
+                    }
+
+                    const auto& mixManager = database::theTrackLibrary.getMixManager();
+                    if (mixManager.createOrUpdateMix(cloneMixInfo, cloneTracks))
+                    {
+                        spdlog::info("Successfully cloned mix {} as new mix '{}' (ID: {})",
+                                     mixInfo.mixId, cloneMixInfo.name, cloneMixInfo.mixId);
+                        m_statusPanel.getStatusBar().postMessage("Mix cloned successfully", false);
+
+                        // Refresh navigation tree to show the new mix
+                        m_navigationTree.onMixCreated(cloneMixInfo.mixId);
+                    }
+                    else
+                    {
+                        spdlog::error("Failed to clone mix {} with name '{}'", mixInfo.mixId, cloneMixInfo.name);
+                        m_statusPanel.getStatusBar().postMessage("Failed to clone mix", true);
+                    }
+                }));
+
+            alertWindow.release(); // Transfer ownership to modal system
         }
 
         bool MainComponent::navigateToFolder(FolderId folderId)

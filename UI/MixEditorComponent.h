@@ -95,7 +95,13 @@ namespace jucyaudio
             {
                 return m_timeline;
             }
-            
+
+            // Set callback for when mix export status changes (for navigation tree refresh)
+            void setOnMixExportStatusChangedCallback(std::function<void()> callback)
+            {
+                m_onMixExportStatusChanged = std::move(callback);
+            }
+
             // Playback is now handled by PlaybackController
 
             void handleDeleteSelectedTrack();
@@ -151,7 +157,10 @@ namespace jucyaudio
             // Scrolling detection to avoid update conflicts
             int64_t m_lastScrollTime{0};
             static constexpr int64_t SCROLL_PAUSE_DURATION_MS = 100; // Pause updates for 100ms after scroll
-            
+
+            // Callback for when mix export status changes
+            std::function<void()> m_onMixExportStatusChanged;
+
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixEditorComponent)
         };
 

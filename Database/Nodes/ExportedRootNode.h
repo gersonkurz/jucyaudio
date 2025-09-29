@@ -16,6 +16,7 @@ namespace jucyaudio
 
             bool expand(std::vector<INavigationNode*>& outChildren) override;
             bool canExpand() override;
+            void refreshChildren() override;
 
         private:
             void loadExportFolders();

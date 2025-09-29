@@ -42,6 +42,10 @@ namespace jucyaudio
 
             void onNodeRenamed(INavigationNode *node, std::string_view newName);
 
+            // @brief Notify the navigation tree that a mix has changed export status.
+            // This method is called after export/unlock operations to refresh the Mixes and Exported nodes.
+            void onMixExportStatusChanged();
+
             void releaseRootNode()
             {
                 if (m_root)

@@ -464,7 +464,6 @@ namespace jucyaudio
                 return;
             }
             nodeToRefresh->refreshChildren();
-            nodeToRefresh->release(REFCOUNT_DEBUG_ARGS); // Release the old
 
             // Find the TreeViewItem associated with the nodeToRemove
             const auto treeViewItemToRefresh = findTreeViewItemForNode(nodeToRefresh);

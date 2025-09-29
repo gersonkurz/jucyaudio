@@ -104,5 +104,37 @@ namespace jucyaudio
             }
         }
 
+        void NavigationTree::onMixExportStatusChanged()
+        {
+            // Refresh the Mixes node to show/hide mixes based on export status
+            if (const auto mixesRootNode{m_root->getMixesRootNode()})
+            {
+                m_npc.refreshNode(mixesRootNode);
+                mixesRootNode->release(REFCOUNT_DEBUG_ARGS);
+            }
+
+            // Refresh the Exported node to show newly exported/unlocked mixes
+            std::vector<INavigationNode *> children;
+            if (m_root->expand(children))
+            {
+                // Find the Exported node
+                for (auto child : children)
+                {
+                    if (child->getName() == "Exported")
+                    {
+                        // The refreshNode call will handle refreshChildren internally
+                        // and properly update the UI tree view
+                        m_npc.refreshNode(child);
+                        break;
+                    }
+                }
+                // Release all children
+                for (const auto child : children)
+                {
+                    child->release(REFCOUNT_DEBUG_ARGS);
+                }
+            }
+        }
+
     } // namespace database
 } // namespace jucyaudio
