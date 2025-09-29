@@ -16,7 +16,7 @@ namespace jucyaudio
             spdlog::info("Started operation {} for mix update", operationId);
             
             // For updates, get the current state for undo
-            if (mixInfo.mixId != 0)
+            if (mixInfo.mixId > 0)  // Existing mix (positive ID)
             {
                 // Get current tracks before update
                 auto oldTracks = m_wrappedManager.getMixTracks(mixInfo.mixId);

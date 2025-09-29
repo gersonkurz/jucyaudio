@@ -2481,68 +2481,85 @@ namespace jucyaudio
             // Show dialog to let user customize the clone name
             auto defaultCloneName = generateCloneName(mixInfo.name);
 
-            // Use AlertWindow directly for more control over the text input
-            std::unique_ptr<juce::AlertWindow> alertWindow = std::make_unique<juce::AlertWindow>(
-                "Clone Mix",
-                "Enter name for the cloned mix:",
-                juce::MessageBoxIconType::QuestionIcon);
-
+            // Create the alert window for clone name input
+            auto* alertWindow = new juce::AlertWindow("Clone Mix",
+                                                      "Enter name for the cloned mix:",
+                                                      juce::AlertWindow::NoIcon);
             alertWindow->addTextEditor("cloneName", defaultCloneName, "Mix Name:");
             alertWindow->addButton("Create Clone", 1, juce::KeyPress(juce::KeyPress::returnKey));
             alertWindow->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
-            alertWindow->getTextEditor("cloneName")->selectAll();
+            // Select all text in the editor for easy replacement
+            if (auto* editor = alertWindow->getTextEditor("cloneName"))
+            {
+                editor->selectAll();
+            }
 
             alertWindow->enterModalState(true,
-                juce::ModalCallbackFunction::create([this, mixInfo, mixTracks](int result)
-                {
-                    if (result != 1) return; // User cancelled
-
-                    auto* alertWindow = dynamic_cast<juce::AlertWindow*>(
-                        juce::Component::getCurrentlyModalComponent(0));
-
-                    if (!alertWindow) return;
-
-                    auto cloneName = alertWindow->getTextEditorContents("cloneName");
-                    if (cloneName.trim().isEmpty())
+                juce::ModalCallbackFunction::create(
+                    [this, mixInfo, mixTracks, alertWindow](int result)
                     {
-                        m_statusPanel.getStatusBar().postMessage("Clone name cannot be empty", true);
-                        return;
-                    }
+                        std::unique_ptr<juce::AlertWindow> windowDeleter(alertWindow); // Auto-delete on scope exit
 
-                    // Create new MixInfo for the clone
-                    database::MixInfo cloneMixInfo;
-                    cloneMixInfo.mixId = -1; // New mix
-                    cloneMixInfo.name = cloneName.toStdString();
-                    cloneMixInfo.status = "New"; // Clone starts as editable
-                    cloneMixInfo.source_ws_id = 0; // No source working set
-                    cloneMixInfo.exportFolder = {}; // Not exported
+                        if (result == 1) // Create Clone was clicked
+                        {
+                            const auto cloneName = alertWindow->getTextEditorContents("cloneName").trim();
 
-                    // Create a mutable copy of the tracks (removing the mixId references)
-                    auto cloneTracks = mixTracks;
-                    for (auto& track : cloneTracks)
-                    {
-                        track.mixId = -1; // Will be set by createOrUpdateMix
-                    }
+                            if (cloneName.isEmpty())
+                            {
+                                m_statusPanel.getStatusBar().postMessage("Clone name cannot be empty", true);
+                            }
+                            else
+                            {
+                                // Create new MixInfo for the clone
+                                database::MixInfo cloneMixInfo;
+                                cloneMixInfo.mixId = 0; // New mix (use 0, not -1)
+                                cloneMixInfo.name = cloneName.toStdString();
+                                cloneMixInfo.status = "New"; // Clone starts as editable
+                                cloneMixInfo.source_ws_id = 0; // No source working set
+                                cloneMixInfo.exportFolder = {}; // Not exported
+                                cloneMixInfo.totalDuration = mixInfo.totalDuration; // Copy duration from original
+                                cloneMixInfo.numberOfTracks = mixInfo.numberOfTracks; // Copy track count
 
-                    const auto& mixManager = database::theTrackLibrary.getMixManager();
-                    if (mixManager.createOrUpdateMix(cloneMixInfo, cloneTracks))
-                    {
-                        spdlog::info("Successfully cloned mix {} as new mix '{}' (ID: {})",
-                                     mixInfo.mixId, cloneMixInfo.name, cloneMixInfo.mixId);
-                        m_statusPanel.getStatusBar().postMessage("Mix cloned successfully", false);
+                                // Create a mutable copy of the tracks with cleared IDs
+                                std::vector<database::MixTrack> cloneTracks;
+                                cloneTracks.reserve(mixTracks.size());
 
-                        // Refresh navigation tree to show the new mix
-                        m_navigationTree.onMixCreated(cloneMixInfo.mixId);
-                    }
-                    else
-                    {
-                        spdlog::error("Failed to clone mix {} with name '{}'", mixInfo.mixId, cloneMixInfo.name);
-                        m_statusPanel.getStatusBar().postMessage("Failed to clone mix", true);
-                    }
-                }));
+                                for (const auto& originalTrack : mixTracks)
+                                {
+                                    database::MixTrack clonedTrack;
+                                    clonedTrack.mixId = 0; // Will be set by createOrUpdateMix (use 0, not -1)
+                                    clonedTrack.trackId = originalTrack.trackId; // Keep the actual track reference
+                                    clonedTrack.orderInMix = originalTrack.orderInMix;
+                                    clonedTrack.cueStart = originalTrack.cueStart;
+                                    clonedTrack.cueEnd = originalTrack.cueEnd;
+                                    clonedTrack.attachFrom = originalTrack.attachFrom;
+                                    clonedTrack.attachTo = originalTrack.attachTo;
+                                    clonedTrack.envelopePoints = originalTrack.envelopePoints;
+                                    clonedTrack.gainAdjustment = originalTrack.gainAdjustment;
+                                    cloneTracks.push_back(clonedTrack);
+                                }
 
-            alertWindow.release(); // Transfer ownership to modal system
+                                const auto& mixManager = database::theTrackLibrary.getMixManager();
+                                if (mixManager.createOrUpdateMix(cloneMixInfo, cloneTracks))
+                                {
+                                    spdlog::info("Successfully cloned mix {} as new mix '{}' (ID: {})",
+                                                 mixInfo.mixId, cloneMixInfo.name, cloneMixInfo.mixId);
+                                    m_statusPanel.getStatusBar().postMessage("Mix cloned successfully", false);
+
+                                    // Refresh navigation tree to show the new mix
+                                    m_navigationTree.onMixCreated(cloneMixInfo.mixId);
+                                }
+                                else
+                                {
+                                    spdlog::error("Failed to clone mix {} with name '{}'",
+                                                 mixInfo.mixId, cloneMixInfo.name);
+                                    m_statusPanel.getStatusBar().postMessage("Failed to clone mix", true);
+                                }
+                            }
+                        }
+                    }),
+                true);
         }
 
         bool MainComponent::navigateToFolder(FolderId folderId)
