@@ -15,9 +15,9 @@ namespace jucyaudio
         using namespace database;
 
         MixTrackComponent::MixTrackComponent(
-            MixTrack &mixTrack, const TrackInfo &trackInfo, juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache)
-            : m_mixTrack{mixTrack},
-              m_trackInfo{trackInfo},
+            const MixTrack &mixTrack, const TrackInfo &trackInfo, juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache)
+            : m_mixTrack{mixTrack},  // Copy the MixTrack
+              m_trackInfo{trackInfo},  // Copy the TrackInfo
               m_thumbnail{2048, formatManager, thumbnailCache}
         {
             m_thumbnail.addChangeListener(this);
@@ -198,6 +198,21 @@ namespace jucyaudio
             // if there are no points, nothing to draw
             if (m_mixTrack.envelopePoints.empty())
             {
+                return;
+            }
+
+            // Safety check: don't draw if track duration is invalid
+            if (m_trackInfo.duration <= Duration_t{0})
+            {
+                spdlog::warn("MixTrackComponent: Cannot draw envelope - invalid track duration for track {}", m_trackInfo.trackId);
+                return;
+            }
+
+            // Safety check: don't draw if effective duration is invalid
+            const auto effectiveDuration = m_mixTrack.getEffectiveDuration(m_trackInfo.duration);
+            if (effectiveDuration <= Duration_t{0})
+            {
+                spdlog::warn("MixTrackComponent: Cannot draw envelope - invalid effective duration for track {}", m_trackInfo.trackId);
                 return;
             }
 

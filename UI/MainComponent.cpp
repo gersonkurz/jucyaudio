@@ -1125,8 +1125,7 @@ namespace jucyaudio
                             deviceName.toStdString(), sampleRate, samplesPerBlockExpected);
                 
                 m_statusPanel.getStatusBar().postMessage(
-                    juce::String::formatted("Audio device: %s (%.0f Hz)", 
-                                          deviceName.toRawUTF8(), sampleRate), 
+                    "Audio device: " + deviceName + juce::String::formatted(" (%.0f Hz)", sampleRate),
                     false);
             }
             else
@@ -1183,7 +1182,7 @@ namespace jucyaudio
                         if (result.isEmpty())
                         {
                             m_statusPanel.getStatusBar().postMessage(
-                                juce::String::formatted("Switched to: %s", defaultDeviceName.toRawUTF8()), 
+                                "Switched to: " + defaultDeviceName,
                                 false);
                         }
                         else
@@ -1241,7 +1240,7 @@ namespace jucyaudio
                     const auto deviceName = currentDevice->getName();
                     spdlog::info("Switched to audio device: {}", deviceName.toStdString());
                     m_statusPanel.getStatusBar().postMessage(
-                        juce::String::formatted("Audio device: %s", deviceName.toRawUTF8()), 
+                        "Audio device: " + deviceName,
                         false);
                 }
             }

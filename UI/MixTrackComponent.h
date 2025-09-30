@@ -52,7 +52,7 @@ namespace jucyaudio
             /** @brief Total height of the component (text + waveform) */
             static constexpr int TOTAL_COMPONENT_HEIGHT = TEXT_SECTION_HEIGHT + WAVEFORM_SECTION_HEIGHT;
 
-            MixTrackComponent(MixTrack &mixTrack,
+            MixTrackComponent(const MixTrack &mixTrack,
                 const TrackInfo &trackInfo,
                 juce::AudioFormatManager &formatManager,
                 juce::AudioThumbnailCache &thumbnailCache);
@@ -375,11 +375,11 @@ namespace jucyaudio
              */
             void handleContextMenuResult(int menuItemID);
 
-            /** @brief Reference to the mix track data (cue points, attach points, envelopes) */
-            MixTrack &m_mixTrack;
-            
-            /** @brief Reference to the track information (duration, title, file path) */
-            const TrackInfo &m_trackInfo;
+            /** @brief Copy of the mix track data (cue points, attach points, envelopes) */
+            MixTrack m_mixTrack;
+
+            /** @brief Copy of the track information (duration, title, file path) */
+            TrackInfo m_trackInfo;
             
             /** @brief JUCE component for generating and caching the audio waveform visualization */
             juce::AudioThumbnail m_thumbnail;

@@ -176,11 +176,10 @@ The project uses CMake and includes a `justfile` for build automation (macOS). F
 
 The build system supports multiple architectures (Apple Silicon, Intel, Universal on macOS) and automatically organizes outputs by architecture and configuration.
 
-**IMPORTANT FOR AI ASSISTANTS:** 
-- On macOS: Always BUILD (`just build`) to verify code changes compile correctly
-- On Windows: Use `cmake --build build` to verify code changes
+**IMPORTANT FOR AI ASSISTANTS:**
+- NEVER build the application yourself - always ask the user to build and verify the code changes
 - NEVER attempt to RUN the application - it's a GUI app that requires human interaction
-- After building, wait for human feedback on testing results
+- After making code changes, ask the user to build and test
 - The human will test UI features and report back any issues
 
 ---
