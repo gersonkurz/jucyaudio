@@ -329,8 +329,6 @@ namespace jucyaudio
               m_folderDatabase{m_db},
               m_markerManager{m_db},
               m_mixMarkerManager{m_db},
-              m_undoManager{m_db},
-              m_mixManagerWithUndo{m_mixManager, m_undoManager},
               m_albumManager{m_db},
               m_eqPresetManager{m_db},
               m_reverbPresetManager{m_db},
@@ -371,13 +369,13 @@ namespace jucyaudio
         IMixManager &SqliteTrackDatabase::getMixManager()
         {
             assert(isOpen() && "Cannot get mix manager when database is not open");
-            return m_mixManagerWithUndo;
+            return m_mixManager;
         }
 
         const IMixManager &SqliteTrackDatabase::getMixManager() const
         {
             assert(isOpen() && "Cannot get mix manager when database is not open");
-            return m_mixManagerWithUndo;
+            return m_mixManager;
         }
 
         IWorkingSetManager &SqliteTrackDatabase::getWorkingSetManager()
@@ -426,18 +424,6 @@ namespace jucyaudio
         {
             assert(isOpen() && "Cannot get mix marker manager when database is not open");
             return m_mixMarkerManager;
-        }
-
-        IUndoManager &SqliteTrackDatabase::getUndoManager()
-        {
-            assert(isOpen() && "Cannot get undo manager when database is not open");
-            return m_undoManager;
-        }
-
-        const IUndoManager &SqliteTrackDatabase::getUndoManager() const
-        {
-            assert(isOpen() && "Cannot get undo manager when database is not open");
-            return m_undoManager;
         }
 
         IAlbumManager &SqliteTrackDatabase::getAlbumManager()
@@ -539,7 +525,6 @@ namespace jucyaudio
                 m_db.close();
                 return schemaResult;
             }
-            m_undoManager.initialize();
             m_folderDatabase.initialize();
             return DbResult::success();
         }

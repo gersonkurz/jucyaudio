@@ -4,6 +4,7 @@
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/ExportFolderInfo.h>
 #include <Database/Includes/TrackQueryArgs.h>
+#include <Database/UndoManager.h>
 #include <optional>
 #include <string>
 #include <vector>
@@ -33,6 +34,22 @@ namespace jucyaudio
                 {
                     return mixes.front(); // Return the first match
                 }
+            }
+
+            ExtendedMixInfo getExtendedMixInfo(MixId mixId) const
+            {
+                ExtendedMixInfo extMixInfo;
+                extMixInfo.mixInfo = getMix(mixId);
+                if (extMixInfo.mixInfo.mixId != 0) // Valid mix found
+                {
+                    extMixInfo.tracks = getMixTracks(mixId);
+                }
+                return extMixInfo;
+            }
+
+            void recordMixChange(MixId mixId) const
+            {
+                theUndoManager.recordMixChange(getExtendedMixInfo(mixId));
             }
 
             // @brief Get the mix-track information associated with a specific mix ID.

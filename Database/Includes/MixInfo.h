@@ -169,6 +169,13 @@ namespace jucyaudio
             }
         };
 
+        struct ExtendedMixInfo
+        {
+            MixInfo mixInfo;
+            std::vector<MixTrack> tracks; // Detailed track info for the mix
+        };
+
+
     } // namespace database
 } // namespace jucyaudio
 

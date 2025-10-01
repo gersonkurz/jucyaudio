@@ -164,17 +164,6 @@ namespace jucyaudio
 
             } loggingSettings{this};
 
-            struct UndoSettings : public Section
-            {
-                UndoSettings(Section *parent)
-                    : Section{parent, "Undo"}
-                {
-                }
-
-                TypedValue<int> maxOperations{this, "MaxOperations", 100};
-
-            } undoSettings{this};
-
             struct BackupSettings : public Section
             {
                 BackupSettings(Section *parent)

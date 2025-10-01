@@ -6,7 +6,6 @@
 #include <Database/Includes/ITagManager.h>
 #include <Database/Includes/IWorkingSetManager.h>
 #include <Database/Includes/IMarkerManager.h>
-#include <Database/Includes/IUndoManager.h>
 #include <Database/Includes/IAlbumManager.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
@@ -143,9 +142,6 @@ namespace jucyaudio
             virtual IMixMarkerManager &getMixMarkerManager() = 0;
             virtual const IMixMarkerManager &getMixMarkerManager() const = 0;
             
-            virtual IUndoManager &getUndoManager() = 0;
-            virtual const IUndoManager &getUndoManager() const = 0;
-
             virtual IAlbumManager &getAlbumManager() = 0;
             virtual const IAlbumManager &getAlbumManager() const = 0;
 

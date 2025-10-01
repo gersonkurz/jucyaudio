@@ -6,13 +6,11 @@
 #include <Database/Sqlite/SqliteTagManager.h>
 #include <Database/Sqlite/SqliteAlbumManager.h>
 #include <Database/Sqlite/SqliteMixManager.h>
-#include <Database/Sqlite/SqliteMixManagerWithUndo.h>
 #include <Database/Sqlite/SqliteLibraryRootManager.h>
 #include <Database/Sqlite/SqliteFolderDatabase.h>
 #include <Database/Sqlite/SqliteWorkingSetManager.h>
 #include <Database/Sqlite/SqliteMarkerManager.h>
 #include <Database/Sqlite/SqliteMixMarkerManager.h>
-#include <Database/Sqlite/SqliteUndoManager.h>
 #include <Database/Sqlite/SqliteEQPresetManager.h>
 #include <Database/Sqlite/SqliteReverbPresetManager.h>
 #include <Database/Sqlite/sqlite3.h>
@@ -109,9 +107,6 @@ namespace jucyaudio
             ILibraryRootManager &getLibraryRootManager() override;
             const ILibraryRootManager &getLibraryRootManager() const override;
 
-            IUndoManager &getUndoManager() override;
-            const IUndoManager &getUndoManager() const override;
-
             IAlbumManager &getAlbumManager() override;
             const IAlbumManager &getAlbumManager() const override;
             
@@ -145,8 +140,6 @@ namespace jucyaudio
             mutable SqliteFolderDatabase m_folderDatabase; // Folder database instance
             mutable SqliteMarkerManager m_markerManager; // Marker manager instance
             mutable SqliteMixMarkerManager m_mixMarkerManager; // Mix marker manager instance
-            mutable SqliteUndoManager m_undoManager; // Undo manager instance
-            mutable SqliteMixManagerWithUndo m_mixManagerWithUndo;
             mutable SqliteAlbumManager m_albumManager; // Album manager instance
             mutable SqliteEQPresetManager m_eqPresetManager; // EQ preset manager instance
             mutable SqliteReverbPresetManager m_reverbPresetManager; // Reverb preset manager instance

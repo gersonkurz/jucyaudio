@@ -6,7 +6,6 @@
 #include <Database/Includes/ITrackDatabase.h>
 #include <Database/Includes/IWorkingSetManager.h>
 #include <Database/Includes/IMarkerManager.h>
-#include <Database/Includes/IUndoManager.h>
 #include <Database/Includes/IAlbumManager.h>
 #include <Database/Includes/TrackInfo.h>
 #include <Database/Includes/TrackQueryArgs.h>
@@ -103,11 +102,6 @@ namespace jucyaudio
             IMarkerManager &getMarkerManager() const
             {
                 return m_database->getMarkerManager();
-            }
-            
-            IUndoManager &getUndoManager() const
-            {
-                return m_database->getUndoManager();
             }
 
             IAlbumManager &getAlbumManager() const

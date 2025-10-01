@@ -10,6 +10,7 @@
 #include <Utils/StringWriter.h>
 #include <Utils/UiUtils.h>
 #include <Database/TrackLibrary.h>
+#include <Database/UndoManager.h>
 
 namespace jucyaudio
 {
@@ -200,10 +201,9 @@ namespace jucyaudio
             {
                 spdlog::info("MixEditorComponent: Undo requested");
                 
-                auto& undoManager = database::theTrackLibrary.getUndoManager();
                 const auto mixId = m_node->getMixProjectLoader().getMixId();
                 
-                if (undoManager.canUndo(mixId))
+                if (theUndoManager.canUndo(mixId))
                 {
                     // Check if we're currently playing and store the position
                     bool wasPlaying = false;
@@ -216,7 +216,8 @@ namespace jucyaudio
                         m_playbackController->stop();
                     }
                     
-                    undoManager.undo(mixId, [this, wasPlaying, playbackPosition]() {
+                    if (theUndoManager.undo(mixId))
+                    {
                         // Refresh the mix after undo
                         if (m_node)
                         {
@@ -271,7 +272,7 @@ namespace jucyaudio
                                 m_viewport.repaint();
                             }
                         }
-                    });
+                    }
                 }
                 else
                 {
@@ -285,10 +286,8 @@ namespace jucyaudio
             {
                 spdlog::info("MixEditorComponent: Redo requested");
                 
-                auto& undoManager = database::theTrackLibrary.getUndoManager();
-                const auto mixId = m_node->getMixProjectLoader().getMixId();
-                
-                if (undoManager.canRedo(mixId))
+                const auto mixId = m_node->getMixProjectLoader().getMixId();                
+                if (theUndoManager.canRedo())
                 {
                     // Check if we're currently playing and store the position
                     bool wasPlaying = false;
@@ -301,7 +300,8 @@ namespace jucyaudio
                         m_playbackController->stop();
                     }
                     
-                    undoManager.redo(mixId, [this, wasPlaying, playbackPosition]() {
+                    if(theUndoManager.redo())
+                    {
                         // Refresh the mix after redo
                         if (m_node)
                         {
@@ -356,7 +356,7 @@ namespace jucyaudio
                                 m_viewport.repaint();
                             }
                         }
-                    });
+                    }
                 }
                 else
                 {

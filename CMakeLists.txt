@@ -247,7 +247,7 @@ juce_add_gui_app(jucyaudio
 
 # Add Windows resource file for icon
 if(WIN32)
-    target_sources(jucyaudio PRIVATE windows_icon.rc)
+    target_sources(jucyaudio PRIVATE windows_icon.rc "Database/UndoManager.h" "Database/UndoManager.cpp")
 endif()
 
 # Add all source files
@@ -333,7 +333,7 @@ target_sources(jucyaudio PRIVATE
     Database/Includes/IMarkerManager.h
     Database/Includes/IMixMarkerManager.h
     Database/Includes/INavigationNode.h
-    Database/Includes/IUndoManager.h
+    
     Database/Includes/IRefCounted.h
     Database/Includes/ITagManager.h
     Database/Includes/ITrackDatabase.h
@@ -358,14 +358,14 @@ target_sources(jucyaudio PRIVATE
     Database/Sqlite/SqliteFolderDatabase.h
     Database/Sqlite/SqliteMixManager.cpp
     Database/Sqlite/SqliteMixManager.h
-    Database/Sqlite/SqliteMixManagerWithUndo.cpp
-    Database/Sqlite/SqliteMixManagerWithUndo.h
+    
+    
     Database/Sqlite/SqliteMarkerManager.cpp
     Database/Sqlite/SqliteMarkerManager.h
     Database/Sqlite/SqliteMixMarkerManager.cpp
     Database/Sqlite/SqliteMixMarkerManager.h
-    Database/Sqlite/SqliteUndoManager.cpp
-    Database/Sqlite/SqliteUndoManager.h
+    
+    
     Database/Sqlite/SqliteStatement.cpp
     Database/Sqlite/SqliteStatement.h
     Database/Sqlite/SqliteStatementConstruction.cpp

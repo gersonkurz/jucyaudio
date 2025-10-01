@@ -200,9 +200,6 @@ namespace jucyaudio
                 m_statusPanel.getStatusBar().postMessage("Error: Could not load navigation.", true);
             }
 
-            // Set the undo manager's limit
-            theTrackLibrary.getUndoManager().setMaxOperations(config::theSettings.undoSettings.maxOperations);
-
             // --- Playback Controller Setup ---
             // Listen to changes from the transport source (e.g., when a track
             // finishes)

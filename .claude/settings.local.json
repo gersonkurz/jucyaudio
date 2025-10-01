@@ -22,7 +22,8 @@
       "Read(//Users/gersonkurz/development/jucyaudio/jucyaudio-old/jucyaudio/UI/**)",
       "Read(//Users/gersonkurz/development/jucyaudio/jucyaudio-old/jucyaudio/**)",
       "Bash(sed:*)",
-      "Read(//c/Users/GersonKurz/AppData/Roaming/jucyaudioApp_Dev/Logs/**)"
+      "Read(//c/Users/GersonKurz/AppData/Roaming/jucyaudioApp_Dev/Logs/**)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": [],

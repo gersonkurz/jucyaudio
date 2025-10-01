@@ -10,6 +10,7 @@
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <algorithm>
+#include <Database/UndoManager.h>
 
 using json = nlohmann::json;
 
@@ -241,6 +242,15 @@ WHERE m.export_folder IS NULL
                 },
                 "SELECT * FROM MixTracks WHERE mix_id=? ORDER BY order_in_mix ASC",
                 mixId);
+
+            // special case´: record first ever mix
+            if (!theUndoManager.isMixKnown(mixId) && !mixTracks.empty())
+            {
+                ExtendedMixInfo extMixInfo;
+                extMixInfo.mixInfo = getMix(mixId);
+                extMixInfo.tracks = mixTracks;
+                theUndoManager.recordMixChange(std::move(extMixInfo));
+            }
             return mixTracks;
         }
 
@@ -297,7 +307,12 @@ WHERE m.export_folder IS NULL
                     spdlog::info("Re-enumerated orderInMix after deleting {} tracks", trackIds.size());
                 }
                 
-                return transaction.commit();
+                if (transaction.commit())
+                {
+                    recordMixChange(mixId);
+                    return true;
+                }
+                transaction.rollback();
             }
             return false;
         }
@@ -340,7 +355,12 @@ WHERE m.export_folder IS NULL
                     spdlog::info("Re-enumerated orderInMix for tracks after position {}", deletedTrackOrder);
                 }
                 
-                return transaction.commit();
+                if (transaction.commit())
+                {
+                    recordMixChange(mixId);
+                    return true;
+                }
+                transaction.rollback();
             }
             return false;
         }
@@ -406,7 +426,12 @@ WHERE m.export_folder IS NULL
                         return transaction.rollback();
                     }
                 }
-                return transaction.commit();
+                if (transaction.commit())
+                {
+                    recordMixChange(mixInfo.mixId);
+                    return true;
+                }
+                transaction.rollback();
             }
             return false;
         }
@@ -527,7 +552,6 @@ WHERE m.export_folder IS NULL
                 spdlog::error("Failed to clear working_set_id for mix {}", mixId);
                 return false;
             }
-            
             spdlog::info("Successfully cleared working_set_id for mix {}", mixId);
             return true;
         }
@@ -552,7 +576,12 @@ WHERE m.export_folder IS NULL
                     return transaction.rollback();
                 }
                 spdlog::info("Successfully updated MixTrack for mix {} track {}", mixId, updatedTrack.trackId);
-                return transaction.commit();
+                if (transaction.commit())
+                {
+                    recordMixChange(mixId);
+                    return true;
+                }
+                transaction.rollback();
             }
             return false;
         }
@@ -728,15 +757,20 @@ WHERE m.export_folder IS NULL
             // Store in database
             return createOrUpdateMix(mixInfo, resultingTracks);
         }
+
         bool SqliteMixManager::renameMix(MixId mixId, std::string_view name) const
         {
             if (SqliteTransaction transaction{m_db})
             {
                 if (transaction.execute("UPDATE Mixes SET name=? WHERE mix_id=?;", name, mixId))
                 {
-                    return transaction.commit();
+                    if (transaction.commit())
+                    {
+                        recordMixChange(mixId);
+                        return true;
+                    }
                 }
-                return transaction.commit();
+                return transaction.rollback();
             }
             return false;
         }
