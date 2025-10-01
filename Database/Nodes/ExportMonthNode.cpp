@@ -67,16 +67,14 @@ namespace jucyaudio
 
         std::string ExportMonthNode::getMonthName(int month) const
         {
-            static const std::array<const char*, 12> monthNames = {
-                "January", "February", "March", "April", "May", "June",
-                "July", "August", "September", "October", "November", "December"
-            };
-
+            // Use 2-digit month numbers (01-12) for proper chronological sorting
             if (month >= 0 && month < 12)
             {
-                return monthNames[month];
+                char buffer[3];
+                std::snprintf(buffer, sizeof(buffer), "%02d", month + 1); // tm_mon is 0-11, display as 01-12
+                return std::string(buffer);
             }
-            return "Unknown";
+            return "00";
         }
     }
 }
