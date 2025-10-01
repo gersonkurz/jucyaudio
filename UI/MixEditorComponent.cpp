@@ -287,7 +287,7 @@ namespace jucyaudio
                 spdlog::info("MixEditorComponent: Redo requested");
                 
                 const auto mixId = m_node->getMixProjectLoader().getMixId();                
-                if (theUndoManager.canRedo())
+                if (theUndoManager.canRedo(mixId))
                 {
                     // Check if we're currently playing and store the position
                     bool wasPlaying = false;
@@ -300,7 +300,7 @@ namespace jucyaudio
                         m_playbackController->stop();
                     }
                     
-                    if(theUndoManager.redo())
+                    if (theUndoManager.redo(mixId))
                     {
                         // Refresh the mix after redo
                         if (m_node)

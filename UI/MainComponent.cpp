@@ -13,6 +13,7 @@
 #include <Database/Sqlite/SqliteEQPresetManager.h>
 #include <Database/Sqlite/SqliteReverbPresetManager.h>
 #include <Database/Sqlite/SqliteTrackDatabase.h>
+#include <Database/UndoManager.h>
 #include <UI/AboutDialog.h>
 #include <UI/CheckboxLookAndFeel.h>
 #include <UI/ColumnConfiguratorDialog.h>
@@ -258,12 +259,14 @@ namespace jucyaudio
                                       const std::string &desc,
                                       std::function<void()> action,
                                       char key = 0,
-                                      juce::ModifierKeys mods = juce::ModifierKeys::noModifiers) -> MenuItem
+                                      juce::ModifierKeys mods = juce::ModifierKeys::noModifiers,
+                                      std::function<bool()> isEnabled = nullptr) -> MenuItem
             {
                 MenuItem item;
                 item.name = name;
                 item.description = desc;
                 item.action = action;
+                item.isEnabled = isEnabled;
                 if (key != 0)
                 {
                     item.keyPress = MenuItem::KeyPress{key, mods};
@@ -324,7 +327,66 @@ namespace jucyaudio
 
             // 2. Define Edit menu with DataActions
             menuManager.registerMenu("Edit",
-                {makeActionItem("Delete", "Delete selected items", DataAction::Delete, juce::KeyPress::deleteKey, juce::ModifierKeys::noModifiers),
+                {makeStaticItem("Undo",
+                    "Undo last action",
+                    [&]()
+                    {
+                        // Get current mix from mix editor
+                        if (auto* mixNode = m_mixEditorComponent.getCurrentMixNode())
+                        {
+                            auto mixId = mixNode->getMixInfo().mixId;
+                            if (theUndoManager.undo(mixId))
+                            {
+                                // Reload the mix to reflect changes
+                                m_mixEditorComponent.loadMix(mixNode);
+                            }
+                        }
+                    },
+                    'z',
+                    juce::ModifierKeys::commandModifier,
+                    [&]()
+                    {
+                        // Enabled only if we're in mix editor and can undo
+                        if (m_currentMainView == MainViewType::MixEditor)
+                        {
+                            if (auto* mixNode = m_mixEditorComponent.getCurrentMixNode())
+                            {
+                                return theUndoManager.canUndo(mixNode->getMixInfo().mixId);
+                            }
+                        }
+                        return false;
+                    }),
+                    makeStaticItem("Redo",
+                        "Redo last undone action",
+                        [&]()
+                        {
+                            // Get current mix from mix editor
+                            if (auto* mixNode = m_mixEditorComponent.getCurrentMixNode())
+                            {
+                                auto mixId = mixNode->getMixInfo().mixId;
+                                if (theUndoManager.redo(mixId))
+                                {
+                                    // Reload the mix to reflect changes
+                                    m_mixEditorComponent.loadMix(mixNode);
+                                }
+                            }
+                        },
+                        'y',
+                        juce::ModifierKeys::commandModifier,
+                        [&]()
+                        {
+                            // Enabled only if we're in mix editor and can redo
+                            if (m_currentMainView == MainViewType::MixEditor)
+                            {
+                                if (auto* mixNode = m_mixEditorComponent.getCurrentMixNode())
+                                {
+                                    return theUndoManager.canRedo(mixNode->getMixInfo().mixId);
+                                }
+                            }
+                            return false;
+                        }),
+                    {"-"},
+                    makeActionItem("Delete", "Delete selected items", DataAction::Delete, juce::KeyPress::deleteKey, juce::ModifierKeys::noModifiers),
                     makeActionItem(
                         "Remove Tracks", "Remove selected tracks from working set", DataAction::RemoveTracks, 'r', juce::ModifierKeys::commandModifier),
                     {"-"},

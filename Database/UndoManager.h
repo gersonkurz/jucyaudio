@@ -20,7 +20,7 @@ namespace jucyaudio
         {
         public:
             UndoManager() = default;
-            ~UndoManager() = default;
+            ~UndoManager();
             UndoManager(const UndoManager &) = delete;
             UndoManager &operator=(const UndoManager &) = delete;
             UndoManager(UndoManager &&) = delete;
@@ -28,12 +28,15 @@ namespace jucyaudio
 
         public:
             bool canUndo(MixId mixId) const;
-            bool canRedo() const;
+            bool canRedo(MixId mixId) const;
             bool undo(MixId mixId);
-            bool redo();
+            bool redo(MixId mixId);
 
             // change recording operations
             void recordMixChange(ExtendedMixInfo &&after);
+
+            // clear history for a specific mix
+            void clearHistory(MixId mixId);
 
             // ensure we have a state recorded for this mix, if not, record it now
             bool isMixKnown(MixId mixId) const

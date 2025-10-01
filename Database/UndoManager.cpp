@@ -1,5 +1,3 @@
-#pragma once
-
 #include <Database/UndoManager.h>
 #include <Database/TrackLibrary.h>
 #include <spdlog/spdlog.h>
@@ -15,6 +13,19 @@ namespace jucyaudio
     {
         constexpr size_t MAX_UNDO_STACK_SIZE = 100;
 
+        UndoManager::~UndoManager()
+        {
+            std::lock_guard<std::mutex> lock{undoMutex};
+            for (auto& [mixId, state] : m_perMixStates)
+            {
+                for (auto* p : state.undoOperations)
+                    delete p;
+                for (auto* p : state.redoOperations)
+                    delete p;
+            }
+            m_perMixStates.clear();
+        }
+
         bool UndoManager::canUndo(MixId mixId) const
         {
             auto item = m_perMixStates.find(mixId);
@@ -25,9 +36,10 @@ namespace jucyaudio
             return item->second.undoOperations.size() > 1;
         }
 
-        bool UndoManager::canRedo() const
+        bool UndoManager::canRedo(MixId mixId) const
         {
-            return false;
+            auto item = m_perMixStates.find(mixId);
+            return item != m_perMixStates.end() && !item->second.redoOperations.empty();
         }
 
         bool UndoManager::undo(MixId mixId)
@@ -114,9 +126,65 @@ namespace jucyaudio
             }
         }
         
-        bool UndoManager::redo()
+        bool UndoManager::redo(MixId mixId)
         {
-            return false;
+            assert(canRedo(mixId));
+
+            spdlog::info("UndoManager: redo()");
+            std::lock_guard<std::mutex> lock{undoMutex};
+            auto item = m_perMixStates.find(mixId);
+            if (item == m_perMixStates.end())
+            {
+                spdlog::warn("UndoManager: No recorded states found for mix ID {}", mixId);
+                return false;
+            }
+
+            auto& mixState = item->second;
+            if (mixState.redoOperations.empty())
+            {
+                spdlog::warn("UndoManager: No redo operations available for mix ID {}", mixId);
+                return false;
+            }
+
+            // Get the state to restore from redo stack
+            auto* redoState = mixState.redoOperations.back();
+            if (redoState == nullptr)
+            {
+                spdlog::warn("UndoManager: Redo state is null for mix ID {}", mixId);
+                return false;
+            }
+
+            // Capture current state before redo
+            auto* currentState = mixState.undoOperations.back();
+
+            // Restore the redo state
+            m_undoOperationInProgress = true;
+            theTrackLibrary.getMixManager().createOrUpdateMix(redoState->mixInfo, redoState->tracks);
+            m_undoOperationInProgress = false;
+
+            // Move redo state back to undo stack
+            mixState.undoOperations.push_back(redoState);
+            mixState.redoOperations.pop_back();
+
+            spdlog::info("After redo, state for mixId has {} undo ops, {} redo ops",
+                mixState.undoOperations.size(), mixState.redoOperations.size());
+
+            return true;
+        }
+
+        void UndoManager::clearHistory(MixId mixId)
+        {
+            std::lock_guard<std::mutex> lock{undoMutex};
+            auto it = m_perMixStates.find(mixId);
+            if (it != m_perMixStates.end())
+            {
+                for (auto* p : it->second.undoOperations)
+                    delete p;
+                for (auto* p : it->second.redoOperations)
+                    delete p;
+                m_perMixStates.erase(it);
+                spdlog::info("UndoManager: Cleared history for mix ID {}", mixId);
+            }
         }
 
         UndoManager theUndoManager;
