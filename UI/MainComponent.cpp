@@ -2896,7 +2896,7 @@ namespace jucyaudio
             if (success)
             {
                 m_statusPanel.getStatusBar().postMessage("Mix '" + mixInfo.name + "' created or updated successfully.", false);
-                
+
                 // Check if this mix was already selected BEFORE we call onMixCreated
                 bool wasAlreadySelected = false;
                 if (m_currentNode)
@@ -2904,9 +2904,11 @@ namespace jucyaudio
                     if (auto *mixNode = dynamic_cast<MixNode *>(m_currentNode))
                     {
                         wasAlreadySelected = (mixNode->getUniqueId() == mixInfo.mixId);
+                        spdlog::info("onMixCreatedCallback: current node is mix {}, target mix is {}, wasAlreadySelected={}",
+                            mixNode->getUniqueId(), mixInfo.mixId, wasAlreadySelected);
                     }
                 }
-                
+
                 // This will select the node if it's new, or just refresh the tree if it exists
                 m_navigationTree.onMixCreated(mixInfo.mixId);
 
@@ -2914,6 +2916,7 @@ namespace jucyaudio
                 // If it wasn't selected before, onMixCreated->selectNode will handle loading it
                 if (wasAlreadySelected)
                 {
+                    spdlog::info("Mix was already selected, forcing refresh...");
                     if (auto *mixNode = dynamic_cast<MixNode *>(m_currentNode))
                     {
                         spdlog::info("Currently selected mix (ID: {}) was updated, forcing view refresh.", mixInfo.mixId);
@@ -2923,13 +2926,19 @@ namespace jucyaudio
 
                         if (m_currentMainView == MainViewType::MixEditor)
                         {
+                            spdlog::info("Reloading mix editor...");
                             m_mixEditorComponent.loadMix(mixNode);
                         }
                         else // DataView showing the mix's tracks
                         {
+                            spdlog::info("Refreshing data view...");
                             m_dataViewComponent.refreshView();
                         }
                     }
+                }
+                else
+                {
+                    spdlog::info("Mix was NOT already selected, onMixCreated will handle selection");
                 }
             }
             else
