@@ -89,6 +89,27 @@ namespace jucyaudio
             return true;
         }
 
+        bool AlbumsNode::getAlbumAggregateStats(AlbumAggregateStats& outStats) const
+        {
+            outStats.reset();
+
+            // Ensure data is loaded
+            if (!m_bCacheInitialized)
+            {
+                const_cast<AlbumsNode *>(this)->prepareToShowData();
+            }
+
+            // Aggregate from cached album data
+            for (const auto& album : m_albums)
+            {
+                outStats.totalAlbums++;
+                outStats.totalTracks += album.trackCount;
+                outStats.totalDurationMs += album.totalDuration.count();
+            }
+
+            return outStats.totalAlbums > 0;
+        }
+
         bool AlbumsNode::prepareToShowData()
         {
             try

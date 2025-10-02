@@ -81,6 +81,15 @@ namespace jucyaudio
                 formatSize(stats.totalBytes),
                 formatDuration(stats.totalDurationMs));
         }
+
+        /// Format album aggregate stats as "N Albums, T Tracks, D:HH:MM:SS"
+        std::string formatAlbumAggregateStats(const database::AlbumAggregateStats& stats)
+        {
+            return std::format("{:L} Albums, {:L} Tracks, {}",
+                stats.totalAlbums,
+                stats.totalTracks,
+                formatDuration(stats.totalDurationMs));
+        }
     } // namespace
 
     namespace ui
@@ -3426,32 +3435,52 @@ namespace jucyaudio
                 return;
             }
 
-            // Get total stats for current node
-            database::AggregateStats totalStats;
-            const bool hasTotalStats = m_currentNode->getAggregateStats(totalStats);
-
-            if (!hasTotalStats)
+            // Try album stats first (for Albums node)
+            database::AlbumAggregateStats albumStats;
+            if (m_currentNode->getAlbumAggregateStats(albumStats))
             {
-                // Fallback to just showing node name
-                m_statusPanel.getStatusBar().setInfoMessage(m_currentNode->getName());
+                std::string statusMessage = formatAlbumAggregateStats(albumStats);
+
+                // Check if we're in DataView and have album selections
+                if (m_currentMainView == MainViewType::DataView)
+                {
+                    database::AlbumAggregateStats selectionStats;
+                    if (m_dataViewComponent.getAlbumSelectionStats(selectionStats))
+                    {
+                        // Append selection stats
+                        statusMessage += std::format(" ({} SELECTED)",
+                            formatAlbumAggregateStats(selectionStats));
+                    }
+                }
+
+                m_statusPanel.getStatusBar().setInfoMessage(statusMessage);
                 return;
             }
 
-            std::string statusMessage = formatAggregateStats(totalStats);
-
-            // Check if we're in DataView and have selections
-            if (m_currentMainView == MainViewType::DataView)
+            // Try track stats (for most other nodes)
+            database::AggregateStats trackStats;
+            if (m_currentNode->getAggregateStats(trackStats))
             {
-                database::AggregateStats selectionStats;
-                if (m_dataViewComponent.getSelectionStats(selectionStats))
+                std::string statusMessage = formatAggregateStats(trackStats);
+
+                // Check if we're in DataView and have track selections
+                if (m_currentMainView == MainViewType::DataView)
                 {
-                    // Append selection stats
-                    statusMessage += std::format(" ({} SELECTED)",
-                        formatAggregateStats(selectionStats));
+                    database::AggregateStats selectionStats;
+                    if (m_dataViewComponent.getSelectionStats(selectionStats))
+                    {
+                        // Append selection stats
+                        statusMessage += std::format(" ({} SELECTED)",
+                            formatAggregateStats(selectionStats));
+                    }
                 }
+
+                m_statusPanel.getStatusBar().setInfoMessage(statusMessage);
+                return;
             }
 
-            m_statusPanel.getStatusBar().setInfoMessage(statusMessage);
+            // Fallback to just showing node name
+            m_statusPanel.getStatusBar().setInfoMessage(m_currentNode->getName());
         }
 
         void MainComponent::showEqualizerWindow()

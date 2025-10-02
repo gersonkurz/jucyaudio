@@ -119,6 +119,9 @@ namespace jucyaudio
             // Get aggregate statistics for currently selected rows
             bool getSelectionStats(database::AggregateStats& outStats) const;
 
+            // Get album aggregate statistics for currently selected rows (when in Albums view)
+            bool getAlbumSelectionStats(database::AlbumAggregateStats& outStats) const;
+
             // Handle track reordering from drag & drop
             void handleTrackReorder(int sourceRow, int targetRow);
             void handleTracksReorder(const std::vector<int> &sourceRows, int targetRow);

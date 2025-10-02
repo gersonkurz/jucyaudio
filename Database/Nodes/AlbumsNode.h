@@ -23,7 +23,8 @@ namespace jucyaudio
         protected:
             bool prepareToShowData() override;
             bool setSortOrder(const std::vector<SortOrderInfo> &sortOrders) override;
-            
+            bool getAlbumAggregateStats(AlbumAggregateStats& outStats) const override;
+
             // Node-Centric Command Architecture
             RowActivationResult onRowActivated(RowIndex_t rowIndex) override;
             

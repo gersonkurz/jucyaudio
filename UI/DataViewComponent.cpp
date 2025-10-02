@@ -1,5 +1,6 @@
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Nodes/MixNode.h>
+#include <Database/Nodes/AlbumsNode.h>
 #include <Database/TrackLibrary.h>
 #include <UI/DataViewComponent.h>
 #include <UI/MainComponent.h>
@@ -367,6 +368,36 @@ namespace jucyaudio
             }
 
             return outStats.totalTracks > 0;
+        }
+
+        bool DataViewComponent::getAlbumSelectionStats(database::AlbumAggregateStats& outStats) const
+        {
+            outStats.reset();
+
+            if (!m_currentNode)
+                return false;
+
+            const auto selectedRows = getSelectedRowIndices();
+            if (selectedRows.empty())
+                return false;
+
+            // Check if current node is an AlbumsNode
+            auto* albumsNode = dynamic_cast<database::AlbumsNode*>(m_currentNode);
+            if (!albumsNode)
+                return false;
+
+            // Aggregate from selected albums
+            for (const auto rowIndex : selectedRows)
+            {
+                if (const auto* albumInfo = albumsNode->getAlbumInfoForRow(rowIndex))
+                {
+                    outStats.totalAlbums++;
+                    outStats.totalTracks += albumInfo->trackCount;
+                    outStats.totalDurationMs += albumInfo->totalDuration.count();
+                }
+            }
+
+            return outStats.totalAlbums > 0;
         }
 
         void DataViewComponent::paintRowBackground(

@@ -37,6 +37,29 @@ namespace jucyaudio
             }
         };
 
+        /// Statistics for aggregating album data across a node
+        struct AlbumAggregateStats
+        {
+            int64_t totalAlbums{0};
+            int64_t totalTracks{0};
+            int64_t totalDurationMs{0};  // Total duration in milliseconds
+
+            void reset()
+            {
+                totalAlbums = 0;
+                totalTracks = 0;
+                totalDurationMs = 0;
+            }
+
+            AlbumAggregateStats& operator+=(const AlbumAggregateStats& other)
+            {
+                totalAlbums += other.totalAlbums;
+                totalTracks += other.totalTracks;
+                totalDurationMs += other.totalDurationMs;
+                return *this;
+            }
+        };
+
         // --- INavigationNode Interface (remains an interface) ---
         struct INavigationNode : public IRefCounted
         {
@@ -168,6 +191,11 @@ namespace jucyaudio
             /// @param outStats Reference to store the aggregate statistics.
             /// @return True if stats are available, false otherwise.
             virtual bool getAggregateStats(AggregateStats& outStats) const = 0;
+
+            /// @brief Get album aggregate statistics (album count, track count, duration) for nodes that represent albums.
+            /// @param outStats Reference to store the album aggregate statistics.
+            /// @return True if stats are available, false otherwise.
+            virtual bool getAlbumAggregateStats(AlbumAggregateStats& outStats) const = 0;
 
             virtual const TrackQueryArgs *getQueryArgs() const = 0;
 
