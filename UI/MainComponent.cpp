@@ -1411,6 +1411,18 @@ namespace jucyaudio
 
                 m_currentNode->prepareToShowData();
                 m_dynamicToolbar.setCurrentNode(m_currentNode); // Toolbar updates its actions
+
+                // Apply current global filter to the new node
+                // Get the current filter text from the toolbar
+                const auto currentFilterText = m_dynamicToolbar.getFilterText();
+                std::vector<std::string> searchTerms;
+                if (!currentFilterText.isEmpty())
+                {
+                    searchTerms.push_back(currentFilterText.toStdString());
+                }
+                // Always set search terms (even if empty) to clear any previous filter on the node
+                m_currentNode->setSearchTerms(searchTerms);
+
                 if (m_currentMainView == MainViewType::MixEditor)
                 {
                     m_mixEditorComponent.loadMix(static_cast<MixNode *>(m_currentNode)); // Load the mix data

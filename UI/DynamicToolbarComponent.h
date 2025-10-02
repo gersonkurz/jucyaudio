@@ -43,6 +43,12 @@ namespace jucyaudio
             // Method for MainComponent to set the filter text programmatically if needed
             void setFilterText(const juce::String &text, juce::NotificationType notification = juce::sendNotification);
 
+            // Method to get the current filter text
+            juce::String getFilterText() const
+            {
+                return m_filterTextEditor.getText();
+            }
+
         private:
             // juce::TextEditor::Listener override
             void textEditorReturnKeyPressed(juce::TextEditor &editor) override;
