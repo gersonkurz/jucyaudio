@@ -1,4 +1,5 @@
 #include <Database/Includes/ITagManager.h>
+#include <Database/Includes/INavigationNode.h>
 #include <Database/Includes/EQPreset.h>
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
@@ -2657,6 +2658,42 @@ CREATE TABLE MixUndoHistory (
             // or getNextResult() failed. In either case, it's an error.
             m_lastErrorMessage = m_db.getLastError();
             return -1; // Indicate error
+        }
+
+        bool SqliteTrackDatabase::getAggregateStats(const TrackQueryArgs &args, AggregateStats &outStats) const
+        {
+            outStats.reset();
+
+            if (!isOpen())
+            {
+                return false;
+            }
+
+            try
+            {
+                SqliteStatement stmt{m_db};
+                SqliteStatementConstruction stmtConstruction{stmt};
+
+                if (!stmtConstruction.createAggregateStatement(args))
+                {
+                    spdlog::error("Failed to create aggregate statement");
+                    return false;
+                }
+
+                if (stmt.isValid() && stmt.getNextResult())
+                {
+                    outStats.totalTracks = stmt.getInt64(0);
+                    outStats.totalBytes = static_cast<uint64_t>(stmt.getInt64(1));
+                    outStats.totalDurationMs = stmt.getInt64(2);
+                    return true;
+                }
+            }
+            catch (const std::exception &e)
+            {
+                spdlog::error("Failed to get aggregate stats: {}", e.what());
+            }
+
+            return false;
         }
 
         // --- Tag Management Implementations ---

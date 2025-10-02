@@ -53,6 +53,34 @@ namespace jucyaudio
 
         // @brief This is the last-known view type FOR MIXES ONLY
         ui::MainViewType lastKnownViewTypeForMixes{ui::MainViewType::MixEditor};
+
+        /// Format duration as DDD:HH:MM:SS
+        std::string formatDuration(int64_t totalMs)
+        {
+            const int64_t totalSecs = totalMs / 1000;
+            const int days = static_cast<int>(totalSecs / 86400);
+            const int hours = static_cast<int>((totalSecs % 86400) / 3600);
+            const int mins = static_cast<int>((totalSecs % 3600) / 60);
+            const int secs = static_cast<int>(totalSecs % 60);
+
+            return std::format("{}:{:02}:{:02}:{:02}", days, hours, mins, secs);
+        }
+
+        /// Format file size in GB with one decimal place
+        std::string formatSize(uint64_t bytes)
+        {
+            const double gb = bytes / 1073741824.0;
+            return std::format("{:.1f} GB", gb);
+        }
+
+        /// Format aggregate stats as "N Tracks, X GB, D:HH:MM:SS"
+        std::string formatAggregateStats(const database::AggregateStats& stats)
+        {
+            return std::format("{:L} Tracks, {}, {}",
+                stats.totalTracks,
+                formatSize(stats.totalBytes),
+                formatDuration(stats.totalDurationMs));
+        }
     } // namespace
 
     namespace ui
@@ -3392,22 +3420,38 @@ namespace jucyaudio
 
         void MainComponent::updateTrackCountStatus()
         {
-            if (m_currentNode)
-            {
-                int64_t totalTracks = 0;
-                if (m_currentNode->getTotalTrackCount(totalTracks))
-                {
-                    m_statusPanel.getStatusBar().setInfoMessage(std::format("{:L} tracks in '{}'", totalTracks, m_currentNode->getName()));
-                }
-                else
-                {
-                    m_statusPanel.getStatusBar().setInfoMessage(m_currentNode->getName());
-                }
-            }
-            else
+            if (!m_currentNode)
             {
                 m_statusPanel.getStatusBar().setInfoMessage("");
+                return;
             }
+
+            // Get total stats for current node
+            database::AggregateStats totalStats;
+            const bool hasTotalStats = m_currentNode->getAggregateStats(totalStats);
+
+            if (!hasTotalStats)
+            {
+                // Fallback to just showing node name
+                m_statusPanel.getStatusBar().setInfoMessage(m_currentNode->getName());
+                return;
+            }
+
+            std::string statusMessage = formatAggregateStats(totalStats);
+
+            // Check if we're in DataView and have selections
+            if (m_currentMainView == MainViewType::DataView)
+            {
+                database::AggregateStats selectionStats;
+                if (m_dataViewComponent.getSelectionStats(selectionStats))
+                {
+                    // Append selection stats
+                    statusMessage += std::format(" ({} SELECTED)",
+                        formatAggregateStats(selectionStats));
+                }
+            }
+
+            m_statusPanel.getStatusBar().setInfoMessage(statusMessage);
         }
 
         void MainComponent::showEqualizerWindow()

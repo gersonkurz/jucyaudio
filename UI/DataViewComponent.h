@@ -116,6 +116,9 @@ namespace jucyaudio
 
             std::vector<RowIndex_t> getSelectedRowIndices() const;
 
+            // Get aggregate statistics for currently selected rows
+            bool getSelectionStats(database::AggregateStats& outStats) const;
+
             // Handle track reordering from drag & drop
             void handleTrackReorder(int sourceRow, int targetRow);
             void handleTracksReorder(const std::vector<int> &sourceRows, int targetRow);
@@ -148,6 +151,7 @@ namespace jucyaudio
 
             // Drag & drop support
             juce::var getDragSourceDescription(const juce::SparseSet<int> &selectedRows) override;
+            void selectedRowsChanged(int lastRowSelected) override;
 
             void updateTableColumns();
 

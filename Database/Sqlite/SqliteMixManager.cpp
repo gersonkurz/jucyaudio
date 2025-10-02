@@ -243,7 +243,7 @@ WHERE m.export_folder IS NULL
                 "SELECT * FROM MixTracks WHERE mix_id=? ORDER BY order_in_mix ASC",
                 mixId);
 
-            // special case´: record first ever mix
+            // special case: record first ever mix
             if (!theUndoManager.isMixKnown(mixId) && !mixTracks.empty())
             {
                 ExtendedMixInfo extMixInfo;

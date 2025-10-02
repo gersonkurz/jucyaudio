@@ -88,6 +88,9 @@ namespace jucyaudio
             void playDataRow(RowIndex_t rowIndex);
             bool navigateToFolder(FolderId folderId);
 
+            // Update status bar with track count and statistics
+            void updateTrackCountStatus();
+
         private:
             friend class MainPlaybackAndStatusComponent;
             void handleNodeSelection(INavigationNode *selectedNode, bool forceDisplaySwitch = false, bool syncNavigationTree = false);
@@ -112,7 +115,6 @@ namespace jucyaudio
 
             void seekToTimelinePosition(double timePosition);
             void removeTrackFromMix(TrackId trackId);
-            void updateTrackCountStatus();
 
             // menu management --------------------------------
             bool onShowScanDialog();

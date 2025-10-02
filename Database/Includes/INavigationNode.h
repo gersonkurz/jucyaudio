@@ -14,6 +14,29 @@ namespace jucyaudio
 {
     namespace database
     {
+        /// Statistics for aggregating track data across a node
+        struct AggregateStats
+        {
+            int64_t totalTracks{0};
+            uint64_t totalBytes{0};      // Total file size in bytes
+            int64_t totalDurationMs{0};  // Total duration in milliseconds
+
+            void reset()
+            {
+                totalTracks = 0;
+                totalBytes = 0;
+                totalDurationMs = 0;
+            }
+
+            AggregateStats& operator+=(const AggregateStats& other)
+            {
+                totalTracks += other.totalTracks;
+                totalBytes += other.totalBytes;
+                totalDurationMs += other.totalDurationMs;
+                return *this;
+            }
+        };
+
         // --- INavigationNode Interface (remains an interface) ---
         struct INavigationNode : public IRefCounted
         {
@@ -140,6 +163,11 @@ namespace jucyaudio
             /// @param outCount Reference to store the total track count.
             /// @return True if the count was successfully retrieved, false otherwise.
             virtual bool getTotalTrackCount(int64_t &outCount) const = 0;
+
+            /// @brief Get aggregate statistics (count, size, duration) for all tracks under this node.
+            /// @param outStats Reference to store the aggregate statistics.
+            /// @return True if stats are available, false otherwise.
+            virtual bool getAggregateStats(AggregateStats& outStats) const = 0;
 
             virtual const TrackQueryArgs *getQueryArgs() const = 0;
 

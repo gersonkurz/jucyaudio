@@ -345,6 +345,30 @@ namespace jucyaudio
             return result;
         }
 
+        bool DataViewComponent::getSelectionStats(database::AggregateStats& outStats) const
+        {
+            outStats.reset();
+
+            if (!m_currentNode)
+                return false;
+
+            const auto selectedRows = getSelectedRowIndices();
+            if (selectedRows.empty())
+                return false;
+
+            // Use the public API to get track information
+            const auto trackResult = m_currentNode->getTrackInfosForOperation(selectedRows);
+
+            for (const auto& trackInfo : trackResult.trackInfos)
+            {
+                outStats.totalTracks++;
+                outStats.totalBytes += trackInfo.filesize_bytes;
+                outStats.totalDurationMs += trackInfo.duration.count();
+            }
+
+            return outStats.totalTracks > 0;
+        }
+
         void DataViewComponent::paintRowBackground(
             juce::Graphics &g, int rowNumber, [[maybe_unused]] int width, [[maybe_unused]] int height, bool rowIsSelected)
         {
@@ -520,6 +544,12 @@ namespace jucyaudio
                     // Nothing to do
                     break;
             }
+        }
+
+        void DataViewComponent::selectedRowsChanged([[maybe_unused]] int lastRowSelected)
+        {
+            // Notify MainComponent to update status bar with selection stats
+            m_mainComponent.updateTrackCountStatus();
         }
 
         juce::var DataViewComponent::getDragSourceDescription(const juce::SparseSet<int> &selectedRows)

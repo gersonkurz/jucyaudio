@@ -16,6 +16,7 @@ namespace jucyaudio
             SqliteStatementConstruction(SqliteStatement &stmt);
 
             bool createCountStatement(const TrackQueryArgs &trackQueryArgs);
+            bool createAggregateStatement(const TrackQueryArgs &trackQueryArgs);
             bool createSelectStatement(const TrackQueryArgs &trackQueryArgs);
             bool createInsertIntoSelectTrackIdsStatement(const TrackQueryArgs &trackQueryArgs, WorkingSetId wsId);
 

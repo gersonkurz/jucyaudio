@@ -23,6 +23,7 @@ namespace jucyaudio
     namespace database
     {
         // Forward declarations
+        struct AggregateStats;
         class IMixMarkerManager;
         
         struct AudioMetadata
@@ -88,6 +89,9 @@ namespace jucyaudio
             virtual std::vector<TrackInfo> getTracks(const TrackQueryArgs &args) const = 0;
             virtual std::vector<TrackId> getTrackIds(const TrackQueryArgs &args) const = 0;
             virtual int getTotalTrackCount(const TrackQueryArgs &baseFilters) const = 0;
+
+            // Get aggregate statistics for tracks matching the given query
+            virtual bool getAggregateStats(const TrackQueryArgs &args, AggregateStats &outStats) const = 0;
 
             // Specific updates, often user-driven or for quick filesystem checks
             virtual DbResult updateTrackRating(TrackId trackId, int rating) = 0;

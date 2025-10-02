@@ -281,6 +281,46 @@ namespace jucyaudio
             return finalizeStatement(writer, args);
         }
 
+        bool SqliteStatementConstruction::createAggregateStatement(const TrackQueryArgs &args)
+        {
+            m_paramIndex = 1;
+            StringWriter writer;
+
+            // If we have search terms, use FTS5 for searching
+            if (!args.searchTerms.empty() && !args.searchTerms[0].empty())
+            {
+                writer.append("SELECT COUNT(*), COALESCE(SUM(filesize_bytes), 0), COALESCE(SUM(duration), 0) ");
+                writer.append("FROM Tracks INNER JOIN TracksSearchFTS ON Tracks.track_id = TracksSearchFTS.rowid");
+                writer.appendFormatted(" WHERE TracksSearchFTS MATCH ?{}", m_paramIndex++);
+
+                // Add other WHERE conditions if needed
+                if (args.workingSetId > 0)
+                {
+                    writer.appendFormatted(" AND track_id IN (SELECT track_id FROM WorkingSetTracks WHERE ws_id = ?{})", m_paramIndex++);
+                }
+                if (args.mixId > 0)
+                {
+                    writer.appendFormatted(" AND track_id IN (SELECT track_id FROM MixTracks WHERE mix_id = ?{})", m_paramIndex++);
+                }
+                if (!args.folderIds.empty())
+                {
+                    writer.append(" AND folder_id IN (");
+                    for (size_t i = 0; i < args.folderIds.size(); ++i)
+                    {
+                        writer.append(i == 0 ? std::format("?{}", m_paramIndex++) : std::format(", ?{}", m_paramIndex++));
+                    }
+                    writer.append(")");
+                }
+            }
+            else
+            {
+                writer.append("SELECT COUNT(*), COALESCE(SUM(filesize_bytes), 0), COALESCE(SUM(duration), 0) FROM Tracks");
+                addWhereClause(writer, args);
+            }
+
+            return finalizeStatement(writer, args);
+        }
+
         bool SqliteStatementConstruction::createInsertIntoSelectTrackIdsStatement(const TrackQueryArgs &args, WorkingSetId wsId)
         {
             m_paramIndex = 1;

@@ -61,6 +61,7 @@ namespace jucyaudio
             std::vector<TrackInfo> getTracks(const TrackQueryArgs &args) const override;
             std::vector<TrackId> getTrackIds(const TrackQueryArgs &args) const override;
             int getTotalTrackCount(const TrackQueryArgs &baseFilters) const override;
+            bool getAggregateStats(const TrackQueryArgs &args, AggregateStats &outStats) const override;
             int getTotalTrackCount() const // Without filters, but with cache
             {
                 if (!m_cachedTotalTrackCountValid)

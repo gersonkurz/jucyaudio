@@ -117,6 +117,13 @@ namespace jucyaudio
             return getNumberOfRows(outCount);
         }
 
+        bool BaseNode::getAggregateStats(AggregateStats& outStats) const
+        {
+            // Default implementation: not supported
+            outStats.reset();
+            return false;
+        }
+
         std::string BaseNode::getCellText([[maybe_unused]] RowIndex_t rowIndex, [[maybe_unused]] ColumnIndex_t index) const
         {
             return {};

@@ -110,6 +110,18 @@ namespace jucyaudio
             return true;
         }
 
+        bool LibraryNode::getAggregateStats(AggregateStats& outStats) const
+        {
+            const auto* trackDb = theTrackLibrary.getTrackDatabase();
+            if (!trackDb)
+            {
+                outStats.reset();
+                return false;
+            }
+
+            return trackDb->getAggregateStats(m_queryArgs, outStats);
+        }
+
         bool LibraryNode::setSortOrder(const std::vector<SortOrderInfo> &sortOrders)
         {
             m_queryArgs.sortBy = sortOrders;

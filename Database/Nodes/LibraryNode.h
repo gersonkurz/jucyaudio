@@ -28,6 +28,7 @@ namespace jucyaudio
         protected:
             bool prepareToShowData() override;
             bool setSortOrder(const std::vector<SortOrderInfo> &sortOrders) override;
+            bool getAggregateStats(AggregateStats& outStats) const override;
             const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;
             CellRenderInfo getCellRenderInfo(RowIndex_t rowIndex, ColumnIndex_t columnIndex) const override;
 
