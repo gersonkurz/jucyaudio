@@ -1,6 +1,8 @@
 SetCompressor /SOLID LZMA 
 
-!define CURRENT_VERSION "0.6.0"
+; Include the generated version file from the build directory
+; Note: This assumes the script is run from the build directory context
+!include "version.nsi"
 
 !include "MUI2.nsh"
 
@@ -9,8 +11,8 @@ XPStyle on
 
 Name "jucyaudio ${CURRENT_VERSION}" 
 OutFile "jucyaudio-${CURRENT_VERSION}-setup-x64.exe"
-InstallDir "$PROGRAMFILES64\jucyaudio"
-InstallDirRegKey HKLM SOFTWARE\jucyaudio "Install_Dir"
+InstallDir "$PROGRAMFILES64\NGBT\jucyaudio"
+InstallDirRegKey HKLM SOFTWARE\NGBT\jucyaudio "Install_Dir"
 
 !define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
 !define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
@@ -46,14 +48,14 @@ RequestExecutionLevel admin
   VIAddVersionKey /LANG=${LANG_ENGLISH} "Comments" "GPL Licensed"
   VIAddVersionKey /LANG=${LANG_ENGLISH} "CompanyName" "Gerson Kurz"
   VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalTrademarks" ""
-  VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalCopyright" "GPL Licensed"
+  VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalCopyright" "(C) Gerson Kurz"
   VIAddVersionKey /LANG=${LANG_ENGLISH} "FileDescription" "jucyaudio"
   VIAddVersionKey /LANG=${LANG_ENGLISH} "FileVersion" ${CURRENT_VERSION}
 
 Section  "-Jucyaudio (required)"
     SetRegView 64
     SetOutPath $INSTDIR
-    File /R ..\..\..\out\build\x64-release\jucyaudio_artefacts\Release\*
+    File /R ..\out\install\X64-Release\bin\*
     
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\jucyaudio" "DisplayName" "jucyaudio (Remove only)"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\jucyaudio" "UninstallString" '"$INSTDIR\uninstall.exe"'
@@ -71,11 +73,17 @@ Section "Create Start Menu Shortcuts"
     CreateShortCut "$SMPROGRAMS\jucyaudio\jucyaudio.lnk" "$INSTDIR\jucyaudio.exe" "" "$INSTDIR\jucyaudio.exe" 0
 SectionEnd
 
+Section "Register Shell Extension"
+    WriteRegStr HKCR "*\shell\jucyaudio" "Icon" "$INSTDIR\jucyaudio.exe"
+    WriteRegStr HKCR "*\shell\jucyaudio" "Position" "Middle"
+    WriteRegStr HKCR "*\shell\jucyaudio\Command" "" '$INSTDIR\jucyaudio.exe %0'
+SectionEnd
+
 Section "Uninstall"
     SetRegView 64
 	Delete $INSTDIR\uninstall.exe
     Delete "$DESKTOP\jucyaudio.lnk"
     RMDir /r "$SMPROGRAMS\jucyaudio"
-	ReadRegStr $INSTDIR HKLM SOFTWARE\jucyaudio "Install_Dir"
+	ReadRegStr $INSTDIR HKLM SOFTWARE\NGBT\jucyaudio "Install_Dir"
     RMDir /r "$INSTDIR\"
 SectionEnd

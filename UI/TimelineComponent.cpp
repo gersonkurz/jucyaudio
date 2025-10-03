@@ -787,6 +787,8 @@ namespace jucyaudio
 
         void TimelineComponent::repositionTrack(TrackId trackId)
         {
+            spdlog::info("[REPOSITION] repositionTrack called for TrackId={}", trackId);
+
             // Find which track index this is
             int trackIndex = -1;
             for (size_t i = 0; i < m_trackViews.size(); ++i)
@@ -794,12 +796,21 @@ namespace jucyaudio
                 if (m_trackViews[i].mixTrackData && m_trackViews[i].mixTrackData->trackId == trackId)
                 {
                     trackIndex = static_cast<int>(i);
+                    spdlog::info("[REPOSITION]   Found track at index {}, OrderInMix={}", i, m_trackViews[i].mixTrackData->orderInMix);
+                    spdlog::info("[REPOSITION]   Current values: CueStart={}ms, CueEnd={}ms, AttachFrom={}ms, AttachTo={}ms",
+                                m_trackViews[i].mixTrackData->cueStart.count(),
+                                m_trackViews[i].mixTrackData->cueEnd.count(),
+                                m_trackViews[i].mixTrackData->attachFrom.count(),
+                                m_trackViews[i].mixTrackData->attachTo.count());
                     break;
                 }
             }
 
             if (trackIndex == -1)
+            {
+                spdlog::warn("[REPOSITION] Track {} not found in track views", trackId);
                 return;
+            }
 
             // Check if this is the first track or if attach points changed
             // For now, let's check if we need full recalculation
@@ -813,6 +824,8 @@ namespace jucyaudio
                 needsFullRecalculation = true;
             }
 
+            spdlog::info("[REPOSITION] Needs full recalculation: {}", needsFullRecalculation);
+
             if (needsFullRecalculation)
             {
                 // Recalculate all positions without recreating components
@@ -823,6 +836,8 @@ namespace jucyaudio
                 // For the last track with only cueStart/cueEnd changes, just update that track
                 auto &view = m_trackViews[trackIndex];
                 view.componentStartTime = view.audioStartTime + view.mixTrackData->cueStart;
+
+                spdlog::info("[REPOSITION] Updated last track only - componentStartTime={}ms", view.componentStartTime.count());
 
                 // Trigger a layout update to reposition the component
                 resized();
@@ -838,13 +853,14 @@ namespace jucyaudio
                 return;
             }
 
-            spdlog::info("TimelineComponent::recalculateTrackPositions - Processing {} tracks", m_trackViews.size());
+            spdlog::info("[RECALC] recalculateTrackPositions - Processing {} tracks", m_trackViews.size());
 
             // Calculate the global offset from the first track's cueStart
             Duration_t globalOffset{0};
             if (m_trackViews[0].mixTrackData && m_trackViews[0].mixTrackData->cueStart < Duration_t{0})
             {
                 globalOffset = -m_trackViews[0].mixTrackData->cueStart;
+                spdlog::info("[RECALC]   First track has negative cueStart, globalOffset={}ms", globalOffset.count());
             }
 
             // Recalculate positions for all tracks
@@ -870,11 +886,31 @@ namespace jucyaudio
                 // Update component start time
                 view.componentStartTime = view.audioStartTime + view.mixTrackData->cueStart;
 
+                spdlog::info("[RECALC]   Track {} (OrderInMix={}): CueStart={}ms, AttachFrom={}ms, AttachTo={}ms, audioStartTime={}ms, componentStartTime={}ms",
+                            view.mixTrackData->trackId, view.mixTrackData->orderInMix,
+                            view.mixTrackData->cueStart.count(),
+                            view.mixTrackData->attachFrom.count(),
+                            view.mixTrackData->attachTo.count(),
+                            view.audioStartTime.count(),
+                            view.componentStartTime.count());
+
                 previousAudioStartTime = view.audioStartTime;
             }
 
             // Refresh the layout with the new positions
+            spdlog::info("[RECALC] Calling refreshLayout()");
             refreshLayout();
+
+            // Synchronize all MixTrackComponent internal data with the updated MixProjectLoader data
+            // This prevents stale data from being used when components fire callbacks
+            spdlog::info("[RECALC] Synchronizing component data after recalculation");
+            for (auto &view : m_trackViews)
+            {
+                if (view.component && view.mixTrackData)
+                {
+                    view.component->updateMixTrackData(*view.mixTrackData);
+                }
+            }
         }
 
         void TimelineComponent::maintainViewportPosition(double timeAtMouse, int mouseX)

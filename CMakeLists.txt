@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(jucyaudio VERSION 0.7.0)
+project(jucyaudio VERSION 0.8.0)
 
 # Enable export of compile commands for IDEs
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)

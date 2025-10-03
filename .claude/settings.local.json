@@ -1,34 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(xxd:*)",
-      "Bash(mkdir:*)",
-      "Bash(sips:*)",
-      "Bash(iconutil:*)",
-      "Bash(cat:*)",
-      "Bash(cp:*)",
-      "Bash(touch:*)",
-      "Bash(grep:*)",
-      "Bash(python:*)",
-      "Read(//Users/gersonkurz/NGBT/NGBT/ptraced-qt/**)",
-      "Bash(just clean:*)",
-      "Bash(just build:*)",
-      "Bash(./build/jucyaudio_artefacts/RelWithDebInfo/JucyAudio.app/Contents/MacOS/JucyAudio:*)",
-      "Bash(cmake:*)",
-      "Bash(just package:*)",
-      "Bash(just info)",
-      "Read(//Users/gersonkurz/Library/jucyaudioApp_Dev/Logs/**)",
-      "Read(//Users/gersonkurz/development/jucyaudio/jucyaudio-old/jucyaudio/UI/**)",
-      "Read(//Users/gersonkurz/development/jucyaudio/jucyaudio-old/jucyaudio/UI/**)",
-      "Read(//Users/gersonkurz/development/jucyaudio/jucyaudio-old/jucyaudio/**)",
-      "Bash(sed:*)",
       "Read(//c/Users/GersonKurz/AppData/Roaming/jucyaudioApp_Dev/Logs/**)",
-      "Bash(dir:*)"
+      "Bash(sqlite3:*)"
     ],
     "deny": [],
-    "ask": [],
-    "additionalDirectories": [
-      "/Users/gersonkurz/Library/jucyaudioApp_Dev/Logs"
-    ]
+    "ask": []
   }
 }

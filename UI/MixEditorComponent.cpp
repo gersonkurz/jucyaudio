@@ -579,27 +579,40 @@ namespace jucyaudio
                 return;
             }
 
-            spdlog::info("Updating cue/attach points for track at position {}", orderInMix);
-            
+            spdlog::info("[EDIT-CALLBACK] updateCueAttachInData called - OrderInMix={}, TrackId={}", orderInMix, updatedTrack.trackId);
+            spdlog::info("[EDIT-CALLBACK]   Incoming: CueStart={}ms, CueEnd={}ms, AttachFrom={}ms, AttachTo={}ms",
+                        updatedTrack.cueStart.count(), updatedTrack.cueEnd.count(),
+                        updatedTrack.attachFrom.count(), updatedTrack.attachTo.count());
+
             // Get access to the mix tracks
             auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
-            
+
             // Find and update the track by orderInMix AND trackId (to handle duplicate orderInMix)
             for (auto& track : mixTracks)
             {
                 // Match both orderInMix AND trackId to handle data corruption cases
                 if (track.orderInMix == orderInMix && track.trackId == updatedTrack.trackId)
                 {
+                    spdlog::info("[EDIT-CALLBACK]   Before update: CueStart={}ms, CueEnd={}ms, AttachFrom={}ms, AttachTo={}ms",
+                                track.cueStart.count(), track.cueEnd.count(),
+                                track.attachFrom.count(), track.attachTo.count());
+
                     // Check if cue or attach points actually changed
                     const auto cueStartChanged = track.cueStart != updatedTrack.cueStart;
-                    const auto attachChanged = track.attachFrom != updatedTrack.attachFrom || 
+                    const auto cueEndChanged = track.cueEnd != updatedTrack.cueEnd;
+                    const auto attachChanged = track.attachFrom != updatedTrack.attachFrom ||
                                               track.attachTo != updatedTrack.attachTo;
-                    
+
                     track.cueStart = updatedTrack.cueStart;
                     track.cueEnd = updatedTrack.cueEnd;
                     track.attachFrom = updatedTrack.attachFrom;
                     track.attachTo = updatedTrack.attachTo;
-                    spdlog::info("Updated cue/attach points for track {} at position {}", track.trackId, orderInMix);
+
+                    spdlog::info("[EDIT-CALLBACK]   After update: CueStart={}ms, CueEnd={}ms, AttachFrom={}ms, AttachTo={}ms",
+                                track.cueStart.count(), track.cueEnd.count(),
+                                track.attachFrom.count(), track.attachTo.count());
+                    spdlog::info("[EDIT-CALLBACK]   Changes: CueStart={}, CueEnd={}, Attach={}",
+                                cueStartChanged, cueEndChanged, attachChanged);
                     
                     // Save changes
                     saveMixChanges();
@@ -774,26 +787,35 @@ namespace jucyaudio
                 spdlog::error("MixEditorComponent::saveMixChanges - No mix node loaded");
                 return;
             }
-            spdlog::info("Saving mix changes to database");
+            spdlog::info("[SAVE-DB] saveMixChanges called");
 
             // Get the current mix info and tracks
             auto &mixProjectLoader = m_node->getMixProjectLoader();
-            //auto mixId = mixProjectLoader.getMixId();
             auto &mixTracks = mixProjectLoader.getMixTracks();
+
+            // Log all track values before saving
+            spdlog::info("[SAVE-DB] Saving {} tracks to database", mixTracks.size());
+            for (const auto& track : mixTracks)
+            {
+                spdlog::info("[SAVE-DB]   Track {} (OrderInMix={}): CueStart={}ms, CueEnd={}ms, AttachFrom={}ms, AttachTo={}ms",
+                            track.trackId, track.orderInMix,
+                            track.cueStart.count(), track.cueEnd.count(),
+                            track.attachFrom.count(), track.attachTo.count());
+            }
 
             // Get mix info from database
             auto &mixInfo = mixProjectLoader.getMixInfo();
             mixInfo.totalDuration = mixProjectLoader.calculateMixDuration();
 
             // Save changes back to database
-            spdlog::info("About to call createOrUpdateMix for mix {} with {} tracks", mixInfo.mixId, mixTracks.size());
+            spdlog::info("[SAVE-DB] Calling createOrUpdateMix for mix {}", mixInfo.mixId);
             if (database::theTrackLibrary.getMixManager().createOrUpdateMix(mixInfo, mixTracks))
             {
-                spdlog::info("Successfully saved mix changes");
+                spdlog::info("[SAVE-DB] Successfully saved mix changes to database");
             }
             else
             {
-                spdlog::error("Failed to save mix changes");
+                spdlog::error("[SAVE-DB] FAILED to save mix changes to database");
             }
         }
         

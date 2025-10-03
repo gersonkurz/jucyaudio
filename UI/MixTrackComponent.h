@@ -33,13 +33,13 @@ namespace jucyaudio
         class MixTrackComponent : public juce::Component, public juce::ChangeListener, public juce::Slider::Listener
         {            
             /** @brief Thickness of the path between envelope points */
-            static constexpr double ENVELOPE_PATH_LINE_THICKESS = 4.0f;
+            static constexpr double ENVELOPE_PATH_LINE_THICKESS = 2.0f;
 
             /** @brief Radius of an envelope point not active */
-            static constexpr double ENVELOPE_POINT_STANDARD_RADIUS = 10.0f;
+            static constexpr double ENVELOPE_POINT_STANDARD_RADIUS = 6.0f;
 
             /** @brief Radius of an envelope point that is currently being dragged / hovered upon */
-            static constexpr double ENVELOPE_POINT_ACTIVE_RADIUS = 20.0f;
+            static constexpr double ENVELOPE_POINT_ACTIVE_RADIUS = 10.0f;
 
             /** @brief Height of the text section displaying track title (pixels) */
             static constexpr int TEXT_SECTION_HEIGHT = 20;
@@ -107,6 +107,43 @@ namespace jucyaudio
                     spdlog::info("MixTrackComponent::setPixelsPerSecond - track {}: changing from {} to {}",
                                  m_mixTrack.orderInMix, m_pixelsPerSecond, pixelsPerSecond);
                     m_pixelsPerSecond = pixelsPerSecond;
+                    repaint();
+                }
+            }
+
+            /**
+             * @brief Updates the component's internal MixTrack data from the authoritative source.
+             *
+             * This is needed after timeline recalculations to prevent stale data from being
+             * used when firing callbacks. The component maintains a copy of MixTrack data,
+             * and this copy needs to be synchronized after the timeline updates the positions.
+             *
+             * @param updatedMixTrack The updated MixTrack data from the MixProjectLoader.
+             */
+            void updateMixTrackData(const MixTrack &updatedMixTrack)
+            {
+                // Only update the fields that can be changed by timeline recalculation
+                // Don't update envelope points or gain as those are not affected by repositioning
+                const bool dataChanged = (m_mixTrack.cueStart != updatedMixTrack.cueStart ||
+                                         m_mixTrack.cueEnd != updatedMixTrack.cueEnd ||
+                                         m_mixTrack.attachFrom != updatedMixTrack.attachFrom ||
+                                         m_mixTrack.attachTo != updatedMixTrack.attachTo);
+
+                if (dataChanged)
+                {
+                    spdlog::debug("[SYNC-DATA] Updating MixTrackComponent data for track {} (OrderInMix={}): "
+                                 "CueStart {}ms->{}ms, CueEnd {}ms->{}ms, AttachFrom {}ms->{}ms, AttachTo {}ms->{}ms",
+                                 m_mixTrack.trackId, m_mixTrack.orderInMix,
+                                 m_mixTrack.cueStart.count(), updatedMixTrack.cueStart.count(),
+                                 m_mixTrack.cueEnd.count(), updatedMixTrack.cueEnd.count(),
+                                 m_mixTrack.attachFrom.count(), updatedMixTrack.attachFrom.count(),
+                                 m_mixTrack.attachTo.count(), updatedMixTrack.attachTo.count());
+
+                    m_mixTrack.cueStart = updatedMixTrack.cueStart;
+                    m_mixTrack.cueEnd = updatedMixTrack.cueEnd;
+                    m_mixTrack.attachFrom = updatedMixTrack.attachFrom;
+                    m_mixTrack.attachTo = updatedMixTrack.attachTo;
+
                     repaint();
                 }
             }

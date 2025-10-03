@@ -233,7 +233,8 @@ namespace jucyaudio
                 }
             }
 
-            g.setColour(juce::Colours::yellow.withAlpha(0.8f));
+            // Draw envelope line with reduced opacity (more subtle)
+            g.setColour(juce::Colours::yellow.withAlpha(0.5f));
             g.strokePath(volumePath, juce::PathStrokeType(ENVELOPE_PATH_LINE_THICKESS));
 
             // --- 2. Draw the Interactive Points on Top of the Line ---
@@ -244,19 +245,22 @@ namespace jucyaudio
 
                 auto pointColor = juce::Colours::blue;
                 float pointSize = ENVELOPE_POINT_STANDARD_RADIUS;
+                float alpha = 0.7f; // Slightly transparent by default
 
                 if (m_selectedEnvelopePointIndex.has_value() && m_selectedEnvelopePointIndex.value() == i)
                 {
                     pointColor = juce::Colours::red;
                     pointSize = ENVELOPE_POINT_ACTIVE_RADIUS;
+                    alpha = 1.0f; // Fully opaque when selected
                 }
                 else if (m_hoveredEnvelopePointIndex.has_value() && m_hoveredEnvelopePointIndex.value() == i)
                 {
                     pointColor = juce::Colours::green;
                     pointSize = ENVELOPE_POINT_ACTIVE_RADIUS;
+                    alpha = 1.0f; // Fully opaque when hovered
                 }
 
-                g.setColour(pointColor.withAlpha(1.0f));
+                g.setColour(pointColor.withAlpha(alpha));
                 g.fillEllipse(screenPos.x - pointSize / 2.0f, screenPos.y - pointSize / 2.0f, pointSize, pointSize);
             }
         }
@@ -274,9 +278,23 @@ namespace jucyaudio
                 // Only draw the marker if it falls within the component's visible bounds.
                 if (x >= area.getX() && x <= area.getRight())
                 {
-                    // Draw the vertical line, brightening it on hover for visual feedback.
-                    g.setColour(isHovered ? colour.brighter(0.5f) : colour);
-                    g.drawVerticalLine(x, area.getY(), area.getBottom());
+                    // Draw the vertical line with stronger visual feedback on hover
+                    if (isHovered)
+                    {
+                        // Much brighter and fully opaque when hovered
+                        g.setColour(colour.brighter(1.0f).withAlpha(1.0f));
+                        // Draw thicker line for better visibility using fillRect
+                        const float lineThickness = 3.0f;
+                        g.fillRect(static_cast<float>(x) - lineThickness / 2.0f,
+                                  static_cast<float>(area.getY()),
+                                  lineThickness,
+                                  static_cast<float>(area.getHeight()));
+                    }
+                    else
+                    {
+                        g.setColour(colour);
+                        g.drawVerticalLine(x, area.getY(), area.getBottom());
+                    }
 
                     // Draw the circular handle at the top of the line.
                     const float handleSize = 8.0f;
@@ -482,23 +500,27 @@ namespace jucyaudio
             if (!waveformArea.contains(mousePos))
                 return MarkerType::None;
 
-            const int hitThreshold = 5; // pixels
+            const int hitThreshold = 5; // pixels for cue edges
+            const int attachHitThreshold = 10; // larger threshold for attach markers (easier to grab)
 
-            // Test each marker
-            auto testMarker = [&](MarkerType type) -> bool
+            // Test each marker with appropriate threshold
+            auto testMarker = [&](MarkerType type, int threshold) -> bool
             {
                 const int markerX = getMarkerXPosition(type);
-                return std::abs(mousePos.x - markerX) <= hitThreshold;
+                return std::abs(mousePos.x - markerX) <= threshold;
             };
 
-            if (testMarker(MarkerType::CueStart))
-                return MarkerType::CueStart;
-            if (testMarker(MarkerType::CueEnd))
-                return MarkerType::CueEnd;
-            if (testMarker(MarkerType::AttachFrom))
+            // Test attach markers first with larger threshold (highest priority)
+            if (testMarker(MarkerType::AttachFrom, attachHitThreshold))
                 return MarkerType::AttachFrom;
-            if (testMarker(MarkerType::AttachTo))
+            if (testMarker(MarkerType::AttachTo, attachHitThreshold))
                 return MarkerType::AttachTo;
+
+            // Test cue edges with normal threshold
+            if (testMarker(MarkerType::CueStart, hitThreshold))
+                return MarkerType::CueStart;
+            if (testMarker(MarkerType::CueEnd, hitThreshold))
+                return MarkerType::CueEnd;
 
             return MarkerType::None;
         }
@@ -579,19 +601,26 @@ namespace jucyaudio
                     }
                 }
 
-                // --- Priority 1: Check for an envelope point hit ---
-                if (const auto hitPointIndex = hitTestEnvelopePoint(event.position.toInt()))
+                // --- Priority 1: Check for ATTACH markers first (most important for mixing workflow) ---
+                const auto markerHit = hitTestMarker(event.position.toInt());
+                if (markerHit == MarkerType::AttachFrom || markerHit == MarkerType::AttachTo)
+                {
+                    m_draggedMarker = markerHit;
+                    grabKeyboardFocus(); // Ensure we can receive ESC key
+                }
+                // --- Priority 2: Check for CUE edge markers ---
+                else if (markerHit == MarkerType::CueStart || markerHit == MarkerType::CueEnd)
+                {
+                    m_draggedMarker = markerHit;
+                    grabKeyboardFocus(); // Ensure we can receive ESC key
+                }
+                // --- Priority 3: Check for envelope point hit (lowest priority) ---
+                else if (const auto hitPointIndex = hitTestEnvelopePoint(event.position.toInt()))
                 {
                     m_selectedEnvelopePointIndex = hitPointIndex;
                     m_isDraggingEnvelopePoint = true;
                     m_envelopePointDragStart = event.position.toInt();
                     m_originalEnvelopePoint = m_mixTrack.envelopePoints[*hitPointIndex];
-                    grabKeyboardFocus(); // Ensure we can receive ESC key
-                }
-                // --- Priority 2: Check for an attach marker hit ---
-                else if (const auto markerHit = hitTestMarker(event.position.toInt()); markerHit != MarkerType::None)
-                {
-                    m_draggedMarker = markerHit;
                     grabKeyboardFocus(); // Ensure we can receive ESC key
                 }
                 if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
@@ -696,6 +725,10 @@ namespace jucyaudio
                 MixTrack updatedTrack = m_mixTrack;
                 updatedTrack.cueStart = newAbsoluteTime;
 
+                spdlog::info("[EDIT-TRACK] CueStart dragged - Track OrderInMix={}, TrackId={}, NewCueStart={}ms, OldCueStart={}ms",
+                            m_mixTrack.orderInMix, m_mixTrack.trackId,
+                            newAbsoluteTime.count(), m_mixTrack.cueStart.count());
+
                 // 3. Fire the callback to update the data model and trigger a layout refresh.
                 if (onCueAttachChanged)
                 {
@@ -724,7 +757,11 @@ namespace jucyaudio
                 // So: cueEnd = newAbsoluteTime - (cueStart + trackDuration)
                 MixTrack updatedTrack = m_mixTrack;
                 updatedTrack.cueEnd = newAbsoluteTime - (m_mixTrack.cueStart + m_trackInfo.duration);
-                
+
+                spdlog::info("[EDIT-TRACK] CueEnd dragged - Track OrderInMix={}, TrackId={}, NewCueEnd={}ms, OldCueEnd={}ms",
+                            m_mixTrack.orderInMix, m_mixTrack.trackId,
+                            updatedTrack.cueEnd.count(), m_mixTrack.cueEnd.count());
+
                 // 3. Fire the callback to update the data model and trigger a layout refresh.
                 if (onCueAttachChanged)
                 {
@@ -757,10 +794,16 @@ namespace jucyaudio
                 if (m_draggedMarker == MarkerType::AttachFrom)
                 {
                     updatedTrack.attachFrom = newTime;
+                    spdlog::info("[EDIT-TRACK] AttachFrom dragged - Track OrderInMix={}, TrackId={}, NewAttachFrom={}ms, OldAttachFrom={}ms",
+                                m_mixTrack.orderInMix, m_mixTrack.trackId,
+                                newTime.count(), m_mixTrack.attachFrom.count());
                 }
                 else // AttachTo
                 {
                     updatedTrack.attachTo = newTime;
+                    spdlog::info("[EDIT-TRACK] AttachTo dragged - Track OrderInMix={}, TrackId={}, NewAttachTo={}ms, OldAttachTo={}ms",
+                                m_mixTrack.orderInMix, m_mixTrack.trackId,
+                                newTime.count(), m_mixTrack.attachTo.count());
                 }
 
                 // Fire the callback
@@ -801,19 +844,19 @@ namespace jucyaudio
         {
             bool needsRepaint = false;
 
-            // Check for envelope point hover first (higher priority)
-            const auto hoveredPoint = hitTestEnvelopePoint(event.position.toInt());
-            if (hoveredPoint != m_hoveredEnvelopePointIndex)
-            {
-                m_hoveredEnvelopePointIndex = hoveredPoint;
-                needsRepaint = true;
-            }
-
-            // Check for marker hover only if no envelope point is hovered
-            const auto hoveredMarker = hoveredPoint.has_value() ? MarkerType::None : hitTestMarker(event.position.toInt());
+            // Check for marker hover first (attach markers have highest priority)
+            const auto hoveredMarker = hitTestMarker(event.position.toInt());
             if (hoveredMarker != m_hoveredMarker)
             {
                 m_hoveredMarker = hoveredMarker;
+                needsRepaint = true;
+            }
+
+            // Check for envelope point hover only if no marker is hovered
+            const auto hoveredPoint = (hoveredMarker != MarkerType::None) ? std::nullopt : hitTestEnvelopePoint(event.position.toInt());
+            if (hoveredPoint != m_hoveredEnvelopePointIndex)
+            {
+                m_hoveredEnvelopePointIndex = hoveredPoint;
                 needsRepaint = true;
             }
 
@@ -822,20 +865,20 @@ namespace jucyaudio
                 repaint();
             }
 
-            // Update cursor based on what we're hovering over (envelope points have priority)
-            if (hoveredPoint.has_value())
+            // Update cursor based on what we're hovering over (attach markers have highest priority)
+            if (hoveredMarker == MarkerType::AttachFrom || hoveredMarker == MarkerType::AttachTo)
             {
-                // Envelope points always get pointing hand cursor
-                setMouseCursor(juce::MouseCursor::PointingHandCursor);
+                // Use crosshair cursor for attach markers - more distinctive than pointing hand
+                setMouseCursor(juce::MouseCursor::CrosshairCursor);
             }
             else if (hoveredMarker == MarkerType::CueStart || hoveredMarker == MarkerType::CueEnd)
             {
                 // Use resize cursor for edge dragging
                 setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
             }
-            else if (hoveredMarker == MarkerType::AttachFrom || hoveredMarker == MarkerType::AttachTo)
+            else if (hoveredPoint.has_value())
             {
-                // Use pointing hand for attach markers
+                // Envelope points get pointing hand cursor
                 setMouseCursor(juce::MouseCursor::PointingHandCursor);
             }
             else
