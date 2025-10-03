@@ -244,7 +244,7 @@ namespace jucyaudio::ui
             TrackRenderData *track{nullptr};
             int pointIndex{-1}; // For envelope points
         };
-        HitTestInfo hitTest(juce::Point<int> point) const;
+        HitTestInfo pointHitTest(juce::Point<int> point) const;
 
         // Tiling system helpers
         int getZoomLevel() const;

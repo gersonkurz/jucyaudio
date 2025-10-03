@@ -22,7 +22,7 @@ namespace
     MixInfo mixInfoFromStatement(const SqliteStatement &stmt)
     {
         MixInfo info{};
-        int col = 0;
+        size_t col = 0;
         info.mixId = stmt.getInt64(col++);
         info.name = stmt.getText(col++);
         info.timestamp = timestampFromInt64(stmt.getInt64(col++));

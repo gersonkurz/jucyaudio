@@ -3,6 +3,7 @@
 #include <Database/Includes/Constants.h>
 #include <Database/Includes/MixInfo.h>
 #include <stack>
+#include <list>
 
 namespace jucyaudio
 {

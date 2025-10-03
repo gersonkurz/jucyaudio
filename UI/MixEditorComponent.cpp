@@ -176,7 +176,9 @@ namespace jucyaudio
                 g.setColour(juce::Colours::orange.withAlpha(0.8f));
                 g.setFont(14.0f);
                 const auto text = "[LOCKED] Mix is Read-Only (Exported) - Right-click in tree to unlock";
-                const auto textWidth = g.getCurrentFont().getStringWidth(text);
+                juce::GlyphArrangement glyphs;
+                glyphs.addLineOfText(g.getCurrentFont(), text, 0.0f, 0.0f);
+                const auto textWidth = static_cast<int>(glyphs.getBoundingBox(0, -1, true).getWidth());
                 const auto x = getWidth() - textWidth - 10;
                 const auto y = 5;
                 

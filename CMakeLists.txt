@@ -247,7 +247,7 @@ juce_add_gui_app(jucyaudio
 
 # Add Windows resource file for icon
 if(WIN32)
-    target_sources(jucyaudio PRIVATE windows_icon.rc "Database/UndoManager.h" "Database/UndoManager.cpp")
+    target_sources(jucyaudio PRIVATE windows_icon.rc )
 endif()
 
 # Add all source files
@@ -305,6 +305,8 @@ target_sources(jucyaudio PRIVATE
     Database/BackgroundService.h
     Database/DatabaseBackupManager.cpp
     Database/DatabaseBackupManager.h
+    Database/UndoManager.cpp
+    Database/UndoManager.h
     
     # Background Tasks
     Database/BackgroundTasks/BpmAnalysis.cpp

@@ -327,7 +327,7 @@ namespace jucyaudio::ui
         // Handle right-click for context menu
         if (event.mods.isRightButtonDown())
         {
-            const auto hitInfo = hitTest(event.position.toInt());
+            const auto hitInfo = pointHitTest(event.position.toInt());
 
             // Select the track if we right-clicked on one
             if (hitInfo.track)
@@ -371,7 +371,7 @@ namespace jucyaudio::ui
             repaint();
         }
 
-        const auto hitInfo = hitTest(event.position.toInt());
+        const auto hitInfo = pointHitTest(event.position.toInt());
 
         if (hitInfo.track)
         {
@@ -666,7 +666,7 @@ namespace jucyaudio::ui
     void VirtualTimelineComponent::mouseMove(const juce::MouseEvent &event)
     {
         // Update cursor based on what we're hovering over
-        const auto hitInfo = hitTest(event.position.toInt());
+        const auto hitInfo = pointHitTest(event.position.toInt());
 
         if (hitInfo.type == HitTestResult::CueStart || hitInfo.type == HitTestResult::CueEnd)
         {
@@ -1722,7 +1722,7 @@ namespace jucyaudio::ui
         return nullptr;
     }
 
-    VirtualTimelineComponent::HitTestInfo VirtualTimelineComponent::hitTest(juce::Point<int> point) const
+    VirtualTimelineComponent::HitTestInfo VirtualTimelineComponent::pointHitTest(juce::Point<int> point) const
     {
         HitTestInfo info;
 

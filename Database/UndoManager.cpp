@@ -154,9 +154,6 @@ namespace jucyaudio
                 return false;
             }
 
-            // Capture current state before redo
-            auto* currentState = mixState.undoOperations.back();
-
             // Restore the redo state
             m_undoOperationInProgress = true;
             theTrackLibrary.getMixManager().createOrUpdateMix(redoState->mixInfo, redoState->tracks);
