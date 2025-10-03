@@ -245,6 +245,12 @@ juce_add_gui_app(jucyaudio
     COMPANY_COPYRIGHT "Copyright (c) 2025 P-nand-Q"
 )
 
+configure_file(
+    "${CMAKE_SOURCE_DIR}/setup/version.nsi.in"
+    "${CMAKE_SOURCE_DIR}/setup/version.nsi"
+    @ONLY
+)
+
 # Add Windows resource file for icon
 if(WIN32)
     target_sources(jucyaudio PRIVATE windows_icon.rc )
@@ -758,15 +764,15 @@ if(APPLE)
     # Install themes to the bundle
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes"
             DESTINATION "jucyaudio.app/Contents/Resources")
-    
+
     # Code signing support (optional)
     if(DEFINED ENV{MACOS_CODESIGN_IDENTITY})
         set(CODESIGN_IDENTITY "$ENV{MACOS_CODESIGN_IDENTITY}")
         message(STATUS "Will sign with identity: ${CODESIGN_IDENTITY}")
-        
+
         install(CODE "
             execute_process(
-                COMMAND codesign --deep --force --verify --verbose 
+                COMMAND codesign --deep --force --verify --verbose
                         --sign \"${CODESIGN_IDENTITY}\"
                         --options runtime
                         \"\${CMAKE_INSTALL_PREFIX}/jucyaudio.app\"
@@ -781,7 +787,7 @@ if(APPLE)
             endif()
         ")
     endif()
-    
+
 elseif(WIN32)
     install(TARGETS jucyaudio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes" DESTINATION ${CMAKE_INSTALL_BINDIR})

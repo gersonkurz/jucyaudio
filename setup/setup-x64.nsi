@@ -11,8 +11,8 @@ XPStyle on
 
 Name "jucyaudio ${CURRENT_VERSION}" 
 OutFile "jucyaudio-${CURRENT_VERSION}-setup-x64.exe"
-InstallDir "$PROGRAMFILES64\NGBT\jucyaudio"
-InstallDirRegKey HKLM SOFTWARE\NGBT\jucyaudio "Install_Dir"
+InstallDir "$PROGRAMFILES64\jucyaudio"
+InstallDirRegKey HKLM SOFTWARE\p-nand-q.com\jucyaudio "Install_Dir"
 
 !define MUI_ICON "${NSISDIR}\Contrib\Graphics\Icons\modern-install.ico"
 !define MUI_UNICON "${NSISDIR}\Contrib\Graphics\Icons\modern-uninstall.ico"
@@ -37,7 +37,7 @@ InstallDirRegKey HKLM SOFTWARE\NGBT\jucyaudio "Install_Dir"
 
 !insertmacro MUI_LANGUAGE "English"
 
-BrandingText "Gerson Kurz"
+BrandingText "p-nand-q.com"
 
 ShowInstDetails show
 
@@ -46,9 +46,9 @@ RequestExecutionLevel admin
   VIProductVersion "${CURRENT_VERSION}.0"
   VIAddVersionKey /LANG=${LANG_ENGLISH} "ProductName" "jucyaudio"
   VIAddVersionKey /LANG=${LANG_ENGLISH} "Comments" "GPL Licensed"
-  VIAddVersionKey /LANG=${LANG_ENGLISH} "CompanyName" "Gerson Kurz"
+  VIAddVersionKey /LANG=${LANG_ENGLISH} "CompanyName" "p-nand-q.com"
   VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalTrademarks" ""
-  VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalCopyright" "(C) Gerson Kurz"
+  VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalCopyright" "(C) p-nand-q.com"
   VIAddVersionKey /LANG=${LANG_ENGLISH} "FileDescription" "jucyaudio"
   VIAddVersionKey /LANG=${LANG_ENGLISH} "FileVersion" ${CURRENT_VERSION}
 
@@ -84,6 +84,6 @@ Section "Uninstall"
 	Delete $INSTDIR\uninstall.exe
     Delete "$DESKTOP\jucyaudio.lnk"
     RMDir /r "$SMPROGRAMS\jucyaudio"
-	ReadRegStr $INSTDIR HKLM SOFTWARE\NGBT\jucyaudio "Install_Dir"
+	ReadRegStr $INSTDIR HKLM SOFTWARE\p-nand-q.com\jucyaudio "Install_Dir"
     RMDir /r "$INSTDIR\"
 SectionEnd
