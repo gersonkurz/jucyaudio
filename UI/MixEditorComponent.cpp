@@ -616,7 +616,12 @@ namespace jucyaudio
                     
                     // Save changes
                     saveMixChanges();
-                    
+
+                    // Verify the change was preserved in memory after save
+                    spdlog::info("[EDIT-CALLBACK]   After saveMixChanges: CueStart={}ms, CueEnd={}ms, AttachFrom={}ms, AttachTo={}ms",
+                                track.cueStart.count(), track.cueEnd.count(),
+                                track.attachFrom.count(), track.attachTo.count());
+
                     // Tell timeline to reposition this specific track
                     m_timeline.repositionTrack(track.trackId);
                     
@@ -822,7 +827,7 @@ namespace jucyaudio
         void MixEditorComponent::handleMixPlayback(double startTime, bool alwaysPlay)
         {
             spdlog::info("[MixEditor] handleMixPlayback called - startTime: {}, alwaysPlay: {}", startTime, alwaysPlay);
-            
+
             // Special case: negative value means stop
             if (startTime < 0)
             {
@@ -833,19 +838,19 @@ namespace jucyaudio
                 }
                 return;
             }
-            
+
             if (!m_node)
             {
                 spdlog::error("[MixEditor] No mix node loaded");
                 return;
             }
-            
+
             if (!m_playbackController)
             {
                 spdlog::error("[MixEditor] m_playbackController is null!");
                 return;
             }
-            
+
             // Check if we should toggle playback (for keyboard shortcuts)
             if (!alwaysPlay && m_playbackController->isPlaying())
             {
@@ -854,19 +859,38 @@ namespace jucyaudio
                 m_playbackController->pause();
                 return;
             }
-            
-            // Ensure mix is loaded
+
+            // Only load the mix if we're not already in mix mode
+            // If we're already in mix mode, the mix is already loaded with the current state
+            // and we should NOT reload it (which could fetch stale data from the database)
             if (!m_playbackController->isMixMode())
             {
-                spdlog::info("[MixEditor] Loading mix into playback controller");
-                if (!m_playbackController->loadMix(&m_node->getMixProjectLoader()))
+                spdlog::info("[MixEditor] Loading mix into playback controller (not in mix mode)");
+
+                // Log the current state before loading
+                auto& mixLoader = m_node->getMixProjectLoader();
+                auto& mixTracks = mixLoader.getMixTracks();
+                spdlog::info("[MixEditor] Current mix loader has {} tracks before loading into playback", mixTracks.size());
+                if (mixTracks.size() > 1)
+                {
+                    spdlog::info("[MixEditor]   Track 0: AttachFrom={}ms, AttachTo={}ms",
+                                mixTracks[0].attachFrom.count(), mixTracks[0].attachTo.count());
+                    spdlog::info("[MixEditor]   Track 1: AttachFrom={}ms, AttachTo={}ms",
+                                mixTracks[1].attachFrom.count(), mixTracks[1].attachTo.count());
+                }
+
+                if (!m_playbackController->loadMix(&mixLoader))
                 {
                     spdlog::error("[MixEditor] Failed to load mix");
                     return;
                 }
             }
-            
-            // Play from the specified position  
+            else
+            {
+                spdlog::info("[MixEditor] Already in mix mode, skipping reload to preserve in-memory changes");
+            }
+
+            // Play from the specified position
             spdlog::info("[MixEditor] Starting playback at {:.2f}s", startTime);
             m_playbackController->playMixFrom(startTime);
         }

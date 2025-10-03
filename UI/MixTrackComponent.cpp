@@ -718,27 +718,36 @@ namespace jucyaudio
         {
             if (m_draggedMarker == MarkerType::CueStart)
             {
-                // 1. Calculate the new absolute time based on the mouse release position.
-                const auto newAbsoluteTime = xToTime(event.position.x, false /* clampToComponentBounds */);
-
-                // 2. Update cueStart directly with the new absolute time.
-                MixTrack updatedTrack = m_mixTrack;
-                updatedTrack.cueStart = newAbsoluteTime;
-
-                spdlog::info("[EDIT-TRACK] CueStart dragged - Track OrderInMix={}, TrackId={}, NewCueStart={}ms, OldCueStart={}ms",
-                            m_mixTrack.orderInMix, m_mixTrack.trackId,
-                            newAbsoluteTime.count(), m_mixTrack.cueStart.count());
-
-                // 3. Fire the callback to update the data model and trigger a layout refresh.
-                if (onCueAttachChanged)
+                // Only update if the mouse was actually dragged
+                if (event.mouseWasDraggedSinceMouseDown())
                 {
-                    onCueAttachChanged(m_mixTrack.orderInMix, updatedTrack);
+                    // 1. Calculate the new absolute time based on the mouse release position.
+                    const auto newAbsoluteTime = xToTime(event.position.x, false /* clampToComponentBounds */);
+
+                    // 2. Update cueStart directly with the new absolute time.
+                    MixTrack updatedTrack = m_mixTrack;
+                    updatedTrack.cueStart = newAbsoluteTime;
+
+                    spdlog::info("[EDIT-TRACK] CueStart dragged - Track OrderInMix={}, TrackId={}, NewCueStart={}ms, OldCueStart={}ms",
+                                m_mixTrack.orderInMix, m_mixTrack.trackId,
+                                newAbsoluteTime.count(), m_mixTrack.cueStart.count());
+
+                    // 3. Fire the callback to update the data model and trigger a layout refresh.
+                    if (onCueAttachChanged)
+                    {
+                        onCueAttachChanged(m_mixTrack.orderInMix, updatedTrack);
+                    }
+
+                    // 4. Clear the preview line
+                    if (onCueDragInProgress)
+                    {
+                        onCueDragInProgress(m_mixTrack.orderInMix, false, std::nullopt);
+                    }
                 }
-
-                // 4. Clear the preview line
-                if (onCueDragInProgress)
+                else
                 {
-                    onCueDragInProgress(m_mixTrack.orderInMix, false, std::nullopt);
+                    spdlog::info("[EDIT-TRACK] CueStart marker clicked but not dragged - ignoring (Track OrderInMix={}, TrackId={})",
+                                m_mixTrack.orderInMix, m_mixTrack.trackId);
                 }
 
                 // 5. Reset the drag state.
@@ -747,31 +756,40 @@ namespace jucyaudio
             }
             else if (m_draggedMarker == MarkerType::CueEnd)
             {
-                // 1. Calculate the new absolute time based on the mouse release position.
-                const auto newAbsoluteTime = xToTime(event.position.x, false /* clampToComponentBounds */);
-
-                // 2. Convert this absolute time to our storage format (offset from track end).
-                // cueEnd is the offset from the END of the track
-                // newAbsoluteTime is where we want the cue-end marker to be
-                // The natural end of the track (without cueEnd) would be at: cueStart + trackDuration
-                // So: cueEnd = newAbsoluteTime - (cueStart + trackDuration)
-                MixTrack updatedTrack = m_mixTrack;
-                updatedTrack.cueEnd = newAbsoluteTime - (m_mixTrack.cueStart + m_trackInfo.duration);
-
-                spdlog::info("[EDIT-TRACK] CueEnd dragged - Track OrderInMix={}, TrackId={}, NewCueEnd={}ms, OldCueEnd={}ms",
-                            m_mixTrack.orderInMix, m_mixTrack.trackId,
-                            updatedTrack.cueEnd.count(), m_mixTrack.cueEnd.count());
-
-                // 3. Fire the callback to update the data model and trigger a layout refresh.
-                if (onCueAttachChanged)
+                // Only update if the mouse was actually dragged
+                if (event.mouseWasDraggedSinceMouseDown())
                 {
-                    onCueAttachChanged(m_mixTrack.orderInMix, updatedTrack);
+                    // 1. Calculate the new absolute time based on the mouse release position.
+                    const auto newAbsoluteTime = xToTime(event.position.x, false /* clampToComponentBounds */);
+
+                    // 2. Convert this absolute time to our storage format (offset from track end).
+                    // cueEnd is the offset from the END of the track
+                    // newAbsoluteTime is where we want the cue-end marker to be
+                    // The natural end of the track (without cueEnd) would be at: cueStart + trackDuration
+                    // So: cueEnd = newAbsoluteTime - (cueStart + trackDuration)
+                    MixTrack updatedTrack = m_mixTrack;
+                    updatedTrack.cueEnd = newAbsoluteTime - (m_mixTrack.cueStart + m_trackInfo.duration);
+
+                    spdlog::info("[EDIT-TRACK] CueEnd dragged - Track OrderInMix={}, TrackId={}, NewCueEnd={}ms, OldCueEnd={}ms",
+                                m_mixTrack.orderInMix, m_mixTrack.trackId,
+                                updatedTrack.cueEnd.count(), m_mixTrack.cueEnd.count());
+
+                    // 3. Fire the callback to update the data model and trigger a layout refresh.
+                    if (onCueAttachChanged)
+                    {
+                        onCueAttachChanged(m_mixTrack.orderInMix, updatedTrack);
+                    }
+
+                    // 4. Clear the preview line
+                    if (onCueDragInProgress)
+                    {
+                        onCueDragInProgress(m_mixTrack.orderInMix, false, std::nullopt);
+                    }
                 }
-
-                // 4. Clear the preview line
-                if (onCueDragInProgress)
+                else
                 {
-                    onCueDragInProgress(m_mixTrack.orderInMix, false, std::nullopt);
+                    spdlog::info("[EDIT-TRACK] CueEnd marker clicked but not dragged - ignoring (Track OrderInMix={}, TrackId={})",
+                                m_mixTrack.orderInMix, m_mixTrack.trackId);
                 }
 
                 // 5. Reset the drag state.
@@ -780,42 +798,52 @@ namespace jucyaudio
             }
             else if (m_draggedMarker == MarkerType::AttachFrom || m_draggedMarker == MarkerType::AttachTo)
             {
-                // Calculate the new time for the attach point
-                auto newTime = xToTime(event.position.x, false /* clampToComponentBounds */);
-
-                // Constrain attach points to valid range
-                const auto effectiveStart = m_mixTrack.cueStart;
-                const auto effectiveEnd = m_mixTrack.getCueEndActual(m_trackInfo.duration);
-                newTime = std::max(newTime, effectiveStart);
-                newTime = std::min(newTime, effectiveEnd);
-
-                // Update the appropriate attach point
-                MixTrack updatedTrack = m_mixTrack;
-                if (m_draggedMarker == MarkerType::AttachFrom)
+                // Only update the attach point if the mouse was actually dragged
+                // This prevents accidentally moving attach points when just clicking near them
+                if (event.mouseWasDraggedSinceMouseDown())
                 {
-                    updatedTrack.attachFrom = newTime;
-                    spdlog::info("[EDIT-TRACK] AttachFrom dragged - Track OrderInMix={}, TrackId={}, NewAttachFrom={}ms, OldAttachFrom={}ms",
-                                m_mixTrack.orderInMix, m_mixTrack.trackId,
-                                newTime.count(), m_mixTrack.attachFrom.count());
+                    // Calculate the new time for the attach point
+                    auto newTime = xToTime(event.position.x, false /* clampToComponentBounds */);
+
+                    // Constrain attach points to valid range
+                    const auto effectiveStart = m_mixTrack.cueStart;
+                    const auto effectiveEnd = m_mixTrack.getCueEndActual(m_trackInfo.duration);
+                    newTime = std::max(newTime, effectiveStart);
+                    newTime = std::min(newTime, effectiveEnd);
+
+                    // Update the appropriate attach point
+                    MixTrack updatedTrack = m_mixTrack;
+                    if (m_draggedMarker == MarkerType::AttachFrom)
+                    {
+                        updatedTrack.attachFrom = newTime;
+                        spdlog::info("[EDIT-TRACK] AttachFrom dragged - Track OrderInMix={}, TrackId={}, NewAttachFrom={}ms, OldAttachFrom={}ms",
+                                    m_mixTrack.orderInMix, m_mixTrack.trackId,
+                                    newTime.count(), m_mixTrack.attachFrom.count());
+                    }
+                    else // AttachTo
+                    {
+                        updatedTrack.attachTo = newTime;
+                        spdlog::info("[EDIT-TRACK] AttachTo dragged - Track OrderInMix={}, TrackId={}, NewAttachTo={}ms, OldAttachTo={}ms",
+                                    m_mixTrack.orderInMix, m_mixTrack.trackId,
+                                    newTime.count(), m_mixTrack.attachTo.count());
+                    }
+
+                    // Fire the callback
+                    if (onCueAttachChanged)
+                    {
+                        onCueAttachChanged(m_mixTrack.orderInMix, updatedTrack);
+                    }
+
+                    // Clear preview line
+                    if (onCueDragInProgress)
+                    {
+                        onCueDragInProgress(m_mixTrack.orderInMix, true, std::nullopt);
+                    }
                 }
-                else // AttachTo
+                else
                 {
-                    updatedTrack.attachTo = newTime;
-                    spdlog::info("[EDIT-TRACK] AttachTo dragged - Track OrderInMix={}, TrackId={}, NewAttachTo={}ms, OldAttachTo={}ms",
-                                m_mixTrack.orderInMix, m_mixTrack.trackId,
-                                newTime.count(), m_mixTrack.attachTo.count());
-                }
-
-                // Fire the callback
-                if (onCueAttachChanged)
-                {
-                    onCueAttachChanged(m_mixTrack.orderInMix, updatedTrack);
-                }
-
-                // Clear preview line
-                if (onCueDragInProgress)
-                {
-                    onCueDragInProgress(m_mixTrack.orderInMix, true, std::nullopt);
+                    spdlog::info("[EDIT-TRACK] Attach marker clicked but not dragged - ignoring (Track OrderInMix={}, TrackId={})",
+                                m_mixTrack.orderInMix, m_mixTrack.trackId);
                 }
 
                 m_draggedMarker = MarkerType::None;
