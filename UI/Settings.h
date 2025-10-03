@@ -133,6 +133,7 @@ namespace jucyaudio
                 TypedValue<std::string> defaultYear{this, "DefaultYear", "2025"};
                 TypedValue<std::string> defaultGenre{this, "DefaultGenre", "Electronic"};
                 TypedValue<std::string> defaultComment{this, "DefaultComment", ""};
+                TypedValue<std::string> lastUsedExportFolder{this, "LastUsedExportFolder", ""};
 
             } exportSettings{this};
 

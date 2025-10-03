@@ -309,8 +309,25 @@ namespace jucyaudio
                 m_exportFolderCombo.addItem(folder.name, id++);
             }
 
-            // Select first folder if available
-            if (m_exportFolderCombo.getNumItems() > 0)
+            // Try to restore the last-used folder
+            const auto lastUsedFolder = config::theSettings.exportSettings.lastUsedExportFolder.get();
+            bool foundLastUsed = false;
+
+            if (!lastUsedFolder.empty())
+            {
+                for (int i = 0; i < m_exportFolderCombo.getNumItems(); ++i)
+                {
+                    if (m_exportFolderCombo.getItemText(i) == juce::String{lastUsedFolder})
+                    {
+                        m_exportFolderCombo.setSelectedItemIndex(i);
+                        foundLastUsed = true;
+                        break;
+                    }
+                }
+            }
+
+            // If last-used folder wasn't found, select first folder as fallback
+            if (!foundLastUsed && m_exportFolderCombo.getNumItems() > 0)
             {
                 m_exportFolderCombo.setSelectedId(1);
             }
@@ -408,6 +425,9 @@ namespace jucyaudio
 
             m_settings.outputPath = file.getFullPathName().toStdString();
             m_settings.exportFolder = m_exportFolderCombo.getText().toStdString();
+
+            // Save the selected folder for next time
+            config::theSettings.exportSettings.lastUsedExportFolder.set(m_settings.exportFolder);
 
             spdlog::info("Exporting mix '{}' to: {} (Folder: '{}')",
                 m_mixInfo.name, m_settings.outputPath.string(), m_settings.exportFolder);
