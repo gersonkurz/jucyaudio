@@ -500,8 +500,6 @@ target_sources(jucyaudio PRIVATE
     UI/OverlayComponent.h
     UI/TrackRenderer.cpp
     UI/TrackRenderer.h
-    UI/PerfCounters.cpp
-    UI/PerfCounters.h
     UI/EditWorkingSetMetaDataDialog.cpp
     UI/EditWorkingSetMetaDataDialog.h
     UI/MarkerEditDialog.cpp
