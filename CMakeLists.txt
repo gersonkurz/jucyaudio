@@ -71,7 +71,7 @@ include(FetchContent)
 FetchContent_Declare(
     JUCE
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG 8.0.8
+    GIT_TAG 8.0.10
     GIT_SHALLOW TRUE
 )
 
@@ -79,7 +79,7 @@ FetchContent_Declare(
 FetchContent_Declare(
     nlohmann_json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG v3.11.3
+    GIT_TAG v3.12.0
     GIT_SHALLOW TRUE
 )
 
@@ -95,7 +95,7 @@ FetchContent_Declare(
 FetchContent_Declare(
     spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG v1.14.1
+    GIT_TAG v1.16.0
     GIT_SHALLOW TRUE
 )
 
@@ -119,7 +119,7 @@ FetchContent_Declare(
 FetchContent_Declare(
     taglib
     GIT_REPOSITORY https://github.com/taglib/taglib.git
-    GIT_TAG v2.0.2
+    GIT_TAG v2.1.1
     GIT_SHALLOW TRUE
 )
 
