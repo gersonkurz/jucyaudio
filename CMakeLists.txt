@@ -107,7 +107,15 @@ set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
 set(SPDLOG_INSTALL OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog)
+# Add tomlplusplus for configuration file parsing
+FetchContent_Declare(
+    tomlplusplus
+    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+    GIT_TAG v3.4.0
+    GIT_SHALLOW TRUE
+)
+
+FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog tomlplusplus)
 
 # Global compile definitions
 add_compile_definitions(
@@ -147,7 +155,7 @@ if(WIN32)
     set(TAGLIB_INCLUDE_PATH_DEBUG "${WIN32_DEPS_ROOT}/taglib/out/install/x64-Debug/include")
     set(TAGLIB_INCLUDE_PATH_RELEASE "${WIN32_DEPS_ROOT}/taglib/out/install/x64-Release/include")
     set(LAME_INCLUDE_PATH "${WIN32_DEPS_ROOT}/lame/include")
-    set(TOMLPLUSPLUS_INCLUDE_PATH "${WIN32_DEPS_ROOT}/tomlplusplus/include")
+    # tomlplusplus is now handled by FetchContent
     set(PTHREADS_INCLUDE_PATH "${WIN32_DEPS_ROOT}/pthreads-w32/include")
     set(FFTW_INCLUDE_PATH "${WIN32_DEPS_ROOT}/fftw")
     set(LIBSNDFILE_INCLUDE_PATH "C:/Projects/libsndfile/include")
@@ -202,11 +210,11 @@ if(WIN32)
         # spdlog is now handled by FetchContent
         ${TAGLIB_INCLUDE_PATH}
         ${LAME_INCLUDE_PATH}
-        ${TOMLPLUSPLUS_INCLUDE_PATH}
+        # tomlplusplus is now handled by FetchContent
         ${PTHREADS_INCLUDE_PATH}
         ${FFTW_INCLUDE_PATH}
         ${LIBSNDFILE_INCLUDE_PATH}
-        ${ICU_INCLUDE_PATH} 
+        ${ICU_INCLUDE_PATH}
         ${CMAKE_CURRENT_SOURCE_DIR}
     )
     
@@ -231,7 +239,7 @@ else()
         /Users/gersonkurz/development/aubio_install_macos/include
         # spdlog is now handled by FetchContent
         /Users/gersonkurz/development/taglib_install/include
-        /Users/gersonkurz/development/tomlplusplus-master/include
+        # tomlplusplus is now handled by FetchContent
         /opt/homebrew/include
     )
 endif()
@@ -587,7 +595,10 @@ if(WIN32)
         
         # tabulate
         tabulate::tabulate
-        
+
+        # tomlplusplus
+        tomlplusplus::tomlplusplus
+
         # External libraries (Windows)
         ${AUBIO_LIBRARY}
         spdlog::spdlog
@@ -624,7 +635,10 @@ else()
         
         # tabulate
         tabulate::tabulate
-        
+
+        # tomlplusplus
+        tomlplusplus::tomlplusplus
+
         # External libraries (macOS/Linux)
         ${AUBIO_LIBRARY}
         spdlog::spdlog
