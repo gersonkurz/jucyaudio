@@ -807,6 +807,35 @@ add_custom_command(
 )
 
 # ============================================================================
+# macOS Bundle Dependencies - Bundle all dylibs into the .app
+# ============================================================================
+if(APPLE)
+    # Find dylibbundler
+    find_program(DYLIBBUNDLER dylibbundler)
+
+    if(DYLIBBUNDLER)
+        message(STATUS "Found dylibbundler: ${DYLIBBUNDLER}")
+
+        # Add custom command to bundle dependencies after build
+        add_custom_command(TARGET jucyaudio POST_BUILD
+            # Clean extended attributes that interfere with codesigning
+            COMMAND xattr -cr "$<TARGET_BUNDLE_DIR:jucyaudio>"
+            # Bundle dependencies
+            COMMAND ${DYLIBBUNDLER}
+                -od -b
+                -x "$<TARGET_BUNDLE_DIR:jucyaudio>/Contents/MacOS/jucyaudio"
+                -d "$<TARGET_BUNDLE_DIR:jucyaudio>/Contents/libs/"
+                -p "@executable_path/../libs/"
+            COMMENT "Bundling dependencies into .app..."
+            VERBATIM
+        )
+    else()
+        message(WARNING "dylibbundler not found. Install with: brew install dylibbundler")
+        message(WARNING "The .app will require Homebrew libraries to be installed.")
+    endif()
+endif()
+
+# ============================================================================
 # Installation Rules
 # ============================================================================
 include(GNUInstallDirs)
@@ -814,7 +843,7 @@ include(GNUInstallDirs)
 if(APPLE)
     # macOS Bundle Installation
     install(TARGETS jucyaudio BUNDLE DESTINATION .)
-    
+
     # Install themes to the bundle
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes"
             DESTINATION "jucyaudio.app/Contents/Resources")
@@ -853,8 +882,10 @@ endif()
 # ============================================================================
 # CPack Configuration - Creates DMG on macOS, ZIP on Windows
 # ============================================================================
-include(InstallRequiredSystemLibraries)
-include(CPack)
+# Skip InstallRequiredSystemLibraries on macOS - we bundle everything in the .app
+if(NOT APPLE)
+    include(InstallRequiredSystemLibraries)
+endif()
 
 set(CPACK_PACKAGE_NAME "JucyAudio")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
@@ -866,7 +897,10 @@ if(APPLE)
     set(CPACK_GENERATOR "DragNDrop")
     set(CPACK_DMG_VOLUME_NAME "JucyAudio ${PROJECT_VERSION}")
     set(CPACK_DMG_FORMAT "UDZO")  # Compressed
-    
+
+    # Only include the .app bundle, not bin/lib/include directories
+    set(CPACK_INSTALL_CMAKE_PROJECTS "${CMAKE_BINARY_DIR};${PROJECT_NAME};ALL;/")
+
     # Package filename includes architecture
     if(CMAKE_OSX_ARCHITECTURES)
         string(REPLACE ";" "_" ARCH_STRING "${CMAKE_OSX_ARCHITECTURES}")
@@ -874,7 +908,7 @@ if(APPLE)
     else()
         set(CPACK_PACKAGE_FILE_NAME "JucyAudio-${PROJECT_VERSION}-macOS-${CMAKE_SYSTEM_PROCESSOR}")
     endif()
-    
+
     # Optional: Custom DMG appearance
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Assets/dmg-background.png")
         set(CPACK_DMG_BACKGROUND_IMAGE "${CMAKE_CURRENT_SOURCE_DIR}/Assets/dmg-background.png")
@@ -886,6 +920,9 @@ else()
     set(CPACK_GENERATOR "TGZ")
     set(CPACK_PACKAGE_FILE_NAME "JucyAudio-${PROJECT_VERSION}-Linux-${CMAKE_SYSTEM_PROCESSOR}")
 endif()
+
+# Include CPack AFTER setting all variables
+include(CPack)
 
 # ============================================================================
 # Status Messages

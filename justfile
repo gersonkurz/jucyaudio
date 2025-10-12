@@ -1,24 +1,14 @@
 # Build automation for JucyAudio project
-# Requires: just (brew install just on macOS, scoop install just on Windows)
+# Requires: just (brew install just)
 
-# Set shell for Windows (use PowerShell)
-set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
-
-# Detect OS
-is_windows := if os() == "windows" { "true" } else { "false" }
-is_macos := if os() == "macos" { "true" } else { "false" }
-
-# Get architecture for build directory (macOS only)
-arch := if is_macos == "true" { `uname -m` } else { "x64" }
+# Get architecture for build directory
+arch := `uname -m`
 
 # Default build type (RelWithDebInfo for optimized builds with debug symbols)
-default_build_type := if is_windows == "true" { "x64-RelWithDebInfo" } else { "RelWithDebInfo" }
-
-# Default config for release builds
-default_release_config := if is_windows == "true" { "x64-Release" } else { "Release" }
+default_build_type := "RelWithDebInfo"
 
 # Get version from CMakeLists.txt
-version := "0.8.0"
+version := `grep "project(jucyaudio VERSION" CMakeLists.txt | sed 's/.*VERSION \([0-9.]*\).*/\1/'`
 
 # ============================================================================
 # Build Commands
@@ -26,10 +16,9 @@ version := "0.8.0"
 
 # Build with specified configuration (Debug, Release, or RelWithDebInfo)
 build config=default_build_type:
-    @echo "Building JucyAudio [{{config}}]..."
-    cmake --preset {{config}}
-    cmake --build --preset {{config}} --parallel
-    @echo "✓ Build complete: out/build/{{config}}/"
+    cmake -B build -DCMAKE_BUILD_TYPE={{config}} -DCMAKE_OSX_ARCHITECTURES={{arch}}
+    cmake --build build -j`sysctl -n hw.ncpu`
+    @echo "✓ Build complete: build/{{arch}}-{{config}}/"
 
 # Cross-compile for a specific architecture
 build-cross arch_target config=default_build_type:
@@ -53,15 +42,15 @@ build-universal config=default_build_type:
 
 # Build debug configuration
 debug:
-    @just build x64-Debug
+    @just build Debug
 
-# Build release configuration
+# Build release configuration  
 release:
-    @just build x64-Release
+    @just build Release
 
 # Build release with debug info
 relwithdebinfo:
-    @just build {{default_build_type}}
+    @just build RelWithDebInfo
 
 # ============================================================================
 # Clean Commands
@@ -69,10 +58,7 @@ relwithdebinfo:
 
 # Clean build directory
 clean:
-    @echo "Cleaning build directories..."
-    @if (Test-Path out) { Remove-Item -Recurse -Force out }
-    @if (Test-Path build) { Remove-Item -Recurse -Force build }
-    @echo "✓ Clean complete"
+    rm -rf build build-* install-*
 
 # Clean and rebuild
 rebuild config=default_build_type:
@@ -156,68 +142,34 @@ package-universal config="Release":
 # Release Publishing
 # ============================================================================
 
-# Publish release builds for all architectures (macOS)
+# Publish release build for native architecture (macOS)
 publish: clean-packages
     @echo "🚀 Starting JucyAudio release build process..."
     @echo "Version: {{version}}"
+    @echo "Architecture: {{arch}}"
     @echo ""
-    
-    # Build and package Apple Silicon version
-    @echo "📦 Building Apple Silicon (arm64) release..."
-    rm -rf build build-arm64
+
+    # Build and package native architecture version
+    @echo "📦 Building {{arch}} release..."
+    rm -rf build
     @just build Release
-    cmake --install build --prefix install-arm64
+    @echo "📦 Bundling dependencies..."
+    @echo "Note: Dependencies are bundled during build via POST_BUILD"
     cmake --build build --target package
-    @if [ -f build/*.dmg ]; then \
-        mv build/*.dmg ./JucyAudio-arm64.dmg.tmp; \
-        echo "✅ Apple Silicon DMG created"; \
-    else \
-        echo "❌ Failed to create Apple Silicon DMG"; \
-        exit 1; \
-    fi
-    
-    # Build and package Intel version
-    @echo ""
-    @echo "📦 Building Intel (x86_64) release..."
-    @just build-cross x86_64 Release
-    cmake --install build-x86_64 --prefix install-x86_64
-    cd build-x86_64 && cpack -G DragNDrop
-    @if [ -f build-x86_64/*.dmg ]; then \
-        mv build-x86_64/*.dmg ./JucyAudio-x86_64.dmg.tmp; \
-        echo "✅ Intel DMG created"; \
-    else \
-        echo "❌ Failed to create Intel DMG"; \
-        exit 1; \
-    fi
-    
-    # Optional: Build Universal Binary
-    @echo ""
-    @echo "📦 Building Universal Binary release..."
-    @just build-universal Release
-    cmake --install build-universal --prefix install-universal
-    cd build-universal && cpack -G DragNDrop
-    @if [ -f build-universal/*.dmg ]; then \
-        mv build-universal/*.dmg ./JucyAudio-universal.dmg.tmp; \
-        echo "✅ Universal DMG created"; \
-    else \
-        echo "⚠️  Universal DMG creation skipped"; \
-    fi
-    
-    # Move DMGs to release directory
-    @echo ""
-    @echo "📁 Organizing release files..."
     @mkdir -p releases
-    @mv JucyAudio-arm64.dmg.tmp releases/JucyAudio-{{version}}-macOS-arm64.dmg
-    @mv JucyAudio-x86_64.dmg.tmp releases/JucyAudio-{{version}}-macOS-x86_64.dmg
-    @if [ -f JucyAudio-universal.dmg.tmp ]; then \
-        mv JucyAudio-universal.dmg.tmp releases/JucyAudio-{{version}}-macOS-universal.dmg; \
+    @if [ -f build/JucyAudio-*.dmg ]; then \
+        mv build/JucyAudio-*.dmg releases/; \
+        echo "✅ DMG created successfully"; \
+    else \
+        echo "❌ Failed to create DMG"; \
+        exit 1; \
     fi
-    
+
     # Generate checksums
     @echo ""
     @echo "🔐 Generating checksums..."
     @cd releases && shasum -a 256 *.dmg > checksums.txt
-    
+
     # Summary
     @echo ""
     @echo "✨ JucyAudio Release Build Complete!"
@@ -255,11 +207,19 @@ list-packages:
 info:
     @echo "JucyAudio Build Information"
     @echo "============================"
-    @echo "OS: {{os()}}"
     @echo "Version: {{version}}"
     @echo "Architecture: {{arch}}"
     @echo "Default build type: {{default_build_type}}"
-    @if (Test-Path out/build) { echo "Build directories:"; Get-ChildItem out/build -Directory | ForEach-Object { echo "  $($_.Name)" } } else { echo "No build directory found" }
+    @if [ -d build ]; then \
+        echo "Current build configuration:"; \
+        grep CMAKE_BUILD_TYPE build/CMakeCache.txt 2>/dev/null | cut -d= -f2 || echo "  Not configured"; \
+        echo "Build directories:"; \
+        ls -d build* 2>/dev/null | while read dir; do \
+            echo "  $$dir"; \
+        done; \
+    else \
+        echo "No build directory found"; \
+    fi
 
 # Install the application (requires admin privileges)
 install config="Release":
