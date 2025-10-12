@@ -123,6 +123,14 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
+# Add libsndfile for audio file I/O
+FetchContent_Declare(
+    libsndfile
+    GIT_REPOSITORY https://github.com/libsndfile/libsndfile.git
+    GIT_TAG 1.2.2
+    GIT_SHALLOW TRUE
+)
+
 # Configure taglib options (must be before MakeAvailable)
 set(BUILD_SHARED_LIBS_SAVED ${BUILD_SHARED_LIBS})
 set(BUILD_SHARED_LIBS OFF)
@@ -130,7 +138,13 @@ set(TAGLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(TAGLIB_BUILD_BINDINGS OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog tomlplusplus taglib)
+# Configure libsndfile options
+set(BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(ENABLE_EXTERNAL_LIBS OFF CACHE BOOL "" FORCE)
+set(ENABLE_MPEG OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog tomlplusplus taglib libsndfile)
 
 # Restore BUILD_SHARED_LIBS
 if(DEFINED BUILD_SHARED_LIBS_SAVED)
@@ -183,7 +197,7 @@ if(WIN32)
     set(LAME_LIB_PATH "${WIN32_DEPS_ROOT}/lame")
     set(PTHREADS_LIB_PATH "${WIN32_DEPS_ROOT}/pthreads-w32/lib")
     set(FFTW_LIB_PATH "${WIN32_DEPS_ROOT}/fftw")
-    set(LIBSNDFILE_LIB_PATH "${WIN32_DEPS_ROOT}/libsndfile/lib")
+    # libsndfile is now handled by FetchContent
     set(FFMPEG_LIB_PATH "${WIN32_DEPS_ROOT}/ffmpeg/lib")
 
 
@@ -194,7 +208,7 @@ if(WIN32)
     # tomlplusplus is now handled by FetchContent
     set(PTHREADS_INCLUDE_PATH "${WIN32_DEPS_ROOT}/pthreads-w32/include")
     set(FFTW_INCLUDE_PATH "${WIN32_DEPS_ROOT}/fftw")
-    set(LIBSNDFILE_INCLUDE_PATH "C:/Projects/libsndfile/include")
+    # libsndfile is now handled by FetchContent
     set(FFMPEG_INCLUDE_PATH "${WIN32_DEPS_ROOT}/ffmpeg/include")   
     set(ICU_LIB_PATH_DEBUG "${WIN32_DEPS_ROOT}/icu/lib")
     set(ICU_LIB_PATH_RELEASE "${WIN32_DEPS_ROOT}/icu/lib")
@@ -215,7 +229,7 @@ if(WIN32)
     find_library(LAME_LIBRARY mp3lame PATHS ${LAME_LIB_PATH} REQUIRED)
     find_library(FFTW3F_LIBRARY libfftw3f-3 PATHS ${FFTW_LIB_PATH} REQUIRED)
     find_library(FFTW3_LIBRARY libfftw3-3 PATHS ${FFTW_LIB_PATH})
-    find_library(LIBSNDFILE_LIBRARY libsndfile-1 PATHS ${LIBSNDFILE_LIB_PATH} REQUIRED)
+    # libsndfile is now handled by FetchContent
     
     # Find FFmpeg libraries
     find_library(AVCODEC_LIBRARY avcodec PATHS ${FFMPEG_LIB_PATH} REQUIRED)
@@ -241,7 +255,7 @@ if(WIN32)
         # tomlplusplus is now handled by FetchContent
         ${PTHREADS_INCLUDE_PATH}
         ${FFTW_INCLUDE_PATH}
-        ${LIBSNDFILE_INCLUDE_PATH}
+        # libsndfile is now handled by FetchContent
         ${ICU_INCLUDE_PATH}
         ${CMAKE_CURRENT_SOURCE_DIR}
     )
@@ -634,7 +648,7 @@ if(WIN32)
         ${PTHREADS_LIBRARY}
         ${LAME_LIBRARY}
         ${FFTW3F_LIBRARY}
-        ${LIBSNDFILE_LIBRARY}
+        SndFile::sndfile
 
         ${ICU_UC_LIBRARY}
         ${ICU_I18N_LIBRARY}
