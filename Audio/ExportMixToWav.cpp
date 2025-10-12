@@ -35,13 +35,21 @@ namespace jucyaudio
             }
 
             juce::WavAudioFormat wavFormat;
-            m_writer.reset(wavFormat.createWriterFor(fileOutputStream.get(), outputSampleRate(), outputNumChannels(), outputBitDepth(), {}, 0));
+
+            auto options = juce::AudioFormatWriterOptions{}
+                .withSampleRate(outputSampleRate())
+                .withNumChannels(static_cast<int>(outputNumChannels()))
+                .withBitsPerSample(static_cast<int>(outputBitDepth()))
+                .withQualityOptionIndex(0);
+
+            std::unique_ptr<juce::OutputStream> streamPtr(fileOutputStream.release());
+            m_writer = wavFormat.createWriterFor(streamPtr, options);
             if (!m_writer)
             {
                 spdlog::info("MTE: unable to create WavAudioFormat writer for file: {}", exportPath);
                 return false;
             }
-            fileOutputStream.release(); // Writer now owns the stream
+            // Writer now owns the stream via streamPtr
             return true;
         }
 

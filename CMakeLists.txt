@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.15)
 project(jucyaudio VERSION 0.8.0)
 
 # Enable export of compile commands for IDEs
@@ -99,9 +99,11 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
-# Configure spdlog to use std::format
+# Configure spdlog to use std::format and build as compiled static library
 set(SPDLOG_USE_STD_FORMAT ON CACHE BOOL "" FORCE)
 set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(SPDLOG_ENABLE_PCH ON CACHE BOOL "" FORCE)
+set(SPDLOG_WCHAR_SUPPORT OFF CACHE BOOL "" FORCE)
 set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
 set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
@@ -130,6 +132,9 @@ FetchContent_Declare(
     GIT_TAG 1.2.2
     GIT_SHALLOW TRUE
 )
+
+# Allow libsndfile's older CMake version requirement
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 
 # Configure taglib options (must be before MakeAvailable)
 set(BUILD_SHARED_LIBS_SAVED ${BUILD_SHARED_LIBS})
@@ -175,12 +180,12 @@ add_compile_definitions(
     SQLITE_ENABLE_JSON1
     SQLITE_ENABLE_STAT4
     SQLITE_DQS=0
-    SPDLOG_COMPILED_LIB
     SPDLOG_USE_STD_FORMAT
 )
 
 if(WIN32)
     add_compile_definitions(
+        SPDLOG_COMPILED_LIB
         SPDLOG_MSVC_UTF8
         TAGLIB_STATIC
     )
@@ -683,10 +688,11 @@ else()
 
         # External libraries (macOS/Linux)
         ${AUBIO_LIBRARY}
-        spdlog::spdlog
+        spdlog::spdlog_header_only
         tag
         ${MP3LAME_LIBRARY}
-        
+        SndFile::sndfile
+
         z  # zlib
 
         ICU::uc
