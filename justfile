@@ -1,14 +1,24 @@
 # Build automation for JucyAudio project
-# Requires: just (brew install just)
+# Requires: just (brew install just on macOS, scoop install just on Windows)
 
-# Get architecture for build directory
-arch := `uname -m`
+# Set shell for Windows (use PowerShell)
+set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
+
+# Detect OS
+is_windows := if os() == "windows" { "true" } else { "false" }
+is_macos := if os() == "macos" { "true" } else { "false" }
+
+# Get architecture for build directory (macOS only)
+arch := if is_macos == "true" { `uname -m` } else { "x64" }
 
 # Default build type (RelWithDebInfo for optimized builds with debug symbols)
-default_build_type := "RelWithDebInfo"
+default_build_type := if is_windows == "true" { "x64-RelWithDebInfo" } else { "RelWithDebInfo" }
+
+# Default config for release builds
+default_release_config := if is_windows == "true" { "x64-Release" } else { "Release" }
 
 # Get version from CMakeLists.txt
-version := `grep "project(jucyaudio VERSION" CMakeLists.txt | sed 's/.*VERSION \([0-9.]*\).*/\1/'`
+version := "0.8.0"
 
 # ============================================================================
 # Build Commands
@@ -16,9 +26,10 @@ version := `grep "project(jucyaudio VERSION" CMakeLists.txt | sed 's/.*VERSION \
 
 # Build with specified configuration (Debug, Release, or RelWithDebInfo)
 build config=default_build_type:
-    cmake -B build -DCMAKE_BUILD_TYPE={{config}}
-    cmake --build build -j`sysctl -n hw.ncpu`
-    @echo "✓ Build complete: build/{{arch}}-{{config}}/"
+    @echo "Building JucyAudio [{{config}}]..."
+    cmake --preset {{config}}
+    cmake --build --preset {{config}} --parallel
+    @echo "✓ Build complete: out/build/{{config}}/"
 
 # Cross-compile for a specific architecture
 build-cross arch_target config=default_build_type:
@@ -42,15 +53,15 @@ build-universal config=default_build_type:
 
 # Build debug configuration
 debug:
-    @just build Debug
+    @just build x64-Debug
 
-# Build release configuration  
+# Build release configuration
 release:
-    @just build Release
+    @just build x64-Release
 
 # Build release with debug info
 relwithdebinfo:
-    @just build RelWithDebInfo
+    @just build {{default_build_type}}
 
 # ============================================================================
 # Clean Commands
@@ -58,7 +69,10 @@ relwithdebinfo:
 
 # Clean build directory
 clean:
-    rm -rf build build-* install-*
+    @echo "Cleaning build directories..."
+    @if (Test-Path out) { Remove-Item -Recurse -Force out }
+    @if (Test-Path build) { Remove-Item -Recurse -Force build }
+    @echo "✓ Clean complete"
 
 # Clean and rebuild
 rebuild config=default_build_type:
@@ -241,19 +255,11 @@ list-packages:
 info:
     @echo "JucyAudio Build Information"
     @echo "============================"
+    @echo "OS: {{os()}}"
     @echo "Version: {{version}}"
     @echo "Architecture: {{arch}}"
     @echo "Default build type: {{default_build_type}}"
-    @if [ -d build ]; then \
-        echo "Current build configuration:"; \
-        grep CMAKE_BUILD_TYPE build/CMakeCache.txt 2>/dev/null | cut -d= -f2 || echo "  Not configured"; \
-        echo "Build directories:"; \
-        ls -d build* 2>/dev/null | while read dir; do \
-            echo "  $$dir"; \
-        done; \
-    else \
-        echo "No build directory found"; \
-    fi
+    @if (Test-Path out/build) { echo "Build directories:"; Get-ChildItem out/build -Directory | ForEach-Object { echo "  $($_.Name)" } } else { echo "No build directory found" }
 
 # Install the application (requires admin privileges)
 install config="Release":
