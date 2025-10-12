@@ -115,7 +115,45 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
-FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog tomlplusplus)
+# Add taglib for ID3 tag reading
+FetchContent_Declare(
+    taglib
+    GIT_REPOSITORY https://github.com/taglib/taglib.git
+    GIT_TAG v2.0.2
+    GIT_SHALLOW TRUE
+)
+
+# Configure taglib options (must be before MakeAvailable)
+set(BUILD_SHARED_LIBS_SAVED ${BUILD_SHARED_LIBS})
+set(BUILD_SHARED_LIBS OFF)
+set(TAGLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(TAGLIB_BUILD_BINDINGS OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog tomlplusplus taglib)
+
+# Restore BUILD_SHARED_LIBS
+if(DEFINED BUILD_SHARED_LIBS_SAVED)
+    set(BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS_SAVED})
+else()
+    unset(BUILD_SHARED_LIBS)
+endif()
+
+# Get taglib source and binary directories for include paths
+FetchContent_GetProperties(taglib)
+if(taglib_POPULATED)
+    # Add taglib include directories
+    # Include the parent directory so that #include <taglib/fileref.h> works
+    # Also include taglib/ subdirectory for internal taglib headers that use relative includes
+    set(TAGLIB_INCLUDE_DIRS
+        ${taglib_SOURCE_DIR}
+        ${taglib_SOURCE_DIR}/taglib
+        ${taglib_SOURCE_DIR}/taglib/toolkit
+        ${taglib_SOURCE_DIR}/taglib/mpeg
+        ${taglib_SOURCE_DIR}/taglib/mpeg/id3v2
+        ${taglib_BINARY_DIR}
+    )
+endif()
 
 # Global compile definitions
 add_compile_definitions(
@@ -141,19 +179,17 @@ if(WIN32)
     # Windows paths from jucer file
     set(AUBIO_LIB_PATH "${WIN32_DEPS_ROOT}/aubio/lib")
     # spdlog is now handled by FetchContent
-    set(TAGLIB_LIB_PATH_DEBUG "${WIN32_DEPS_ROOT}/taglib/out/install/x64-Debug/lib")
-    set(TAGLIB_LIB_PATH_RELEASE "${WIN32_DEPS_ROOT}/taglib/out/install/x64-Release/lib")
+    # taglib is now handled by FetchContent
     set(LAME_LIB_PATH "${WIN32_DEPS_ROOT}/lame")
     set(PTHREADS_LIB_PATH "${WIN32_DEPS_ROOT}/pthreads-w32/lib")
     set(FFTW_LIB_PATH "${WIN32_DEPS_ROOT}/fftw")
     set(LIBSNDFILE_LIB_PATH "${WIN32_DEPS_ROOT}/libsndfile/lib")
     set(FFMPEG_LIB_PATH "${WIN32_DEPS_ROOT}/ffmpeg/lib")
 
-    
+
     set(AUBIO_INCLUDE_PATH "${WIN32_DEPS_ROOT}/aubio/include")
     # spdlog is now handled by FetchContent
-    set(TAGLIB_INCLUDE_PATH_DEBUG "${WIN32_DEPS_ROOT}/taglib/out/install/x64-Debug/include")
-    set(TAGLIB_INCLUDE_PATH_RELEASE "${WIN32_DEPS_ROOT}/taglib/out/install/x64-Release/include")
+    # taglib is now handled by FetchContent
     set(LAME_INCLUDE_PATH "${WIN32_DEPS_ROOT}/lame/include")
     # tomlplusplus is now handled by FetchContent
     set(PTHREADS_INCLUDE_PATH "${WIN32_DEPS_ROOT}/pthreads-w32/include")
@@ -166,23 +202,15 @@ if(WIN32)
     
     # Use debug or release paths based on build type
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        # spdlog is now handled by FetchContent
-        set(TAGLIB_LIB_PATH ${TAGLIB_LIB_PATH_DEBUG})
-        set(ICU_LIB_PATH ${ICU_LIB_PATH_DEBUG}) 
-        # spdlog is now handled by FetchContent
-        set(TAGLIB_INCLUDE_PATH ${TAGLIB_INCLUDE_PATH_DEBUG})
+        set(ICU_LIB_PATH ${ICU_LIB_PATH_DEBUG})
     else()
-        # spdlog is now handled by FetchContent
-        set(TAGLIB_LIB_PATH ${TAGLIB_LIB_PATH_RELEASE})
         set(ICU_LIB_PATH ${ICU_LIB_PATH_RELEASE})
-        # spdlog is now handled by FetchContent
-        set(TAGLIB_INCLUDE_PATH ${TAGLIB_INCLUDE_PATH_RELEASE})
     endif()
     
     # Find libraries on Windows
     find_library(AUBIO_LIBRARY aubio PATHS ${AUBIO_LIB_PATH} REQUIRED)
     # spdlog is now handled by FetchContent
-    find_library(TAGLIB_LIBRARY tag PATHS ${TAGLIB_LIB_PATH} REQUIRED)
+    # taglib is now handled by FetchContent
     find_library(PTHREADS_LIBRARY pthreadVC2 PATHS ${PTHREADS_LIB_PATH} REQUIRED)
     find_library(LAME_LIBRARY mp3lame PATHS ${LAME_LIB_PATH} REQUIRED)
     find_library(FFTW3F_LIBRARY libfftw3f-3 PATHS ${FFTW_LIB_PATH} REQUIRED)
@@ -208,7 +236,7 @@ if(WIN32)
     set(EXTERNAL_INCLUDES
         ${AUBIO_INCLUDE_PATH}
         # spdlog is now handled by FetchContent
-        ${TAGLIB_INCLUDE_PATH}
+        ${TAGLIB_INCLUDE_DIRS}
         ${LAME_INCLUDE_PATH}
         # tomlplusplus is now handled by FetchContent
         ${PTHREADS_INCLUDE_PATH}
@@ -231,14 +259,14 @@ else()
     # macOS/Linux paths (original)
     find_library(AUBIO_LIBRARY aubio PATHS /Users/gersonkurz/development/aubio_install_macos/lib)
     # spdlog is now handled by FetchContent
-    find_library(TAGLIB_LIBRARY tag PATHS /Users/gersonkurz/development/taglib_install/lib)
+    # taglib is now handled by FetchContent
     find_library(MP3LAME_LIBRARY mp3lame PATHS /opt/homebrew/lib)
     
     # macOS/Linux external includes
     set(EXTERNAL_INCLUDES
         /Users/gersonkurz/development/aubio_install_macos/include
         # spdlog is now handled by FetchContent
-        /Users/gersonkurz/development/taglib_install/include
+        ${TAGLIB_INCLUDE_DIRS}
         # tomlplusplus is now handled by FetchContent
         /opt/homebrew/include
     )
@@ -602,7 +630,7 @@ if(WIN32)
         # External libraries (Windows)
         ${AUBIO_LIBRARY}
         spdlog::spdlog
-        ${TAGLIB_LIBRARY}
+        tag
         ${PTHREADS_LIBRARY}
         ${LAME_LIBRARY}
         ${FFTW3F_LIBRARY}
@@ -642,7 +670,7 @@ else()
         # External libraries (macOS/Linux)
         ${AUBIO_LIBRARY}
         spdlog::spdlog
-        ${TAGLIB_LIBRARY}
+        tag
         ${MP3LAME_LIBRARY}
         
         z  # zlib

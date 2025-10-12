@@ -1,11 +1,11 @@
 #include <Database/Scanners/Id3TagScanner.h>
 #include <Utils/AssortedUtils.h>
 #include <spdlog/spdlog.h>
-#include <taglib/fileref.h>
-#include <taglib/id3v2tag.h> // For specific ID3v2 access if needed
-#include <taglib/tag.h>
-#include <taglib/taglib.h>
-#include <taglib/tpropertymap.h>
+#include "fileref.h"
+#include "id3v2tag.h"
+#include "tag.h"
+#include "taglib.h"
+#include "tpropertymap.h"
 
 namespace jucyaudio
 {
