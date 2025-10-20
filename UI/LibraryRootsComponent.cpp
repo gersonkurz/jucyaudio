@@ -252,14 +252,27 @@ namespace jucyaudio
         {
             spdlog::info("LibraryRootsComponent::loadRoots called");
             m_displayedRoots = m_rootManager.getAllRoots();
-            
-            spdlog::info("  Loaded {} roots:", m_displayedRoots.size());
-            for (const auto& root : m_displayedRoots)
+
+            // Populate folder info for each root
+            auto& folderDb = m_db.getFolderDatabase();
+            for (auto& root : m_displayedRoots)
             {
-                spdlog::info("    Root ID {} ({}): isOnline = {}", 
-                            root.id, root.path, root.isOnline);
+                // Get the folder ID for this root path
+                const auto folderId = folderDb.findOrCreateFolderByPath(root.path);
+                if (folderId != -1)
+                {
+                    // Get the folder info with recursive track count
+                    auto folderInfo = folderDb.getFolderById(folderId);
+                    if (folderInfo.has_value())
+                    {
+                        root.folderInfo = folderInfo.value();
+                    }
+                }
+
+                spdlog::info("  Root ID {} ({}): isOnline = {}, trackCount = {}",
+                            root.id, root.path, root.isOnline, root.folderInfo.trackCount);
             }
-            
+
             sortOrderChanged(m_rootFoldersTable.getHeader().getSortColumnId(), m_rootFoldersTable.getHeader().isSortedForwards());
             m_rootFoldersTable.updateContent();
             m_rootFoldersTable.repaint();
@@ -373,7 +386,7 @@ namespace jucyaudio
             else if (columnId == RootFolderTableColumns::FileCount)
             {
                 const auto fileCountStr = std::format("{:L}", rootInfo.folderInfo.trackCount);
-                g.drawText(fileCountStr, 2, 0, width - 4, height, juce::Justification::centredLeft, true);
+                g.drawText(fileCountStr, 2, 0, width - 4, height, juce::Justification::centredRight, true);
             }
             else if (columnId == RootFolderTableColumns::LastScanned)
             {
@@ -381,9 +394,17 @@ namespace jucyaudio
                 if (rootInfo.lastScanned.has_value())
                 {
                     const auto time = std::chrono::system_clock::to_time_t(rootInfo.lastScanned.value());
-                    char buffer[100];
-                    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M", std::localtime(&time));
-                    lastScannedStr = buffer;
+                    const auto* tm = std::localtime(&time);
+                    if (tm != nullptr)
+                    {
+                        char buffer[100];
+                        std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M", tm);
+                        lastScannedStr = buffer;
+                    }
+                    else
+                    {
+                        lastScannedStr = "Invalid Date";
+                    }
                 }
                 g.drawText(lastScannedStr, 2, 0, width - 4, height, juce::Justification::centredLeft, true);
             }

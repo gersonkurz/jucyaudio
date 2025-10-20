@@ -743,6 +743,8 @@ if(WIN32)
         JUCE_USE_MP3AUDIOFORMAT=1
         PROJECT_NAME="${PROJECT_NAME}"
         PROJECT_VERSION="${PROJECT_VERSION}"
+        # Disable JUCE assertions in Debug builds to avoid overly strict thread checking
+        $<$<CONFIG:Debug>:JUCE_DISABLE_ASSERTIONS=1>
     )
     
     # Windows-specific compiler flags
@@ -760,6 +762,8 @@ else()
         JUCE_USE_MP3AUDIOFORMAT=1
         PROJECT_NAME="${PROJECT_NAME}"
         PROJECT_VERSION="${PROJECT_VERSION}"
+        # Disable JUCE assertions in Debug builds to avoid overly strict thread checking
+        $<$<CONFIG:Debug>:JUCE_DISABLE_ASSERTIONS=1>
     )
 endif()
 

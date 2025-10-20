@@ -50,6 +50,7 @@ namespace jucyaudio
 
             // this is a lookup of existing folders and their tracks by name.
             std::unordered_map<FolderId, std::unordered_map<std::string, TrackId>> existingTrackCache;
+            std::unordered_set<std::string> existingFolders;
 
             spdlog::debug("Building cache of existing tracks for scan scope...");
 
@@ -126,7 +127,13 @@ namespace jucyaudio
                     auto item = existingTrackCache.find(parentFolderId);
                     if (item == existingTrackCache.end())
                     {
-                        spdlog::info("Folder {} is new - did not exist before", pathToString(fullPath.parent_path()));
+                        const auto pathToStore{pathToString(fullPath.parent_path())};
+                        const auto pathItem{existingFolders.find(pathToStore)};
+                        if (pathItem != existingFolders.end())
+                        {
+                            spdlog::info("Folder {} is new - did not exist before", pathToStore);
+                        }
+                        spdlog::info("File {} is new in {}, processing.", file.getFileName().toStdString(), pathToStore);
                     }
                     else
                     {

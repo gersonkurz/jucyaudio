@@ -83,6 +83,11 @@ namespace jucyaudio
                 return m_statement != nullptr;
             }
 
+            SqliteDatabase& getDatabase() const
+            {
+                return m_db;
+            }
+
             bool isNull(int index) const
             {
                 return sqlite3_column_type(m_statement, index) == SQLITE_NULL;

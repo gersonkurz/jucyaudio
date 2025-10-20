@@ -19,6 +19,52 @@ namespace jucyaudio
         {
         }
 
+        bool SqliteStatementConstruction::populateQueryScopeFoldersTable(const std::vector<FolderId> &folderIds)
+        {
+            // Get database from statement
+            auto& db = m_stmt.getDatabase();
+
+            // Create temp table if it doesn't exist
+            SqliteStatement createStmt{db};
+            createStmt.bindStatement("CREATE TEMP TABLE IF NOT EXISTS QueryScopeFolders (folder_id INTEGER PRIMARY KEY);");
+            if (!createStmt.execute())
+            {
+                spdlog::error("populateQueryScopeFoldersTable: Failed to create temp table");
+                return false;
+            }
+
+            // Clear existing contents
+            SqliteStatement clearStmt{db};
+            clearStmt.bindStatement("DELETE FROM temp.QueryScopeFolders;");
+            if (!clearStmt.execute())
+            {
+                spdlog::error("populateQueryScopeFoldersTable: Failed to clear temp table");
+                return false;
+            }
+
+            // Insert folder IDs in batches
+            if (!folderIds.empty())
+            {
+                SqliteStatement insertStmt{db};
+                insertStmt.bindStatement("INSERT INTO temp.QueryScopeFolders (folder_id) VALUES (?);");
+
+                for (const auto folderId : folderIds)
+                {
+                    insertStmt.reset();
+                    insertStmt.addParam(folderId);
+                    if (!insertStmt.execute())
+                    {
+                        spdlog::error("populateQueryScopeFoldersTable: Failed to insert folder_id {}", folderId);
+                        return false;
+                    }
+                }
+
+                spdlog::debug("populateQueryScopeFoldersTable: Populated temp table with {} folder IDs", folderIds.size());
+            }
+
+            return true;
+        }
+
         void SqliteStatementConstruction::addWhereClause(StringWriter &writer, const TrackQueryArgs &args)
         {
             bool whereAdded = false;
@@ -57,35 +103,31 @@ namespace jucyaudio
             }
             if (!args.folderIds.empty())
             {
-                StringWriter folderCondition;
-                
+                // Populate temp table with folder IDs (handles both recursive and non-recursive)
+                std::vector<FolderId> folderIdsToUse;
+
                 if (args.recursive)
                 {
-                    // When recursive, we need to get all child folders too
-                    // Import necessary header at top of file for folder database access
+                    // When recursive, get all child folders
                     const auto& folderDb = theTrackLibrary.getFolderDatabase();
                     auto allFolderIds = folderDb.getAllChildFolders(args.folderIds);
-                    
-                    folderCondition.append("folder_id IN (");
-                    for(size_t idx = 0; idx < allFolderIds.size(); ++idx)
-                    {
-                        folderCondition.append(idx == 0 ? std::format("?{}", m_paramIndex++) : std::format(", ?{}", m_paramIndex++));
-                    }
-                    folderCondition.append(")");
+                    folderIdsToUse = std::vector<FolderId>{allFolderIds.begin(), allFolderIds.end()};
                 }
                 else
                 {
                     // Non-recursive: just use the provided folder IDs
-                    folderCondition.append("folder_id IN (");
-                    for (size_t i = 0; i < args.folderIds.size(); ++i)
-                    {
-                        folderCondition.append(i == 0 ? std::format("?{}", m_paramIndex++) : std::format(", ?{}", m_paramIndex++));
-                    }
-                    folderCondition.append(")");
+                    folderIdsToUse = args.folderIds;
                 }
-                
-                const auto conditionAsString{folderCondition.asString()};
-                addCondition(conditionAsString);
+
+                // Populate the temp table with all folder IDs
+                if (!const_cast<SqliteStatementConstruction*>(this)->populateQueryScopeFoldersTable(folderIdsToUse))
+                {
+                    spdlog::error("addWhereClause: Failed to populate QueryScopeFolders temp table");
+                    return;
+                }
+
+                // Use the temp table in the WHERE clause
+                addCondition("folder_id IN (SELECT folder_id FROM temp.QueryScopeFolders)");
             }
         }
 
@@ -136,28 +178,7 @@ namespace jucyaudio
             {
                 m_stmt.addParam(args.mixId);
             }
-            // For folder IDs, we need to handle recursive case differently
-            if (!args.folderIds.empty())
-            {
-                if (args.recursive)
-                {
-                    // When recursive, bind all child folder IDs
-                    const auto& folderDb = theTrackLibrary.getFolderDatabase();
-                    auto allFolderIds = folderDb.getAllChildFolders(args.folderIds);
-                    for (const auto &folderId : allFolderIds)
-                    {
-                        m_stmt.addParam(folderId);
-                    }
-                }
-                else
-                {
-                    // Non-recursive: just bind the provided folder IDs
-                    for (const auto &folderId : args.folderIds)
-                    {
-                        m_stmt.addParam(folderId);
-                    }
-                }
-            }
+            // Folder IDs are now handled via temp table, no need to bind them as parameters
             return true;
         }
 
@@ -187,7 +208,7 @@ namespace jucyaudio
                 // FTS5 with content table - just join on track_id directly
                 writer.append(" FROM Tracks INNER JOIN TracksSearchFTS ON Tracks.track_id = TracksSearchFTS.rowid");
                 writer.appendFormatted(" WHERE TracksSearchFTS MATCH ?{}", m_paramIndex++);
-                
+
                 // Add other WHERE conditions if needed
                 if (args.workingSetId > 0)
                 {
@@ -199,12 +220,26 @@ namespace jucyaudio
                 }
                 if (!args.folderIds.empty())
                 {
-                    writer.append(" AND folder_id IN (");
-                    for (size_t i = 0; i < args.folderIds.size(); ++i)
+                    // Populate temp table with folder IDs
+                    std::vector<FolderId> folderIdsToUse;
+                    if (args.recursive)
                     {
-                        writer.append(i == 0 ? std::format("?{}", m_paramIndex++) : std::format(", ?{}", m_paramIndex++));
+                        const auto& folderDb = theTrackLibrary.getFolderDatabase();
+                        auto allFolderIds = folderDb.getAllChildFolders(args.folderIds);
+                        folderIdsToUse = std::vector<FolderId>{allFolderIds.begin(), allFolderIds.end()};
                     }
-                    writer.append(")");
+                    else
+                    {
+                        folderIdsToUse = args.folderIds;
+                    }
+
+                    if (!populateQueryScopeFoldersTable(folderIdsToUse))
+                    {
+                        spdlog::error("createSelectStatement(FTS): Failed to populate QueryScopeFolders temp table");
+                        return false;
+                    }
+
+                    writer.append(" AND folder_id IN (SELECT folder_id FROM temp.QueryScopeFolders)");
                 }
             }
             else
@@ -252,7 +287,7 @@ namespace jucyaudio
                 spdlog::info("FTS5 Count: Using search term: '{}'", args.searchTerms[0]);
                 writer.append("SELECT COUNT(*) FROM Tracks INNER JOIN TracksSearchFTS ON Tracks.track_id = TracksSearchFTS.rowid");
                 writer.appendFormatted(" WHERE TracksSearchFTS MATCH ?{}", m_paramIndex++);
-                
+
                 // Add other WHERE conditions if needed
                 if (args.workingSetId > 0)
                 {
@@ -264,12 +299,26 @@ namespace jucyaudio
                 }
                 if (!args.folderIds.empty())
                 {
-                    writer.append(" AND folder_id IN (");
-                    for (size_t i = 0; i < args.folderIds.size(); ++i)
+                    // Populate temp table with folder IDs
+                    std::vector<FolderId> folderIdsToUse;
+                    if (args.recursive)
                     {
-                        writer.append(i == 0 ? std::format("?{}", m_paramIndex++) : std::format(", ?{}", m_paramIndex++));
+                        const auto& folderDb = theTrackLibrary.getFolderDatabase();
+                        auto allFolderIds = folderDb.getAllChildFolders(args.folderIds);
+                        folderIdsToUse = std::vector<FolderId>{allFolderIds.begin(), allFolderIds.end()};
                     }
-                    writer.append(")");
+                    else
+                    {
+                        folderIdsToUse = args.folderIds;
+                    }
+
+                    if (!populateQueryScopeFoldersTable(folderIdsToUse))
+                    {
+                        spdlog::error("createCountStatement(FTS): Failed to populate QueryScopeFolders temp table");
+                        return false;
+                    }
+
+                    writer.append(" AND folder_id IN (SELECT folder_id FROM temp.QueryScopeFolders)");
                 }
             }
             else
@@ -304,12 +353,26 @@ namespace jucyaudio
                 }
                 if (!args.folderIds.empty())
                 {
-                    writer.append(" AND folder_id IN (");
-                    for (size_t i = 0; i < args.folderIds.size(); ++i)
+                    // Populate temp table with folder IDs
+                    std::vector<FolderId> folderIdsToUse;
+                    if (args.recursive)
                     {
-                        writer.append(i == 0 ? std::format("?{}", m_paramIndex++) : std::format(", ?{}", m_paramIndex++));
+                        const auto& folderDb = theTrackLibrary.getFolderDatabase();
+                        auto allFolderIds = folderDb.getAllChildFolders(args.folderIds);
+                        folderIdsToUse = std::vector<FolderId>{allFolderIds.begin(), allFolderIds.end()};
                     }
-                    writer.append(")");
+                    else
+                    {
+                        folderIdsToUse = args.folderIds;
+                    }
+
+                    if (!populateQueryScopeFoldersTable(folderIdsToUse))
+                    {
+                        spdlog::error("createAggregateStatement(FTS): Failed to populate QueryScopeFolders temp table");
+                        return false;
+                    }
+
+                    writer.append(" AND folder_id IN (SELECT folder_id FROM temp.QueryScopeFolders)");
                 }
             }
             else
@@ -331,7 +394,7 @@ namespace jucyaudio
             {
                 writer.appendFormatted("INSERT INTO WorkingSetTracks (ws_id, track_id) SELECT ?{}, Tracks.track_id FROM Tracks INNER JOIN TracksSearchFTS ON Tracks.track_id = TracksSearchFTS.rowid", m_paramIndex++);
                 writer.appendFormatted(" WHERE TracksSearchFTS MATCH ?{}", m_paramIndex++);
-                
+
                 // Add other WHERE conditions if needed
                 if (args.workingSetId > 0)
                 {
@@ -343,12 +406,26 @@ namespace jucyaudio
                 }
                 if (!args.folderIds.empty())
                 {
-                    writer.append(" AND folder_id IN (");
-                    for (size_t i = 0; i < args.folderIds.size(); ++i)
+                    // Populate temp table with folder IDs
+                    std::vector<FolderId> folderIdsToUse;
+                    if (args.recursive)
                     {
-                        writer.append(i == 0 ? std::format("?{}", m_paramIndex++) : std::format(", ?{}", m_paramIndex++));
+                        const auto& folderDb = theTrackLibrary.getFolderDatabase();
+                        auto allFolderIds = folderDb.getAllChildFolders(args.folderIds);
+                        folderIdsToUse = std::vector<FolderId>{allFolderIds.begin(), allFolderIds.end()};
                     }
-                    writer.append(")");
+                    else
+                    {
+                        folderIdsToUse = args.folderIds;
+                    }
+
+                    if (!populateQueryScopeFoldersTable(folderIdsToUse))
+                    {
+                        spdlog::error("createInsertIntoSelectTrackIdsStatement(FTS): Failed to populate QueryScopeFolders temp table");
+                        return false;
+                    }
+
+                    writer.append(" AND folder_id IN (SELECT folder_id FROM temp.QueryScopeFolders)");
                 }
                 // No need for closing parenthesis in FTS5 case
                 const auto sqlStatement = writer.asString();
@@ -357,7 +434,7 @@ namespace jucyaudio
                     spdlog::error("Failed to bind statement: {}", sqlStatement);
                     return false;
                 }
-                // Bind parameters
+                // Bind parameters - note: no folder IDs to bind since we use temp table
                 m_stmt.addParam(wsId);
                 m_stmt.addParam(args.searchTerms[0]);
                 if (args.workingSetId > 0)
@@ -368,10 +445,7 @@ namespace jucyaudio
                 {
                     m_stmt.addParam(args.mixId);
                 }
-                for (const auto &folderId : args.folderIds)
-                {
-                    m_stmt.addParam(folderId);
-                }
+                // Folder IDs are now in temp table, not bound as parameters
                 return true;
             }
             else

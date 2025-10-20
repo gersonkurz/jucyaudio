@@ -26,7 +26,8 @@
       "WebSearch",
       "Read(//c/Projects/jucyaudio_deps_win32_x64/**)",
       "Bash(cmake:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Read(//c/Users/GersonKurz/AppData/Roaming/jucyaudioApp_Dev/**)"
     ],
     "deny": [],
     "ask": []

@@ -18,7 +18,7 @@ namespace
         if (!stmt.isNull(2))
         {
             const auto timestamp = stmt.getInt64(2);
-            info.lastScanned = std::chrono::system_clock::from_time_t(timestamp);
+            info.lastScanned = jucyaudio::timestampFromInt64(timestamp);
         }
         return info;
     }
