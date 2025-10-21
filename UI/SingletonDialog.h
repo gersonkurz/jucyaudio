@@ -231,15 +231,12 @@ namespace jucyaudio
                 juce::DialogWindow::LaunchOptions &launchOptions,
                 bool modal = false)
             {
-                // Check if this dialog is already open
-                if (isDialogOpen(dialogId))
+                // Check if this dialog is already open AND still valid
+                if (auto *window = getValidDialogWindow(dialogId))
                 {
                     // Bring existing dialog to front
-                    if (auto *window = getDialogWindow(dialogId))
-                    {
-                        window->toFront(true);
-                        window->grabKeyboardFocus();
-                    }
+                    window->toFront(true);
+                    window->grabKeyboardFocus();
                     delete component; // Clean up the component we were going to show
                     return;
                 }
@@ -316,7 +313,7 @@ namespace jucyaudio
             }
 
         private:
-            static inline std::unordered_map<juce::String, juce::DialogWindow *> s_openDialogs;
+            static inline std::unordered_map<juce::String, juce::Component::SafePointer<juce::DialogWindow>> s_openDialogs;
             static inline juce::CriticalSection s_dialogLock;
 
             static bool isDialogOpen(const juce::String &dialogId)
@@ -329,7 +326,29 @@ namespace jucyaudio
             {
                 const juce::ScopedLock lock{s_dialogLock};
                 auto it = s_openDialogs.find(dialogId);
-                return it != s_openDialogs.end() ? it->second : nullptr;
+                return it != s_openDialogs.end() ? it->second.getComponent() : nullptr;
+            }
+
+            static juce::DialogWindow *getValidDialogWindow(const juce::String &dialogId)
+            {
+                const juce::ScopedLock lock{s_dialogLock};
+                auto it = s_openDialogs.find(dialogId);
+                if (it == s_openDialogs.end())
+                {
+                    return nullptr;
+                }
+
+                // SafePointer automatically handles validity checking
+                auto *window = it->second.getComponent();
+
+                if (window == nullptr)
+                {
+                    // Window is dead but still in our map - clean it up
+                    s_openDialogs.erase(it);
+                    return nullptr;
+                }
+
+                return window;
             }
 
             static void registerDialog(const juce::String &dialogId, juce::DialogWindow *window)
