@@ -2032,13 +2032,8 @@ namespace jucyaudio
                             // Stop playback before modifying data to prevent audio thread issues
                             stopMixPlayback();
 
-                            bool removalSuccess = false;
-                            m_playbackController.withMixEngineLock(
-                                [&]()
-                                {
-                                    // Use the safe list of object IDs
-                                    removalSuccess = node->removeObjects(analysisResult.deletableObjectIds);
-                                });
+                            // Use the safe list of object IDs
+                            bool removalSuccess = node->removeObjects(analysisResult.deletableObjectIds);
 
                             if (removalSuccess)
                             {

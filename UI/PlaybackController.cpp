@@ -546,22 +546,6 @@ namespace jucyaudio
             }
         }
 
-        void PlaybackController::withMixEngineLock(std::function<void()> action)
-        {
-            if (m_mixPlaybackEngine)
-            {
-                const juce::ScopedLock lock(m_mixPlaybackEngine->getLock());
-                action();
-            }
-            else
-            {
-                // If there's no engine, there's nothing to lock.
-                // It might be safer to just run the action, or log a warning.
-                // For now, we'll just run it, assuming the action is safe without a mix.
-                action();
-            }
-        }
-        
         void PlaybackController::updateMasterEQ(const audio::model::EQSettings& settings)
         {
             m_currentEQSettings = settings;

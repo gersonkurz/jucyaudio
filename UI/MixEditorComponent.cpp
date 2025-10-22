@@ -226,37 +226,32 @@ namespace jucyaudio
                             spdlog::info("Refreshing mix after undo");
                             m_node->refreshCache(true);  // Force a complete refresh
                             
-                            // Use thread-safe lock to ensure mix data is updated atomically
+                            // Reload mix - atomic swap handles thread safety
                             if (m_playbackController)
                             {
-                                m_playbackController->withMixEngineLock([this, wasPlaying, playbackPosition]() {
-                                    // Reload the mix in the playback controller
-                                    auto& mixLoader = m_node->getMixProjectLoader();
-                                    if (m_playbackController)
-                                    {
-                                        spdlog::debug("[UNDO] Reloading mix in playback controller");
-                                        m_playbackController->loadMix(&mixLoader);
-                                    }
-                                    
-                                    // Refresh the appropriate timeline
-                                    if (m_useVirtualTimeline && m_virtualTimeline)
-                                    {
-                                        m_virtualTimeline->loadMixProject(&mixLoader);
-                                    }
-                                    else
-                                    {
-                                        m_timeline.populateFrom(&mixLoader);
-                                        m_timeline.repaint();
-                                    }
-                                    m_viewport.repaint();
-                                    
-                                    // Resume playback if it was playing (inside the lock)
-                                    if (wasPlaying && m_playbackController)
-                                    {
-                                        spdlog::debug("[UNDO] Resuming playback at position {}", playbackPosition);
-                                        m_playbackController->playMixFrom(playbackPosition);
-                                    }
-                                });
+                                // Reload the mix in the playback controller
+                                auto& mixLoader = m_node->getMixProjectLoader();
+                                spdlog::debug("[UNDO] Reloading mix in playback controller");
+                                m_playbackController->loadMix(&mixLoader);
+
+                                // Refresh the appropriate timeline
+                                if (m_useVirtualTimeline && m_virtualTimeline)
+                                {
+                                    m_virtualTimeline->loadMixProject(&mixLoader);
+                                }
+                                else
+                                {
+                                    m_timeline.populateFrom(&mixLoader);
+                                    m_timeline.repaint();
+                                }
+                                m_viewport.repaint();
+
+                                // Resume playback if it was playing
+                                if (wasPlaying)
+                                {
+                                    spdlog::debug("[UNDO] Resuming playback at position {}", playbackPosition);
+                                    m_playbackController->playMixFrom(playbackPosition);
+                                }
                             }
                             else
                             {
@@ -310,37 +305,32 @@ namespace jucyaudio
                             spdlog::info("Refreshing mix after redo");
                             m_node->refreshCache(true);  // Force a complete refresh
                             
-                            // Use thread-safe lock to ensure mix data is updated atomically
+                            // Reload mix - atomic swap handles thread safety
                             if (m_playbackController)
                             {
-                                m_playbackController->withMixEngineLock([this, wasPlaying, playbackPosition]() {
-                                    // Reload the mix in the playback controller
-                                    auto& mixLoader = m_node->getMixProjectLoader();
-                                    if (m_playbackController)
-                                    {
-                                        spdlog::debug("[REDO] Reloading mix in playback controller");
-                                        m_playbackController->loadMix(&mixLoader);
-                                    }
-                                    
-                                    // Refresh the appropriate timeline
-                                    if (m_useVirtualTimeline && m_virtualTimeline)
-                                    {
-                                        m_virtualTimeline->loadMixProject(&mixLoader);
-                                    }
-                                    else
-                                    {
-                                        m_timeline.populateFrom(&mixLoader);
-                                        m_timeline.repaint();
-                                    }
-                                    m_viewport.repaint();
-                                    
-                                    // Resume playback if it was playing (inside the lock)
-                                    if (wasPlaying && m_playbackController)
-                                    {
-                                        spdlog::debug("[REDO] Resuming playback at position {}", playbackPosition);
-                                        m_playbackController->playMixFrom(playbackPosition);
-                                    }
-                                });
+                                // Reload the mix in the playback controller
+                                auto& mixLoader = m_node->getMixProjectLoader();
+                                spdlog::debug("[REDO] Reloading mix in playback controller");
+                                m_playbackController->loadMix(&mixLoader);
+
+                                // Refresh the appropriate timeline
+                                if (m_useVirtualTimeline && m_virtualTimeline)
+                                {
+                                    m_virtualTimeline->loadMixProject(&mixLoader);
+                                }
+                                else
+                                {
+                                    m_timeline.populateFrom(&mixLoader);
+                                    m_timeline.repaint();
+                                }
+                                m_viewport.repaint();
+
+                                // Resume playback if it was playing
+                                if (wasPlaying)
+                                {
+                                    spdlog::debug("[REDO] Resuming playback at position {}", playbackPosition);
+                                    m_playbackController->playMixFrom(playbackPosition);
+                                }
                             }
                             else
                             {
@@ -703,28 +693,28 @@ namespace jucyaudio
 
             spdlog::info("Updating envelope for track at position {} with {} points", orderInMix, points.size());
             
-            // Use thread-safe locking when modifying envelope points that the audio thread reads
-            if (m_playbackController)
+            // Update envelope points in MixProjectLoader
+            auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
+
+            // Find and update the track by orderInMix
+            for (auto& track : mixTracks)
             {
-                m_playbackController->withMixEngineLock([&]()
+                if (track.orderInMix == orderInMix)
                 {
-                    // Get access to the mix tracks
-                    auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
-                    
-                    // Find and update the track by orderInMix (and trackId if available)
-                    for (auto& track : mixTracks)
-                    {
-                        if (track.orderInMix == orderInMix)
-                        {
-                            track.envelopePoints = points;
-                            spdlog::info("Updated envelope points for track {} at position {}", track.trackId, orderInMix);
-                            
-                            // Save changes
-                            saveMixChanges();
-                            break;
-                        }
-                    }
-                });
+                    track.envelopePoints = points;
+                    spdlog::info("Updated envelope points for track {} at position {}", track.trackId, orderInMix);
+
+                    // Save changes
+                    saveMixChanges();
+                    break;
+                }
+            }
+
+            // Reload mix to update playback state (atomic swap handles thread safety)
+            if (m_playbackController && m_playbackController->isMixMode())
+            {
+                auto& mixLoader = m_node->getMixProjectLoader();
+                m_playbackController->loadMix(&mixLoader);
             }
             else
             {
@@ -743,42 +733,40 @@ namespace jucyaudio
             spdlog::info("Updating gain adjustment for track at position {} to {} (save: {})", 
                         orderInMix, newGain, saveToDatabase);
             
-            // Use thread-safe locking when modifying gain that the audio thread reads
-            if (m_playbackController)
+            // Update gain in MixProjectLoader
+            auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
+
+            // Find and update the track by orderInMix
+            for (auto& track : mixTracks)
             {
-                m_playbackController->withMixEngineLock([&]()
+                if (track.orderInMix == orderInMix)
                 {
-                    // Get access to the mix tracks
-                    auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
-                    
-                    // Find and update the track by orderInMix
-                    for (auto& track : mixTracks)
+                    track.gainAdjustment = newGain;
+                    spdlog::info("Updated gain adjustment for track {} at position {} to {}",
+                               track.trackId, orderInMix, newGain);
+
+                    // Only save to database if requested (i.e., when OK is clicked)
+                    if (saveToDatabase)
                     {
-                        if (track.orderInMix == orderInMix)
+                        saveMixChanges();
+
+                        // Update the virtual timeline's internal data after saving
+                        if (m_virtualTimeline)
                         {
-                            track.gainAdjustment = newGain;
-                            spdlog::info("Updated gain adjustment for track {} at position {} to {}", 
-                                       track.trackId, orderInMix, newGain);
-                            
-                            // Only save to database if requested (i.e., when OK is clicked)
-                            if (saveToDatabase)
-                            {
-                                saveMixChanges();
-                                
-                                // Update the virtual timeline's internal data after saving
-                                if (m_virtualTimeline)
-                                {
-                                    auto& mixLoader = m_node->getMixProjectLoader();
-                                    m_virtualTimeline->loadMixProject(&mixLoader);
-                                }
-                            }
-                            // For preview (dragging), we just need to update the playback engine
-                            // The change is already applied above by modifying track.gainAdjustment
-                            
-                            break;
+                            auto& mixLoader = m_node->getMixProjectLoader();
+                            m_virtualTimeline->loadMixProject(&mixLoader);
                         }
                     }
-                });
+
+                    break;
+                }
+            }
+
+            // Reload mix to update playback state (atomic swap handles thread safety)
+            if (m_playbackController && m_playbackController->isMixMode())
+            {
+                auto& mixLoader = m_node->getMixProjectLoader();
+                m_playbackController->loadMix(&mixLoader);
             }
             else
             {
