@@ -279,6 +279,13 @@ The build system supports multiple architectures (Apple Silicon, Intel, Universa
    - WAV path intelligence
    - Cost-controlled, batch processing
 
+2. **M3U Playlist Import:**
+   - Import existing .m3u/.m3u8 playlists as new mixes
+   - Resolve playlist file paths against library database (case-insensitive matching)
+   - Handle unresolved tracks (not in library, unmounted drives)
+   - Extract track order and create mix with default fade/gap settings
+   - UI: file picker, progress dialog showing resolution status
+
 ---
 
 ## Design Documents
