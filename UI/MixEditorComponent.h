@@ -144,19 +144,22 @@ namespace jucyaudio
             PlayheadOverlay m_playheadOverlay;  // Separate component for playhead
             juce::Viewport m_viewport;
             database::MixNode *m_node{nullptr};
-            
+
             // Virtual timeline toggle
             bool m_useVirtualTimeline{true};
-            
+
             // Read-only mode for exported mixes
             bool m_isReadOnly{false};
-            
+
             // Playback controller reference
             PlaybackController* m_playbackController{nullptr};
-            
+
             // Scrolling detection to avoid update conflicts
             int64_t m_lastScrollTime{0};
             static constexpr int64_t SCROLL_PAUSE_DURATION_MS = 100; // Pause updates for 100ms after scroll
+
+            // Track the currently loaded mix ID to detect when switching mixes
+            MixId m_currentMixId{0};
 
             // Callback for when mix export status changes
             std::function<void()> m_onMixExportStatusChanged;

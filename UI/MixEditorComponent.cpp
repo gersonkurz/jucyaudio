@@ -389,7 +389,7 @@ namespace jucyaudio
         void MixEditorComponent::loadMix(database::MixNode *node)
         {
             spdlog::info("[MixEditor] loadMix called with node: {}", node ? "valid" : "null");
-            
+
             // Special case: run performance harness if node is null and virtual timeline is enabled
             if (!node && m_useVirtualTimeline && m_virtualTimeline)
             {
@@ -397,8 +397,9 @@ namespace jucyaudio
                 m_virtualTimeline->runPerfHarness(282);
                 return;
             }
-            
+
             assert(node != nullptr && "MixNode should not be null in loadMix()");
+
             if (m_node)
             {
                 spdlog::info("[MixEditor] Releasing previous node");
@@ -407,7 +408,7 @@ namespace jucyaudio
             m_node = node; // Take ownership of the new node
             node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid
             node->refreshCache(false);
-            
+
             // Check if mix is exported and set read-only mode
             const auto& mixManager = database::theTrackLibrary.getMixManager();
             auto mixInfo = mixManager.getMix(node->getMixInfo().mixId);
@@ -1731,7 +1732,20 @@ namespace jucyaudio
         {
             if (!loader)
                 return;
-                
+
+            // Check if we're loading a different mix - if so, reset viewport to start
+            const auto newMixId = loader->getMixId();
+            const bool isDifferentMix = (m_currentMixId != newMixId);
+
+            if (isDifferentMix)
+            {
+                spdlog::info("[MixEditor] Switching from mix {} to mix {}, resetting viewport to start",
+                           m_currentMixId, newMixId);
+                m_currentMixId = newMixId;
+                // Reset viewport scroll position to the beginning
+                m_viewport.setViewPosition(0, 0);
+            }
+
             // Load the mix into the correct timeline
             if (m_useVirtualTimeline && m_virtualTimeline)
             {
@@ -1747,11 +1761,11 @@ namespace jucyaudio
             {
                 m_timeline.populateFrom(loader);
             }
-            
+
             // Calculate mix duration and set it on the ruler
             const auto mixDuration = loader->calculateMixDuration();
             m_markerRuler.setMixDuration(mixDuration);
-            
+
             // Load markers for this mix
             loadMixMarkers();
             
