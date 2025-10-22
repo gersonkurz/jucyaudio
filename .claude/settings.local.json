@@ -27,7 +27,8 @@
       "Read(//c/Projects/jucyaudio_deps_win32_x64/**)",
       "Bash(cmake:*)",
       "Bash(cat:*)",
-      "Read(//c/Users/GersonKurz/AppData/Roaming/jucyaudioApp_Dev/**)"
+      "Read(//c/Users/GersonKurz/AppData/Roaming/jucyaudioApp_Dev/**)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

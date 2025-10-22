@@ -13,7 +13,7 @@ namespace jucyaudio
         void MixPlaybackEngine::calculateTrackStartTimes()
         {
             spdlog::info("[PlaybackEngine] calculateTrackStartTimes called");
-            
+
             const auto &mixTracks = m_mixLoader->getMixTracks();
             m_trackStartTimes.clear();
             m_trackStartTimes.reserve(mixTracks.size());
@@ -25,7 +25,7 @@ namespace jucyaudio
             }
 
             Duration_t previousAudioStartTime{0};
-            
+
             for (size_t i = 0; i < mixTracks.size(); ++i)
             {
                 const auto& mixTrack = mixTracks[i];
@@ -46,10 +46,120 @@ namespace jucyaudio
             }
         }
 
-        PlaybackTrackSource::PlaybackTrackSource(TrackId id, const TrackInfo *ti, const MixTrack *mt)
+        PlaybackState* MixPlaybackEngine::buildPlaybackState(MixProjectLoader* mixLoader)
+        {
+            spdlog::debug("[PlaybackEngine] buildPlaybackState -> Entry");
+
+            if (!mixLoader)
+            {
+                spdlog::error("[PlaybackEngine] buildPlaybackState -> mixLoader is null");
+                return nullptr;
+            }
+
+            // Create new refcounted PlaybackState (refcount=1)
+            auto* state = new PlaybackState();
+
+            // Copy TrackInfo data from MixProjectLoader
+            const auto& mixTracks = mixLoader->getMixTracks();
+            state->trackInfos.reserve(mixTracks.size());
+
+            for (const auto& mixTrack : mixTracks)
+            {
+                if (const auto* trackInfo = mixLoader->getTrackInfoForId(mixTrack.trackId))
+                {
+                    state->trackInfos.push_back(*trackInfo);  // Copy TrackInfo by value
+                }
+            }
+
+            // Calculate track start times using Mix Flow algorithm
+            state->trackStartTimes.reserve(mixTracks.size());
+            Duration_t previousAudioStartTime{0};
+
+            for (size_t i = 0; i < mixTracks.size(); ++i)
+            {
+                const auto& mixTrack = mixTracks[i];
+                Duration_t audioStartTime;
+
+                if (i == 0)
+                {
+                    audioStartTime = Duration_t{0};
+                }
+                else
+                {
+                    const auto& prevTrack = mixTracks[i - 1];
+                    audioStartTime = previousAudioStartTime + prevTrack.attachTo - mixTrack.attachFrom;
+                }
+
+                state->trackStartTimes.push_back(audioStartTime);
+                previousAudioStartTime = audioStartTime;
+            }
+
+            // Calculate total duration
+            Duration_t maxEndTime{0};
+            for (size_t i = 0; i < mixTracks.size(); ++i)
+            {
+                const auto& mixTrack = mixTracks[i];
+                if (const auto* trackInfo = state->getTrackInfo(mixTrack.trackId))
+                {
+                    Duration_t trackStartTime = state->trackStartTimes[i];
+                    Duration_t trackEndTime = trackStartTime + trackInfo->duration;
+                    maxEndTime = std::max(maxEndTime, trackEndTime);
+                }
+            }
+            state->totalDuration = maxEndTime;
+
+            // Build PlaybackTrackSource objects (only if engine is prepared)
+            if (m_isPrepared)
+            {
+                spdlog::debug("[PlaybackEngine] buildPlaybackState -> Engine is prepared, creating track sources");
+                state->trackSources.reserve(mixTracks.size());
+
+                for (const auto& mixTrack : mixTracks)
+                {
+                    const auto* trackInfo = state->getTrackInfo(mixTrack.trackId);
+                    if (!trackInfo)
+                    {
+                        spdlog::warn("[PlaybackEngine] buildPlaybackState -> TrackInfo not found for trackId={}", mixTrack.trackId);
+                        continue;
+                    }
+
+                    auto source = std::make_unique<PlaybackTrackSource>(mixTrack.trackId, trackInfo, mixTrack);
+
+                    if (source->prepare(m_formatManager, m_sampleRate, m_blockSize))
+                    {
+                        state->trackSources.push_back(std::move(source));
+                    }
+                    else
+                    {
+                        spdlog::error("[PlaybackEngine] buildPlaybackState -> Failed to prepare track source for trackId={}", mixTrack.trackId);
+                    }
+                }
+            }
+
+            spdlog::debug("[PlaybackEngine] buildPlaybackState -> Exit (state created with {} tracks, {} sources)",
+                         state->trackInfos.size(), state->trackSources.size());
+
+            return state;
+        }
+
+        void MixPlaybackEngine::cleanupOldStates()
+        {
+            spdlog::debug("[PlaybackEngine] cleanupOldStates -> Cleaning up {} old states", m_statesToDelete.size());
+
+            for (auto* state : m_statesToDelete)
+            {
+                if (state)
+                {
+                    state->release(REFCOUNT_DEBUG_ARGS);  // May trigger deletion
+                }
+            }
+            m_statesToDelete.clear();
+        }
+
+        PlaybackTrackSource::PlaybackTrackSource(TrackId id, const TrackInfo *ti, const MixTrack& mt)
             : trackId{id},
               trackInfo{ti},
-              mixTrack{mt}
+              mixTrack{mt}  // Copy MixTrack by value
         {
         }
 
@@ -127,47 +237,39 @@ namespace jucyaudio
 
         bool MixPlaybackEngine::loadMix(MixProjectLoader *mixLoader)
         {
-            spdlog::debug("JUCYAUDIO: MixPlaybackEngine::loadMix -> Entry");
+            spdlog::debug("[PlaybackEngine] loadMix -> Entry");
             if (!mixLoader)
             {
+                spdlog::error("[PlaybackEngine] loadMix -> mixLoader is null");
                 return false;
             }
-
-            const juce::ScopedLock lock(m_critSec);
-
-            unloadMixInternal();
 
             m_mixLoader = mixLoader;
 
-            calculateTrackStartTimes();
-
-            const auto &mixTracks = m_mixLoader->getMixTracks();
-            if (mixTracks.empty())
+            // Build new PlaybackState (refcount=1)
+            auto* newState = buildPlaybackState(mixLoader);
+            if (!newState)
             {
+                spdlog::error("[PlaybackEngine] loadMix -> Failed to build PlaybackState");
                 return false;
             }
 
-            Duration_t maxEndTime{0};
-            for (size_t i = 0; i < mixTracks.size(); ++i)
+            // Atomic swap - replace current state with new state
+            auto* oldState = m_currentPlaybackState.exchange(newState);
+
+            // Queue old state for deletion on message thread
+            if (oldState)
             {
-                const auto &mixTrack = mixTracks[i];
-                if (const auto *trackInfo = m_mixLoader->getTrackInfoForId(mixTrack.trackId))
-                {
-                    Duration_t trackStartTime = m_trackStartTimes[i];
-                    Duration_t trackEndTime = trackStartTime + trackInfo->duration;
-                    maxEndTime = std::max(maxEndTime, trackEndTime);
-                }
+                spdlog::debug("[PlaybackEngine] loadMix -> Queueing old state for deletion");
+                m_statesToDelete.push_back(oldState);
+
+                // Trigger cleanup on message thread
+                juce::MessageManager::callAsync([this]() {
+                    this->cleanupOldStates();
+                });
             }
 
-            m_totalDurationMs = maxEndTime;
-
-            if (m_isPrepared)
-            {
-                spdlog::debug("JUCYAUDIO: MixPlaybackEngine::loadMix -> Engine already prepared, preparing sources now.");
-                return prepareTrackSources();
-            }
-
-            spdlog::debug("JUCYAUDIO: MixPlaybackEngine::loadMix -> Exit (success, sources will be prepared later)");
+            spdlog::debug("[PlaybackEngine] loadMix -> Exit (success)");
             return true;
         }
 
@@ -179,23 +281,30 @@ namespace jucyaudio
 
         void MixPlaybackEngine::unloadMixInternal()
         {
-            spdlog::debug("JUCYAUDIO: MixPlaybackEngine::unloadMixInternal -> Entry");
+            spdlog::debug("[PlaybackEngine] unloadMixInternal -> Entry");
             m_isPaused = true;
-            
-            for (auto &source : m_trackSources)
+
+            // Atomic swap to null - old state will be deleted via deferred deletion queue
+            auto* oldState = m_currentPlaybackState.exchange(nullptr);
+            if (oldState)
             {
-                if (source && source->getAudioSource())
-                {
-                    source->getAudioSource()->releaseResources();
-                }
+                spdlog::debug("[PlaybackEngine] unloadMixInternal -> Queueing old state for deletion");
+                m_statesToDelete.push_back(oldState);
+
+                // Trigger cleanup on message thread
+                juce::MessageManager::callAsync([this]() {
+                    this->cleanupOldStates();
+                });
             }
-            m_trackSources.clear();
-            m_trackStartTimes.clear();
 
             m_mixLoader = nullptr;
             m_currentPositionSamples = 0;
-            m_totalDurationMs = Duration_t{0};
-            spdlog::debug("JUCYAUDIO: MixPlaybackEngine::unloadMixInternal -> Exit");
+
+            // Clear deprecated member variables (will be removed later)
+            m_trackSources.clear();
+            m_trackStartTimes.clear();
+
+            spdlog::debug("[PlaybackEngine] unloadMixInternal -> Exit");
         }
         
         void MixPlaybackEngine::recalculateTrackPositions()
@@ -404,7 +513,7 @@ namespace jucyaudio
                 }
                 const auto trackPath{trackInfo->reconstructFullPath()};
 
-                auto source = std::make_unique<PlaybackTrackSource>(mixTrack.trackId, trackInfo, &mixTrack);
+                auto source = std::make_unique<PlaybackTrackSource>(mixTrack.trackId, trackInfo, mixTrack);
 
                 if (source->prepare(m_formatManager, m_sampleRate, m_blockSize))
                 {
@@ -453,34 +562,44 @@ namespace jucyaudio
 
         void MixPlaybackEngine::mixActiveTracksForBlock(juce::AudioBuffer<float> &buffer, juce::int64 startSample, int numSamples)
         {
+            // CRITICAL: Audio callback - NO LOCKS, NO ALLOCATION, NO RETAIN/RELEASE
+            // Just atomic pointer read for lock-free access
+
+            auto* state = m_currentPlaybackState.load();  // Atomic read - safe, lock-free
+            if (!state)
+            {
+                return;  // No mix loaded
+            }
+
             const int numChannels = buffer.getNumChannels();
             int activeTracksThisBlock = 0;
-            
+
             static int mixBlockCount = 0;
             const bool shouldLogDetails = (++mixBlockCount % 100 == 1);
-            
+
             if (shouldLogDetails) {
-                spdlog::debug("mixActiveTracksForBlock: output buffer channels={}, numSamples={}", 
+                spdlog::debug("mixActiveTracksForBlock: output buffer channels={}, numSamples={}",
                             numChannels, numSamples);
             }
 
-            for (size_t i = 0; i < m_trackSources.size(); ++i)
+            // Use state->trackSources (safe because state is refcounted and won't be deleted while audio thread has the pointer)
+            for (size_t i = 0; i < state->trackSources.size(); ++i)
             {
-                auto &source = m_trackSources[i];
-                
-                if (!source || !source->mixTrack || !source->trackInfo || !source->reader)
-                {
-                    continue;
-                }
-                
-                const MixTrack &mixTrack = *source->mixTrack;
+                auto &source = state->trackSources[i];
 
-                if (i >= m_trackStartTimes.size())
+                if (!source || !source->trackInfo || !source->reader)
                 {
                     continue;
                 }
 
-                const auto trackStartSamples = static_cast<juce::int64>((m_trackStartTimes[i].count() / 1000.0) * m_sampleRate);
+                const MixTrack &mixTrack = source->mixTrack;  // Access by-value copy (safe)
+
+                if (i >= state->trackStartTimes.size())
+                {
+                    continue;
+                }
+
+                const auto trackStartSamples = static_cast<juce::int64>((state->trackStartTimes[i].count() / 1000.0) * m_sampleRate);
                 const auto trackDurationSamples = static_cast<juce::int64>((source->trackInfo->duration.count() / 1000.0) * m_sampleRate);
                 const auto trackEndSamples = trackStartSamples + trackDurationSamples;
 
