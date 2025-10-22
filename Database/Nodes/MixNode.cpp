@@ -110,7 +110,17 @@ namespace jucyaudio
                         m_mixInfo.mixId,
                         m_mixInfo.exportFolder.has_value() ? *m_mixInfo.exportFolder : "NULL");
         }
-        
+
+        void MixNode::updateSummaryMetadata(int trackCount, Duration_t totalDuration)
+        {
+            // Update only the summary statistics without touching track data or triggering cache refresh
+            m_mixInfo.numberOfTracks = trackCount;
+            m_mixInfo.totalDuration = totalDuration;
+
+            spdlog::debug("[MixNode] Updated summary metadata for mix {}: {} tracks, {} total duration",
+                        m_mixInfo.mixId, trackCount, totalDuration.count());
+        }
+
         DeletionAnalysisResult MixNode::analyzeDeletionRequest(const std::vector<RowIndex_t>& selectedRows) const
         {
             DeletionAnalysisResult result;

@@ -1068,12 +1068,18 @@ namespace jucyaudio
                 return;
             }
             
+            // Update the node's cached summary metadata after successful deletion
+            m_node->updateSummaryMetadata(
+                static_cast<int>(mixLoader.getMixTracks().size()),
+                mixLoader.calculateMixDuration()
+            );
+
             // 6. Refresh the timeline UI first (but only if not playing - otherwise do it after)
             if (!wasPlaying)
             {
                 spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Refreshing timeline UI.");
                 m_timeline.refreshAfterDeletion(trackIdToRemove);
-                
+
                 if (m_useVirtualTimeline && m_virtualTimeline)
                 {
                     m_virtualTimeline->loadMixProject(&mixLoader);
@@ -1226,6 +1232,12 @@ namespace jucyaudio
                     m_playbackController->loadMix(&mixLoader);
                 }
                 
+                // Update the node's cached summary metadata after successful paste
+                m_node->updateSummaryMetadata(
+                    static_cast<int>(mixLoader.getMixTracks().size()),
+                    mixLoader.calculateMixDuration()
+                );
+
                 // Refresh the timeline
                 if (m_useVirtualTimeline && m_virtualTimeline)
                 {
@@ -1237,7 +1249,7 @@ namespace jucyaudio
                     spdlog::info("[PASTE_DB] Refreshing regular timeline with updated mix");
                     m_timeline.populateFrom(&mixLoader);
                 }
-                
+
                 // Resume playback if it was playing
                 if (wasPlaying)
                 {
@@ -1337,7 +1349,15 @@ namespace jucyaudio
                 {
                     m_timeline.populateFrom(&mixLoader);
                 }
-                
+
+                // Update the node's cached summary metadata (track count and total duration)
+                // This ensures the metadata dialog shows the correct values without affecting
+                // the active track editing session or triggering broader cache invalidation
+                m_node->updateSummaryMetadata(
+                    static_cast<int>(mixLoader.getMixTracks().size()),
+                    mixLoader.calculateMixDuration()
+                );
+
                 // Resume playback if it was playing
                 if (wasPlaying)
                 {
