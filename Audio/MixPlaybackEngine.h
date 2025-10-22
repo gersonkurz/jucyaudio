@@ -173,6 +173,10 @@ namespace jucyaudio
             std::atomic<bool> m_isPrepared{false};
             std::atomic<bool> m_isPaused{false};
 
+            // Lock-free seek support
+            std::atomic<bool> m_pendingSeek{false};
+            std::atomic<int64_t> m_targetPositionMs{0};
+
             // Audio format management
             juce::AudioFormatManager m_formatManager;
 

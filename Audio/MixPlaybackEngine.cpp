@@ -48,7 +48,7 @@ namespace jucyaudio
 
         PlaybackState* MixPlaybackEngine::buildPlaybackState(MixProjectLoader* mixLoader)
         {
-            spdlog::debug("[PlaybackEngine] buildPlaybackState -> Entry");
+            spdlog::info("[PlaybackEngine] buildPlaybackState -> Entry (NEW REFCOUNTING CODE)");
 
             if (!mixLoader)
             {
@@ -58,6 +58,7 @@ namespace jucyaudio
 
             // Create new refcounted PlaybackState (refcount=1)
             auto* state = new PlaybackState();
+            spdlog::info("[PlaybackEngine] buildPlaybackState -> Created new PlaybackState");
 
             // Copy TrackInfo data from MixProjectLoader
             const auto& mixTracks = mixLoader->getMixTracks();
@@ -237,7 +238,7 @@ namespace jucyaudio
 
         bool MixPlaybackEngine::loadMix(MixProjectLoader *mixLoader)
         {
-            spdlog::debug("[PlaybackEngine] loadMix -> Entry");
+            spdlog::info("[PlaybackEngine] loadMix -> Entry (NEW REFCOUNTING CODE)");
             if (!mixLoader)
             {
                 spdlog::error("[PlaybackEngine] loadMix -> mixLoader is null");
@@ -245,6 +246,7 @@ namespace jucyaudio
             }
 
             m_mixLoader = mixLoader;
+            spdlog::info("[PlaybackEngine] loadMix -> Building PlaybackState, isPrepared={}", m_isPrepared.load());
 
             // Build new PlaybackState (refcount=1)
             auto* newState = buildPlaybackState(mixLoader);
@@ -254,8 +256,12 @@ namespace jucyaudio
                 return false;
             }
 
+            spdlog::info("[PlaybackEngine] loadMix -> PlaybackState built with {} track sources", newState->trackSources.size());
+
             // Atomic swap - replace current state with new state
             auto* oldState = m_currentPlaybackState.exchange(newState);
+
+            spdlog::info("[PlaybackEngine] loadMix -> Atomic swap complete, oldState={}", oldState ? "exists" : "null");
 
             // Queue old state for deletion on message thread
             if (oldState)
@@ -269,7 +275,7 @@ namespace jucyaudio
                 });
             }
 
-            spdlog::debug("[PlaybackEngine] loadMix -> Exit (success)");
+            spdlog::info("[PlaybackEngine] loadMix -> Exit (success)");
             return true;
         }
 
@@ -340,31 +346,35 @@ namespace jucyaudio
 
         void MixPlaybackEngine::setPositionInternal(Duration_t positionMs)
         {
-            spdlog::debug("JUCYAUDIO: setPositionInternal -> Entry. Requested ms: {}, Total duration ms: {}", positionMs.count(), m_totalDurationMs.count());
             if (!m_mixLoader)
             {
-                spdlog::debug("JUCYAUDIO: setPositionInternal -> Exit (no mix loader)");
                 return;
             }
-            
-            Duration_t clampedPosition = std::max(Duration_t{0}, std::min(positionMs, m_totalDurationMs));
-            
+
+            // Get current PlaybackState (NEW REFCOUNTING CODE)
+            auto* state = m_currentPlaybackState.load();
+            if (!state)
+            {
+                return;
+            }
+
+            Duration_t clampedPosition = std::max(Duration_t{0}, std::min(positionMs, state->totalDuration));
+
             juce::int64 positionSamples = static_cast<juce::int64>((clampedPosition.count() / 1000.0) * m_sampleRate);
-            spdlog::debug("JUCYAUDIO: setPositionInternal -> Calculated samples: {} (from {}ms)", positionSamples, clampedPosition.count());
 
             m_currentPositionSamples = positionSamples;
-            spdlog::debug("JUCYAUDIO: setPositionInternal -> m_currentPositionSamples is now {}", m_currentPositionSamples.load());
 
-            for (size_t i = 0; i < m_trackSources.size(); ++i)
+            // Reposition all track sources using PlaybackState (NEW REFCOUNTING CODE)
+            for (size_t i = 0; i < state->trackSources.size(); ++i)
             {
-                auto &source = m_trackSources[i];
-                
-                if (i >= m_trackStartTimes.size())
+                auto &source = state->trackSources[i];
+
+                if (i >= state->trackStartTimes.size())
                 {
                     continue;
                 }
-                
-                Duration_t trackStartMs = m_trackStartTimes[i];
+
+                Duration_t trackStartMs = state->trackStartTimes[i];
                 juce::int64 trackStartSamples = static_cast<juce::int64>((trackStartMs.count() / 1000.0) * m_sampleRate);
 
                 if (positionSamples >= trackStartSamples)
@@ -393,15 +403,13 @@ namespace jucyaudio
                     }
                 }
             }
-            spdlog::debug("JUCYAUDIO: setPositionInternal -> Exit");
         }
         
         void MixPlaybackEngine::setPosition(Duration_t positionMs)
         {
-            spdlog::debug("JUCYAUDIO: MixPlaybackEngine::setPosition -> Entry, ms: {}", positionMs.count());
-            const juce::ScopedLock lock(m_critSec);
-            setPositionInternal(positionMs);
-            spdlog::debug("JUCYAUDIO: MixPlaybackEngine::setPosition -> Exit");
+            // Lock-free seek: just set atomic flags, audio thread will apply the seek
+            m_targetPositionMs = positionMs.count();
+            m_pendingSeek = true;
         }
 
         Duration_t MixPlaybackEngine::getPosition() const
@@ -465,21 +473,12 @@ namespace jucyaudio
                 return;
             }
 
-            const juce::ScopedLock lock(m_critSec);
-            
-            if (!m_mixLoader || m_trackSources.empty())
+            // Check if we have a valid PlaybackState (NEW REFCOUNTING CODE)
+            auto* state = m_currentPlaybackState.load();
+            if (!state || !m_mixLoader)
             {
                 bufferToFill.clearActiveBufferRegion();
                 return;
-            }
-
-            // Log buffer info periodically
-            static int audioBlockCount = 0;
-            if (++audioBlockCount % 100 == 1) {
-                spdlog::debug("getNextAudioBlock: buffer channels={}, startChannel={}, numSamples={}",
-                            bufferToFill.buffer->getNumChannels(),
-                            bufferToFill.startSample, 
-                            bufferToFill.numSamples);
             }
 
             bufferToFill.clearActiveBufferRegion();
@@ -491,9 +490,19 @@ namespace jucyaudio
             m_currentPositionSamples = startSample + bufferToFill.numSamples;
 
             Duration_t currentPosMs = getPosition();
-            if (currentPosMs >= m_totalDurationMs)
+            Duration_t totalDuration = state->totalDuration;
+            if (currentPosMs >= totalDuration)
             {
-                m_currentPositionSamples = static_cast<juce::int64>((m_totalDurationMs.count() / 1000.0) * m_sampleRate);
+                m_currentPositionSamples = static_cast<juce::int64>((totalDuration.count() / 1000.0) * m_sampleRate);
+            }
+
+            // Check for pending seek and apply it (lock-free)
+            if (m_pendingSeek.load())
+            {
+                Duration_t targetPos{m_targetPositionMs.load()};
+                const juce::ScopedLock lock(m_critSec);  // Safe here - we're in audio thread, no contention
+                setPositionInternal(targetPos);
+                m_pendingSeek = false;
             }
         }
 
@@ -565,10 +574,25 @@ namespace jucyaudio
             // CRITICAL: Audio callback - NO LOCKS, NO ALLOCATION, NO RETAIN/RELEASE
             // Just atomic pointer read for lock-free access
 
+            static int callCount = 0;
+            if (++callCount <= 3)
+            {
+                spdlog::info("[PlaybackEngine] mixActiveTracksForBlock -> Call #{} (NEW REFCOUNTING CODE)", callCount);
+            }
+
             auto* state = m_currentPlaybackState.load();  // Atomic read - safe, lock-free
             if (!state)
             {
+                if (callCount <= 3)
+                {
+                    spdlog::warn("[PlaybackEngine] mixActiveTracksForBlock -> No PlaybackState loaded!");
+                }
                 return;  // No mix loaded
+            }
+
+            if (callCount <= 3)
+            {
+                spdlog::info("[PlaybackEngine] mixActiveTracksForBlock -> PlaybackState has {} track sources", state->trackSources.size());
             }
 
             const int numChannels = buffer.getNumChannels();
