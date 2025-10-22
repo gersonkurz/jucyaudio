@@ -4,6 +4,7 @@
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
 #include <Database/Includes/Constants.h>
+#include <Database/Includes/IRefCounted.h>
 #include <atomic>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -18,12 +19,47 @@ namespace jucyaudio
     {
         using namespace database;
 
+        // Forward declaration
+        struct PlaybackTrackSource;
+
+        /**
+         * @brief Refcounted container holding all data needed for mix playback.
+         *
+         * This struct owns copies of TrackInfo data and the PlaybackTrackSource objects.
+         * The audio thread holds a reference to PlaybackState (via atomic pointer), making
+         * it safe for PlaybackTrackSource to hold pointers into trackInfos.
+         *
+         * Thread-safety: The atomic pointer in MixPlaybackEngine ensures only one thread
+         * can modify the pointer at a time. The audio thread only reads.
+         *
+         * Ownership model:
+         * - PlaybackState is refcounted (starts with refcount=1)
+         * - m_currentPlaybackState atomic pointer "owns" one reference
+         * - Audio thread reads pointer atomically - no retain/release needed
+         * - UI thread swaps pointer atomically - old state queued for deletion on message thread
+         */
+        struct PlaybackState : public database::RefCountImpl
+        {
+            std::vector<database::TrackInfo> trackInfos;  // Owned copies from MixProjectLoader
+            std::vector<std::unique_ptr<PlaybackTrackSource>> trackSources;
+            std::vector<Duration_t> trackStartTimes;
+            Duration_t totalDuration{0};
+
+            // Helper to find TrackInfo by ID (returns pointer into trackInfos vector)
+            const TrackInfo* getTrackInfo(TrackId trackId) const
+            {
+                auto it = std::find_if(trackInfos.begin(), trackInfos.end(),
+                    [trackId](const auto& ti) { return ti.trackId == trackId; });
+                return (it != trackInfos.end()) ? &(*it) : nullptr;
+            }
+        };
+
         // Structure to hold information about an active track during playback
         struct PlaybackTrackSource
         {
             TrackId trackId;
-            const TrackInfo *trackInfo;
-            const MixTrack *mixTrack;
+            const TrackInfo *trackInfo;  // SAFE: Points into PlaybackState->trackInfos (owned by PlaybackState)
+            MixTrack mixTrack;           // OWNED copy (MixTrack is POD, cheap to copy)
 
             std::unique_ptr<juce::AudioFormatReader> reader;
             std::unique_ptr<juce::AudioFormatReaderSource> readerSource;
@@ -32,13 +68,13 @@ namespace jucyaudio
             // Current playback position in samples (in source file's sample rate)
             std::atomic<juce::int64> currentPositionInSourceSamples{0};
 
-            PlaybackTrackSource(TrackId id, const TrackInfo *ti, const MixTrack *mt);
+            PlaybackTrackSource(TrackId id, const TrackInfo *ti, const MixTrack& mt);
             ~PlaybackTrackSource() = default;
 
             bool prepare(juce::AudioFormatManager &formatManager, double targetSampleRate, int blockSize);
             juce::AudioSource *getAudioSource()
             {
-                return resampler ? static_cast<juce::AudioSource*>(resampler.get()) 
+                return resampler ? static_cast<juce::AudioSource*>(resampler.get())
                                  : static_cast<juce::AudioSource*>(readerSource.get());
             }
         };
@@ -71,7 +107,8 @@ namespace jucyaudio
             // Get total mix duration (in milliseconds)
             Duration_t getTotalDuration() const
             {
-                return m_totalDurationMs;
+                auto* state = m_currentPlaybackState.load();
+                return state ? state->totalDuration : Duration_t{0};
             }
 
             // Check if a mix is loaded
@@ -118,14 +155,27 @@ namespace jucyaudio
         private:
             // Mix data
             MixProjectLoader *m_mixLoader{nullptr};
+
+            // Refcounted playback state (atomic swap for lock-free audio thread)
+            std::atomic<PlaybackState*> m_currentPlaybackState{nullptr};
+
+            // Deferred deletion queue (accessed only from message thread)
+            std::vector<PlaybackState*> m_statesToDelete;
+
+            // DEPRECATED: Old members kept temporarily for compatibility with non-audio methods
+            // TODO: Remove these after updating all non-audio-callback methods to use PlaybackState
             std::vector<std::unique_ptr<PlaybackTrackSource>> m_trackSources;
-            std::vector<Duration_t> m_trackStartTimes; // Calculated track start times using Mix Flow algorithm
+            std::vector<Duration_t> m_trackStartTimes;
+            Duration_t m_totalDurationMs{0};
 
             // Playback state
             std::atomic<juce::int64> m_currentPositionSamples{0};
             std::atomic<bool> m_isPrepared{false};
             std::atomic<bool> m_isPaused{false};
-            Duration_t m_totalDurationMs{0};
+
+            // Lock-free seek support
+            std::atomic<bool> m_pendingSeek{false};
+            std::atomic<int64_t> m_targetPositionMs{0};
 
             // Audio format management
             juce::AudioFormatManager m_formatManager;
@@ -139,11 +189,16 @@ namespace jucyaudio
             mutable juce::CriticalSection m_critSec;
 
             // Helper methods
-            bool prepareTrackSources();
+            PlaybackState* buildPlaybackState(MixProjectLoader* mixLoader);  // Build new PlaybackState from MixProjectLoader
+            void cleanupOldStates();  // Called on message thread to safely delete old PlaybackState objects
             void mixActiveTracksForBlock(juce::AudioBuffer<float> &buffer, juce::int64 startSample, int numSamples);
             float getEnvelopeGainForTrack(const MixTrack &mixTrack, Duration_t timeInTrack);
             void unloadMixInternal(); // Internal version that doesn't lock
-            void calculateTrackStartTimes(); // Calculate track positions using Mix Flow algorithm
+
+            // DEPRECATED: Old methods kept temporarily for compatibility
+            // TODO: Remove these after updating all calling code
+            void calculateTrackStartTimes(); // Calculate track positions using Mix Flow algorithm (DEPRECATED - moved to PlaybackState)
+            bool prepareTrackSources(); // DEPRECATED - logic moved to buildPlaybackState
             void setPositionInternal(Duration_t positionMs); // Internal version that assumes mutex is already locked
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixPlaybackEngine)

@@ -105,9 +105,6 @@ namespace jucyaudio
             void updateMasterReverb(const audio::model::ReverbSettings& settings);
             audio::model::ReverbSettings getCurrentReverbSettings() const { return m_currentReverbSettings; }
 
-            // Thread-safe execution for mix-related operations
-            void withMixEngineLock(std::function<void()> action);
-
         private:
             void changeState(PlayerState newState);
             void loadFileInternal(const juce::File &audioFile);
