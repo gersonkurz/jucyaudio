@@ -230,10 +230,28 @@ namespace jucyaudio
 
         CellRenderInfo LibraryNode::getCellRenderInfo(RowIndex_t rowIndex, ColumnIndex_t columnIndex) const
         {
-            // LibraryNode only deals with tracks, so just get the text and return it
+            const auto track = getTrackInfoForRow(rowIndex);
+
+            RenderState state = RenderState::Normal;
+            if (track != nullptr)
+            {
+                // Check if this is an MP3 track by looking at the filename extension
+                // TODO: codec_name field is empty in database - should be populated during scanning
+                const auto& filename = track->filename;
+                const bool isMp3 = (filename.size() >= 4 &&
+                                   (filename.substr(filename.size() - 4) == ".mp3" ||
+                                    filename.substr(filename.size() - 4) == ".MP3"));
+
+                // MP3 tracks below 320 kbps are shown in subdued (gray) color to make high-quality tracks stand out
+                if (isMp3 && track->bitrate < 320)
+                {
+                    state = RenderState::Subdued;
+                }
+            }
+
             return {
                 .text = getCellText(rowIndex, columnIndex),
-                .state = RenderState::Normal
+                .state = state
             };
         }
 
