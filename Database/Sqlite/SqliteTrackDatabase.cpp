@@ -2490,6 +2490,71 @@ CREATE TABLE MixUndoHistory (
             }
         }
 
+        DbResult SqliteTrackDatabase::deleteTracksFromLibrary(const std::vector<TrackId> &trackIds)
+        {
+            if (trackIds.empty())
+            {
+                return DbResult::success();
+            }
+
+            if (SqliteTransaction transaction{m_db})
+            {
+                // Step 1: Delete from MixTracks table
+                SqliteStatement stmtMixTracks{m_db, "DELETE FROM MixTracks WHERE track_id = ?"};
+                for (const auto &trackId : trackIds)
+                {
+                    stmtMixTracks.addParam(trackId);
+                    if (!stmtMixTracks.execute())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, std::format("Failed to delete track {} from MixTracks", trackId));
+                    }
+                    stmtMixTracks.reset();
+                }
+
+                // Step 2: Delete from WorkingSetTracks table
+                SqliteStatement stmtWorkingSetTracks{m_db, "DELETE FROM WorkingSetTracks WHERE track_id = ?"};
+                for (const auto &trackId : trackIds)
+                {
+                    stmtWorkingSetTracks.addParam(trackId);
+                    if (!stmtWorkingSetTracks.execute())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, std::format("Failed to delete track {} from WorkingSetTracks", trackId));
+                    }
+                    stmtWorkingSetTracks.reset();
+                }
+
+                // Step 3: Delete from Tracks table
+                SqliteStatement stmtTracks{m_db, "DELETE FROM Tracks WHERE track_id = ?"};
+                for (const auto &trackId : trackIds)
+                {
+                    stmtTracks.addParam(trackId);
+                    if (!stmtTracks.execute())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, std::format("Failed to delete track {} from Tracks", trackId));
+                    }
+                    stmtTracks.reset();
+                }
+
+                if (!transaction.commit())
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit deleteTracksFromLibrary transaction.");
+                }
+
+                // Invalidate cached track count
+                m_cachedTotalTrackCountValid = false;
+
+                spdlog::info("[SqliteTrackDatabase] Deleted {} track(s) from library (Tracks, MixTracks, WorkingSetTracks)", trackIds.size());
+                return DbResult::success();
+            }
+            else
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin deleteTracksFromLibrary transaction.");
+            }
+        }
+
         // GetTracks and GetTotalTrackCount need more complex SQL building based
         // on TrackQueryArgs
         std::vector<TrackInfo> SqliteTrackDatabase::getTracks(const TrackQueryArgs &args) const

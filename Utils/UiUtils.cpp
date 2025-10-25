@@ -49,6 +49,8 @@ namespace jucyaudio
                 return "------";
             case DataAction::RemoveDuplicates:
                 return "Remove Duplicates";
+            case DataAction::DeleteTracksFromLibrary:
+                return "Delete Tracks...";
             case DataAction::Settings:
                 return "Settings";
             case DataAction::ScanFolders:
@@ -155,6 +157,8 @@ namespace jucyaudio
                 return loadSvg(BinaryData::show_in_folder_svg, BinaryData::show_in_folder_svgSize); // Placeholder
             case DataAction::RemoveDuplicates:
                 return loadSvg(BinaryData::remove_duplicates_svg, BinaryData::remove_duplicates_svgSize); // Placeholder
+            case DataAction::DeleteTracksFromLibrary:
+                return loadSvg(BinaryData::delete_svg, BinaryData::delete_svgSize); // Reuse delete icon
             case DataAction::Settings:
                 return loadSvg(BinaryData::settings_svg, BinaryData::settings_svgSize);
             case DataAction::ScanFolders:

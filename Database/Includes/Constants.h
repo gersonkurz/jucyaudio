@@ -228,8 +228,9 @@ namespace jucyaudio
             ShowInFolder,           ///< Navigate to the folder containing the item
             Separator,              ///< Separator in context menus (not an action)
             RemoveDuplicates,       ///< Remove duplicate tracks from the selection
+            DeleteTracksFromLibrary,///< Delete selected tracks from library (with option to delete files)
             Settings,               ///< Open application settings dialog
-            ScanFolders,            ///< Open folder scanning dialog 
+            ScanFolders,            ///< Open folder scanning dialog
             ShowEqualizer,          ///< Show/hide the equalizer window
             ShowReverb,             ///< Show/hide the reverb window
             UnlockMixForEditing,    ///< Unlock an exported/locked mix for editing

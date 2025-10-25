@@ -216,6 +216,9 @@ namespace jucyaudio
 
             void onDataActionRemoveNamedObjects();
 
+            // @brief Delete tracks from the library (with option to delete files from hard drive)
+            void onDeleteTracksFromLibrary();
+
             // @brief Called when you want to switch the mix-view to "Mix Editor" mode, that is: waveform view
             void onShowMixEditor();
 

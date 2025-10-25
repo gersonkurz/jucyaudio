@@ -35,7 +35,7 @@ namespace jucyaudio
             DataAction::CreateWorkingSet,
             DataAction::CreateMix,
             DataAction::ShowDetails,
-            DataAction::RemoveTracks,
+            DataAction::DeleteTracksFromLibrary,
             DataAction::RunBpmAnalysis};
 
         const std::vector<DataColumn> LibraryColumns = {
@@ -88,6 +88,86 @@ namespace jucyaudio
         bool LibraryNode::canExpand()
         {
             return false;
+        }
+
+        bool LibraryNode::deleteTracksFromLibrary(const std::vector<TrackId>& trackIds, bool deleteFiles)
+        {
+            if (trackIds.empty())
+            {
+                return true;
+            }
+
+            auto* db = theTrackLibrary.getTrackDatabase();
+            if (!db)
+            {
+                spdlog::error("[LibraryNode] Cannot delete tracks: database not initialized");
+                return false;
+            }
+
+            // Step 1: If deleteFiles is true, delete the physical files
+            int filesDeleted = 0;
+            int filesFailed = 0;
+            if (deleteFiles)
+            {
+                for (const auto trackId : trackIds)
+                {
+                    const auto trackInfo = theTrackLibrary.getTrackById(trackId);
+                    if (!trackInfo.has_value())
+                    {
+                        spdlog::warn("[LibraryNode] Track {} not found, skipping file deletion", trackId);
+                        continue;
+                    }
+
+                    const auto fullPath = db->reconstructFullPath(trackInfo.value());
+                    if (fullPath.empty())
+                    {
+                        spdlog::warn("[LibraryNode] Cannot reconstruct path for track {}, skipping file deletion", trackId);
+                        filesFailed++;
+                        continue;
+                    }
+
+                    std::error_code ec;
+                    if (std::filesystem::exists(fullPath, ec))
+                    {
+                        if (std::filesystem::remove(fullPath, ec))
+                        {
+                            spdlog::info("[LibraryNode] Deleted file: {}", fullPath.string());
+                            filesDeleted++;
+                        }
+                        else
+                        {
+                            spdlog::error("[LibraryNode] Failed to delete file: {} - Error: {}", fullPath.string(), ec.message());
+                            filesFailed++;
+                        }
+                    }
+                    else
+                    {
+                        spdlog::warn("[LibraryNode] File does not exist: {}, skipping", fullPath.string());
+                        // Don't count as failure - file already gone
+                    }
+                }
+
+                if (filesFailed > 0)
+                {
+                    spdlog::warn("[LibraryNode] {} file(s) could not be deleted", filesFailed);
+                }
+            }
+
+            // Step 2: Delete from database (always do this, even if file deletion failed)
+            const auto result = db->deleteTracksFromLibrary(trackIds);
+            if (!result.isOk())
+            {
+                spdlog::error("[LibraryNode] Failed to delete tracks from database: {}", result.errorMessage);
+                return false;
+            }
+
+            // Step 3: Refresh cache to update UI
+            refreshCache(true); // Force reload
+
+            spdlog::info("[LibraryNode] Deleted {} track(s) from library. Files deleted: {}, failed: {}",
+                        trackIds.size(), filesDeleted, filesFailed);
+
+            return true;
         }
 
         const std::vector<DataColumn> &LibraryNode::getColumns() const

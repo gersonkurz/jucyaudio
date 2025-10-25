@@ -106,6 +106,16 @@ namespace jucyaudio
             // @return True if the tracks were successfully removed, false otherwise.
             virtual bool removeObjects(const std::vector<ObjectId>& objectIds) const = 0;
 
+            // @brief Delete tracks from the library database and optionally delete physical files.
+            // @param trackIds The IDs of the tracks to delete from the library.
+            // @param deleteFiles If true, also delete the physical audio files from the hard drive.
+            // @return True if the deletion was successful, false otherwise.
+            // @note Default implementation returns false (not supported). Only Library-related nodes should implement this.
+            virtual bool deleteTracksFromLibrary(const std::vector<TrackId>& trackIds, bool deleteFiles)
+            {
+                return false; // Default: not supported
+            }
+
             // @brief Delete this object from the underlying data source.
             // This method is called when the user wants to delete this object (e.g., a mix, working set, etc.).
             // It should handle the deletion logic and return true if the object was successfully deleted, 

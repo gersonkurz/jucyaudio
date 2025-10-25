@@ -772,6 +772,21 @@ namespace jucyaudio
                 return true;
             }
 
+            // DEL key for deleting tracks from library
+            if (keyCode == juce::KeyPress::deleteKey && !key.getModifiers().isAnyModifierKeyDown())
+            {
+                // Only trigger if we're in DataView with tracks selected
+                if (m_currentMainView == MainViewType::DataView && m_currentNode)
+                {
+                    const auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
+                    if (!selectedRows.empty())
+                    {
+                        onDeleteTracksFromLibrary();
+                        return true;
+                    }
+                }
+            }
+
             return false; // Key not handled
         }
 
@@ -1631,6 +1646,9 @@ namespace jucyaudio
             case DataAction::RemoveTracks: // TODO: we should do this only from the data View
                 onDataActionRemoveNamedObjects();
                 break;
+            case DataAction::DeleteTracksFromLibrary:
+                onDeleteTracksFromLibrary();
+                break;
             case DataAction::None:
             default:
                 break;
@@ -2066,6 +2084,95 @@ namespace jucyaudio
                         // Release the node reference we retained earlier
                         node->release(REFCOUNT_DEBUG_ARGS);
                     }));
+        }
+
+        void MainComponent::onDeleteTracksFromLibrary()
+        {
+            if (!m_currentNode)
+            {
+                m_statusPanel.getStatusBar().postMessage("No data node selected.", true);
+                return;
+            }
+
+            const auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
+            if (selectedRows.empty())
+            {
+                m_statusPanel.getStatusBar().postMessage("No tracks selected for deletion.", true);
+                return;
+            }
+
+            // Get track IDs from selected rows using the public API
+            const auto trackResult = m_currentNode->getTrackInfosForOperation(selectedRows);
+            if (trackResult.trackInfos.empty())
+            {
+                if (trackResult.nonApplicableCount > 0)
+                {
+                    m_statusPanel.getStatusBar().postMessage("The selected items are not tracks and cannot be deleted from the library.", true);
+                }
+                else
+                {
+                    m_statusPanel.getStatusBar().postMessage("No valid tracks selected for deletion.", true);
+                }
+                return;
+            }
+
+            // Extract track IDs
+            std::vector<TrackId> trackIds;
+            trackIds.reserve(trackResult.trackInfos.size());
+            for (const auto& trackInfo : trackResult.trackInfos)
+            {
+                trackIds.push_back(trackInfo.trackId);
+            }
+
+            // Build the confirmation message
+            const std::string message = std::format("Are you sure you want to delete {} track(s) from the library?", trackIds.size());
+
+            // Create a custom dialog with three buttons
+            auto* alertWindow = new juce::AlertWindow("Delete Tracks from Library",
+                message,
+                juce::AlertWindow::WarningIcon);
+
+            alertWindow->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+            alertWindow->addButton("Remove from Library", 1);
+            alertWindow->addButton("Remove from Library and Hard Drive", 2);
+
+            // Capture necessary data for the modal callback
+            m_currentNode->retain(REFCOUNT_DEBUG_ARGS);
+
+            alertWindow->enterModalState(true,
+                juce::ModalCallbackFunction::create(
+                    [this, node = m_currentNode, trackIds](int result)
+                    {
+                        if (result == 1 || result == 2) // Remove from Library OR Remove from Library and Hard Drive
+                        {
+                            const bool deleteFiles = (result == 2);
+
+                            // Stop playback before modifying data
+                            stopMixPlayback();
+
+                            // Call the node's deletion method
+                            const bool success = node->deleteTracksFromLibrary(trackIds, deleteFiles);
+
+                            if (success)
+                            {
+                                // Refresh the data view
+                                m_dataViewComponent.refreshView();
+
+                                // Show success message
+                                const std::string fileInfo = deleteFiles ? " and files" : "";
+                                m_statusPanel.getStatusBar().postMessage(
+                                    std::format("Deleted {} track(s) from library{}", trackIds.size(), fileInfo), false);
+                            }
+                            else
+                            {
+                                m_statusPanel.getStatusBar().postMessage("Failed to delete tracks from library", true);
+                            }
+                        }
+
+                        // Release the node reference
+                        node->release(REFCOUNT_DEBUG_ARGS);
+                    }),
+                true);
         }
 
         bool MainComponent::createWorkingSet()

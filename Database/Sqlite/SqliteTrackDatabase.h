@@ -80,6 +80,7 @@ namespace jucyaudio
             DbResult updateTrackFilesystemInfo(TrackId trackId, Timestamp_t lastModified, std::uintmax_t filesize) override;
             DbResult setTrackPathMissing(TrackId trackId, bool isMissing) override;
             DbResult removeTracks(const std::vector<TrackId> &trackIds) override;
+            DbResult deleteTracksFromLibrary(const std::vector<TrackId> &trackIds) override;
 
             IFolderDatabase &getFolderDatabase() const override;
 

@@ -119,6 +119,11 @@ namespace jucyaudio
             virtual DbResult setTrackPathMissing(TrackId trackId, bool isMissing) = 0;
             virtual DbResult removeTracks(const std::vector<TrackId> &trackIds) = 0;
 
+            // @brief Delete tracks from the library (removes from Tracks, MixTracks, WorkingSetTracks)
+            // @param trackIds The IDs of the tracks to delete from the library
+            // @return DbResult indicating success or failure
+            virtual DbResult deleteTracksFromLibrary(const std::vector<TrackId> &trackIds) = 0;
+
             // Waveform Cache
             virtual DbResult saveWaveform(TrackId trackId, const std::vector<unsigned char>& blob) = 0;
             virtual DbResult loadWaveform(TrackId trackId, std::vector<unsigned char>& blob) = 0;

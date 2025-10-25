@@ -51,6 +51,7 @@ namespace jucyaudio
             std::vector<TrackId> getAllTrackIds() const override;
             bool canExpand() override;
             bool expand(std::vector<INavigationNode *> &outChildren) override;
+            bool deleteTracksFromLibrary(const std::vector<TrackId>& trackIds, bool deleteFiles) override;
 
         private:
             mutable std::vector<TrackInfo> m_tracks;
