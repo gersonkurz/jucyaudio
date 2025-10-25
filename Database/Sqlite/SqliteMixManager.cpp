@@ -254,6 +254,21 @@ WHERE m.export_folder IS NULL
             return mixTracks;
         }
 
+        int SqliteMixManager::getTrackCountForMix(MixId mixId) const
+        {
+            int count = 0;
+            SqliteStatement stmt{m_db};
+            stmt.query(
+                [&count, &stmt]() -> bool
+                {
+                    count = stmt.getInt32(0);
+                    return true;
+                },
+                "SELECT COUNT(*) FROM MixTracks WHERE mix_id=?",
+                mixId);
+            return count;
+        }
+
         bool SqliteMixManager::removeTracksFromMix(MixId mixId, const std::vector<TrackId> &trackIds) const
         {
             if (SqliteTransaction transaction{m_db})

@@ -52,7 +52,20 @@ namespace jucyaudio
 
         bool MixNode::removeObjects(const std::vector<ObjectId> &objectIds) const
         {
-            return theTrackLibrary.getMixManager().removeTracksFromMix(m_queryArgs.mixId, objectIds);
+            const bool success = theTrackLibrary.getMixManager().removeTracksFromMix(m_queryArgs.mixId, objectIds);
+
+            if (success)
+            {
+                // Update cached metadata after removing tracks
+                // Force reload to recalculate track count and total duration
+                if (m_bCacheInitialized)
+                {
+                    // Reload the mix to get accurate track count and duration
+                    const_cast<MixNode*>(this)->refreshCache(true); // true = flush and reload
+                }
+            }
+
+            return success;
         }
 
         void MixNode::createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children)

@@ -57,6 +57,11 @@ namespace jucyaudio
             // @return A vector of MixTrack objects representing the tracks in the specified mix.
             virtual std::vector<MixTrack> getMixTracks(MixId mixId) const = 0;
 
+            // @brief Get the track count for a specific mix (efficient COUNT query).
+            // @param mixId The ID of the mix.
+            // @return The number of tracks in the mix.
+            virtual int getTrackCountForMix(MixId mixId) const = 0;
+
             // @brief Create or update a mix in the database.
             // @param mixInfo Input: mixInfo.mixId should be set by the caller. If it is -1 or uninitialized, a new mix will be created.
             //                Output: mixInfo.mixId will be populated for a new mix. mixInfo.timestamp will be set.

@@ -21,6 +21,7 @@ namespace jucyaudio
             std::vector<MixInfo> getMixes(const TrackQueryArgs &args) const override;
             MixInfo getMix(MixId mixId) const override;
             std::vector<MixTrack> getMixTracks(MixId mixId) const override;
+            int getTrackCountForMix(MixId mixId) const override;
             bool createOrUpdateMix(MixInfo &mixInfo, std::vector<MixTrack> &tracks) const override;
             bool removeMix(MixId mixId) const override;
             bool removeMixes(const std::vector<MixId> &mixIds) const override;

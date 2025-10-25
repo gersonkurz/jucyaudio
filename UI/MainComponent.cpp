@@ -2471,7 +2471,27 @@ namespace jucyaudio
         {
             if (auto *mixNode = dynamic_cast<MixNode *>(node))
             {
-                const auto mixInfo = mixNode->getMixInfo();
+                auto mixInfo = mixNode->getMixInfo();
+
+                // Verify the cached metadata against the database and refresh if needed
+                auto& mixManager = database::theTrackLibrary.getMixManager();
+                const int actualTrackCount = mixManager.getTrackCountForMix(mixInfo.mixId);
+
+                if (actualTrackCount != mixInfo.numberOfTracks)
+                {
+                    spdlog::warn("[MainComponent] Metadata mismatch detected for mix {}: cached={} tracks, actual={} tracks. Refreshing metadata...",
+                                mixInfo.mixId, mixInfo.numberOfTracks, actualTrackCount);
+
+                    // Force reload the mix to recalculate the correct duration
+                    // This ensures the MixProjectLoader has the correct data
+                    mixNode->refreshCache(true); // true = flush cache and reload
+
+                    // Get the refreshed metadata (which now has the correct track count and duration)
+                    mixInfo = mixNode->getMixInfo();
+
+                    spdlog::info("[MainComponent] Metadata refreshed: {} tracks, {} duration",
+                                mixInfo.numberOfTracks, mixInfo.totalDuration.count());
+                }
 
                 node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid during metadata editing
                 auto *dialog = new EditMixMetaDataDialog{mixInfo,
