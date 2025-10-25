@@ -80,7 +80,17 @@ namespace jucyaudio
             {
                 saveMixChanges();
             };
-            
+
+            m_timeline.onMixPlaybackReloadRequested = [this]()
+            {
+                // Reload mix in playback controller for hot-reloading gain/envelope changes
+                if (m_playbackController && m_node)
+                {
+                    auto& mixLoader = m_node->getMixProjectLoader();
+                    m_playbackController->loadMix(&mixLoader);
+                }
+            };
+
             // Set up mix playback callbacks
             m_timeline.onMixPlaybackRequested = [this](double startTime)
             {
@@ -626,8 +636,8 @@ namespace jucyaudio
                     // Note: cueStart of first track affects global offset, attach points affect all positions
                     const auto isFirstTrack = (track.orderInMix == 0);
                     const auto needsRecalc = attachChanged || (isFirstTrack && cueStartChanged);
-                    
-                    if (needsRecalc && m_playbackController && m_playbackController->isMixMode())
+
+                    if (needsRecalc && m_playbackController)
                     {
                         spdlog::info("Reloading mix after {} change",
                                     attachChanged ? "attach point" : "first track cueStart");
@@ -711,7 +721,7 @@ namespace jucyaudio
             }
 
             // Reload mix to update playback state (atomic swap handles thread safety)
-            if (m_playbackController && m_playbackController->isMixMode())
+            if (m_playbackController)
             {
                 auto& mixLoader = m_node->getMixProjectLoader();
                 m_playbackController->loadMix(&mixLoader);
@@ -724,24 +734,33 @@ namespace jucyaudio
         
         void MixEditorComponent::updateGainAdjustmentInData(int orderInMix, float newGain, bool saveToDatabase)
         {
+            spdlog::warn("=== GAIN CHANGE === updateGainAdjustmentInData called: orderInMix={}, newGain={}, saveToDatabase={}",
+                        orderInMix, newGain, saveToDatabase);
+
             if (!m_node)
             {
                 spdlog::error("MixEditorComponent::updateGainAdjustmentInData - No mix node loaded");
                 return;
             }
-            
-            spdlog::info("Updating gain adjustment for track at position {} to {} (save: {})", 
+
+            spdlog::info("Updating gain adjustment for track at position {} to {} (save: {})",
                         orderInMix, newGain, saveToDatabase);
-            
+
             // Update gain in MixProjectLoader
             auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
 
+            spdlog::warn("=== GAIN CHANGE === MixProjectLoader has {} tracks", mixTracks.size());
+
             // Find and update the track by orderInMix
+            bool trackFound = false;
             for (auto& track : mixTracks)
             {
                 if (track.orderInMix == orderInMix)
                 {
+                    spdlog::warn("=== GAIN CHANGE === Found track {} at position {}, OLD gain={}, NEW gain={}",
+                               track.trackId, orderInMix, track.gainAdjustment, newGain);
                     track.gainAdjustment = newGain;
+                    trackFound = true;
                     spdlog::info("Updated gain adjustment for track {} at position {} to {}",
                                track.trackId, orderInMix, newGain);
 
@@ -762,11 +781,19 @@ namespace jucyaudio
                 }
             }
 
-            // Reload mix to update playback state (atomic swap handles thread safety)
-            if (m_playbackController && m_playbackController->isMixMode())
+            if (!trackFound)
             {
+                spdlog::error("=== GAIN CHANGE === Track at position {} NOT FOUND!", orderInMix);
+            }
+
+            // Reload mix to update playback state (atomic swap handles thread safety)
+            if (m_playbackController)
+            {
+                spdlog::warn("=== GAIN CHANGE === Calling playbackController->loadMix(), controller state: playing={}, mixMode={}",
+                           m_playbackController->isPlaying(), m_playbackController->isMixMode());
                 auto& mixLoader = m_node->getMixProjectLoader();
-                m_playbackController->loadMix(&mixLoader);
+                bool loadResult = m_playbackController->loadMix(&mixLoader);
+                spdlog::warn("=== GAIN CHANGE === playbackController->loadMix() returned {}", loadResult);
             }
             else
             {

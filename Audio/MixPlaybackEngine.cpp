@@ -238,7 +238,7 @@ namespace jucyaudio
 
         bool MixPlaybackEngine::loadMix(MixProjectLoader *mixLoader)
         {
-            spdlog::info("[PlaybackEngine] loadMix -> Entry (NEW REFCOUNTING CODE)");
+            spdlog::warn("=== GAIN CHANGE === [PlaybackEngine] loadMix -> Entry (NEW REFCOUNTING CODE)");
             if (!mixLoader)
             {
                 spdlog::error("[PlaybackEngine] loadMix -> mixLoader is null");
@@ -246,6 +246,16 @@ namespace jucyaudio
             }
 
             m_mixLoader = mixLoader;
+
+            // Log all track gains in the mix loader
+            const auto& mixTracks = mixLoader->getMixTracks();
+            spdlog::warn("=== GAIN CHANGE === MixLoader has {} tracks:", mixTracks.size());
+            for (const auto& track : mixTracks)
+            {
+                spdlog::warn("=== GAIN CHANGE ===   Track {} (order {}): gainAdjustment = {}",
+                           track.trackId, track.orderInMix, track.gainAdjustment);
+            }
+
             spdlog::info("[PlaybackEngine] loadMix -> Building PlaybackState, isPrepared={}", m_isPrepared.load());
 
             // Build new PlaybackState (refcount=1)
@@ -258,10 +268,18 @@ namespace jucyaudio
 
             spdlog::info("[PlaybackEngine] loadMix -> PlaybackState built with {} track sources", newState->trackSources.size());
 
+            // Log gains in the new PlaybackState
+            spdlog::warn("=== GAIN CHANGE === New PlaybackState track gains:");
+            for (const auto& source : newState->trackSources)
+            {
+                spdlog::warn("=== GAIN CHANGE ===   Track {} (order {}): gainAdjustment = {}",
+                           source->trackId, source->mixTrack.orderInMix, source->mixTrack.gainAdjustment);
+            }
+
             // Atomic swap - replace current state with new state
             auto* oldState = m_currentPlaybackState.exchange(newState);
 
-            spdlog::info("[PlaybackEngine] loadMix -> Atomic swap complete, oldState={}", oldState ? "exists" : "null");
+            spdlog::warn("=== GAIN CHANGE === [PlaybackEngine] Atomic swap complete, oldState={}", oldState ? "exists" : "null");
 
             // Queue old state for deletion on message thread
             if (oldState)

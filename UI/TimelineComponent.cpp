@@ -1303,6 +1303,8 @@ namespace jucyaudio
                         }
 
                         if (targetMixTrack) {
+                            spdlog::warn("=== GAIN CHANGE === TimelineComponent: Updating gain for track order {} to {}", orderInMix, newGain);
+
                             // Create a copy of the found MixTrack to pass to the manager
                             MixTrack updatedTrack = *targetMixTrack;
                             updatedTrack.gainAdjustment = newGain;
@@ -1315,12 +1317,23 @@ namespace jucyaudio
                                     // If successful, update the in-memory MixTrack in the loader as well
                                     // This is crucial to keep the UI and internal model in sync
                                     targetMixTrack->gainAdjustment = newGain;
+
+                                    // Reload mix in playback controller so the audio thread picks up the new gain
+                                    if (onMixPlaybackReloadRequested)
+                                    {
+                                        spdlog::warn("=== GAIN CHANGE === Calling onMixPlaybackReloadRequested to update audio");
+                                        onMixPlaybackReloadRequested();
+                                    }
+                                    else
+                                    {
+                                        spdlog::error("=== GAIN CHANGE === onMixPlaybackReloadRequested is NULL!");
+                                    }
                                 }
                             }
                         } else {
                             spdlog::error("MixTrack with orderInMix {} not found in loader for gain adjustment.", orderInMix);
                         }
-                        
+
                         // No need to call onMixChanged here, as updateMixTrack handles its own undo and persistence
                         // The UI will be refreshed by the TimelineComponent's own update mechanism if needed.
                     };

@@ -215,38 +215,61 @@ namespace jucyaudio
 
         bool PlaybackController::loadMix(audio::MixProjectLoader* mixLoader)
         {
-            spdlog::debug("JUCYAUDIO: PlaybackController::loadMix -> Entry");
+            spdlog::warn("=== GAIN CHANGE === PlaybackController::loadMix -> Entry, current state: {}", static_cast<int>(m_currentState));
             if (!mixLoader)
             {
                 spdlog::error("[PlaybackController] Null mix loader provided");
-                spdlog::debug("JUCYAUDIO: PlaybackController::loadMix -> Exit (failure, null loader)");
                 return false;
             }
-            
+
+            // Remember if we were in mix playback mode before reloading
+            const bool wasInMixMode = (m_currentState == PlayerState::SilenceMixLoaded ||
+                                       m_currentState == PlayerState::MixPlaying ||
+                                       m_currentState == PlayerState::MixPaused);
+            const auto previousState = m_currentState;
+
+            spdlog::warn("=== GAIN CHANGE === wasInMixMode={}, previousState={}", wasInMixMode, static_cast<int>(previousState));
+
             // Stop any track playback
             if (m_currentState == PlayerState::TrackPlaying || m_currentState == PlayerState::TrackPaused)
             {
                 unloadAudioSource();
             }
-            
+
             // Load the mix
             m_currentMixLoader = mixLoader;
+
+            spdlog::warn("=== GAIN CHANGE === About to call m_mixPlaybackEngine->loadMix()");
             if (m_mixPlaybackEngine->loadMix(mixLoader))
             {
+                spdlog::warn("=== GAIN CHANGE === m_mixPlaybackEngine->loadMix() succeeded");
+
                 // Apply the mix's EQ settings
                 m_masterEqualizer.updateParameters(mixLoader->getMasterEQSettings());
-                
-                changeState(PlayerState::SilenceMixLoaded);
+
+                // Preserve the playback state if we were already in mix mode
+                // This allows hot-reloading the mix while playing for gain/envelope changes
+                if (wasInMixMode && (previousState == PlayerState::MixPlaying || previousState == PlayerState::MixPaused))
+                {
+                    // Keep the current playing/paused state
+                    spdlog::warn("=== GAIN CHANGE === Preserving playback state: {}",
+                                previousState == PlayerState::MixPlaying ? "MixPlaying" : "MixPaused");
+                    // State is already correct, no need to change it
+                }
+                else
+                {
+                    spdlog::warn("=== GAIN CHANGE === Changing state to SilenceMixLoaded");
+                    changeState(PlayerState::SilenceMixLoaded);
+                }
+
                 spdlog::info("[PlaybackController] Mix loaded successfully");
-                spdlog::debug("JUCYAUDIO: PlaybackController::loadMix -> Exit (success)");
                 return true;
             }
             else
             {
                 m_currentMixLoader = nullptr;
                 changeState(PlayerState::Silence);
-                spdlog::error("[PlaybackController] Failed to load mix");
-                spdlog::debug("JUCYAUDIO: PlaybackController::loadMix -> Exit (failure, engine load failed)");
+                spdlog::error("=== GAIN CHANGE === m_mixPlaybackEngine->loadMix() FAILED");
                 return false;
             }
         }

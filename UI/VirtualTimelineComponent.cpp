@@ -1389,11 +1389,19 @@ namespace jucyaudio::ui
                 gainSlider.onValueChange = [this]()
                 {
                     currentGain = static_cast<float>(gainSlider.getValue());
+                    spdlog::warn("=== GAIN CHANGE === Slider value changed to {}", currentGain);
                     gainLabel.setText(
                         juce::String(currentGain, 2) + "x (" + juce::String(20.0f * std::log10(currentGain), 1) + " dB)", juce::dontSendNotification);
                     // Apply gain immediately for real-time preview
                     if (gainChangedCallback)
+                    {
+                        spdlog::warn("=== GAIN CHANGE === Calling gainChangedCallback({}, false)", currentGain);
                         gainChangedCallback(currentGain, false); // false = preview only, don't save
+                    }
+                    else
+                    {
+                        spdlog::error("=== GAIN CHANGE === gainChangedCallback is NULL!");
+                    }
                 };
                 addAndMakeVisible(gainSlider);
 
@@ -1471,13 +1479,22 @@ namespace jucyaudio::ui
 
         // Create the gain adjustment component
         const float currentGain = selectedTrack->mixTrack->gainAdjustment;
+        spdlog::warn("=== GAIN CHANGE === showGainAdjustment: Creating dialog for track order {}, current gain={}",
+                     selectedTrack->mixTrack->orderInMix, currentGain);
         auto *gainComponent = new GainAdjustmentComponent(currentGain,
             [this, orderInMix = selectedTrack->mixTrack->orderInMix](float newGain, bool saveToDatabase)
             {
+                spdlog::warn("=== GAIN CHANGE === GainAdjustmentComponent lambda called: order={}, newGain={}, save={}",
+                           orderInMix, newGain, saveToDatabase);
                 // Update gain through the callback
                 if (onGainAdjustmentChanged)
                 {
+                    spdlog::warn("=== GAIN CHANGE === Calling onGainAdjustmentChanged");
                     onGainAdjustmentChanged(orderInMix, newGain, saveToDatabase);
+                }
+                else
+                {
+                    spdlog::error("=== GAIN CHANGE === onGainAdjustmentChanged is NULL!");
                 }
             });
 
