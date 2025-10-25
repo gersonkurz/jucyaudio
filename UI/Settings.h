@@ -151,6 +151,7 @@ namespace jucyaudio
                 TypedValue<bool> preloadWaveformsOnMixOpen{this, "PreloadWaveformsOnMixOpen", true};
                 TypedValue<bool> useVirtualTimeline{this, "UseVirtualTimeline", false};  // Default to old timeline for now
                 TypedValue<bool> drawStereoWaveforms{this, "DrawStereoWaveforms", false}; // Default to combined waveform view
+                TypedValue<bool> linkEnvelopePointsToAttachPoints{this, "LinkEnvelopePointsToAttachPoints", true}; // Auto-scale envelope points when attach points move
 
             } mixEditingSettings{this};
 

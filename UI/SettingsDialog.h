@@ -76,6 +76,7 @@ namespace jucyaudio
             juce::ToggleButton m_removeFromWsToggle;
             juce::ToggleButton m_askBeforeRemovingToggle;
             juce::ToggleButton m_clearWsAfterExportToggle;
+            juce::ToggleButton m_linkEnvelopePointsToggle;
             juce::Label m_removeTrackOptionLabel;
             juce::ComboBox m_removeTrackOptionCombo;
 

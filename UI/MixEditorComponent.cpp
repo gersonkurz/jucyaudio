@@ -604,6 +604,35 @@ namespace jucyaudio
                     const auto attachChanged = track.attachFrom != updatedTrack.attachFrom ||
                                               track.attachTo != updatedTrack.attachTo;
 
+                    spdlog::info("[EDIT-CALLBACK] attachChanged={}, linkEnvelopePointsToAttachPoints={}",
+                               attachChanged, config::theSettings.mixEditingSettings.linkEnvelopePointsToAttachPoints.get());
+
+                    // Scale envelope points if attach points changed and feature is enabled
+                    if (attachChanged && config::theSettings.mixEditingSettings.linkEnvelopePointsToAttachPoints.get())
+                    {
+                        // Get track duration from TrackInfo
+                        const auto trackInfo = database::theTrackLibrary.getTrackById(track.trackId);
+                        if (trackInfo.has_value())
+                        {
+                            spdlog::info("[EDIT-CALLBACK] Scaling envelope points: attachFrom {}ms->{}ms, attachTo {}ms->{}ms",
+                                       track.attachFrom.count(), updatedTrack.attachFrom.count(),
+                                       track.attachTo.count(), updatedTrack.attachTo.count());
+
+                            track.scaleEnvelopePointsForAttachChange(
+                                track.attachFrom,
+                                updatedTrack.attachFrom,
+                                track.attachTo,
+                                updatedTrack.attachTo,
+                                trackInfo.value().duration);
+
+                            spdlog::info("[EDIT-CALLBACK] Envelope points scaled, new count: {}", track.envelopePoints.size());
+                        }
+                        else
+                        {
+                            spdlog::warn("[EDIT-CALLBACK] Could not get TrackInfo for trackId {}, envelope points not scaled", track.trackId);
+                        }
+                    }
+
                     track.cueStart = updatedTrack.cueStart;
                     track.cueEnd = updatedTrack.cueEnd;
                     track.attachFrom = updatedTrack.attachFrom;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <spdlog/spdlog.h>
 #include <Database/Includes/Constants.h>
 #include <chrono>
 #include <nlohmann/json.hpp>
@@ -75,6 +76,16 @@ namespace jucyaudio
             std::string toString() const
             {
                 return std::format("EnvelopePoint(time: {}, volume: {})", time.count(), volume);
+            }
+
+            bool operator==(const EnvelopePoint& other) const
+            {
+                return time == other.time && volume == other.volume;
+            }
+
+            bool operator!=(const EnvelopePoint& other) const
+            {
+                return !(*this == other);
             }
         };
 
@@ -166,6 +177,102 @@ namespace jucyaudio
             {
                 // The total duration is simply the difference between the absolute end time and the start time.
                 return getCueEndActual(trackDuration) - cueStart;
+            }
+
+            /**
+             * @brief Scales envelope points when attach points change.
+             * Envelope points in the fade-in region (cueStart to attachFrom) scale with attachFrom changes.
+             * Envelope points in the fade-out region (attachTo to cueEndActual) scale with attachTo changes.
+             * Points in the middle remain unaffected.
+             *
+             * @param oldAttachFrom Previous attachFrom value
+             * @param newAttachFrom New attachFrom value
+             * @param oldAttachTo Previous attachTo value
+             * @param newAttachTo New attachTo value
+             * @param trackDuration Natural duration of the source audio file
+             */
+            void scaleEnvelopePointsForAttachChange(
+                Duration_t oldAttachFrom,
+                Duration_t newAttachFrom,
+                Duration_t oldAttachTo,
+                Duration_t newAttachTo,
+                Duration_t trackDuration)
+            {
+                const auto cueEndActual = getCueEndActual(trackDuration);
+
+                spdlog::info("[ENVELOPE-SCALE] === Starting envelope scaling ===");
+                spdlog::info("[ENVELOPE-SCALE] Track duration: {}ms, cueStart: {}ms, cueEnd: {}ms, cueEndActual: {}ms",
+                           trackDuration.count(), cueStart.count(), cueEnd.count(), cueEndActual.count());
+                spdlog::info("[ENVELOPE-SCALE] oldAttachFrom: {}ms -> newAttachFrom: {}ms",
+                           oldAttachFrom.count(), newAttachFrom.count());
+                spdlog::info("[ENVELOPE-SCALE] oldAttachTo: {}ms -> newAttachTo: {}ms",
+                           oldAttachTo.count(), newAttachTo.count());
+                spdlog::info("[ENVELOPE-SCALE] Starting with {} envelope points", envelopePoints.size());
+
+                int fadeInCount = 0, fadeOutCount = 0, middleCount = 0;
+
+                for (size_t i = 0; i < envelopePoints.size(); ++i)
+                {
+                    auto& point = envelopePoints[i];
+                    const auto oldTime = point.time;
+
+                    // Scale fade-in points (between cueStart and attachFrom)
+                    if (point.time >= cueStart && point.time <= oldAttachFrom)
+                    {
+                        fadeInCount++;
+                        const auto fadeInRange = oldAttachFrom - cueStart;
+                        spdlog::info("[ENVELOPE-SCALE] Point[{}] FADE-IN: time={}ms, volume={}, fadeInRange={}ms",
+                                   i, point.time.count(), point.volume, fadeInRange.count());
+
+                        if (fadeInRange.count() > 0)
+                        {
+                            const double ratio = static_cast<double>((point.time - cueStart).count()) / fadeInRange.count();
+                            const auto newFadeInRange = newAttachFrom - cueStart;
+                            point.time = cueStart + Duration_t{static_cast<int64_t>(ratio * newFadeInRange.count())};
+                            spdlog::info("[ENVELOPE-SCALE]   Scaled: ratio={:.3f}, newFadeInRange={}ms, newTime={}ms",
+                                       ratio, newFadeInRange.count(), point.time.count());
+                        }
+                        else
+                        {
+                            // Collapsed region - all points go to the boundary
+                            point.time = newAttachFrom;
+                            spdlog::info("[ENVELOPE-SCALE]   Collapsed to boundary: newTime={}ms", point.time.count());
+                        }
+                    }
+                    // Scale fade-out points (between attachTo and cueEndActual)
+                    else if (point.time >= oldAttachTo && point.time <= cueEndActual)
+                    {
+                        fadeOutCount++;
+                        const auto fadeOutRange = cueEndActual - oldAttachTo;
+                        spdlog::info("[ENVELOPE-SCALE] Point[{}] FADE-OUT: time={}ms, volume={}, fadeOutRange={}ms",
+                                   i, point.time.count(), point.volume, fadeOutRange.count());
+
+                        if (fadeOutRange.count() > 0)
+                        {
+                            const double ratio = static_cast<double>((point.time - oldAttachTo).count()) / fadeOutRange.count();
+                            const auto newFadeOutRange = cueEndActual - newAttachTo;
+                            point.time = newAttachTo + Duration_t{static_cast<int64_t>(ratio * newFadeOutRange.count())};
+                            spdlog::info("[ENVELOPE-SCALE]   Scaled: ratio={:.3f}, newFadeOutRange={}ms, newTime={}ms",
+                                       ratio, newFadeOutRange.count(), point.time.count());
+                        }
+                        else
+                        {
+                            // Collapsed region - all points go to the boundary
+                            point.time = newAttachTo;
+                            spdlog::info("[ENVELOPE-SCALE]   Collapsed to boundary: newTime={}ms", point.time.count());
+                        }
+                    }
+                    else
+                    {
+                        // Points in the middle (between attachFrom and attachTo) remain unchanged
+                        middleCount++;
+                        spdlog::info("[ENVELOPE-SCALE] Point[{}] MIDDLE: time={}ms, volume={} (unchanged)",
+                                   i, point.time.count(), point.volume);
+                    }
+                }
+
+                spdlog::info("[ENVELOPE-SCALE] === Scaling complete: {} fade-in, {} middle, {} fade-out ===",
+                           fadeInCount, middleCount, fadeOutCount);
             }
         };
 

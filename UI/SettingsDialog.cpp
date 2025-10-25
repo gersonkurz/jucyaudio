@@ -179,6 +179,8 @@ namespace jucyaudio
             addAndMakeVisible(m_askBeforeRemovingToggle);
             m_clearWsAfterExportToggle.setButtonText("Clear Working Set after a successful export");
             addAndMakeVisible(m_clearWsAfterExportToggle);
+            m_linkEnvelopePointsToggle.setButtonText("Automatically scale envelope points when attach points move");
+            addAndMakeVisible(m_linkEnvelopePointsToggle);
             setupLabel(m_removeTrackOptionLabel, "Default action for removing tracks from Mix:", 15.0f, false);
             m_removeTrackOptionCombo.addItem("Remove from Mix and Working Set", (int)config::RemoveTrackOption::RemoveFromBoth + 1);
             m_removeTrackOptionCombo.addItem("Remove from Mix Only", (int)config::RemoveTrackOption::RemoveFromMixOnly + 1);
@@ -218,6 +220,7 @@ namespace jucyaudio
             m_removeFromWsToggle.setBounds(bounds.removeFromTop(rowHeight));
             m_askBeforeRemovingToggle.setBounds(bounds.removeFromTop(rowHeight));
             m_clearWsAfterExportToggle.setBounds(bounds.removeFromTop(rowHeight));
+            m_linkEnvelopePointsToggle.setBounds(bounds.removeFromTop(rowHeight));
             auto mixRow = bounds.removeFromTop(rowHeight);
             m_removeTrackOptionLabel.setBounds(mixRow.removeFromLeft(labelWidth));
             m_removeTrackOptionCombo.setBounds(mixRow);
@@ -239,6 +242,7 @@ namespace jucyaudio
             config::theSettings.mixEditingSettings.removeFromWorkingSetOnDelete.set(m_removeFromWsToggle.getToggleState());
             config::theSettings.mixEditingSettings.askBeforeRemovingFromWorkingSet.set(m_askBeforeRemovingToggle.getToggleState());
             config::theSettings.mixEditingSettings.clearWorkingSetAfterExport.set(m_clearWsAfterExportToggle.getToggleState());
+            config::theSettings.mixEditingSettings.linkEnvelopePointsToAttachPoints.set(m_linkEnvelopePointsToggle.getToggleState());
             auto removeOption = (config::RemoveTrackOption)(m_removeTrackOptionCombo.getSelectedId() - 1);
             config::theSettings.mixEditingSettings.removeTrackOption.set(removeOption);
 
@@ -264,6 +268,7 @@ namespace jucyaudio
             m_removeFromWsToggle.setToggleState(config::theSettings.mixEditingSettings.removeFromWorkingSetOnDelete, juce::dontSendNotification);
             m_askBeforeRemovingToggle.setToggleState(config::theSettings.mixEditingSettings.askBeforeRemovingFromWorkingSet, juce::dontSendNotification);
             m_clearWsAfterExportToggle.setToggleState(config::theSettings.mixEditingSettings.clearWorkingSetAfterExport, juce::dontSendNotification);
+            m_linkEnvelopePointsToggle.setToggleState(config::theSettings.mixEditingSettings.linkEnvelopePointsToAttachPoints, juce::dontSendNotification);
             m_removeTrackOptionCombo.setSelectedId((int)config::theSettings.mixEditingSettings.removeTrackOption.get().value + 1, juce::dontSendNotification);
 
             // Logging

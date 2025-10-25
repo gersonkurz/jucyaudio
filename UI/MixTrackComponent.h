@@ -122,27 +122,39 @@ namespace jucyaudio
              */
             void updateMixTrackData(const MixTrack &updatedMixTrack)
             {
-                // Only update the fields that can be changed by timeline recalculation
-                // Don't update envelope points or gain as those are not affected by repositioning
-                const bool dataChanged = (m_mixTrack.cueStart != updatedMixTrack.cueStart ||
-                                         m_mixTrack.cueEnd != updatedMixTrack.cueEnd ||
-                                         m_mixTrack.attachFrom != updatedMixTrack.attachFrom ||
-                                         m_mixTrack.attachTo != updatedMixTrack.attachTo);
+                // Check what changed
+                const bool cueAttachChanged = (m_mixTrack.cueStart != updatedMixTrack.cueStart ||
+                                              m_mixTrack.cueEnd != updatedMixTrack.cueEnd ||
+                                              m_mixTrack.attachFrom != updatedMixTrack.attachFrom ||
+                                              m_mixTrack.attachTo != updatedMixTrack.attachTo);
+
+                const bool envelopeChanged = (m_mixTrack.envelopePoints != updatedMixTrack.envelopePoints);
+                const bool dataChanged = cueAttachChanged || envelopeChanged;
 
                 if (dataChanged)
                 {
-                    spdlog::debug("[SYNC-DATA] Updating MixTrackComponent data for track {} (OrderInMix={}): "
-                                 "CueStart {}ms->{}ms, CueEnd {}ms->{}ms, AttachFrom {}ms->{}ms, AttachTo {}ms->{}ms",
-                                 m_mixTrack.trackId, m_mixTrack.orderInMix,
-                                 m_mixTrack.cueStart.count(), updatedMixTrack.cueStart.count(),
-                                 m_mixTrack.cueEnd.count(), updatedMixTrack.cueEnd.count(),
-                                 m_mixTrack.attachFrom.count(), updatedMixTrack.attachFrom.count(),
-                                 m_mixTrack.attachTo.count(), updatedMixTrack.attachTo.count());
+                    if (cueAttachChanged)
+                    {
+                        spdlog::debug("[SYNC-DATA] Updating MixTrackComponent cue/attach for track {} (OrderInMix={}): "
+                                     "CueStart {}ms->{}ms, CueEnd {}ms->{}ms, AttachFrom {}ms->{}ms, AttachTo {}ms->{}ms",
+                                     m_mixTrack.trackId, m_mixTrack.orderInMix,
+                                     m_mixTrack.cueStart.count(), updatedMixTrack.cueStart.count(),
+                                     m_mixTrack.cueEnd.count(), updatedMixTrack.cueEnd.count(),
+                                     m_mixTrack.attachFrom.count(), updatedMixTrack.attachFrom.count(),
+                                     m_mixTrack.attachTo.count(), updatedMixTrack.attachTo.count());
 
-                    m_mixTrack.cueStart = updatedMixTrack.cueStart;
-                    m_mixTrack.cueEnd = updatedMixTrack.cueEnd;
-                    m_mixTrack.attachFrom = updatedMixTrack.attachFrom;
-                    m_mixTrack.attachTo = updatedMixTrack.attachTo;
+                        m_mixTrack.cueStart = updatedMixTrack.cueStart;
+                        m_mixTrack.cueEnd = updatedMixTrack.cueEnd;
+                        m_mixTrack.attachFrom = updatedMixTrack.attachFrom;
+                        m_mixTrack.attachTo = updatedMixTrack.attachTo;
+                    }
+
+                    if (envelopeChanged)
+                    {
+                        spdlog::debug("[SYNC-DATA] Updating MixTrackComponent envelope for track {} (OrderInMix={}): {} points",
+                                     m_mixTrack.trackId, m_mixTrack.orderInMix, updatedMixTrack.envelopePoints.size());
+                        m_mixTrack.envelopePoints = updatedMixTrack.envelopePoints;
+                    }
 
                     repaint();
                 }
