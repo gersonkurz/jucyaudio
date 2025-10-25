@@ -15,6 +15,17 @@ namespace jucyaudio::ui
 
     //==============================================================================
     /**
+        DEPRECATED 2025-10-25: VirtualTimeline is no longer maintained.
+
+        Real-world testing showed no performance benefit over the standard component-based
+        timeline with 197-track mixes. Other optimizations (refcounting system, caching
+        improvements) solved the original performance issues more effectively.
+
+        This code remains for reference but should not be used in production.
+        See performance.md for full details.
+
+        ---
+
         Virtual timeline component that renders all tracks in a single paint() call
         for optimal performance with large track counts (100-1000+).
 

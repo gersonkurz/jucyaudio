@@ -149,7 +149,11 @@ namespace jucyaudio
                 TypedValue<bool> clearWorkingSetAfterExport{this, "ClearWorkingSetAfterExport", true};
                 TypedValue<EnumConfigValue<RemoveTrackOption>> removeTrackOption{this, "RemoveTrackOption", RemoveTrackOption::RemoveFromBoth};
                 TypedValue<bool> preloadWaveformsOnMixOpen{this, "PreloadWaveformsOnMixOpen", true};
-                TypedValue<bool> useVirtualTimeline{this, "UseVirtualTimeline", false};  // Default to old timeline for now
+                // DEPRECATED 2025-10-25: VirtualTimeline is no longer needed - other performance optimizations
+                // (refcounting system, caching improvements) solved the original performance issues.
+                // Real-world testing with 197-track mix shows no discernible performance difference.
+                // Kept at false and hidden from UI. Code remains for reference but is not maintained.
+                TypedValue<bool> useVirtualTimeline{this, "UseVirtualTimeline", false};
                 TypedValue<bool> drawStereoWaveforms{this, "DrawStereoWaveforms", false}; // Default to combined waveform view
                 TypedValue<bool> linkEnvelopePointsToAttachPoints{this, "LinkEnvelopePointsToAttachPoints", true}; // Auto-scale envelope points when attach points move
 
