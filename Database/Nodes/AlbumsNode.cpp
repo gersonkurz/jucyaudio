@@ -36,7 +36,7 @@ namespace jucyaudio
             DataColumn{(ColumnIndex_t)Column::Title, "title", "Album", 250, ColumnAlignment::Left, ColumnDataTypeHint::String},
             DataColumn{(ColumnIndex_t)Column::Year, "year", "Year", 60, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
             DataColumn{(ColumnIndex_t)Column::TrackCount, "track_count", "Tracks", 60, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
-            DataColumn{(ColumnIndex_t)Column::Bitrate, "bitrate", "Bitrate", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::Bitrate, "bitrate", "Bitrate", 80, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
             DataColumn{(ColumnIndex_t)Column::Duration, "duration", "Duration", 100, ColumnAlignment::Right, ColumnDataTypeHint::Duration},
             DataColumn{(ColumnIndex_t)Column::Folder, "folder", "Folder", 300, ColumnAlignment::Left, ColumnDataTypeHint::String},
             DataColumn{(ColumnIndex_t)Column::AlbumId, "album_id", "Album ID", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer}};

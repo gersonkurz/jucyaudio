@@ -252,6 +252,9 @@ namespace jucyaudio
                 m_tableListBox.getHeader().removeAllColumns();
             }
 
+            // Clear selection when switching to a different node
+            m_tableListBox.deselectAllRows();
+
             m_tableListBox.updateContent();
             const auto end{std::chrono::high_resolution_clock::now()};
             const auto duration{std::chrono::duration_cast<std::chrono::milliseconds>(end - start)};
