@@ -280,11 +280,21 @@ namespace jucyaudio
                 if (folderIndex >= 0 && folderIndex < static_cast<int64_t>(m_childFolders.size()))
                 {
                     const auto &childFolder = m_childFolders[folderIndex];
-                    
+
                     if (columnName == "title")
                     {
                         info.text = "📁 " + childFolder.name;
-                        info.state = RenderState::Accent;
+
+                        // Check if folder should be grayed out due to filter
+                        const auto currentSearchTerms = getCurrentSearchTerms();
+                        if (!currentSearchTerms.empty() && m_visibleFolderIds.find(childFolder.folderId) == m_visibleFolderIds.end())
+                        {
+                            info.state = RenderState::Subdued;
+                        }
+                        else
+                        {
+                            info.state = RenderState::Accent;
+                        }
                     }
                     else if (columnName == "artist_name")
                     {
@@ -475,6 +485,52 @@ namespace jucyaudio
             }
             
             return result;
+        }
+
+        bool VirtualFolderNode::setSearchTerms(const std::vector<std::string> &searchTerms)
+        {
+            // First, call parent implementation for track filtering
+            if (!LibraryNode::setSearchTerms(searchTerms))
+            {
+                return false;
+            }
+
+            // Update visible folder set
+            m_visibleFolderIds.clear();
+            if (!searchTerms.empty())
+            {
+                // Get visible folders from database
+                const auto* trackDb = theTrackLibrary.getTrackDatabase();
+                if (trackDb)
+                {
+                    m_visibleFolderIds = trackDb->getFoldersContainingMatchingTracks(searchTerms);
+                }
+            }
+
+            return true;
+        }
+
+        std::vector<std::string> VirtualFolderNode::getCurrentSearchTerms() const
+        {
+            return LibraryNode::getCurrentSearchTerms();
+        }
+
+        bool VirtualFolderNode::shouldBeSubduedInNav() const
+        {
+            // Use the shared filter state from TrackLibrary
+            if (!theTrackLibrary.hasFolderFilter())
+            {
+                return false;
+            }
+
+            const auto& visibleFolders = theTrackLibrary.getVisibleFolderIds();
+            if (visibleFolders.empty())
+            {
+                return false;
+            }
+
+            // Gray out if this folder is NOT in the visible set
+            return visibleFolders.find(m_folderId) == visibleFolders.end();
         }
 
     } // namespace database

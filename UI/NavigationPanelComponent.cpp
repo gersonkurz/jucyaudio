@@ -1,5 +1,6 @@
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Nodes/RootNode.h>
+#include <Database/Nodes/VirtualFolderNode.h>
 #include <UI/CustomColourIds.h>
 #include <UI/MainComponent.h>
 #include <UI/NavigationPanelComponent.h>
@@ -53,9 +54,16 @@ namespace jucyaudio
 
             // Check if this node represents an offline folder
             bool isNodeOnline = true;
+            bool shouldBeGrayedOut = false;
             if (m_node)
             {
                 isNodeOnline = m_node->isOnline();
+
+                // Check if this is a VirtualFolderNode that should be grayed out due to filter
+                if (auto* folderNode = dynamic_cast<database::VirtualFolderNode*>(m_node))
+                {
+                    shouldBeGrayedOut = folderNode->shouldBeSubduedInNav();
+                }
             }
 
             if (isSelected())
@@ -79,10 +87,21 @@ namespace jucyaudio
                 g.setColour(backgroundColour);
                 g.fillRect(localBounds);
 
-                // Use different text color based on online/offline status
-                const auto foregroundColour = isNodeOnline 
-                    ? lf.findColour(ui::folderOnlineTextColourId)
-                    : lf.findColour(ui::folderOfflineTextColourId);
+                // Determine text color: offline > filtered > online
+                juce::Colour foregroundColour;
+                if (!isNodeOnline)
+                {
+                    foregroundColour = lf.findColour(ui::folderOfflineTextColourId);
+                }
+                else if (shouldBeGrayedOut)
+                {
+                    // Gray out filtered folders
+                    foregroundColour = lf.findColour(ui::folderOnlineTextColourId).withAlpha(0.4f);
+                }
+                else
+                {
+                    foregroundColour = lf.findColour(ui::folderOnlineTextColourId);
+                }
                 g.setColour(foregroundColour);
                 //spdlog::debug("NavTreeViewItem::paintItem - Non-selected text color: #{}", foregroundColour.toDisplayString(true).toStdString());
             }

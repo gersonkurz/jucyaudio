@@ -1547,6 +1547,20 @@ namespace jucyaudio
                     {
                         m_dataViewComponent.refreshView(); // Tell DataView data has changed due to filter
                         updateTrackCountStatus();
+
+                        // Check if we're in the Folders view by checking the node type
+                        const bool isInFoldersView =
+                            dynamic_cast<database::VirtualFoldersOverview*>(m_currentNode) != nullptr ||
+                            dynamic_cast<database::VirtualFolderNode*>(m_currentNode) != nullptr;
+
+                        if (isInFoldersView)
+                        {
+                            // Update the shared folder filter state in TrackLibrary
+                            theTrackLibrary.setFolderFilter(searchTerms);
+
+                            // Trigger navigation panel repaint so all folder nodes pick up the new state
+                            m_navigationPanel.getTreeView().repaint();
+                        }
                     }
                 }
             }

@@ -114,7 +114,16 @@ namespace jucyaudio
             if (columnName == "title")
             {
                 info.text = "📁 " + folder.name;
-                info.state = RenderState::Accent;
+
+                // Check if folder should be grayed out due to filter
+                if (!m_searchTerms.empty() && m_visibleFolderIds.find(folder.folderId) == m_visibleFolderIds.end())
+                {
+                    info.state = RenderState::Subdued;
+                }
+                else
+                {
+                    info.state = RenderState::Accent;
+                }
             }
             else if (columnName == "artist_name")
             {
@@ -216,6 +225,30 @@ namespace jucyaudio
 
             // Not found
             return nullptr;
+        }
+
+        bool VirtualFoldersOverview::setSearchTerms(const std::vector<std::string> &searchTerms)
+        {
+            m_searchTerms = searchTerms;
+
+            // Update visible folder set
+            m_visibleFolderIds.clear();
+            if (!searchTerms.empty())
+            {
+                // Get visible folders from database
+                const auto* trackDb = theTrackLibrary.getTrackDatabase();
+                if (trackDb)
+                {
+                    m_visibleFolderIds = trackDb->getFoldersContainingMatchingTracks(searchTerms);
+                }
+            }
+
+            return true;
+        }
+
+        std::vector<std::string> VirtualFoldersOverview::getCurrentSearchTerms() const
+        {
+            return m_searchTerms;
         }
 
     } // namespace database

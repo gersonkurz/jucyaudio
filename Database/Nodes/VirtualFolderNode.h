@@ -28,6 +28,9 @@ namespace jucyaudio
             // Override to check if this folder is online
             bool isOnline() const override;
 
+            // Check if this folder should be grayed out due to active filter
+            bool shouldBeSubduedInNav() const;
+
         // Override Node-Centric Command Architecture methods for folder navigation
         CellRenderInfo getCellRenderInfo(RowIndex_t rowIndex, ColumnIndex_t columnIndex) const override;
         RowActivationResult onRowActivated(RowIndex_t rowIndex) override;
@@ -37,7 +40,11 @@ namespace jucyaudio
         
         // Override to handle folders recursively
         TrackInfosForOperationResult getTrackInfosForOperation(const std::vector<RowIndex_t>& selectedRows) const override;
-        
+
+        // Override to handle filter changes
+        bool setSearchTerms(const std::vector<std::string> &searchTerms) override;
+        std::vector<std::string> getCurrentSearchTerms() const override;
+
     protected:
         // Override to handle folder rows
         const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;
@@ -48,10 +55,13 @@ namespace jucyaudio
         FolderId m_folderId;
         mutable bool m_onlineStatusCached{false};
         mutable bool m_isOnline{true};
-        
+
         // Cached folder children for hierarchical display
         mutable std::vector<FolderInfo> m_childFolders;
         mutable bool m_childFoldersLoaded{false};
+
+        // Filter state
+        mutable std::unordered_set<FolderId> m_visibleFolderIds;
         
         // Helper to determine row type
         enum class RowType { ParentFolder, ChildFolder, Track };

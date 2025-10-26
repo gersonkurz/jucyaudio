@@ -2880,6 +2880,57 @@ CREATE TABLE MixUndoHistory (
             return true;
         }
 
+        std::unordered_set<FolderId> SqliteTrackDatabase::getFoldersContainingMatchingTracks(const std::vector<std::string>& searchTerms) const
+        {
+            std::unordered_set<FolderId> result;
+
+            // If no search terms, return empty set (all folders should be visible)
+            if (searchTerms.empty())
+            {
+                return result;
+            }
+
+            // Build FTS query to get folders containing matching tracks
+            StringWriter sql;
+            sql.append("SELECT DISTINCT t.folder_id FROM Tracks t "
+                      "INNER JOIN TracksSearchFTS ON t.track_id = TracksSearchFTS.rowid "
+                      "WHERE TracksSearchFTS MATCH ?");
+
+            SqliteStatement stmt{m_db, sql.asString()};
+
+            // For FTS5, we pass the entire search string as a single term
+            stmt.addParam(searchTerms[0]);
+
+            // Collect all folder IDs directly containing matching tracks
+            std::unordered_set<FolderId> directFolders;
+            while (stmt.getNextResult())
+            {
+                const auto folderId = stmt.getInt64(0);
+                directFolders.insert(folderId);
+            }
+
+            if (!m_db.getLastError().empty() && m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
+            {
+                spdlog::error("getFoldersContainingMatchingTracks query failed: {}", m_db.getLastError());
+                return result;
+            }
+
+            // Include all ancestors of matching folders
+            for (const auto folderId : directFolders)
+            {
+                result.insert(folderId);
+
+                // Get all parent folders recursively
+                const auto parents = m_folderDatabase.getParentSet(folderId);
+                for (const auto parentId : parents)
+                {
+                    result.insert(parentId);
+                }
+            }
+
+            return result;
+        }
+
         std::vector<TagId> SqliteTrackDatabase::getAllTags() const
         {
             if (!isOpen())

@@ -145,6 +145,12 @@ namespace jucyaudio
             virtual bool getTotalTrackCountForFolders(
                 const std::unordered_set<FolderId> &folderIds, int64_t &outCount) const = 0;
 
+            /// @brief Get all folders (including ancestors) that contain tracks matching the search terms.
+            /// This is used for folder filtering in the navigation tree to gray out non-matching folders.
+            /// @param searchTerms The FTS5 search terms to match against
+            /// @return Set of folder IDs that contain matching tracks or are ancestors of such folders
+            virtual std::unordered_set<FolderId> getFoldersContainingMatchingTracks(const std::vector<std::string> &searchTerms) const = 0;
+
             virtual IMarkerManager &getMarkerManager() = 0;
             virtual const IMarkerManager &getMarkerManager() const = 0;
             

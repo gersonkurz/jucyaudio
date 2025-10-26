@@ -32,20 +32,22 @@ namespace jucyaudio
             const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;
             CellRenderInfo getCellRenderInfo(RowIndex_t rowIndex, ColumnIndex_t columnIndex) const override;
 
+            // Made protected so derived classes can call parent implementation
+            bool setSearchTerms(const std::vector<std::string> &searchTerms) override;
+            std::vector<std::string> getCurrentSearchTerms() const override;
+            std::vector<SortOrderInfo> getCurrentSortOrder() const override;
+
         private:
-            
+
             // INavigationNode interface
             const std::vector<DataColumn> &getColumns() const override;
             bool getNumberOfRows(int64_t &outCount) const override;
             std::string getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const override;
-            
+
             ObjectId getObjectIdForRow(RowIndex_t rowIndex) const override;
             void dataNoLongerShowing() override;
             const DataActions &getNodeActions() const override;
             const DataActions &getRowActions(RowIndex_t rowIndex) const override;
-            bool setSearchTerms(const std::vector<std::string> &searchTerms) override;
-            std::vector<std::string> getCurrentSearchTerms() const override;
-            std::vector<SortOrderInfo> getCurrentSortOrder() const override;
             const TrackQueryArgs *getQueryArgs() const override;
             void refreshCache(bool flushCache = false) const override;
             std::vector<TrackId> getAllTrackIds() const override;

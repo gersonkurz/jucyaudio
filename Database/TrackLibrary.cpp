@@ -226,5 +226,21 @@ namespace jucyaudio
             spdlog::debug("Cleared track online status cache");
         }
 
+        void TrackLibrary::setFolderFilter(const std::vector<std::string> &searchTerms)
+        {
+            m_currentSearchTerms = searchTerms;
+            m_visibleFolderIds.clear();
+
+            if (!searchTerms.empty() && m_database)
+            {
+                m_visibleFolderIds = m_database->getFoldersContainingMatchingTracks(searchTerms);
+                spdlog::info("TrackLibrary: Folder filter set, {} visible folders", m_visibleFolderIds.size());
+            }
+            else
+            {
+                spdlog::info("TrackLibrary: Folder filter cleared");
+            }
+        }
+
     } // namespace database
 } // namespace jucyaudio

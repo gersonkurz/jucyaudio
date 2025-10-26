@@ -33,12 +33,20 @@ namespace jucyaudio
             bool getNumberOfRows(int64_t &outCount) const override;
             CellRenderInfo getCellRenderInfo(RowIndex_t rowIndex, ColumnIndex_t columnIndex) const override;
             RowActivationResult onRowActivated(RowIndex_t rowIndex) override;
-            
+
+            // Override to handle filter changes
+            bool setSearchTerms(const std::vector<std::string> &searchTerms) override;
+            std::vector<std::string> getCurrentSearchTerms() const override;
+
         private:
             // Cache for root folders
             mutable std::vector<FolderInfo> m_rootFolders;
             mutable bool m_rootFoldersLoaded = false;
-            
+
+            // Filter state
+            mutable std::vector<std::string> m_searchTerms;
+            mutable std::unordered_set<FolderId> m_visibleFolderIds;
+
             void loadRootFolders() const;
         };
     } // namespace database

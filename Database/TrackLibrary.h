@@ -188,6 +188,11 @@ namespace jucyaudio
              */
             void clearTrackOnlineCache() const;
 
+            // Shared folder filter state for navigation tree graying-out
+            void setFolderFilter(const std::vector<std::string> &searchTerms);
+            const std::unordered_set<FolderId>& getVisibleFolderIds() const { return m_visibleFolderIds; }
+            bool hasFolderFilter() const { return !m_currentSearchTerms.empty(); }
+
         private:
             bool setLastError(std::string_view errorMessage) const
             {
@@ -201,9 +206,13 @@ namespace jucyaudio
             TrackScanner *m_scanner{nullptr};
             bool m_isInitialised{false};
             mutable std::string m_lastErrorMessage; // For getLastError()
-            
+
             // Cache for track online status (trackId -> isOnline)
             mutable std::map<TrackId, bool> m_trackOnlineCache;
+
+            // Shared folder filter state
+            mutable std::vector<std::string> m_currentSearchTerms;
+            mutable std::unordered_set<FolderId> m_visibleFolderIds;
         };
 
         extern TrackLibrary theTrackLibrary;
