@@ -435,6 +435,9 @@ namespace jucyaudio
             /** @brief The starting mouse position when drag began */
             juce::Point<int> m_trackDragStartPosition;
 
+            /** @brief The current mouse position during drag (for floating rectangle visualization) */
+            juce::Point<int> m_currentDragPosition;
+
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimelineComponent)
         };
     } // namespace ui
