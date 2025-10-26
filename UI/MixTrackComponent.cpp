@@ -564,6 +564,41 @@ namespace jucyaudio
 
             if (event.mods.isLeftButtonDown())
             {
+                // Check if click is in the title area (for potential drag-and-drop reordering)
+                // Forward title area clicks to the parent TimelineComponent to handle
+                if (event.position.y >= 0 && event.position.y < TEXT_SECTION_HEIGHT)
+                {
+                    spdlog::info("[MixTrackComponent] Click in title area, forwarding to timeline");
+                    m_forwardingToTimeline = true; // Remember to forward all subsequent events
+
+                    if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                    {
+                        // Convert local coordinates to timeline coordinates
+                        auto timelinePos = timeline->getLocalPoint(this, event.position);
+
+                        // Create a new mouse event in timeline's coordinate space
+                        juce::MouseEvent timelineEvent(event.source,
+                            timelinePos,
+                            event.mods,
+                            event.pressure,
+                            event.orientation,
+                            event.rotation,
+                            event.tiltX,
+                            event.tiltY,
+                            event.eventComponent,
+                            event.originalComponent,
+                            event.eventTime,
+                            event.mouseDownPosition,
+                            event.mouseDownTime,
+                            event.getNumberOfClicks(),
+                            event.mouseWasDraggedSinceMouseDown());
+
+                        // Forward the event to timeline
+                        timeline->mouseDown(timelineEvent);
+                        return; // Don't process further in this component
+                    }
+                }
+
                 // Check for double-click first - pass it to the timeline for playback
                 if (event.getNumberOfClicks() == 2)
                 {
@@ -633,6 +668,32 @@ namespace jucyaudio
 
         void MixTrackComponent::mouseDrag(const juce::MouseEvent &event)
         {
+            // Forward to timeline if we're in forwarding mode (drag started in title area)
+            if (m_forwardingToTimeline)
+            {
+                if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                {
+                    auto timelinePos = timeline->getLocalPoint(this, event.position);
+                    juce::MouseEvent timelineEvent(event.source,
+                        timelinePos,
+                        event.mods,
+                        event.pressure,
+                        event.orientation,
+                        event.rotation,
+                        event.tiltX,
+                        event.tiltY,
+                        event.eventComponent,
+                        event.originalComponent,
+                        event.eventTime,
+                        event.mouseDownPosition,
+                        event.mouseDownTime,
+                        event.getNumberOfClicks(),
+                        event.mouseWasDraggedSinceMouseDown());
+                    timeline->mouseDrag(timelineEvent);
+                }
+                return;
+            }
+
             // If a cue marker drag is in progress, calculate preview position
             if (m_draggedMarker == MarkerType::CueStart || m_draggedMarker == MarkerType::CueEnd)
             {
@@ -716,6 +777,33 @@ namespace jucyaudio
 
         void MixTrackComponent::mouseUp(const juce::MouseEvent &event)
         {
+            // Forward to timeline if we're in forwarding mode (drag started in title area)
+            if (m_forwardingToTimeline)
+            {
+                if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                {
+                    auto timelinePos = timeline->getLocalPoint(this, event.position);
+                    juce::MouseEvent timelineEvent(event.source,
+                        timelinePos,
+                        event.mods,
+                        event.pressure,
+                        event.orientation,
+                        event.rotation,
+                        event.tiltX,
+                        event.tiltY,
+                        event.eventComponent,
+                        event.originalComponent,
+                        event.eventTime,
+                        event.mouseDownPosition,
+                        event.mouseDownTime,
+                        event.getNumberOfClicks(),
+                        event.mouseWasDraggedSinceMouseDown());
+                    timeline->mouseUp(timelineEvent);
+                }
+                m_forwardingToTimeline = false; // Reset flag after mouseUp
+                return;
+            }
+
             if (m_draggedMarker == MarkerType::CueStart)
             {
                 // Only update if the mouse was actually dragged

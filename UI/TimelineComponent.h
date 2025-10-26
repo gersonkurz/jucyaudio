@@ -181,7 +181,27 @@ namespace jucyaudio
              * @param event The mouse event containing the click position and click count.
              */
             void mouseDown(const juce::MouseEvent &event) override;
-            
+
+            /**
+             * @brief Handles mouse drag events for track reordering.
+             *
+             * This function tracks the mouse position during a drag operation and calculates
+             * the target drop position for track reordering.
+             *
+             * @param event The mouse drag event.
+             */
+            void mouseDrag(const juce::MouseEvent &event) override;
+
+            /**
+             * @brief Handles mouse up events to complete track reordering.
+             *
+             * This function executes the track reorder operation when the mouse button is released
+             * after dragging a track to a new position.
+             *
+             * @param event The mouse up event.
+             */
+            void mouseUp(const juce::MouseEvent &event) override;
+
         private:
             /**
              * @brief Handles key press events when the timeline has focus.
@@ -276,9 +296,20 @@ namespace jucyaudio
              * the first track's cueStart changes, which affects the global offset.
              */
             void recalculateTrackPositions();
-            
+
             void deleteTrackAtIndex(size_t trackIndex);
             bool removeTrackFromMixOnly(TrackId trackId);
+
+            /**
+             * @brief Converts a Y coordinate to an orderInMix position.
+             *
+             * This function calculates which track position (0-based orderInMix) corresponds
+             * to a given Y coordinate on the timeline, taking into account the zigzag lane layout.
+             *
+             * @param yPos The Y coordinate in pixels.
+             * @return The calculated orderInMix position, or -1 if the position is invalid.
+             */
+            int yCoordinateToOrderInMix(int yPos) const;
 
             /**
              * @brief A helper struct that tightly couples a UI component with its underlying data.
@@ -390,6 +421,19 @@ namespace jucyaudio
             
             /** @brief Clipboard for cut/copy/paste operations */
             ClipboardData m_clipboard;
+
+            // ------ Track Reordering (Drag-and-Drop) State -------
+            /** @brief Flag indicating if a track is currently being dragged for reordering */
+            bool m_isDraggingTrackForReorder = false;
+
+            /** @brief The track component being dragged for reordering */
+            MixTrackComponent* m_draggedTrackForReorder = nullptr;
+
+            /** @brief The target position (orderInMix) where the track will be dropped */
+            int m_dropTargetOrderInMix = -1;
+
+            /** @brief The starting mouse position when drag began */
+            juce::Point<int> m_trackDragStartPosition;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimelineComponent)
         };

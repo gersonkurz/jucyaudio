@@ -111,6 +111,13 @@ namespace jucyaudio
             // @return True if all specified tracks were successfully removed from the mix, false otherwise.
             virtual bool removeTracksFromMix(MixId mixId, const std::vector<TrackId> &trackIds) const = 0;
 
+            // @brief Reorder a track within a mix by moving it to a new position.
+            // @param mixId The ID of the mix containing the track.
+            // @param trackId The ID of the track to move.
+            // @param newOrderInMix The new 0-based order position (will shift other tracks accordingly).
+            // @return True if the track was successfully reordered, false otherwise.
+            virtual bool reorderTrackInMix(MixId mixId, TrackId trackId, int newOrderInMix) const = 0;
+
             // @brief Finalize a mix, prune the source working set, and prepare for export.
             // @param mixId The ID of the mix to finalize.
             // @return True if the operation was successful, false otherwise.

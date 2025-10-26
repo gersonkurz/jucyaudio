@@ -49,6 +49,17 @@ namespace jucyaudio
             }
             else if (key == juce::KeyPress::escapeKey)
             {
+                // Check if we're in the middle of a drag operation
+                if (m_isDraggingTrackForReorder)
+                {
+                    spdlog::info("Escape key pressed - canceling track reorder drag");
+                    m_isDraggingTrackForReorder = false;
+                    m_draggedTrackForReorder = nullptr;
+                    m_dropTargetOrderInMix = -1;
+                    repaint(); // Clear drop indicator
+                    return true;
+                }
+
                 spdlog::info("Escape key pressed - stopping playback");
                 // Escape: Stop playback
                 if (onMixPlaybackRequested)
@@ -755,6 +766,43 @@ namespace jucyaudio
                 juce::Line<float> previewLine(previewX, 0.0f, previewX, static_cast<float>(getHeight()));
                 g.drawDashedLine(previewLine, dashLengths, 2);
             }
+
+            // Draw drop indicator for track reordering
+            if (m_isDraggingTrackForReorder && m_dropTargetOrderInMix >= 0)
+            {
+                const int rulerHeight = 30;
+                const int trackHeight = MixTrackComponent::TOTAL_COMPONENT_HEIGHT;
+                const int yGap = 5;
+
+                // Calculate number of lanes
+                const int availableHeightForLanes = getHeight() - rulerHeight;
+                int numLanes = std::max(1, availableHeightForLanes / (trackHeight + yGap));
+
+                // Find which lane the target track is in using the zigzag pattern
+                int currentLane = 0;
+                int laneDirection = +1;
+                int orderInMix = 0;
+
+                for (orderInMix = 0; orderInMix <= m_dropTargetOrderInMix && orderInMix < static_cast<int>(m_trackViews.size()); ++orderInMix)
+                {
+                    if (orderInMix == m_dropTargetOrderInMix)
+                    {
+                        // Draw horizontal line at the top of this track
+                        const int yPos = rulerHeight + (currentLane * (trackHeight + yGap));
+                        g.setColour(juce::Colours::orange.withAlpha(0.9f));
+                        g.fillRect(0, yPos - 2, getWidth(), 4); // 4px thick line
+                        break;
+                    }
+
+                    // Move to next lane using zigzag pattern
+                    if ((currentLane + laneDirection) >= numLanes || (currentLane + laneDirection) < 0)
+                        laneDirection *= -1;
+
+                    currentLane += laneDirection;
+                    if (numLanes == 1)
+                        currentLane = 0;
+                }
+            }
         }
 
         void TimelineComponent::refreshLayout()
@@ -948,6 +996,29 @@ namespace jucyaudio
 
             if (event.mods.isLeftButtonDown())
             {
+                // Check if clicking on a track's title area (for drag-and-drop reordering)
+                if (!m_isReadOnly)
+                {
+                    if (const auto clickedTrack = getTrackAtPosition(event.position.toInt()))
+                    {
+                        // Get the relative position within the track component
+                        const auto trackBounds = clickedTrack->getBounds();
+                        const int yRelativeToTrack = event.position.y - trackBounds.getY();
+
+                        // Check if click is in the title area (top TEXT_SECTION_HEIGHT pixels)
+                        if (yRelativeToTrack >= 0 && yRelativeToTrack < MixTrackComponent::TEXT_SECTION_HEIGHT)
+                        {
+                            spdlog::info("[Timeline] Initiating drag for track reorder");
+                            m_isDraggingTrackForReorder = true;
+                            m_draggedTrackForReorder = clickedTrack;
+                            m_trackDragStartPosition = event.position.toInt();
+                            m_dropTargetOrderInMix = -1;
+                            setSelectedTrack(clickedTrack);
+                            return; // Don't process as normal click
+                        }
+                    }
+                }
+
                 // Convert the pixel x-coordinate to a time in seconds.
                 double clickTime = event.position.x / m_pixelsPerSecond;
                 spdlog::info("[Timeline] Click time: {} seconds (x={}, pixelsPerSecond={})", clickTime, event.position.x, m_pixelsPerSecond);
@@ -990,6 +1061,84 @@ namespace jucyaudio
             }
         }
 
+        void TimelineComponent::mouseDrag(const juce::MouseEvent &event)
+        {
+            if (m_isDraggingTrackForReorder && m_draggedTrackForReorder)
+            {
+                // Calculate the target drop position based on mouse Y coordinate
+                const int targetOrder = yCoordinateToOrderInMix(event.position.y);
+
+                if (targetOrder != m_dropTargetOrderInMix && targetOrder >= 0)
+                {
+                    m_dropTargetOrderInMix = targetOrder;
+                    spdlog::info("[Timeline] Drag target updated to orderInMix: {}", targetOrder);
+                    repaint(); // Repaint to update drop indicator
+                }
+            }
+        }
+
+        void TimelineComponent::mouseUp(const juce::MouseEvent &event)
+        {
+            if (m_isDraggingTrackForReorder && m_draggedTrackForReorder && m_dropTargetOrderInMix >= 0)
+            {
+                // Get the database track ID and current order from the dragged track
+                TrackId trackId = -1;
+                int currentOrder = -1;
+
+                for (size_t i = 0; i < m_trackViews.size(); ++i)
+                {
+                    if (m_trackViews[i].component.get() == m_draggedTrackForReorder)
+                    {
+                        trackId = m_trackViews[i].trackInfoData->trackId;
+                        currentOrder = m_trackViews[i].mixTrackData->orderInMix;
+                        break;
+                    }
+                }
+
+                if (trackId >= 0 && currentOrder != m_dropTargetOrderInMix && m_mixLoader)
+                {
+                    spdlog::info("[Timeline] Executing reorder: track {} from order {} to {}",
+                                trackId, currentOrder, m_dropTargetOrderInMix);
+
+                    // Get the mix manager and execute the reorder
+                    const auto mixId = m_mixLoader->getMixInfo().mixId;
+
+                    if (theTrackLibrary.getMixManager().reorderTrackInMix(mixId, trackId, m_dropTargetOrderInMix))
+                    {
+                        spdlog::info("[Timeline] Track reordered successfully, scheduling reload");
+
+                        // IMPORTANT: We must defer the reload to avoid deleting components during their event handlers
+                        // The MixTrackComponent that initiated this drag is still in its mouseUp handler,
+                        // so we can't destroy it yet. Use MessageManager::callAsync to defer the reload.
+                        juce::MessageManager::callAsync([this]() {
+                            if (m_mixLoader)
+                            {
+                                spdlog::info("[Timeline] Reloading mix after reorder");
+                                m_mixLoader->reloadFromDatabase();
+                                populateFrom(m_mixLoader);
+
+                                // Trigger mix reload for audio engine if playing
+                                if (onMixPlaybackReloadRequested)
+                                {
+                                    onMixPlaybackReloadRequested();
+                                }
+                            }
+                        });
+                    }
+                    else
+                    {
+                        spdlog::error("[Timeline] Failed to reorder track in database");
+                    }
+                }
+            }
+
+            // Clear drag state
+            m_isDraggingTrackForReorder = false;
+            m_draggedTrackForReorder = nullptr;
+            m_dropTargetOrderInMix = -1;
+            repaint(); // Clear drop indicator
+        }
+
         MixTrackComponent *TimelineComponent::getTrackAtPosition(juce::Point<int> position) const
         {
             for (auto &view : m_trackViews)
@@ -1000,6 +1149,67 @@ namespace jucyaudio
                 }
             }
             return nullptr;
+        }
+
+        int TimelineComponent::yCoordinateToOrderInMix(int yPos) const
+        {
+            const int rulerHeight = 30;
+            const int trackHeight = MixTrackComponent::TOTAL_COMPONENT_HEIGHT;
+            const int yGap = 5;
+
+            // Calculate number of lanes
+            const int availableHeightForLanes = getHeight() - rulerHeight;
+            int numLanes = std::max(1, availableHeightForLanes / (trackHeight + yGap));
+
+            // Check if click is above the first track or below all tracks
+            const int yRelativeToLanes = yPos - rulerHeight;
+            if (yRelativeToLanes < 0)
+            {
+                return -1; // Above the first track
+            }
+
+            // Calculate which lane the Y position is in
+            const int lane = yRelativeToLanes / (trackHeight + yGap);
+            if (lane >= numLanes)
+            {
+                return -1; // Below all tracks
+            }
+
+            // Now we need to convert lane to orderInMix using the zigzag pattern
+            // The pattern is: lane 0, 1, 2, ... numLanes-1, then back numLanes-1, numLanes-2, ... 0
+            // This means tracks are placed: lane0(order0), lane1(order1), ..., laneN-1(orderN-1),
+            //                                laneN-1(orderN), laneN-2(orderN+1), ..., lane0(order2N-1)
+
+            // We need to figure out which "pass" through the lanes we're in
+            // For now, let's iterate through tracks and find which one is at this lane
+            int currentLane = 0;
+            int laneDirection = +1;
+            int orderInMix = 0;
+
+            for (const auto &view : m_trackViews)
+            {
+                if (currentLane == lane)
+                {
+                    // Check if the Y position is actually within this track's bounds
+                    const int trackYPos = rulerHeight + (lane * (trackHeight + yGap));
+                    if (yPos >= trackYPos && yPos < trackYPos + trackHeight)
+                    {
+                        return orderInMix;
+                    }
+                }
+
+                // Move to next lane using zigzag pattern
+                if ((currentLane + laneDirection) >= numLanes || (currentLane + laneDirection) < 0)
+                    laneDirection *= -1;
+
+                currentLane += laneDirection;
+                if (numLanes == 1)
+                    currentLane = 0;
+
+                orderInMix++;
+            }
+
+            return -1; // No track found at this position
         }
 
         void TimelineComponent::setSelectedTrack(MixTrackComponent *track)

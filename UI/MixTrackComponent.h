@@ -41,14 +41,13 @@ namespace jucyaudio
             /** @brief Radius of an envelope point that is currently being dragged / hovered upon */
             static constexpr double ENVELOPE_POINT_ACTIVE_RADIUS = 10.0f;
 
+        public:
             /** @brief Height of the text section displaying track title (pixels) */
             static constexpr int TEXT_SECTION_HEIGHT = 20;
 
             /** @brief Height of the waveform display section (pixels) */
             static constexpr int WAVEFORM_SECTION_HEIGHT = 120;
 
-        public:
-            
             /** @brief Total height of the component (text + waveform) */
             static constexpr int TOTAL_COMPONENT_HEIGHT = TEXT_SECTION_HEIGHT + WAVEFORM_SECTION_HEIGHT;
 
@@ -464,6 +463,9 @@ namespace jucyaudio
             MarkerType m_hoveredMarker = MarkerType::None;
 
             bool m_isLoaded = false; // True if thumbnail is loaded from cache or generated
+
+            /** @brief Flag indicating if mouse interaction started in title area (forward to timeline) */
+            bool m_forwardingToTimeline = false;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixTrackComponent)
         };
