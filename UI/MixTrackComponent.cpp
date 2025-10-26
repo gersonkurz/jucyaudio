@@ -564,41 +564,6 @@ namespace jucyaudio
 
             if (event.mods.isLeftButtonDown())
             {
-                // Check if click is in the title area (for potential drag-and-drop reordering)
-                // Forward title area clicks to the parent TimelineComponent to handle
-                if (event.position.y >= 0 && event.position.y < TEXT_SECTION_HEIGHT)
-                {
-                    spdlog::info("[MixTrackComponent] Click in title area, forwarding to timeline");
-                    m_forwardingToTimeline = true; // Remember to forward all subsequent events
-
-                    if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
-                    {
-                        // Convert local coordinates to timeline coordinates
-                        auto timelinePos = timeline->getLocalPoint(this, event.position);
-
-                        // Create a new mouse event in timeline's coordinate space
-                        juce::MouseEvent timelineEvent(event.source,
-                            timelinePos,
-                            event.mods,
-                            event.pressure,
-                            event.orientation,
-                            event.rotation,
-                            event.tiltX,
-                            event.tiltY,
-                            event.eventComponent,
-                            event.originalComponent,
-                            event.eventTime,
-                            event.mouseDownPosition,
-                            event.mouseDownTime,
-                            event.getNumberOfClicks(),
-                            event.mouseWasDraggedSinceMouseDown());
-
-                        // Forward the event to timeline
-                        timeline->mouseDown(timelineEvent);
-                        return; // Don't process further in this component
-                    }
-                }
-
                 // Check for double-click first - pass it to the timeline for playback
                 if (event.getNumberOfClicks() == 2)
                 {
@@ -649,7 +614,7 @@ namespace jucyaudio
                     m_draggedMarker = markerHit;
                     grabKeyboardFocus(); // Ensure we can receive ESC key
                 }
-                // --- Priority 3: Check for envelope point hit (lowest priority) ---
+                // --- Priority 3: Check for envelope point hit ---
                 else if (const auto hitPointIndex = hitTestEnvelopePoint(event.position.toInt()))
                 {
                     m_selectedEnvelopePointIndex = hitPointIndex;
@@ -658,6 +623,40 @@ namespace jucyaudio
                     m_originalEnvelopePoint = m_mixTrack.envelopePoints[*hitPointIndex];
                     grabKeyboardFocus(); // Ensure we can receive ESC key
                 }
+                // --- Priority 4: If not clicking on any interactive element, forward to timeline for reordering ---
+                else
+                {
+                    spdlog::info("[MixTrackComponent] Click on non-interactive area, forwarding to timeline for potential reorder");
+                    m_forwardingToTimeline = true; // Remember to forward all subsequent events
+
+                    if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
+                    {
+                        // Convert local coordinates to timeline coordinates
+                        auto timelinePos = timeline->getLocalPoint(this, event.position);
+
+                        // Create a new mouse event in timeline's coordinate space
+                        juce::MouseEvent timelineEvent(event.source,
+                            timelinePos,
+                            event.mods,
+                            event.pressure,
+                            event.orientation,
+                            event.rotation,
+                            event.tiltX,
+                            event.tiltY,
+                            event.eventComponent,
+                            event.originalComponent,
+                            event.eventTime,
+                            event.mouseDownPosition,
+                            event.mouseDownTime,
+                            event.getNumberOfClicks(),
+                            event.mouseWasDraggedSinceMouseDown());
+
+                        // Forward the event to timeline
+                        timeline->mouseDown(timelineEvent);
+                        return; // Don't process further in this component
+                    }
+                }
+
                 if (auto *timeline = findParentComponentOfClass<TimelineComponent>())
                 {
                     timeline->setSelectedTrack(this);
@@ -999,7 +998,9 @@ namespace jucyaudio
             }
             else
             {
-                setMouseCursor(juce::MouseCursor::NormalCursor);
+                // When not over any interactive element, show that track can be dragged to reorder
+                // Use up-down resize cursor to indicate vertical reordering
+                setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
             }
         }
 

@@ -767,40 +767,51 @@ namespace jucyaudio
                 g.drawDashedLine(previewLine, dashLengths, 2);
             }
 
-            // Draw drop indicator for track reordering
-            if (m_isDraggingTrackForReorder && m_dropTargetOrderInMix >= 0)
+            // Draw drag-and-drop visual feedback for track reordering
+            if (m_isDraggingTrackForReorder && m_draggedTrackForReorder)
             {
-                const int rulerHeight = 30;
-                const int trackHeight = MixTrackComponent::TOTAL_COMPONENT_HEIGHT;
-                const int yGap = 5;
+                // 1. Draw semi-transparent overlay on the dragged track (shows what's being moved)
+                auto draggedBounds = m_draggedTrackForReorder->getBounds();
+                g.setColour(juce::Colours::orange.withAlpha(0.3f));
+                g.fillRect(draggedBounds);
+                g.setColour(juce::Colours::orange.withAlpha(0.8f));
+                g.drawRect(draggedBounds, 2); // 2px border
 
-                // Calculate number of lanes
-                const int availableHeightForLanes = getHeight() - rulerHeight;
-                int numLanes = std::max(1, availableHeightForLanes / (trackHeight + yGap));
-
-                // Find which lane the target track is in using the zigzag pattern
-                int currentLane = 0;
-                int laneDirection = +1;
-                int orderInMix = 0;
-
-                for (orderInMix = 0; orderInMix <= m_dropTargetOrderInMix && orderInMix < static_cast<int>(m_trackViews.size()); ++orderInMix)
+                // 2. Draw drop indicator line (shows where track will be inserted)
+                if (m_dropTargetOrderInMix >= 0)
                 {
-                    if (orderInMix == m_dropTargetOrderInMix)
+                    const int rulerHeight = 30;
+                    const int trackHeight = MixTrackComponent::TOTAL_COMPONENT_HEIGHT;
+                    const int yGap = 5;
+
+                    // Calculate number of lanes
+                    const int availableHeightForLanes = getHeight() - rulerHeight;
+                    int numLanes = std::max(1, availableHeightForLanes / (trackHeight + yGap));
+
+                    // Find which lane the target track is in using the zigzag pattern
+                    int currentLane = 0;
+                    int laneDirection = +1;
+                    int orderInMix = 0;
+
+                    for (orderInMix = 0; orderInMix <= m_dropTargetOrderInMix && orderInMix < static_cast<int>(m_trackViews.size()); ++orderInMix)
                     {
-                        // Draw horizontal line at the top of this track
-                        const int yPos = rulerHeight + (currentLane * (trackHeight + yGap));
-                        g.setColour(juce::Colours::orange.withAlpha(0.9f));
-                        g.fillRect(0, yPos - 2, getWidth(), 4); // 4px thick line
-                        break;
+                        if (orderInMix == m_dropTargetOrderInMix)
+                        {
+                            // Draw horizontal line at the top of this track
+                            const int yPos = rulerHeight + (currentLane * (trackHeight + yGap));
+                            g.setColour(juce::Colours::orange.withAlpha(0.9f));
+                            g.fillRect(0, yPos - 2, getWidth(), 4); // 4px thick line
+                            break;
+                        }
+
+                        // Move to next lane using zigzag pattern
+                        if ((currentLane + laneDirection) >= numLanes || (currentLane + laneDirection) < 0)
+                            laneDirection *= -1;
+
+                        currentLane += laneDirection;
+                        if (numLanes == 1)
+                            currentLane = 0;
                     }
-
-                    // Move to next lane using zigzag pattern
-                    if ((currentLane + laneDirection) >= numLanes || (currentLane + laneDirection) < 0)
-                        laneDirection *= -1;
-
-                    currentLane += laneDirection;
-                    if (numLanes == 1)
-                        currentLane = 0;
                 }
             }
         }
@@ -996,26 +1007,22 @@ namespace jucyaudio
 
             if (event.mods.isLeftButtonDown())
             {
-                // Check if clicking on a track's title area (for drag-and-drop reordering)
-                if (!m_isReadOnly)
+                // Check if clicking on a track (for drag-and-drop reordering)
+                // Note: MixTrackComponent already filters out interactive elements (markers, envelope points)
+                // and only forwards clicks from non-interactive areas, so any click we receive here
+                // on a track is safe to treat as a potential reorder drag
+                // BUT: Don't initiate drag on double-clicks - those are for playback
+                if (!m_isReadOnly && event.getNumberOfClicks() == 1)
                 {
                     if (const auto clickedTrack = getTrackAtPosition(event.position.toInt()))
                     {
-                        // Get the relative position within the track component
-                        const auto trackBounds = clickedTrack->getBounds();
-                        const int yRelativeToTrack = event.position.y - trackBounds.getY();
-
-                        // Check if click is in the title area (top TEXT_SECTION_HEIGHT pixels)
-                        if (yRelativeToTrack >= 0 && yRelativeToTrack < MixTrackComponent::TEXT_SECTION_HEIGHT)
-                        {
-                            spdlog::info("[Timeline] Initiating drag for track reorder");
-                            m_isDraggingTrackForReorder = true;
-                            m_draggedTrackForReorder = clickedTrack;
-                            m_trackDragStartPosition = event.position.toInt();
-                            m_dropTargetOrderInMix = -1;
-                            setSelectedTrack(clickedTrack);
-                            return; // Don't process as normal click
-                        }
+                        spdlog::info("[Timeline] Initiating drag for track reorder");
+                        m_isDraggingTrackForReorder = true;
+                        m_draggedTrackForReorder = clickedTrack;
+                        m_trackDragStartPosition = event.position.toInt();
+                        m_dropTargetOrderInMix = -1;
+                        setSelectedTrack(clickedTrack);
+                        return; // Don't process as normal click
                     }
                 }
 
