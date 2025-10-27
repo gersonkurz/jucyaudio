@@ -492,5 +492,33 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             return true;
         }
 
+        bool SqliteWorkingSetManager::setNextMixNumber(WorkingSetId workingSetId, int nextMixNumber)
+        {
+            if (nextMixNumber < 1)
+            {
+                spdlog::error("Invalid mix number value: {}. Must be >= 1.", nextMixNumber);
+                return false;
+            }
+
+            SqliteStatement stmt{m_db, "UPDATE WorkingSets SET next_mix_number = ? WHERE ws_id = ?;"};
+            if (!stmt.isValid())
+            {
+                spdlog::error("Failed to prepare setNextMixNumber statement: {}", m_db.getLastError());
+                return false;
+            }
+
+            stmt.addParam(nextMixNumber);
+            stmt.addParam(workingSetId);
+
+            if (!stmt.execute())
+            {
+                spdlog::error("Failed to set mix number for working set {}: {}", workingSetId, m_db.getLastError());
+                return false;
+            }
+
+            spdlog::info("Set next mix number to {} for working set {}", nextMixNumber, workingSetId);
+            return true;
+        }
+
     } // namespace database
 } // namespace jucyaudio

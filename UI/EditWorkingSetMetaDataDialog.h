@@ -29,13 +29,20 @@ namespace jucyaudio
             EditWorkingSetMetaDataDialog(const WorkingSetInfo &workingSetInfo, OnDialogFinished onFinishedCallback);
             ~EditWorkingSetMetaDataDialog() override = default;
 
+            void resized() override;
+
         protected:
             bool performRename(const std::string& newName) override;
             std::string getErrorMessage() const override;
 
         private:
             WorkingSetInfo m_workingSetInfo;
-            
+            int m_initialMixNumber;
+
+            // Additional UI components for mix number
+            juce::Label m_mixNumberLabel;
+            juce::TextEditor m_mixNumberEditor;
+
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EditWorkingSetMetaDataDialog)
         };
     } // namespace ui

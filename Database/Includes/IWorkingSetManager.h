@@ -44,6 +44,12 @@ namespace jucyaudio
             /// @param workingSetId The working set to increment the number for
             /// @return true on success, false on error
             virtual bool incrementMixNumber(WorkingSetId workingSetId) = 0;
+
+            /// @brief Set the next mix number for a working set (for editing/resetting)
+            /// @param workingSetId The working set to set the number for
+            /// @param nextMixNumber The new next mix number value
+            /// @return true on success, false on error
+            virtual bool setNextMixNumber(WorkingSetId workingSetId, int nextMixNumber) = 0;
         };
 
     } // namespace database

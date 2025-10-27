@@ -43,6 +43,7 @@ namespace jucyaudio
                                const std::vector<SortOrderInfo>& sortOrder) override;
             int getNextMixNumber(WorkingSetId workingSetId) const override;
             bool incrementMixNumber(WorkingSetId workingSetId) override;
+            bool setNextMixNumber(WorkingSetId workingSetId, int nextMixNumber) override;
 
         private:
             database::SqliteDatabase &m_db;
