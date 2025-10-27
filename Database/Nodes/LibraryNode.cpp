@@ -48,8 +48,8 @@ namespace jucyaudio
             DataColumn{(ColumnIndex_t)Column::Intro, "intro_end", "Intro", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
             DataColumn{(ColumnIndex_t)Column::Outro, "outro_start", "Outro", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
             DataColumn{(ColumnIndex_t)Column::TrackId, "track_id", "Track ID", 80, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
-            DataColumn{(ColumnIndex_t)Column::Filepath, "filepath", "Path", 80, ColumnAlignment::Left, ColumnDataTypeHint::String},
-            DataColumn{(ColumnIndex_t)Column::Filename, "filepath", "Name", 80, ColumnAlignment::Left, ColumnDataTypeHint::String},
+            DataColumn{(ColumnIndex_t)Column::Filepath, "(SELECT COALESCE(actual_path, root_path, '') FROM Folders WHERE Folders.folder_id = Tracks.folder_id) || '/' || filename", "Path", 80, ColumnAlignment::Left, ColumnDataTypeHint::String},
+            DataColumn{(ColumnIndex_t)Column::Filename, "filename", "Name", 80, ColumnAlignment::Left, ColumnDataTypeHint::String},
             DataColumn{(ColumnIndex_t)Column::LastModified, "last_modified_fs", "Last Modified", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
         };
 
