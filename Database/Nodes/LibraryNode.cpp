@@ -14,6 +14,7 @@ namespace jucyaudio
             Title = 0,
             Artist,
             Album,
+            TrackNumber,
             Duration,
             BPM,
             Intro,
@@ -42,6 +43,7 @@ namespace jucyaudio
             DataColumn{(ColumnIndex_t)Column::Title, "title", "Title", 200, ColumnAlignment::Left, ColumnDataTypeHint::String},
             DataColumn{(ColumnIndex_t)Column::Artist, "artist_name", "Artist", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
             DataColumn{(ColumnIndex_t)Column::Album, "album_title", "Album", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
+            DataColumn{(ColumnIndex_t)Column::TrackNumber, "track_number", "Track #", 60, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
             DataColumn{(ColumnIndex_t)Column::Duration, "duration", "Duration", 100, ColumnAlignment::Right, ColumnDataTypeHint::Duration},
             DataColumn{(ColumnIndex_t)Column::Bitrate, "bitrate", "Bitrate", 80, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
             DataColumn{(ColumnIndex_t)Column::BPM, "bpm", "BPM at start", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
@@ -271,6 +273,8 @@ namespace jucyaudio
                 return track->artist_name;
             case Column::Album:
                 return track->album_title;
+            case Column::TrackNumber:
+                return track->track_number > 0 ? std::to_string(track->track_number) : "";
             case Column::Duration:
                 return durationToString(track->duration);
             case Column::BPM:
