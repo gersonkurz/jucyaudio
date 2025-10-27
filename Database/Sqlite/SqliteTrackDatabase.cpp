@@ -125,7 +125,7 @@ namespace
         R"SQL(
         CREATE TABLE IF NOT EXISTS WorkingSets(
             ws_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-            timestamp INTEGER, sort_order TEXT
+            timestamp INTEGER, sort_order TEXT, next_mix_number INTEGER DEFAULT 1
         );)SQL",
         R"SQL(
         CREATE TABLE IF NOT EXISTS WorkingSetTracks(
@@ -631,7 +631,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 19;
+            const int latestSchemaVersion = 20;
 
             if (currentVersion == 0)
             {
@@ -2066,6 +2066,45 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 19;
+            }
+
+            if (currentVersion < 20)
+            {
+                spdlog::info("Migrating database from version 19 to 20 (WorkingSet Mix Counter)...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Add next_mix_number column to WorkingSets table
+                    if (!m_db.execute("ALTER TABLE WorkingSets ADD COLUMN next_mix_number INTEGER DEFAULT 1;"))
+                    {
+                        transaction.rollback();
+                        spdlog::error("Failed to add next_mix_number column to WorkingSets table: {}", m_db.getLastError());
+                        return DbResult::failure(DbResultStatus::ErrorDB,
+                            "Failed to add next_mix_number column: " + m_db.getLastError());
+                    }
+
+                    // Update schema version
+                    if (auto result = setDBSchemaVersion(20); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 20.");
+                    }
+
+                    if (transaction.commit())
+                    {
+                        spdlog::info("Successfully migrated to version 20 (WorkingSet Mix Counter).");
+                    }
+                    else
+                    {
+                        const auto error{m_db.getLastError()};
+                        spdlog::error("Failed to commit migration transaction: {}", error);
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration: " + error);
+                    }
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 20;
             }
 
             return DbResult::success();

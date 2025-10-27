@@ -39,8 +39,10 @@ namespace jucyaudio
                                       TrackId trackId) override;
             bool removeWorkingSet(WorkingSetId workingSetId) override;
             bool removeWorkingSets(const std::vector<WorkingSetId> &workingSetIds) override;
-            bool updateSortOrder(WorkingSetId workingSetId, 
+            bool updateSortOrder(WorkingSetId workingSetId,
                                const std::vector<SortOrderInfo>& sortOrder) override;
+            int getNextMixNumber(WorkingSetId workingSetId) const override;
+            bool incrementMixNumber(WorkingSetId workingSetId) override;
 
         private:
             database::SqliteDatabase &m_db;

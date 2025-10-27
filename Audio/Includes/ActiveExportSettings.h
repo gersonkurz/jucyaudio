@@ -15,6 +15,7 @@ namespace jucyaudio
             std::string artist;
             std::string album;
             std::string title;
+            std::string trackNumber; // Track number (e.g., "1" or "1/12" for track 1 of 12)
             std::string year;
             std::string genre;
             std::string comment;

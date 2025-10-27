@@ -20,6 +20,7 @@ namespace jucyaudio
               m_artistLabel{"artistLabel", "Artist:"},
               m_albumLabel{"albumLabel", "Album:"},
               m_trackTitleLabel{"trackTitleLabel", "Title:"},
+              m_trackNumberLabel{"trackNumberLabel", "Track #:"},
               m_yearLabel{"yearLabel", "Year:"},
               m_genreLabel{"genreLabel", "Genre:"},
               m_commentLabel{"commentLabel", "Comment:"},
@@ -38,6 +39,7 @@ namespace jucyaudio
             addAndMakeVisible(m_exportFolderCombo);
             m_exportFolderCombo.setTextWhenNothingSelected("Select export folder...");
             m_exportFolderCombo.setTextWhenNoChoicesAvailable("No folders available");
+            m_exportFolderCombo.addListener(this);
 
             addAndMakeVisible(m_newFolderButton);
             m_newFolderButton.addListener(this);
@@ -79,6 +81,11 @@ namespace jucyaudio
             addAndMakeVisible(m_trackTitleLabel);
             addAndMakeVisible(m_trackTitleEditor);
             m_trackTitleEditor.addListener(this);
+
+            // Track Number
+            addAndMakeVisible(m_trackNumberLabel);
+            addAndMakeVisible(m_trackNumberEditor);
+            m_trackNumberEditor.addListener(this);
 
             // Year
             addAndMakeVisible(m_yearLabel);
@@ -166,7 +173,7 @@ namespace jucyaudio
             auto rightColumn = tagArea;
             rightColumn.removeFromLeft(10); // spacing
 
-            // Left column: Artist, Album, Title
+            // Left column: Artist, Album, Title, Track #
             auto row = leftColumn.removeFromTop(25);
             m_artistLabel.setBounds(row.removeFromLeft(60));
             m_artistEditor.setBounds(row.reduced(2, 0));
@@ -180,6 +187,11 @@ namespace jucyaudio
             row = leftColumn.removeFromTop(25);
             m_trackTitleLabel.setBounds(row.removeFromLeft(60));
             m_trackTitleEditor.setBounds(row.reduced(2, 0));
+            leftColumn.removeFromTop(10);
+
+            row = leftColumn.removeFromTop(25);
+            m_trackNumberLabel.setBounds(row.removeFromLeft(60));
+            m_trackNumberEditor.setBounds(row.reduced(2, 0));
 
             // Right column: Year, Genre
             row = rightColumn.removeFromTop(25);
@@ -232,6 +244,8 @@ namespace jucyaudio
                 m_settings.album = editor.getText().toStdString();
             else if (&editor == &m_trackTitleEditor)
                 m_settings.title = editor.getText().toStdString();
+            else if (&editor == &m_trackNumberEditor)
+                m_settings.trackNumber = editor.getText().toStdString();
             else if (&editor == &m_yearEditor)
                 m_settings.year = editor.getText().toStdString();
             else if (&editor == &m_genreEditor)
@@ -262,6 +276,24 @@ namespace jucyaudio
             }
         }
 
+        void ExportMixDialog::comboBoxChanged(juce::ComboBox *comboBox)
+        {
+            if (comboBox == &m_exportFolderCombo)
+            {
+                // Auto-populate Album and Genre from export folder name
+                const auto folderName = m_exportFolderCombo.getText();
+                if (folderName.isNotEmpty())
+                {
+                    m_albumEditor.setText(folderName);
+                    m_genreEditor.setText(folderName);
+
+                    // Update settings
+                    m_settings.album = folderName.toStdString();
+                    m_settings.genre = folderName.toStdString();
+                }
+            }
+        }
+
         void ExportMixDialog::updateTagFieldsVisibility()
         {
             const auto file = m_filenameComponent->getCurrentFile();
@@ -275,6 +307,8 @@ namespace jucyaudio
             m_albumEditor.setVisible(isMp3);
             m_trackTitleLabel.setVisible(isMp3);
             m_trackTitleEditor.setVisible(isMp3);
+            m_trackNumberLabel.setVisible(isMp3);
+            m_trackNumberEditor.setVisible(isMp3);
             m_yearLabel.setVisible(isMp3);
             m_yearEditor.setVisible(isMp3);
             m_genreLabel.setVisible(isMp3);
@@ -288,6 +322,7 @@ namespace jucyaudio
                 m_settings.artist.clear();
                 m_settings.album.clear();
                 m_settings.title.clear();
+                m_settings.trackNumber.clear();
                 m_settings.year.clear();
                 m_settings.genre.clear();
                 m_settings.comment.clear();
@@ -377,16 +412,47 @@ namespace jucyaudio
             const auto &exportSettings = config::theSettings.exportSettings;
 
             m_artistEditor.setText(exportSettings.defaultArtist.get());
-            m_albumEditor.setText(exportSettings.defaultAlbum.get());
+
+            // Album and Genre are auto-populated from export folder (via comboBoxChanged)
+            // Only set from settings if no folder is selected
+            if (m_albumEditor.getText().isEmpty())
+            {
+                m_albumEditor.setText(exportSettings.defaultAlbum.get());
+            }
+
             m_trackTitleEditor.setText(m_mixInfo.name); // Use mix name as default title
+
+            // Extract track number from mix name (e.g., "4025 - Automix 2025-10-26" → "4025")
+            juce::String trackNumber;
+            const juce::String mixName{m_mixInfo.name};
+            const auto firstSpace = mixName.indexOfChar(' ');
+            if (firstSpace > 0)
+            {
+                const auto possibleNumber = mixName.substring(0, firstSpace);
+                // Check if it's all digits
+                if (possibleNumber.containsOnly("0123456789"))
+                {
+                    trackNumber = possibleNumber;
+                }
+            }
+            m_trackNumberEditor.setText(trackNumber);
+
             m_yearEditor.setText(exportSettings.defaultYear.get());
-            m_genreEditor.setText(exportSettings.defaultGenre.get());
+
+            // Genre is auto-populated from export folder (via comboBoxChanged)
+            // Only set from settings if no folder is selected
+            if (m_genreEditor.getText().isEmpty())
+            {
+                m_genreEditor.setText(exportSettings.defaultGenre.get());
+            }
+
             m_commentEditor.setText(exportSettings.defaultComment.get());
 
             // Update settings
             m_settings.artist = m_artistEditor.getText().toStdString();
             m_settings.album = m_albumEditor.getText().toStdString();
             m_settings.title = m_trackTitleEditor.getText().toStdString();
+            m_settings.trackNumber = m_trackNumberEditor.getText().toStdString();
             m_settings.year = m_yearEditor.getText().toStdString();
             m_settings.genre = m_genreEditor.getText().toStdString();
             m_settings.comment = m_commentEditor.getText().toStdString();
@@ -433,10 +499,11 @@ namespace jucyaudio
                 m_mixInfo.name, m_settings.outputPath.string(), m_settings.exportFolder);
             if (file.hasFileExtension(".mp3"))
             {
-                spdlog::info("ID3 tags - Artist: '{}', Album: '{}', Title: '{}', Year: '{}', Genre: '{}', Comment: '{}'",
+                spdlog::info("ID3 tags - Artist: '{}', Album: '{}', Title: '{}', Track: '{}', Year: '{}', Genre: '{}', Comment: '{}'",
                     m_settings.artist,
                     m_settings.album,
                     m_settings.title,
+                    m_settings.trackNumber,
                     m_settings.year,
                     m_settings.genre,
                     m_settings.comment);

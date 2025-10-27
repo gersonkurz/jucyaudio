@@ -34,6 +34,16 @@ namespace jucyaudio
             /// @param sortOrder The new sort order configuration
             /// @return true if successful, false otherwise
             virtual bool updateSortOrder(WorkingSetId workingSetId, const std::vector<SortOrderInfo> &sortOrder) = 0;
+
+            /// @brief Get the next mix number for a working set WITHOUT incrementing it
+            /// @param workingSetId The working set to get the number for
+            /// @return The next mix number (starts at 1), or 0 on error
+            virtual int getNextMixNumber(WorkingSetId workingSetId) const = 0;
+
+            /// @brief Increment the mix number for a working set (call when mix is actually created)
+            /// @param workingSetId The working set to increment the number for
+            /// @return true on success, false on error
+            virtual bool incrementMixNumber(WorkingSetId workingSetId) = 0;
         };
 
     } // namespace database

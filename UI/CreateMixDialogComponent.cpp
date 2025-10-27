@@ -5,6 +5,7 @@
 #include <Utils/AssortedUtils.h> // For pathToString, durationToString if needed for logging
 #include <ctime>
 #include <iomanip>
+#include <locale>
 #include <spdlog/spdlog.h>
 #include <sstream>
 
@@ -209,6 +210,16 @@ namespace jucyaudio
                     return;
                 }
 
+                // Now that the mix is successfully created, increment the mix counter
+                if (m_source_ws_id > 0)
+                {
+                    auto* trackDb = database::theTrackLibrary.getTrackDatabase();
+                    if (trackDb)
+                    {
+                        trackDb->getWorkingSetManager().incrementMixNumber(m_source_ws_id);
+                    }
+                }
+
                 if (m_onOkCallback)
                 {
                     m_onOkCallback(true, newMixInfo);
@@ -351,6 +362,19 @@ namespace jucyaudio
 
         juce::String CreateMixDialogComponent::generateDefaultMixName()
         {
+            // Get the NEXT mix number for this working set (WITHOUT incrementing)
+            // We'll increment it only when the mix is actually created
+            int mixNumber = 0;
+            if (m_source_ws_id > 0)
+            {
+                auto* trackDb = database::theTrackLibrary.getTrackDatabase();
+                if (trackDb)
+                {
+                    auto& wsManager = trackDb->getWorkingSetManager();
+                    mixNumber = wsManager.getNextMixNumber(m_source_ws_id);
+                }
+            }
+
             auto now = std::time(nullptr);
 #ifdef _MSC_VER // Use localtime_s on Windows
             std::tm tm_s;
@@ -361,7 +385,17 @@ namespace jucyaudio
 #endif
 
             std::ostringstream oss;
-            oss << "Auto-Mix " << std::put_time(&tm, "%Y-%m-%d %H-%M-%S"); // Added seconds for uniqueness
+            oss.imbue(std::locale::classic()); // Disable locale-specific formatting (no thousands separators)
+            if (mixNumber > 0)
+            {
+                oss << std::setw(4) << std::setfill('0') << mixNumber << " - Automix "
+                    << std::put_time(&tm, "%Y-%m-%d %H-%M-%S");
+            }
+            else
+            {
+                // Fallback if we couldn't get the number
+                oss << "Auto-Mix " << std::put_time(&tm, "%Y-%m-%d %H-%M-%S");
+            }
             return juce::String(oss.str());
         }
 

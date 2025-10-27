@@ -67,10 +67,11 @@ namespace jucyaudio
             
             // Add ID3 tags
             id3tag_init(m_lameFlags);
-            
+
             id3tag_set_artist(m_lameFlags, m_settings.artist.c_str());
             id3tag_set_album(m_lameFlags, m_settings.album.c_str());
             id3tag_set_title(m_lameFlags, m_settings.title.c_str());
+            id3tag_set_track(m_lameFlags, m_settings.trackNumber.c_str());
             id3tag_set_year(m_lameFlags, m_settings.year.c_str());
             id3tag_set_genre(m_lameFlags, m_settings.genre.c_str());
             id3tag_set_comment(m_lameFlags, m_settings.comment.c_str());

@@ -438,5 +438,59 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             return true;
         }
 
+        int SqliteWorkingSetManager::getNextMixNumber(WorkingSetId workingSetId) const
+        {
+            SqliteStatement stmt{m_db, "SELECT next_mix_number FROM WorkingSets WHERE ws_id = ?;"};
+            if (!stmt.isValid())
+            {
+                spdlog::error("Failed to prepare getNextMixNumber statement: {}", m_db.getLastError());
+                return 0;
+            }
+
+            stmt.addParam(workingSetId);
+            if (!stmt.getNextResult())
+            {
+                spdlog::error("Failed to get next_mix_number for working set {}: {}", workingSetId, m_db.getLastError());
+                return 0;
+            }
+
+            int mixNumber = stmt.getInt32(0);
+            if (mixNumber == 0)
+            {
+                mixNumber = 1; // Default if null/zero
+            }
+
+            return mixNumber;
+        }
+
+        bool SqliteWorkingSetManager::incrementMixNumber(WorkingSetId workingSetId)
+        {
+            // Get current value
+            int currentNumber = getNextMixNumber(workingSetId);
+            if (currentNumber == 0)
+            {
+                return false;
+            }
+
+            // Increment it
+            SqliteStatement stmt{m_db, "UPDATE WorkingSets SET next_mix_number = ? WHERE ws_id = ?;"};
+            if (!stmt.isValid())
+            {
+                spdlog::error("Failed to prepare incrementMixNumber statement: {}", m_db.getLastError());
+                return false;
+            }
+
+            stmt.addParam(currentNumber + 1);
+            stmt.addParam(workingSetId);
+
+            if (!stmt.execute())
+            {
+                spdlog::error("Failed to increment mix number for working set {}: {}", workingSetId, m_db.getLastError());
+                return false;
+            }
+
+            return true;
+        }
+
     } // namespace database
 } // namespace jucyaudio

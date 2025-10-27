@@ -13,7 +13,8 @@ namespace jucyaudio
         class ExportMixDialog : public juce::Component,
                                 public juce::Button::Listener,
                                 public juce::TextEditor::Listener,
-                                public juce::FilenameComponentListener
+                                public juce::FilenameComponentListener,
+                                public juce::ComboBox::Listener
         {
         public:
             using OnExportCallback = std::function<void(bool success, const audio::ActiveExportSettings& settings)>;
@@ -35,7 +36,10 @@ namespace jucyaudio
             
             // FilenameComponentListener
             void filenameComponentChanged(juce::FilenameComponent* component) override;
-            
+
+            // ComboBox::Listener
+            void comboBoxChanged(juce::ComboBox* comboBox) override;
+
         private:
             void updateTagFieldsVisibility();
             void loadDefaultTags();
@@ -72,7 +76,10 @@ namespace jucyaudio
             
             juce::Label m_trackTitleLabel;
             juce::TextEditor m_trackTitleEditor;
-            
+
+            juce::Label m_trackNumberLabel;
+            juce::TextEditor m_trackNumberEditor;
+
             juce::Label m_yearLabel;
             juce::TextEditor m_yearEditor;
             
