@@ -14,16 +14,30 @@ namespace jucyaudio
             Title = 0,
             Artist,
             Album,
+            AlbumArtist,
             TrackNumber,
+            DiscNumber,
+            Year,
             Duration,
+            Bitrate,
+            Codec,
+            SampleRate,
+            Channels,
+            FileSize,
             BPM,
+            Key,
             Intro,
             Outro,
+            Rating,
+            LikedStatus,
+            PlayCount,
+            LastPlayed,
+            DateAdded,
+            LastScanned,
             TrackId,
             Filepath,
             Filename,
-            LastModified,
-            Bitrate
+            LastModified
         };
     } // namespace
 
@@ -43,16 +57,30 @@ namespace jucyaudio
             DataColumn{(ColumnIndex_t)Column::Title, "title", "Title", 200, ColumnAlignment::Left, ColumnDataTypeHint::String},
             DataColumn{(ColumnIndex_t)Column::Artist, "artist_name", "Artist", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
             DataColumn{(ColumnIndex_t)Column::Album, "album_title", "Album", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
+            DataColumn{(ColumnIndex_t)Column::AlbumArtist, "album_artist_name", "Album Artist", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
             DataColumn{(ColumnIndex_t)Column::TrackNumber, "track_number", "Track #", 60, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::DiscNumber, "disc_number", "Disc #", 60, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::Year, "year", "Year", 60, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
             DataColumn{(ColumnIndex_t)Column::Duration, "duration", "Duration", 100, ColumnAlignment::Right, ColumnDataTypeHint::Duration},
             DataColumn{(ColumnIndex_t)Column::Bitrate, "bitrate", "Bitrate", 80, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
-            DataColumn{(ColumnIndex_t)Column::BPM, "bpm", "BPM at start", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
-            DataColumn{(ColumnIndex_t)Column::Intro, "intro_end", "Intro", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
-            DataColumn{(ColumnIndex_t)Column::Outro, "outro_start", "Outro", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::Codec, "codec_name", "Codec", 60, ColumnAlignment::Left, ColumnDataTypeHint::String},
+            DataColumn{(ColumnIndex_t)Column::SampleRate, "samplerate", "Sample Rate", 90, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::Channels, "channels", "Channels", 70, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::FileSize, "filesize_bytes", "File Size", 90, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::BPM, "bpm", "BPM", 80, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::Key, "key_string", "Key", 50, ColumnAlignment::Left, ColumnDataTypeHint::String},
+            DataColumn{(ColumnIndex_t)Column::Intro, "intro_end", "Intro", 80, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::Outro, "outro_start", "Outro", 80, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::Rating, "rating", "Rating", 70, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::LikedStatus, "liked_status", "Liked", 60, ColumnAlignment::Center, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::PlayCount, "play_count", "Play Count", 80, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::LastPlayed, "last_played", "Last Played", 120, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::DateAdded, "date_added", "Date Added", 120, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::LastScanned, "last_scanned", "Last Scanned", 120, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
             DataColumn{(ColumnIndex_t)Column::TrackId, "track_id", "Track ID", 80, ColumnAlignment::Right, ColumnDataTypeHint::Integer},
-            DataColumn{(ColumnIndex_t)Column::Filepath, "(SELECT COALESCE(actual_path, root_path, '') FROM Folders WHERE Folders.folder_id = Tracks.folder_id) || '/' || filename", "Path", 80, ColumnAlignment::Left, ColumnDataTypeHint::String},
-            DataColumn{(ColumnIndex_t)Column::Filename, "filename", "Name", 80, ColumnAlignment::Left, ColumnDataTypeHint::String},
-            DataColumn{(ColumnIndex_t)Column::LastModified, "last_modified_fs", "Last Modified", 80, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
+            DataColumn{(ColumnIndex_t)Column::Filepath, "(SELECT COALESCE(actual_path, root_path, '') FROM Folders WHERE Folders.folder_id = Tracks.folder_id) || '/' || filename", "Path", 200, ColumnAlignment::Left, ColumnDataTypeHint::String},
+            DataColumn{(ColumnIndex_t)Column::Filename, "filename", "Name", 150, ColumnAlignment::Left, ColumnDataTypeHint::String},
+            DataColumn{(ColumnIndex_t)Column::LastModified, "last_modified_fs", "Last Modified", 120, ColumnAlignment::Left, ColumnDataTypeHint::Integer},
         };
 
         const DataActions &LibraryNode::getNodeActions() const
@@ -273,16 +301,47 @@ namespace jucyaudio
                 return track->artist_name;
             case Column::Album:
                 return track->album_title;
+            case Column::AlbumArtist:
+                return track->album_artist_name;
             case Column::TrackNumber:
                 return track->track_number > 0 ? std::to_string(track->track_number) : "";
+            case Column::DiscNumber:
+                return track->disc_number > 0 ? std::to_string(track->disc_number) : "";
+            case Column::Year:
+                return track->year > 0 ? std::to_string(track->year) : "";
             case Column::Duration:
                 return durationToString(track->duration);
+            case Column::Bitrate:
+                return track->bitrate > 0 ? std::to_string(track->bitrate) : "";
+            case Column::Codec:
+                return track->codec_name;
+            case Column::SampleRate:
+                return track->samplerate > 0 ? std::to_string(track->samplerate) : "";
+            case Column::Channels:
+                return track->channels > 0 ? std::to_string(track->channels) : "";
+            case Column::FileSize:
+                if (track->filesize_bytes > 0)
+                {
+                    // Format file size in human-readable format
+                    const auto size = track->filesize_bytes;
+                    if (size < 1024)
+                        return std::format("{} B", size);
+                    else if (size < 1024 * 1024)
+                        return std::format("{:.1f} KB", size / 1024.0);
+                    else if (size < 1024 * 1024 * 1024)
+                        return std::format("{:.1f} MB", size / (1024.0 * 1024.0));
+                    else
+                        return std::format("{:.2f} GB", size / (1024.0 * 1024.0 * 1024.0));
+                }
+                return "";
             case Column::BPM:
                 if (track->bpm.has_value())
                 {
                     return std::format("{:.2f}", track->bpm.value() / 100.0);
                 }
                 return "-";
+            case Column::Key:
+                return track->key_string;
             case Column::Intro:
                 return track->intro_end.has_value() ? durationToString(*track->intro_end) : "-";
             case Column::Outro:
@@ -293,6 +352,18 @@ namespace jucyaudio
                     return durationToString(remaining);
                 }
                 return "-";
+            case Column::Rating:
+                return track->rating > 0 ? std::to_string(track->rating) : "";
+            case Column::LikedStatus:
+                return track->liked_status != 0 ? "♥" : "";
+            case Column::PlayCount:
+                return track->play_count > 0 ? std::to_string(track->play_count) : "";
+            case Column::LastPlayed:
+                return track->last_played.time_since_epoch().count() > 0 ? timestampToString(track->last_played) : "";
+            case Column::DateAdded:
+                return track->date_added.time_since_epoch().count() > 0 ? timestampToString(track->date_added) : "";
+            case Column::LastScanned:
+                return track->last_scanned.time_since_epoch().count() > 0 ? timestampToString(track->last_scanned) : "";
             case Column::TrackId:
                 return std::to_string(track->trackId);
             case Column::Filepath:
@@ -301,8 +372,6 @@ namespace jucyaudio
                 return track->filename;
             case Column::LastModified:
                 return jucyaudio::timestampToString(track->last_modified_fs);
-            case Column::Bitrate:
-                return std::to_string(track->bitrate);
             default:
                 spdlog::warn("Invalid column index {} for LibraryRow", index);
                 return "";
