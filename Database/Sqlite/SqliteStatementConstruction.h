@@ -26,6 +26,7 @@ namespace jucyaudio
 
             void addWhereClause(StringWriter &writer, const TrackQueryArgs &trackQueryArgs);
             void addOrderByClause(StringWriter &writer, const TrackQueryArgs &trackQueryArgs);
+            void addFilterCriteria(StringWriter &writer, const TrackQueryArgs &trackQueryArgs);
             bool finalizeStatement(StringWriter &writer, const TrackQueryArgs &trackQueryArgs, WorkingSetId wsId = 0);
             bool populateQueryScopeFoldersTable(const std::vector<FolderId> &folderIds);
         };

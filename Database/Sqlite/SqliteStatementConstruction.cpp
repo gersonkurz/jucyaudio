@@ -5,6 +5,7 @@
 #include <Database/TrackLibrary.h>
 #include <UI/Settings.h>
 #include <Utils/AssortedUtils.h>
+#include <Utils/FilterParser.h>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <vector>
@@ -144,6 +145,77 @@ namespace jucyaudio
             }
         }
 
+        void SqliteStatementConstruction::addFilterCriteria(StringWriter &writer, const TrackQueryArgs &args)
+        {
+            if (args.filterCriteria.empty())
+                return;
+
+            for (const auto& criterion : args.filterCriteria)
+            {
+                // Map field name to SQL column
+                const auto columnName = utils::mapFieldToColumn(criterion.fieldName);
+                if (columnName.empty())
+                {
+                    spdlog::warn("Unknown filter field: {}", criterion.fieldName);
+                    continue;
+                }
+
+                const bool isNumeric = utils::isNumericField(criterion.fieldName);
+
+                // Build the SQL condition
+                writer.append(" AND ");
+
+                if (criterion.op == "..")
+                {
+                    // Range: field BETWEEN value1 AND value2
+                    writer.append(columnName);
+                    writer.append(" BETWEEN ");
+                    if (isNumeric)
+                    {
+                        writer.append(criterion.value);
+                        writer.append(" AND ");
+                        writer.append(criterion.value2);
+                    }
+                    else
+                    {
+                        writer.append("'");
+                        writer.append(criterion.value);
+                        writer.append("' AND '");
+                        writer.append(criterion.value2);
+                        writer.append("'");
+                    }
+                }
+                else if (criterion.op == "=" && !isNumeric)
+                {
+                    // String exact match with LIKE for case-insensitive
+                    writer.append(columnName);
+                    writer.append(" LIKE '");
+                    writer.append(criterion.value);
+                    writer.append("'");
+                }
+                else
+                {
+                    // Numeric comparison or string with operator
+                    writer.append(columnName);
+                    writer.append(" ");
+                    writer.append(criterion.op);
+                    writer.append(" ");
+                    if (isNumeric)
+                    {
+                        writer.append(criterion.value);
+                    }
+                    else
+                    {
+                        writer.append("'");
+                        writer.append(criterion.value);
+                        writer.append("'");
+                    }
+                }
+
+                spdlog::debug("Added filter SQL: {} {} {}", columnName, criterion.op, criterion.value);
+            }
+        }
+
         bool SqliteStatementConstruction::finalizeStatement(StringWriter &writer, const TrackQueryArgs &args, WorkingSetId wsId)
         {
             // The logic for INSERT...SELECT needs a closing parenthesis
@@ -241,6 +313,9 @@ namespace jucyaudio
 
                     writer.append(" AND folder_id IN (SELECT folder_id FROM temp.QueryScopeFolders)");
                 }
+
+                // Add filter criteria (e.g., year:1991, bpm:>120)
+                addFilterCriteria(writer, args);
             }
             else
             {
@@ -260,8 +335,11 @@ namespace jucyaudio
                 }
                 writer.append(" FROM Tracks");
                 addWhereClause(writer, args);
+
+                // Add filter criteria (e.g., year:1991, bpm:>120)
+                addFilterCriteria(writer, args);
             }
-            
+
             addOrderByClause(writer, args);
             if (args.usePaging)
             {
@@ -320,13 +398,19 @@ namespace jucyaudio
 
                     writer.append(" AND folder_id IN (SELECT folder_id FROM temp.QueryScopeFolders)");
                 }
+
+                // Add filter criteria
+                addFilterCriteria(writer, args);
             }
             else
             {
                 writer.append("SELECT COUNT(*) FROM Tracks");
                 addWhereClause(writer, args);
+
+                // Add filter criteria
+                addFilterCriteria(writer, args);
             }
-            
+
             return finalizeStatement(writer, args);
         }
 
@@ -374,11 +458,17 @@ namespace jucyaudio
 
                     writer.append(" AND folder_id IN (SELECT folder_id FROM temp.QueryScopeFolders)");
                 }
+
+                // Add filter criteria
+                addFilterCriteria(writer, args);
             }
             else
             {
                 writer.append("SELECT COUNT(*), COALESCE(SUM(filesize_bytes), 0), COALESCE(SUM(duration), 0) FROM Tracks");
                 addWhereClause(writer, args);
+
+                // Add filter criteria
+                addFilterCriteria(writer, args);
             }
 
             return finalizeStatement(writer, args);

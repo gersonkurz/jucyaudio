@@ -1,6 +1,7 @@
 #include <Database/Nodes/LibraryNode.h>
 #include <Database/Nodes/RootNode.h>
 #include <Utils/AssortedUtils.h>
+#include <Utils/FilterParser.h>
 #include <cassert>
 #include <spdlog/spdlog.h>
 
@@ -247,7 +248,34 @@ namespace jucyaudio
 
         bool LibraryNode::setSearchTerms(const std::vector<std::string> &searchTerms)
         {
-            m_queryArgs.searchTerms = searchTerms;
+            // Parse the search string to extract filter criteria
+            if (!searchTerms.empty() && !searchTerms[0].empty())
+            {
+                const auto parsed = utils::parseFilterString(searchTerms[0]);
+
+                // Store the parsed filter criteria
+                m_queryArgs.filterCriteria = parsed.criteria;
+
+                // Update search terms with only the remaining text (for FTS5)
+                if (!parsed.remainingText.empty())
+                {
+                    m_queryArgs.searchTerms = {parsed.remainingText};
+                }
+                else
+                {
+                    m_queryArgs.searchTerms.clear();
+                }
+
+                spdlog::info("Filter parsing: {} criteria extracted, remaining text: '{}'",
+                    parsed.criteria.size(), parsed.remainingText);
+            }
+            else
+            {
+                // Clear both search terms and filters
+                m_queryArgs.searchTerms.clear();
+                m_queryArgs.filterCriteria.clear();
+            }
+
             m_bCacheInitialized = false;
             m_cachedRowCount = -1;
             return true;

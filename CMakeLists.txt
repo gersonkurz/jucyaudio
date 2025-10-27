@@ -353,9 +353,11 @@ target_sources(jucyaudio PRIVATE
     Utils/StringWriter.cpp
     Utils/UiUtils.cpp
     Utils/LoggingUtils.cpp
+    Utils/FilterParser.cpp
     Utils/AssortedUtils.h
     Utils/StringWriter.h
     Utils/UiUtils.h
+    Utils/FilterParser.h
     
     # Database files
     Database/TrackLibrary.cpp

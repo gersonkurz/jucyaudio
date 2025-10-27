@@ -19,7 +19,7 @@ namespace jucyaudio
             m_filterTextEditor.setMultiLine(false);
             m_filterTextEditor.setReturnKeyStartsNewLine(false);
             m_filterTextEditor.addListener(this); // Listen for text changes, return key, focus loss
-            m_filterTextEditor.setTextToShowWhenEmpty("Type to filter...", juce::Colours::grey);
+            m_filterTextEditor.setTextToShowWhenEmpty("Search or filter (e.g., year:1991, bpm:>120)", juce::Colours::grey);
             addAndMakeVisible(m_filterTextEditor);
 
             // Create all possible action buttons upfront (for consistent UI)
