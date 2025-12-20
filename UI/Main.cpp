@@ -190,10 +190,31 @@ namespace jucyaudio
                 config::TomlBackend backend{g_strConfigFilename};
                 config::theSettings.load(backend);
 
-                // Determine database path
+                // Determine database path (configurable or default)
                 juce::File appDataDir{juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("jucyaudioApp_Dev")};
-                juce::File dbJuceFile{appDataDir.getChildFile("jucyaudio_library_dev.sqlite")};
-                std::filesystem::path dbPath{dbJuceFile.getFullPathName().toStdString()};
+                std::filesystem::path dbPath;
+                const auto& configuredDbFilename = config::theSettings.database.filename.get();
+                if (!configuredDbFilename.empty())
+                {
+                    // Use configured database path (can be absolute or relative to app data dir)
+                    std::filesystem::path configuredPath{configuredDbFilename};
+                    if (configuredPath.is_absolute())
+                    {
+                        dbPath = configuredPath;
+                    }
+                    else
+                    {
+                        dbPath = std::filesystem::path{appDataDir.getFullPathName().toStdString()} / configuredPath;
+                    }
+                    spdlog::info("Using configured database path: {}", dbPath.string());
+                }
+                else
+                {
+                    // Default database filename
+                    juce::File dbJuceFile{appDataDir.getChildFile("jucyaudio_library_dev.sqlite")};
+                    dbPath = std::filesystem::path{dbJuceFile.getFullPathName().toStdString()};
+                    spdlog::info("Using default database path: {}", dbPath.string());
+                }
 
                 // Perform database backup check before the database is opened
                 {
