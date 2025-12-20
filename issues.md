@@ -198,3 +198,31 @@ struct PlaybackTrackSource {
 5. **Issue 3** - setSize per track (minor but easy fix)
 6. **Issue 5** - getNextAudioBlock overhead (profile first)
 7. **Issue 7** - Repeated duration calcs (minor optimization)
+
+---
+
+## Config File Performance (December 2025)
+
+### Config Written 84 Times on Startup (MEDIUM)
+
+**Location:** `Config/toml_backend.h` - `setValueAtPath()` calls `saveToFile()` after every value change
+
+**Problem:**
+During startup, the config file is written 84 times because:
+1. Three separate `TomlBackend` instances are created
+2. Instance #3 (in `DynamicColumnManager.cpp`) saves ALL settings when initializing default columns
+3. Each `TypedValue::save()` triggers a full file write
+
+**Root Cause:**
+- `DynamicColumnManager::getColumnsForNode()` calls `config::theSettings.save(backend)` which saves all 84 settings
+- Each setting's `save()` calls `setValueAtPath()` which calls `saveToFile()`
+
+**Potential Fixes:**
+1. **Batch mode API**: Add `beginBatch()`/`endBatch()` to `TomlBackend` that defers writes until batch ends
+2. **Dirty flag with explicit flush**: Mark dirty on change, only write on explicit `flush()` or destructor
+3. **Surgical fix**: Change `DynamicColumnManager` to only save the specific column vector, not all settings
+
+**Considerations:**
+- Batch mode in destructor risks losing changes on crash for long-lived backends
+- Explicit batch API is safest - opt-in for bulk operations, immediate writes for normal usage
+- Current behavior is safe but slow (84 file writes in ~50ms during startup)

@@ -119,6 +119,13 @@ namespace jucyaudio
 
             std::string getText(int index) const;
 
+            /// @brief Returns raw pointer to text column (valid until next step/reset/finalize)
+            /// @note Use this for comparisons or when immediately copying to avoid double allocation
+            const char* getTextRaw(int index) const
+            {
+                return reinterpret_cast<const char*>(sqlite3_column_text(m_statement, index));
+            }
+
             std::vector<unsigned char> getBlob(int index) const;
 
             // Add this to your SqliteStatement class or as a free function

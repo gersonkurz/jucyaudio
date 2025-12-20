@@ -5,8 +5,11 @@
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Utils/AssortedUtils.h> // For pathToString etc.
 #include <Utils/StringWriter.h>
+#include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <numeric>
+#include <random>
 #include <spdlog/spdlog.h>
 
 namespace jucyaudio
@@ -19,6 +22,32 @@ namespace jucyaudio
         }
 
         bool SqliteFolderDatabase::buildCacheIfNeeded() const
+        {
+            enum class CacheBuildMode
+            {
+                GersonOnly,
+                CodexOnly,
+                ClaudeCodeOnly,
+                AllCompare
+            };
+
+            constexpr CacheBuildMode kBuildMode = CacheBuildMode::CodexOnly;
+
+            switch (kBuildMode)
+            {
+            case CacheBuildMode::CodexOnly:
+                return buildCacheIfNeededCodexVariant();
+            case CacheBuildMode::ClaudeCodeOnly:
+                return buildCacheIfNeededClaudeCode();
+            case CacheBuildMode::AllCompare:
+                return buildCacheIfNeededCompare();
+            case CacheBuildMode::GersonOnly:
+            default:
+                return buildCacheIfNeededGerson();
+            }
+        }
+
+        bool SqliteFolderDatabase::buildCacheIfNeededGerson() const
         {
             std::lock_guard lock{m_cacheMutex};
             if (m_isCacheValid)
@@ -259,6 +288,18 @@ namespace jucyaudio
                     }
                 }
             }
+            if (useThisFolder && !folderAlreadyHasAlbum && lastKnownFolderId > 0)
+            {
+                if (!albumFolders.contains(lastKnownFolderId) &&
+                    !lastKnownArtistName.empty() && !lastKnownAlbumName.empty())
+                {
+                    NewAlbumInfo nai;
+                    nai.albumArtist = lastKnownArtistName;
+                    nai.title = lastKnownAlbumName;
+                    nai.folderId = lastKnownFolderId;
+                    albums.push_back(nai);
+                }
+            }
             spdlog::info("FINISHED recursive track count calculation for {:L} folders and {:L} new albums", m_folderInfoFromId.size(), albums.size());
 
             if (!albums.empty())
@@ -284,6 +325,1023 @@ namespace jucyaudio
 
             m_isCacheValid = true;
             return true;
+        }
+
+        bool SqliteFolderDatabase::buildCacheIfNeededCodexVariant() const
+        {
+            std::lock_guard lock{m_cacheMutex};
+            if (m_isCacheValid)
+                return true;
+
+            spdlog::debug("Building all folder caches (Codex variant)...");
+
+            m_folderInfoFromId.clear();
+            m_idFromFolderPath.clear();
+            m_childrenFromParents.clear();
+            m_parentsFromChildren.clear();
+
+            auto reserveFromCount = [this](const char *sql, auto &container)
+            {
+                SqliteStatement countStmt{m_db, sql};
+                if (countStmt.isValid() && countStmt.getNextResult())
+                {
+                    const auto count = static_cast<size_t>(countStmt.getInt64(0));
+                    if (count > 0)
+                    {
+                        container.reserve(count);
+                    }
+                }
+            };
+
+            reserveFromCount("SELECT COUNT(*) FROM Folders", m_folderInfoFromId);
+            reserveFromCount("SELECT COUNT(*) FROM Folders", m_idFromFolderPath);
+            reserveFromCount("SELECT COUNT(*) FROM Folders", m_childrenFromParents);
+            reserveFromCount("SELECT COUNT(*) FROM Folders", m_parentsFromChildren);
+
+            SqliteStatement stmt{m_db,
+                                 "SELECT folder_id, COALESCE(parent_id, -1), name, "
+                                 "COALESCE(root_path, ''), COALESCE(actual_path, '') FROM Folders;"};
+            if (!stmt.isValid())
+            {
+                spdlog::error("buildCacheIfNeededCodexVariant: Failed to prepare statement. DB error: {}", m_db.getLastError());
+                return false;
+            }
+
+            spdlog::info("buildCacheIfNeededCodexVariant: Fetching all folders from the database...");
+
+            std::vector<FolderId> roots;
+            FolderInfo info{};
+            while (stmt.getNextResult())
+            {
+                info.folderId = stmt.getInt64(0);
+                info.parentId = stmt.getInt64(1);
+                const char *nameRaw = stmt.getTextRaw(2);
+                const char *pathRaw = stmt.getTextRaw(3);
+                const char *actualPathRaw = stmt.getTextRaw(4);
+                info.name = nameRaw ? nameRaw : "";
+                info.path = pathRaw ? pathRaw : "";
+                info.actualPath = actualPathRaw ? actualPathRaw : "";
+                info.trackCount = 0;
+
+                m_folderInfoFromId[info.folderId] = info;
+                if (info.parentId > 0)
+                {
+                    registerAsParent(info.parentId, info.folderId);
+                }
+                else
+                {
+                    roots.push_back(info.folderId);
+                }
+            }
+
+            // lookup list for updates of the root_path value
+            std::unordered_map<FolderId, std::string> pathUpdates;
+
+            std::vector<FolderId> currentLevel = std::move(roots);
+            std::vector<FolderId> nextLevel;
+
+            for (const auto rootId : currentLevel)
+            {
+                m_parentsFromChildren[rootId] = {rootId};
+            }
+
+            size_t visitedCount = 0;
+            while (!currentLevel.empty())
+            {
+                nextLevel.clear();
+
+                for (const auto folderId : currentLevel)
+                {
+                    auto it = m_folderInfoFromId.find(folderId);
+                    if (it == m_folderInfoFromId.end())
+                        continue;
+                    ++visitedCount;
+
+                    auto &folderInfo = it->second;
+                    if (folderInfo.path.empty())
+                    {
+                        if (folderInfo.parentId <= 0)
+                        {
+                            folderInfo.path = normalizeForCache(folderInfo.name);
+                        }
+                        else
+                        {
+                            auto parentIt = m_folderInfoFromId.find(folderInfo.parentId);
+                            if (parentIt != m_folderInfoFromId.end())
+                            {
+                                folderInfo.path = normalizeForCache(parentIt->second.path + "\\" + folderInfo.name);
+                            }
+                            else
+                            {
+                                spdlog::error("buildCacheIfNeededCodexVariant: Missing parent {} for folder {}", folderInfo.parentId, folderId);
+                                return false;
+                            }
+                        }
+                        pathUpdates[folderId] = folderInfo.path;
+                    }
+
+                    const auto pf{m_idFromFolderPath.find(folderInfo.path)};
+                    if (pf != m_idFromFolderPath.end())
+                    {
+                        spdlog::error("Found duplicate: Folder {} already exists in m_folderInfoFromId", folderInfo.path);
+                        spdlog::error("New ID is {}", folderInfo.folderId);
+                        spdlog::error("Existing ID is {}", pf->second);
+                        return false;
+                    }
+                    m_idFromFolderPath[folderInfo.path] = folderInfo.folderId;
+
+                    if (folderInfo.parentId > 0 && !m_parentsFromChildren.contains(folderId))
+                    {
+                        auto parentChainIt = m_parentsFromChildren.find(folderInfo.parentId);
+                        if (parentChainIt == m_parentsFromChildren.end())
+                        {
+                            spdlog::error("buildCacheIfNeededCodexVariant: Missing parent chain for {} (parent {})", folderId, folderInfo.parentId);
+                            return false;
+                        }
+                        std::vector<FolderId> chain;
+                        chain.reserve(parentChainIt->second.size() + 1);
+                        chain.push_back(folderId);
+                        chain.insert(chain.end(), parentChainIt->second.begin(), parentChainIt->second.end());
+                        m_parentsFromChildren[folderId] = std::move(chain);
+                    }
+
+                    auto childrenIt = m_childrenFromParents.find(folderId);
+                    if (childrenIt != m_childrenFromParents.end())
+                    {
+                        for (const auto childId : childrenIt->second)
+                        {
+                            nextLevel.push_back(childId);
+                        }
+                    }
+                }
+
+                std::swap(currentLevel, nextLevel);
+            }
+            if (visitedCount != m_folderInfoFromId.size())
+            {
+                spdlog::error("buildCacheIfNeededCodexVariant: visited {} folders, expected {}. Orphaned folders likely exist.",
+                              visitedCount, m_folderInfoFromId.size());
+                return false;
+            }
+
+            spdlog::info("buildCacheIfNeededCodexVariant: complete with {} folders loaded.", m_folderInfoFromId.size());
+
+            if (!pathUpdates.empty())
+            {
+                updateRootPathValuesInDatabase(pathUpdates);
+            }
+            spdlog::info("BEGIN recursive track count calculation (Codex variant)");
+
+            struct ExistingAlbumInfo
+            {
+                AlbumId albumId;
+                std::string albumArtist;
+                std::string title;
+            };
+
+            struct NewAlbumInfo
+            {
+                std::string albumArtist;
+                std::string title;
+                FolderId folderId;
+            };
+
+            // build lookup map of existing albums by folder ID
+            std::unordered_map<FolderId, ExistingAlbumInfo> albumsByFolder;
+            reserveFromCount("SELECT COUNT(*) FROM Albums", albumsByFolder);
+
+            SqliteStatement albumQuery{m_db, "SELECT album_id, album_artist, title, folder_id FROM Albums"};
+            while (albumQuery.getNextResult())
+            {
+                ExistingAlbumInfo albumInfo;
+                albumInfo.albumId = albumQuery.getInt64(0);
+                albumInfo.albumArtist = albumQuery.getText(1);
+                albumInfo.title = albumQuery.getText(2);
+                const FolderId folderId = albumQuery.getInt64(3);
+                assert(albumInfo.albumId >= 0 && "Album ID should be non-negative");
+                assert(!albumsByFolder.contains(folderId) && "Folder should not have multiple albums in this context");
+
+                albumsByFolder[folderId] = std::move(albumInfo);
+            }
+
+            FolderId lastKnownFolderId = -1;
+            std::string lastKnownArtistName;
+            std::string lastKnownAlbumName;
+            bool useThisFolder = true;
+            bool folderAlreadyHasAlbum = false;
+
+            std::vector<NewAlbumInfo> albums;
+            std::unordered_set<FolderId> albumFolders;
+            reserveFromCount("SELECT COUNT(*) FROM Tracks", albumFolders);
+
+            SqliteStatement countStmt{m_db, "SELECT folder_id, COALESCE(artist_name, ''), COALESCE(album_title, '') FROM Tracks ORDER BY folder_ID ASC"};
+            while (countStmt.getNextResult())
+            {
+                const FolderId folderId = countStmt.getInt64(0);
+                const char *artistRaw = countStmt.getTextRaw(1);
+                const char *albumRaw = countStmt.getTextRaw(2);
+                const std::string_view artistName{artistRaw ? artistRaw : ""};
+                const std::string_view albumName{albumRaw ? albumRaw : ""};
+
+                if (folderId != lastKnownFolderId)
+                {
+                    if (useThisFolder)
+                    {
+                        if (!folderAlreadyHasAlbum && (lastKnownFolderId > 0))
+                        {
+                            if (albumFolders.contains(lastKnownFolderId))
+                            {
+                                spdlog::warn("Folder {} already has an album, skipping for folder ID {}", lastKnownFolderId, lastKnownFolderId);
+                            }
+                            else if (!lastKnownArtistName.empty() && !lastKnownArtistName.empty())
+                            {
+                                albumFolders.insert(lastKnownFolderId);
+
+                                NewAlbumInfo nai;
+                                nai.albumArtist = lastKnownArtistName;
+                                nai.title = lastKnownAlbumName;
+                                nai.folderId = lastKnownFolderId;
+                                albums.push_back(nai);
+                            }
+                        }
+                    }
+                    lastKnownArtistName.clear();
+                    lastKnownAlbumName.clear();
+                    useThisFolder = true;
+                    folderAlreadyHasAlbum = false;
+                    lastKnownFolderId = folderId;
+                }
+                else if (useThisFolder)
+                {
+                    if (artistName.empty())
+                    {
+                        useThisFolder = false; // Skip this folder for album creation
+                    }
+                    else if (albumName.empty())
+                    {
+                        useThisFolder = false; // Skip this folder for album creation
+                    }
+                    else if (lastKnownArtistName.empty())
+                    {
+                        auto item = albumsByFolder.find(folderId);
+                        if (item != albumsByFolder.end())
+                        {
+                            if (item->second.albumArtist != artistName || item->second.title != albumName)
+                            {
+                                useThisFolder = false; // Skip this folder for album creation
+                            }
+                            else
+                            {
+                                folderAlreadyHasAlbum = true; // This folder already has an album
+                            }
+                        }
+                        if (useThisFolder)
+                        {
+                            lastKnownArtistName = artistName;
+                            lastKnownAlbumName = albumName;
+                        }
+                    }
+                    else if (lastKnownArtistName != artistName || lastKnownAlbumName != albumName)
+                    {
+                        lastKnownArtistName.clear();
+                        lastKnownAlbumName.clear();
+                        useThisFolder = false; // Skip this folder for album creation
+                    }
+                }
+
+                auto item = m_parentsFromChildren.find(folderId);
+                if (item != m_parentsFromChildren.end())
+                {
+                    for (const auto parentId : item->second)
+                    {
+                        auto it = m_folderInfoFromId.find(parentId);
+                        if (it != m_folderInfoFromId.end())
+                        {
+                            ++(it->second.trackCount);
+                        }
+                    }
+                }
+            }
+            if (useThisFolder && !folderAlreadyHasAlbum && lastKnownFolderId > 0)
+            {
+                if (!albumFolders.contains(lastKnownFolderId) &&
+                    !lastKnownArtistName.empty() && !lastKnownAlbumName.empty())
+                {
+                    NewAlbumInfo nai;
+                    nai.albumArtist = lastKnownArtistName;
+                    nai.title = lastKnownAlbumName;
+                    nai.folderId = lastKnownFolderId;
+                    albums.push_back(nai);
+                }
+            }
+            spdlog::info("FINISHED recursive track count calculation for {:L} folders and {:L} new albums (Codex variant)", m_folderInfoFromId.size(), albums.size());
+
+            if (!albums.empty())
+            {
+                if (SqliteTransaction transaction{m_db})
+                {
+                    SqliteStatement stmt{m_db, "INSERT INTO Albums (album_artist, title, folder_id) VALUES (?, ?, ?)"};
+                    for (const auto &item : albums)
+                    {
+                        stmt.addParam(item.albumArtist);
+                        stmt.addParam(item.title);
+                        stmt.addParam(item.folderId);
+                        if (!stmt.execute())
+                        {
+                            spdlog::error("Failed to update folder with ID: {}", item.folderId);
+                            return transaction.rollback();
+                        }
+                        stmt.reset();
+                    }
+                    transaction.commit();
+                }
+            }
+
+            m_isCacheValid = true;
+            return true;
+        }
+
+        bool SqliteFolderDatabase::buildCacheIfNeededClaudeCode() const
+        {
+            std::lock_guard lock{m_cacheMutex};
+            if (m_isCacheValid)
+                return true;
+
+            spdlog::debug("Building all folder caches (ClaudeCode variant - topological optimized)...");
+
+            m_folderInfoFromId.clear();
+            m_idFromFolderPath.clear();
+            m_childrenFromParents.clear();
+            m_parentsFromChildren.clear();
+
+            // Pre-allocate hash maps based on folder count (like Codex)
+            {
+                SqliteStatement countStmt{m_db, "SELECT COUNT(*) FROM Folders"};
+                if (countStmt.isValid() && countStmt.getNextResult())
+                {
+                    const auto count = static_cast<size_t>(countStmt.getInt64(0));
+                    if (count > 0)
+                    {
+                        m_folderInfoFromId.reserve(count);
+                        m_idFromFolderPath.reserve(count);
+                        m_parentsFromChildren.reserve(count);
+                    }
+                }
+            }
+
+            // --- PHASE 1: Single pass to load all folders and build parent-child relationships ---
+            // Use COALESCE to avoid per-row NULL checks in C++
+            SqliteStatement stmt{m_db,
+                "SELECT folder_id, COALESCE(parent_id, -1), name, "
+                "COALESCE(root_path, ''), COALESCE(actual_path, '') FROM Folders;"};
+            if (!stmt.isValid())
+            {
+                spdlog::error("buildCacheIfNeededClaudeCode: Failed to prepare statement. DB error: {}", m_db.getLastError());
+                return false;
+            }
+
+            spdlog::info("buildCacheIfNeededClaudeCode: Loading folders from database...");
+
+            std::vector<FolderId> roots;  // Track root folders for BFS start
+
+            while (stmt.getNextResult())
+            {
+                FolderInfo info{};
+                info.folderId = stmt.getInt64(0);
+                info.parentId = stmt.getInt64(1);  // COALESCE handles NULL -> -1
+                // Use getTextRaw to avoid intermediate string construction
+                const char* nameRaw = stmt.getTextRaw(2);
+                const char* pathRaw = stmt.getTextRaw(3);
+                const char* actualPathRaw = stmt.getTextRaw(4);
+                info.name = nameRaw ? nameRaw : "";
+                info.path = pathRaw ? pathRaw : "";
+                info.actualPath = actualPathRaw ? actualPathRaw : "";
+                info.trackCount = 0;
+
+                m_folderInfoFromId[info.folderId] = info;
+
+                if (info.parentId > 0)
+                {
+                    registerAsParent(info.parentId, info.folderId);
+                }
+                else
+                {
+                    roots.push_back(info.folderId);
+                }
+            }
+
+            spdlog::info("buildCacheIfNeededClaudeCode: Loaded {} folders, {} roots", m_folderInfoFromId.size(), roots.size());
+
+            // --- PHASE 2: BFS from roots to compute paths AND build parentsFromChildren ---
+            // Key optimization: build parent chains incrementally during BFS (O(n) instead of O(n*d))
+            // When visiting a child, parent's chain is already computed: child's chain = [child] + parent's chain
+            std::unordered_map<FolderId, std::string> pathUpdates;
+            std::vector<FolderId> currentLevel = std::move(roots);
+            std::vector<FolderId> nextLevel;
+
+            // Initialize root parent chains (just themselves)
+            for (const auto rootId : currentLevel)
+            {
+                m_parentsFromChildren[rootId] = {rootId};
+            }
+
+            while (!currentLevel.empty())
+            {
+                nextLevel.clear();
+
+                for (const auto folderId : currentLevel)
+                {
+                    auto it = m_folderInfoFromId.find(folderId);
+                    if (it == m_folderInfoFromId.end())
+                        continue;
+
+                    auto& folderInfo = it->second;
+
+                    // Compute path if not already set
+                    if (folderInfo.path.empty())
+                    {
+                        if (folderInfo.parentId <= 0)
+                        {
+                            // Root folder - path is just name
+                            folderInfo.path = normalizeForCache(folderInfo.name);
+                        }
+                        else
+                        {
+                            // Child folder - parent path is already computed
+                            auto parentIt = m_folderInfoFromId.find(folderInfo.parentId);
+                            if (parentIt != m_folderInfoFromId.end())
+                            {
+                                folderInfo.path = normalizeForCache(parentIt->second.path + "\\" + folderInfo.name);
+                            }
+                            else
+                            {
+                                spdlog::error("buildCacheIfNeededClaudeCode: Missing parent {} for folder {}", folderInfo.parentId, folderId);
+                                return false;
+                            }
+                        }
+                        pathUpdates[folderId] = folderInfo.path;
+                    }
+
+                    // Add to path index (check for duplicates)
+                    const auto existingIt = m_idFromFolderPath.find(folderInfo.path);
+                    if (existingIt != m_idFromFolderPath.end())
+                    {
+                        spdlog::error("buildCacheIfNeededClaudeCode: Duplicate path '{}' for IDs {} and {}",
+                            folderInfo.path, existingIt->second, folderId);
+                        return false;
+                    }
+                    m_idFromFolderPath[folderInfo.path] = folderId;
+
+                    // Queue children for next level and build their parent chains
+                    auto childrenIt = m_childrenFromParents.find(folderId);
+                    if (childrenIt != m_childrenFromParents.end())
+                    {
+                        // Get this folder's parent chain (already computed)
+                        const auto& myParentChain = m_parentsFromChildren[folderId];
+
+                        for (const auto childId : childrenIt->second)
+                        {
+                            nextLevel.push_back(childId);
+
+                            // Child's parent chain = [child] + parent's chain (O(1) per child amortized)
+                            std::vector<FolderId> childChain;
+                            childChain.reserve(myParentChain.size() + 1);
+                            childChain.push_back(childId);
+                            childChain.insert(childChain.end(), myParentChain.begin(), myParentChain.end());
+                            m_parentsFromChildren[childId] = std::move(childChain);
+                        }
+                    }
+                }
+
+                std::swap(currentLevel, nextLevel);
+            }
+
+            spdlog::info("buildCacheIfNeededClaudeCode: Paths computed, {} updates needed", pathUpdates.size());
+
+            if (!pathUpdates.empty())
+            {
+                updateRootPathValuesInDatabase(pathUpdates);
+            }
+
+            // --- PHASE 4: Track counts and album creation (same as other variants) ---
+            spdlog::info("BEGIN recursive track count calculation (ClaudeCode variant)");
+
+            struct ExistingAlbumInfo
+            {
+                AlbumId albumId;
+                std::string albumArtist;
+                std::string title;
+            };
+
+            struct NewAlbumInfo
+            {
+                std::string albumArtist;
+                std::string title;
+                FolderId folderId;
+            };
+
+            std::unordered_map<FolderId, ExistingAlbumInfo> albumsByFolder;
+            SqliteStatement albumQuery{m_db, "SELECT album_id, album_artist, title, folder_id FROM Albums"};
+            while (albumQuery.getNextResult())
+            {
+                ExistingAlbumInfo albumInfo;
+                albumInfo.albumId = albumQuery.getInt64(0);
+                const char* artistRaw = albumQuery.getTextRaw(1);
+                const char* titleRaw = albumQuery.getTextRaw(2);
+                albumInfo.albumArtist = artistRaw ? artistRaw : "";
+                albumInfo.title = titleRaw ? titleRaw : "";
+                const FolderId folderId = albumQuery.getInt64(3);
+                albumsByFolder[folderId] = std::move(albumInfo);
+            }
+
+            FolderId lastKnownFolderId = -1;
+            std::string lastKnownArtistName;
+            std::string lastKnownAlbumName;
+            bool useThisFolder = true;
+            bool folderAlreadyHasAlbum = false;
+
+            std::vector<NewAlbumInfo> albums;
+            std::unordered_set<FolderId> albumFolders;
+
+            // Use COALESCE to handle NULLs in SQL
+            SqliteStatement countStmt{m_db,
+                "SELECT folder_id, COALESCE(artist_name, ''), COALESCE(album_title, '') "
+                "FROM Tracks ORDER BY folder_ID ASC"};
+            while (countStmt.getNextResult())
+            {
+                const FolderId folderId = countStmt.getInt64(0);
+                // Use getTextRaw - COALESCE guarantees non-NULL
+                const char* artistRaw = countStmt.getTextRaw(1);
+                const char* albumRaw = countStmt.getTextRaw(2);
+                const std::string_view artistName{artistRaw ? artistRaw : ""};
+                const std::string_view albumName{albumRaw ? albumRaw : ""};
+
+                if (folderId != lastKnownFolderId)
+                {
+                    if (useThisFolder && !folderAlreadyHasAlbum && lastKnownFolderId > 0)
+                    {
+                        if (!albumFolders.contains(lastKnownFolderId) &&
+                            !lastKnownArtistName.empty() && !lastKnownAlbumName.empty())
+                        {
+                            albumFolders.insert(lastKnownFolderId);
+                            albums.push_back({lastKnownArtistName, lastKnownAlbumName, lastKnownFolderId});
+                        }
+                    }
+                    lastKnownArtistName.clear();
+                    lastKnownAlbumName.clear();
+                    useThisFolder = true;
+                    folderAlreadyHasAlbum = false;
+                    lastKnownFolderId = folderId;
+                }
+                else if (useThisFolder)
+                {
+                    if (artistName.empty() || albumName.empty())
+                    {
+                        useThisFolder = false;
+                    }
+                    else if (lastKnownArtistName.empty())
+                    {
+                        auto item = albumsByFolder.find(folderId);
+                        if (item != albumsByFolder.end())
+                        {
+                            if (item->second.albumArtist != artistName || item->second.title != albumName)
+                                useThisFolder = false;
+                            else
+                                folderAlreadyHasAlbum = true;
+                        }
+                        if (useThisFolder)
+                        {
+                            lastKnownArtistName = artistName;
+                            lastKnownAlbumName = albumName;
+                        }
+                    }
+                    else if (lastKnownArtistName != artistName || lastKnownAlbumName != albumName)
+                    {
+                        lastKnownArtistName.clear();
+                        lastKnownAlbumName.clear();
+                        useThisFolder = false;
+                    }
+                }
+
+                // Update track counts for this folder and all parents
+                auto item = m_parentsFromChildren.find(folderId);
+                if (item != m_parentsFromChildren.end())
+                {
+                    for (const auto parentId : item->second)
+                    {
+                        auto it = m_folderInfoFromId.find(parentId);
+                        if (it != m_folderInfoFromId.end())
+                        {
+                            ++(it->second.trackCount);
+                        }
+                    }
+                }
+            }
+
+            // Handle last folder
+            if (useThisFolder && !folderAlreadyHasAlbum && lastKnownFolderId > 0)
+            {
+                if (!albumFolders.contains(lastKnownFolderId) &&
+                    !lastKnownArtistName.empty() && !lastKnownAlbumName.empty())
+                {
+                    albums.push_back({lastKnownArtistName, lastKnownAlbumName, lastKnownFolderId});
+                }
+            }
+
+            spdlog::info("FINISHED track count calculation for {:L} folders and {:L} new albums (ClaudeCode variant)",
+                m_folderInfoFromId.size(), albums.size());
+
+            if (!albums.empty())
+            {
+                if (SqliteTransaction transaction{m_db})
+                {
+                    SqliteStatement insertStmt{m_db, "INSERT INTO Albums (album_artist, title, folder_id) VALUES (?, ?, ?)"};
+                    for (const auto &item : albums)
+                    {
+                        insertStmt.addParam(item.albumArtist);
+                        insertStmt.addParam(item.title);
+                        insertStmt.addParam(item.folderId);
+                        if (!insertStmt.execute())
+                        {
+                            spdlog::error("Failed to insert album for folder ID: {}", item.folderId);
+                            return transaction.rollback();
+                        }
+                        insertStmt.reset();
+                    }
+                    transaction.commit();
+                }
+            }
+
+            m_isCacheValid = true;
+            return true;
+        }
+
+        bool SqliteFolderDatabase::buildCacheIfNeededCompare() const
+        {
+            using Clock = std::chrono::steady_clock;
+
+            struct CacheSnapshot
+            {
+                std::unordered_map<FolderId, FolderInfo> folderInfoFromId;
+                std::unordered_map<std::string, FolderId> idFromFolderPath;
+                std::unordered_map<FolderId, std::vector<FolderId>> childrenFromParents;
+                std::unordered_map<FolderId, std::vector<FolderId>> parentsFromChildren;
+            };
+
+            auto clearAllCaches = [this]()
+            {
+                std::lock_guard lock{m_cacheMutex};
+                m_isCacheValid = false;
+                m_folderInfoFromId.clear();
+                m_idFromFolderPath.clear();
+                m_childrenFromParents.clear();
+                m_parentsFromChildren.clear();
+            };
+
+            auto snapshotCache = [this]() -> CacheSnapshot
+            {
+                std::lock_guard lock{m_cacheMutex};
+                CacheSnapshot snapshot;
+                snapshot.folderInfoFromId = m_folderInfoFromId;
+                snapshot.idFromFolderPath = m_idFromFolderPath;
+                snapshot.childrenFromParents = m_childrenFromParents;
+                snapshot.parentsFromChildren = m_parentsFromChildren;
+                return snapshot;
+            };
+
+            auto runTimed = [&](const char *label, auto &&buildFn, CacheSnapshot &snapshot) -> bool
+            {
+                clearAllCaches();
+                const auto start = Clock::now();
+                const bool ok = buildFn();
+                const auto end = Clock::now();
+                const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+                spdlog::info("buildCacheIfNeededCompare: {} build took {} ms, ok={}", label, elapsedMs, ok);
+                if (ok)
+                {
+                    snapshot = snapshotCache();
+                }
+                return ok;
+            };
+
+            auto logSnapshotStats = [&](const char *label, const CacheSnapshot &snapshot)
+            {
+                size_t totalChildrenLinks = 0;
+                for (const auto &item : snapshot.childrenFromParents)
+                {
+                    totalChildrenLinks += item.second.size();
+                }
+                size_t totalParentLinks = 0;
+                for (const auto &item : snapshot.parentsFromChildren)
+                {
+                    totalParentLinks += item.second.size();
+                }
+                int64_t totalTrackCount = 0;
+                for (const auto &item : snapshot.folderInfoFromId)
+                {
+                    totalTrackCount += item.second.trackCount;
+                }
+
+                spdlog::info(
+                    "buildCacheIfNeededCompare: {} stats folders={}, pathIndex={}, childrenIndex={}, parentsIndex={}, childLinks={}, parentLinks={}, totalTrackCount={}",
+                    label, snapshot.folderInfoFromId.size(), snapshot.idFromFolderPath.size(),
+                    snapshot.childrenFromParents.size(), snapshot.parentsFromChildren.size(), totalChildrenLinks,
+                    totalParentLinks, totalTrackCount);
+            };
+
+            auto folderInfoEquals = [](const FolderInfo &lhs, const FolderInfo &rhs)
+            {
+                return lhs.folderId == rhs.folderId && lhs.parentId == rhs.parentId && lhs.name == rhs.name &&
+                       lhs.path == rhs.path && lhs.actualPath == rhs.actualPath && lhs.trackCount == rhs.trackCount;
+            };
+
+            auto vectorEquals = [](const std::vector<FolderId> &lhs, const std::vector<FolderId> &rhs)
+            {
+                if (lhs.size() != rhs.size())
+                    return false;
+                for (size_t i = 0; i < lhs.size(); ++i)
+                {
+                    if (lhs[i] != rhs[i])
+                        return false;
+                }
+                return true;
+            };
+
+            auto compareSnapshots = [&](const CacheSnapshot &lhs, const CacheSnapshot &rhs) -> bool
+            {
+                constexpr size_t kMaxDiffsToLog = 5;
+                bool ok = true;
+
+                size_t diffCount = 0;
+                if (lhs.folderInfoFromId.size() != rhs.folderInfoFromId.size())
+                {
+                    spdlog::warn("buildCacheIfNeededCompare: folderInfoFromId size differs: {} vs {}",
+                                 lhs.folderInfoFromId.size(), rhs.folderInfoFromId.size());
+                    ok = false;
+                }
+                for (const auto &item : lhs.folderInfoFromId)
+                {
+                    const auto it = rhs.folderInfoFromId.find(item.first);
+                    if (it == rhs.folderInfoFromId.end())
+                    {
+                        if (diffCount++ < kMaxDiffsToLog)
+                        {
+                            spdlog::warn("buildCacheIfNeededCompare: missing folderInfoFromId entry in Codex: {}", item.first);
+                        }
+                        ok = false;
+                        continue;
+                    }
+                    if (!folderInfoEquals(item.second, it->second))
+                    {
+                        if (diffCount++ < kMaxDiffsToLog)
+                        {
+                            spdlog::warn("buildCacheIfNeededCompare: folderInfoFromId mismatch for ID {}", item.first);
+                        }
+                        ok = false;
+                    }
+                }
+                for (const auto &item : rhs.folderInfoFromId)
+                {
+                    if (!lhs.folderInfoFromId.contains(item.first))
+                    {
+                        if (diffCount++ < kMaxDiffsToLog)
+                        {
+                            spdlog::warn("buildCacheIfNeededCompare: extra folderInfoFromId entry in Codex: {}", item.first);
+                        }
+                        ok = false;
+                    }
+                }
+
+                diffCount = 0;
+                if (lhs.idFromFolderPath.size() != rhs.idFromFolderPath.size())
+                {
+                    spdlog::warn("buildCacheIfNeededCompare: idFromFolderPath size differs: {} vs {}",
+                                 lhs.idFromFolderPath.size(), rhs.idFromFolderPath.size());
+                    ok = false;
+                }
+                for (const auto &item : lhs.idFromFolderPath)
+                {
+                    const auto it = rhs.idFromFolderPath.find(item.first);
+                    if (it == rhs.idFromFolderPath.end())
+                    {
+                        if (diffCount++ < kMaxDiffsToLog)
+                        {
+                            spdlog::warn("buildCacheIfNeededCompare: missing idFromFolderPath entry in Codex: {}", item.first);
+                        }
+                        ok = false;
+                        continue;
+                    }
+                    if (it->second != item.second)
+                    {
+                        if (diffCount++ < kMaxDiffsToLog)
+                        {
+                            spdlog::warn("buildCacheIfNeededCompare: idFromFolderPath mismatch for {}: {} vs {}",
+                                         item.first, item.second, it->second);
+                        }
+                        ok = false;
+                    }
+                }
+                for (const auto &item : rhs.idFromFolderPath)
+                {
+                    if (!lhs.idFromFolderPath.contains(item.first))
+                    {
+                        if (diffCount++ < kMaxDiffsToLog)
+                        {
+                            spdlog::warn("buildCacheIfNeededCompare: extra idFromFolderPath entry in Codex: {}", item.first);
+                        }
+                        ok = false;
+                    }
+                }
+
+                diffCount = 0;
+                if (lhs.childrenFromParents.size() != rhs.childrenFromParents.size())
+                {
+                    spdlog::warn("buildCacheIfNeededCompare: childrenFromParents size differs: {} vs {}",
+                                 lhs.childrenFromParents.size(), rhs.childrenFromParents.size());
+                    ok = false;
+                }
+                for (const auto &item : lhs.childrenFromParents)
+                {
+                    const auto it = rhs.childrenFromParents.find(item.first);
+                    if (it == rhs.childrenFromParents.end())
+                    {
+                        if (diffCount++ < kMaxDiffsToLog)
+                        {
+                            spdlog::warn("buildCacheIfNeededCompare: missing childrenFromParents entry in Codex: {}", item.first);
+                        }
+                        ok = false;
+                        continue;
+                    }
+                    if (!vectorEquals(item.second, it->second))
+                    {
+                        if (diffCount++ < kMaxDiffsToLog)
+                        {
+                            spdlog::warn("buildCacheIfNeededCompare: childrenFromParents mismatch for parent ID {}", item.first);
+                        }
+                        ok = false;
+                    }
+                }
+                for (const auto &item : rhs.childrenFromParents)
+                {
+                    if (!lhs.childrenFromParents.contains(item.first))
+                    {
+                        if (diffCount++ < kMaxDiffsToLog)
+                        {
+                            spdlog::warn("buildCacheIfNeededCompare: extra childrenFromParents entry in Codex: {}", item.first);
+                        }
+                        ok = false;
+                    }
+                }
+
+                diffCount = 0;
+                if (lhs.parentsFromChildren.size() != rhs.parentsFromChildren.size())
+                {
+                    spdlog::warn("buildCacheIfNeededCompare: parentsFromChildren size differs: {} vs {}",
+                                 lhs.parentsFromChildren.size(), rhs.parentsFromChildren.size());
+                    ok = false;
+                }
+                for (const auto &item : lhs.parentsFromChildren)
+                {
+                    const auto it = rhs.parentsFromChildren.find(item.first);
+                    if (it == rhs.parentsFromChildren.end())
+                    {
+                        if (diffCount++ < kMaxDiffsToLog)
+                        {
+                            spdlog::warn("buildCacheIfNeededCompare: missing parentsFromChildren entry in Codex: {}", item.first);
+                        }
+                        ok = false;
+                        continue;
+                    }
+                    if (!vectorEquals(item.second, it->second))
+                    {
+                        if (diffCount++ < kMaxDiffsToLog)
+                        {
+                            spdlog::warn("buildCacheIfNeededCompare: parentsFromChildren mismatch for child ID {}", item.first);
+                        }
+                        ok = false;
+                    }
+                }
+                for (const auto &item : rhs.parentsFromChildren)
+                {
+                    if (!lhs.parentsFromChildren.contains(item.first))
+                    {
+                        if (diffCount++ < kMaxDiffsToLog)
+                        {
+                            spdlog::warn("buildCacheIfNeededCompare: extra parentsFromChildren entry in Codex: {}", item.first);
+                        }
+                        ok = false;
+                    }
+                }
+
+                if (!lhs.folderInfoFromId.empty() && !rhs.folderInfoFromId.empty())
+                {
+                    std::vector<FolderId> sampleIds;
+                    sampleIds.reserve(lhs.folderInfoFromId.size());
+                    for (const auto &item : lhs.folderInfoFromId)
+                    {
+                        sampleIds.push_back(item.first);
+                    }
+                    std::mt19937 rng{0xC0D3u}; // stable seed for reproducible samples
+                    std::shuffle(sampleIds.begin(), sampleIds.end(), rng);
+                    const size_t sampleCount = std::min<size_t>(10, sampleIds.size());
+                    for (size_t i = 0; i < sampleCount; ++i)
+                    {
+                        const FolderId id = sampleIds[i];
+                        const auto leftIt = lhs.folderInfoFromId.find(id);
+                        const auto rightIt = rhs.folderInfoFromId.find(id);
+                        if (leftIt == lhs.folderInfoFromId.end() || rightIt == rhs.folderInfoFromId.end())
+                        {
+                            spdlog::warn("buildCacheIfNeededCompare: random sample missing ID {}", id);
+                            ok = false;
+                            continue;
+                        }
+                        if (!folderInfoEquals(leftIt->second, rightIt->second))
+                        {
+                            spdlog::warn("buildCacheIfNeededCompare: random sample mismatch for ID {}", id);
+                            ok = false;
+                        }
+                    }
+                }
+
+                return ok;
+            };
+
+            CacheSnapshot gersonSnapshot;
+            CacheSnapshot codexSnapshot;
+            CacheSnapshot claudeCodeSnapshot;
+
+            constexpr int kIterations = 10;
+
+            struct TimingStats
+            {
+                std::vector<int64_t> times;
+                int64_t min() const { return *std::min_element(times.begin(), times.end()); }
+                int64_t max() const { return *std::max_element(times.begin(), times.end()); }
+                int64_t avg() const { return std::accumulate(times.begin(), times.end(), 0LL) / static_cast<int64_t>(times.size()); }
+            };
+
+            auto runMultipleTimed = [&](const char *label, auto &&buildFn, CacheSnapshot &snapshot) -> std::optional<TimingStats>
+            {
+                TimingStats stats;
+                stats.times.reserve(kIterations);
+
+                for (int i = 0; i < kIterations; ++i)
+                {
+                    clearAllCaches();
+                    const auto start = Clock::now();
+                    const bool ok = buildFn();
+                    const auto end = Clock::now();
+                    const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+                    if (!ok)
+                    {
+                        spdlog::error("buildCacheIfNeededCompare: {} variant failed on iteration {}", label, i + 1);
+                        return std::nullopt;
+                    }
+
+                    stats.times.push_back(elapsedMs);
+                    spdlog::debug("buildCacheIfNeededCompare: {} iteration {} took {} ms", label, i + 1, elapsedMs);
+                }
+
+                snapshot = snapshotCache();
+                spdlog::info("buildCacheIfNeededCompare: {} ({} runs): min={} ms, max={} ms, avg={} ms",
+                             label, kIterations, stats.min(), stats.max(), stats.avg());
+                return stats;
+            };
+
+            auto gersonStats = runMultipleTimed("Gerson", [&]() { return buildCacheIfNeededGerson(); }, gersonSnapshot);
+            if (!gersonStats)
+                return false;
+            logSnapshotStats("Gerson", gersonSnapshot);
+
+            auto codexStats = runMultipleTimed("Codex", [&]() { return buildCacheIfNeededCodexVariant(); }, codexSnapshot);
+            if (!codexStats)
+                return false;
+            logSnapshotStats("Codex", codexSnapshot);
+
+            auto claudeCodeStats = runMultipleTimed("ClaudeCode", [&]() { return buildCacheIfNeededClaudeCode(); }, claudeCodeSnapshot);
+            if (!claudeCodeStats)
+                return false;
+            logSnapshotStats("ClaudeCode", claudeCodeSnapshot);
+
+            // Summary comparison
+            spdlog::info("buildCacheIfNeededCompare: === TIMING SUMMARY ({} iterations) ===", kIterations);
+            spdlog::info("buildCacheIfNeededCompare:   Gerson:     avg={} ms (min={}, max={})", gersonStats->avg(), gersonStats->min(), gersonStats->max());
+            spdlog::info("buildCacheIfNeededCompare:   Codex:      avg={} ms (min={}, max={})", codexStats->avg(), codexStats->min(), codexStats->max());
+            spdlog::info("buildCacheIfNeededCompare:   ClaudeCode: avg={} ms (min={}, max={})", claudeCodeStats->avg(), claudeCodeStats->min(), claudeCodeStats->max());
+
+            const bool gersonVsCodex = compareSnapshots(gersonSnapshot, codexSnapshot);
+            spdlog::info("buildCacheIfNeededCompare: Gerson vs Codex: {}", gersonVsCodex ? "OK" : "DIFFERENT");
+
+            const bool gersonVsClaudeCode = compareSnapshots(gersonSnapshot, claudeCodeSnapshot);
+            spdlog::info("buildCacheIfNeededCompare: Gerson vs ClaudeCode: {}", gersonVsClaudeCode ? "OK" : "DIFFERENT");
+
+            // TEMPORARY: Exit after comparison to avoid issues during operation
+            spdlog::info("buildCacheIfNeededCompare: Exiting after comparison (temporary for testing)");
+            spdlog::default_logger()->flush();
+            std::exit(0);
+
+            return gersonVsCodex && gersonVsClaudeCode;
         }
 
         void SqliteFolderDatabase::getChildFoldersRecursive(std::unordered_set<FolderId> &allChildIds, FolderId folderId) const

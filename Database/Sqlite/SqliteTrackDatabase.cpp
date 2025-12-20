@@ -519,6 +519,7 @@ namespace jucyaudio
             
             // Moderate performance optimizations
             m_db.execute("PRAGMA cache_size=-16000;");   // 16MB cache (was default ~2MB)
+            m_db.execute("PRAGMA mmap_size=268435456;"); // 256MB memory-mapped I/O for faster reads
 
             DbResult schemaResult = createTablesIfNeeded();
             if (!schemaResult.isOk())

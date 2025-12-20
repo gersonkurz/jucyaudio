@@ -72,6 +72,10 @@ namespace jucyaudio
             // r
             /// @brief Loads all folders from the database into the cache if it's empty.
             bool buildCacheIfNeeded() const;
+            bool buildCacheIfNeededGerson() const;
+            bool buildCacheIfNeededCodexVariant() const;
+            bool buildCacheIfNeededClaudeCode() const;
+            bool buildCacheIfNeededCompare() const;
 
             /// @brief Helper function that updates root_path values in the database, once.
             bool updateRootPathValuesInDatabase(const std::unordered_map<FolderId, std::string> &pathUpdates) const;
