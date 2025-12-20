@@ -3,6 +3,7 @@
 #include <Utils/UiUtils.h>
 #include <Database/Includes/Constants.h>
 #include <spdlog/spdlog.h>
+#include <unordered_map>
 
 namespace jucyaudio
 {
@@ -72,6 +73,14 @@ namespace jucyaudio
                 }
             }
 
+            // Build O(1) lookup map for TrackInfo (avoids O(n²) linear searches)
+            std::unordered_map<TrackId, const TrackInfo*> trackInfoMap;
+            trackInfoMap.reserve(state->trackInfos.size());
+            for (const auto& ti : state->trackInfos)
+            {
+                trackInfoMap[ti.trackId] = &ti;
+            }
+
             // Calculate track start times using Mix Flow algorithm
             state->trackStartTimes.reserve(mixTracks.size());
             Duration_t previousAudioStartTime{0};
@@ -95,15 +104,16 @@ namespace jucyaudio
                 previousAudioStartTime = audioStartTime;
             }
 
-            // Calculate total duration
+            // Calculate total duration using O(1) map lookups
             Duration_t maxEndTime{0};
             for (size_t i = 0; i < mixTracks.size(); ++i)
             {
                 const auto& mixTrack = mixTracks[i];
-                if (const auto* trackInfo = state->getTrackInfo(mixTrack.trackId))
+                auto it = trackInfoMap.find(mixTrack.trackId);
+                if (it != trackInfoMap.end())
                 {
                     Duration_t trackStartTime = state->trackStartTimes[i];
-                    Duration_t trackEndTime = trackStartTime + trackInfo->duration;
+                    Duration_t trackEndTime = trackStartTime + it->second->duration;
                     maxEndTime = std::max(maxEndTime, trackEndTime);
                 }
             }
@@ -118,12 +128,13 @@ namespace jucyaudio
                 for (size_t i = 0; i < mixTracks.size(); ++i)
                 {
                     const auto& mixTrack = mixTracks[i];
-                    const auto* trackInfo = state->getTrackInfo(mixTrack.trackId);
-                    if (!trackInfo)
+                    auto it = trackInfoMap.find(mixTrack.trackId);
+                    if (it == trackInfoMap.end())
                     {
                         spdlog::warn("[PlaybackEngine] buildPlaybackState -> TrackInfo not found for trackId={}", mixTrack.trackId);
                         continue;
                     }
+                    const auto* trackInfo = it->second;
 
                     auto source = std::make_unique<PlaybackTrackSource>(mixTrack.trackId, i, trackInfo, mixTrack);
 
