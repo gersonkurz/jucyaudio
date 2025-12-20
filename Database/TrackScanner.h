@@ -64,7 +64,7 @@ namespace jucyaudio
             
             ITrackDatabase &m_db;
 
-            std::vector<ITrackInfoScanner *> m_scanners;
+            std::vector<std::unique_ptr<ITrackInfoScanner>> m_scanners;
 
             ProgressCallback m_progressCb{nullptr};
             CompletionCallback m_completionCb{nullptr};

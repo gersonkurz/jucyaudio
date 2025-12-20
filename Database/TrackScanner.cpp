@@ -13,7 +13,7 @@ namespace jucyaudio
         TrackScanner::TrackScanner(ITrackDatabase &database)
             : m_db{database}
         {
-            m_scanners.push_back(new scanners::Id3TagScanner{m_db.getTagManager()});
+            m_scanners.push_back(std::make_unique<scanners::Id3TagScanner>(m_db.getTagManager()));
         }
 
         bool TrackScanner::scan(const std::vector<FolderId> &folderIdsToScan,
@@ -165,7 +165,7 @@ namespace jucyaudio
 
                     if (needsFullAnalysis)
                     {
-                        for (auto *scanner : m_scanners)
+                        for (const auto& scanner : m_scanners)
                         {
                             scanner->processTrack(currentTrackInfo, fullPath);
                         }
