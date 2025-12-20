@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <Audio/AudioLibrary.h>
 #include <Audio/Includes/ActiveExportSettings.h>
 #include <Database/Includes/INavigationNode.h>
@@ -119,6 +120,8 @@ namespace jucyaudio
             // menu management --------------------------------
             bool onShowScanDialog();
             bool onShowMaintenanceDialog();
+            void performDatabaseRestore(const std::filesystem::path& backupPath);
+            void reinitializeAfterRestore();
             bool onShowConfigureColumnsDialog();
             bool onShowAboutDialog();
             bool onApplyThemeByIndex(size_t themeIndex);

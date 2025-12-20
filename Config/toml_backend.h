@@ -24,14 +24,14 @@ namespace jucyaudio
             bool load(const std::string &path, int32_t &value) override
             {
                 auto loc = std::source_location::current();
-                logger->info("{}: Loading int32_t from path: {}", loc.function_name(), path);
+                logger->debug("{}: Loading int32_t from path: {}", loc.function_name(), path);
                 if (auto val = getValueAtPath(path))
                 {
-                    logger->info("{}: getValueAtPath {} returned {}", loc.function_name(), path, (const void*) val);
+                    logger->debug("{}: getValueAtPath {} returned {}", loc.function_name(), path, (const void*) val);
                     if (val->is_integer())
                     {
                         value = static_cast<int32_t>(val->as_integer()->get());
-                        logger->info("{}: Loaded '{}' from path: {}", loc.function_name(), value, path);
+                        logger->debug("{}: Loaded '{}' from path: {}", loc.function_name(), value, path);
                         return true;
                     }
                 }
@@ -41,21 +41,21 @@ namespace jucyaudio
 
             bool save(const std::string &path, int32_t value) override
             {
-                logger->info("Set {} at path: {}", value, path);
+                logger->debug("Set {} at path: {}", value, path);
                 return setValueAtPath(path, value);
             }
 
             bool load(const std::string &path, bool &value) override
             {
                 auto loc = std::source_location::current();
-                logger->info("{}: Loading bool from path: {}", loc.function_name(), path);
+                logger->debug("{}: Loading bool from path: {}", loc.function_name(), path);
                 if (auto val = getValueAtPath(path))
                 {
-                    logger->info("{}: getValueAtPath {} returned {}", loc.function_name(), path, (const void*) val);
+                    logger->debug("{}: getValueAtPath {} returned {}", loc.function_name(), path, (const void*) val);
                     if (val->is_boolean())
                     {
                         value = val->as_boolean()->get();
-                        logger->info("{}: Loaded '{}' from path: {}", loc.function_name(), value, path);
+                        logger->debug("{}: Loaded '{}' from path: {}", loc.function_name(), value, path);
                         return true;
                     }
                 }
@@ -65,21 +65,21 @@ namespace jucyaudio
 
             bool save(const std::string &path, bool value) override
             {
-                logger->info("Set {} at path: {}", value, path);
+                logger->debug("Set {} at path: {}", value, path);
                 return setValueAtPath(path, value);
             }
 
             bool load(const std::string &path, std::string &value) override
             {                
                 auto loc = std::source_location::current();
-                logger->info("{}: Loading std::string from path: {}", loc.function_name(), path);
+                logger->debug("{}: Loading std::string from path: {}", loc.function_name(), path);
                 if (auto val = getValueAtPath(path))
                 {
-                    logger->info("{}: getValueAtPath {} returned {}", loc.function_name(), path, (const void*) val);
+                    logger->debug("{}: getValueAtPath {} returned {}", loc.function_name(), path, (const void*) val);
                     if (val->is_string())
                     {
                         value = val->as_string()->get();
-                        logger->info("{}: Loaded '{}' from path: {}", loc.function_name(), value, path);
+                        logger->debug("{}: Loaded '{}' from path: {}", loc.function_name(), value, path);
                         return true;
                     }
                 }
@@ -89,14 +89,14 @@ namespace jucyaudio
 
             bool save(const std::string &path, const std::string &value) override
             {
-                logger->info("Set {} at path: {}", value, path);
+                logger->debug("Set {} at path: {}", value, path);
                 return setValueAtPath(path, value);
             }
 
             bool sectionExists(const std::string &path) override
             {
                 auto loc = std::source_location::current();
-                logger->info("{}: called for {}", loc.function_name(), path);
+                logger->debug("{}: called for {}", loc.function_name(), path);
                 auto parts = splitPath(path);
                 if (parts.empty())
                 {
@@ -109,7 +109,7 @@ namespace jucyaudio
                 // Navigate through all path parts
                 for (const auto &part : parts)
                 {
-                    logger->info("{}: Looking at part '{}'", loc.function_name(), part);
+                    logger->debug("{}: Looking at part '{}'", loc.function_name(), part);
                     if (auto table = current->as_table())
                     {
                         auto it = table->find(part);
@@ -119,7 +119,7 @@ namespace jucyaudio
                         }
                         else
                         {
-                            logger->info("{}: Section '{}' does not exist in the config.", loc.function_name(), part);
+                            logger->debug("{}: Section '{}' does not exist in the config.", loc.function_name(), part);
                             return false; // Path doesn't exist
                         }
                     }
@@ -134,7 +134,7 @@ namespace jucyaudio
                 const auto success = current->is_table();
                 if(success)
                 {
-                    logger->info("{}: Section '{}' exists in the config.", loc.function_name(), path);
+                    logger->debug("{}: Section '{}' exists in the config.", loc.function_name(), path);
                 }
                 else
                 {
@@ -146,7 +146,7 @@ namespace jucyaudio
             bool deleteKey(const std::string &path) override
             {
                 auto loc = std::source_location::current();
-                logger->info("{}: called for {}", loc.function_name(), path);
+                logger->debug("{}: called for {}", loc.function_name(), path);
                 auto parts = splitPath(path);
                 if (parts.empty())
                     return false;
@@ -186,7 +186,7 @@ namespace jucyaudio
             bool deleteSection(const std::string &path) override
             {
                 auto loc = std::source_location::current();
-                logger->info("{}: called for {}", loc.function_name(), path);
+                logger->debug("{}: called for {}", loc.function_name(), path);
                 auto parts = splitPath(path);
                 if (parts.empty())
                     return false;
@@ -271,7 +271,7 @@ namespace jucyaudio
             toml::node *getValueAtPath(const std::string &path)
             {
                 auto loc = std::source_location::current();
-                logger->info("{}: called for {}", loc.function_name(), path);
+                logger->debug("{}: called for {}", loc.function_name(), path);
 
                 auto parts = splitPath(path);
                 if (parts.empty())
@@ -285,7 +285,7 @@ namespace jucyaudio
                 // Navigate to the parent table
                 for (size_t i = 0; i < parts.size() - 1; ++i)
                 {
-                    logger->info("{} Navigating to part: {}", loc.function_name(), parts[i]);
+                    logger->debug("{} Navigating to part: {}", loc.function_name(), parts[i]);
                     if (const auto& table = current->as_table())
                     {
                         auto it = table->find(parts[i]);
@@ -312,7 +312,7 @@ namespace jucyaudio
                     auto it = table->find(parts.back());
                     if (it != table->end())
                     {
-                        logger->info("{}: Found value at path: {}", loc.function_name(), path);
+                        logger->debug("{}: Found value at path: {}", loc.function_name(), path);
                         return &it->second;
                     }
                 }

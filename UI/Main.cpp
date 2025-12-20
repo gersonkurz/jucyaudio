@@ -211,8 +211,9 @@ namespace jucyaudio
                 // Perform database backup check before the database is opened
                 {
                     database::DatabaseBackupManager backupManager;
-                    // Enable creation (false) but keep pruning in dry-run mode (true) for now.
-                    backupManager.performBackupCheck(config::theSettings, dbPath, false, true);
+                    // dryRunPruning is the inverse of enablePruning setting
+                    const bool dryRunPruning = !config::theSettings.backupSettings.enablePruning.get();
+                    backupManager.performBackupCheck(config::theSettings, dbPath, false, dryRunPruning);
                 }
 
                 theThemeManager.initialize(getThemesDirectoryPath(), config::theSettings.uiSettings.theme.get());

@@ -12,9 +12,9 @@ namespace jucyaudio
 {
     namespace database
     {
-                void DatabaseBackupManager::performBackupCheck(const config::RootSettings& appSettings, const std::filesystem::path& databaseFile, bool dryRunCreation, bool dryRunPruning)
+                void DatabaseBackupManager::performBackupCheck(const config::RootSettings& appSettings, const std::filesystem::path& databaseFile, bool dryRunCreation, bool dryRunPruning, bool forceCreation)
         {
-            spdlog::info("[Backup Manager] Starting backup check. Creation Dry Run: {}, Pruning Dry Run: {}", dryRunCreation, dryRunPruning);
+            spdlog::info("[Backup Manager] Starting backup check. Creation Dry Run: {}, Pruning Dry Run: {}, Force Creation: {}", dryRunCreation, dryRunPruning, forceCreation);
 
             try
             {
@@ -28,9 +28,10 @@ namespace jucyaudio
                 auto existingBackups = getExistingBackups(dbDirectory);
                 spdlog::info("[Backup Manager] Found {} existing backups.", existingBackups.size());
 
-                if (isBackupNeeded(existingBackups))
+                if (forceCreation || isBackupNeeded(existingBackups))
                 {
-                    spdlog::info("[Backup Manager] Backup is needed. Proceeding to create a new one.");
+                    spdlog::info("[Backup Manager] {} Proceeding to create a new backup.",
+                        forceCreation ? "Forced backup requested." : "Backup is needed.");
                     createNewBackup(databaseFile, existingBackups, dryRunCreation);
                     // After creating a new backup, we need to refresh the list before pruning.
                     if (!dryRunCreation)

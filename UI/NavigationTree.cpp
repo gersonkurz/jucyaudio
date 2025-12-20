@@ -19,7 +19,14 @@ namespace jucyaudio
 
         bool NavigationTree::initialize()
         {
-            assert(m_root == nullptr);         // Ensure we only initialize once
+            // If already initialized, release the old root first
+            if (m_root != nullptr)
+            {
+                m_npc.releaseRootNode();
+                m_root->release(REFCOUNT_DEBUG_ARGS);
+                m_root = nullptr;
+            }
+
             m_root = new RootNode{};           // Create the root node
             if (!m_root)
             {

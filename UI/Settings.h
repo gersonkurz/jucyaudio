@@ -180,6 +180,7 @@ namespace jucyaudio
                 }
 
                 TypedValue<int> numberOfBackups{this, "NumberOfBackups", 5};
+                TypedValue<bool> enablePruning{this, "EnablePruning", true};
 
             } backupSettings{this};
             

@@ -16,6 +16,8 @@
 #include <Database/UndoManager.h>
 #include <UI/AboutDialog.h>
 #include <UI/CheckboxLookAndFeel.h>
+#include <UI/DatabaseMaintenanceDialog.h>
+#include <Database/DatabaseBackupManager.h>
 #include <UI/ColumnConfiguratorDialog.h>
 #include <UI/CreateMixDialogComponent.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
@@ -3348,47 +3350,219 @@ namespace jucyaudio
 
         bool MainComponent::onShowMaintenanceDialog()
         {
-            class DatabaseMaintenanceTask final : public ILongRunningTask
+            // Show options dialog first
+            DatabaseMaintenanceDialog::show(this, [this](bool accepted, const DatabaseMaintenanceDialog::Options& options)
+            {
+                if (!accepted)
+                {
+                    return;  // User cancelled
+                }
+
+                // Handle restore from backup (exclusive operation)
+                if (options.restoreFromBackup && !options.backupToRestore.empty())
+                {
+                    performDatabaseRestore(options.backupToRestore);
+                    return;
+                }
+
+                // Nothing to do if no options selected
+                if (!options.backupBeforeMaintenance && !options.runPerformanceOperations)
+                {
+                    return;
+                }
+
+                // Create maintenance task with selected options
+                class DatabaseMaintenanceTask final : public ILongRunningTask
+                {
+                public:
+                    DatabaseMaintenanceTask(bool doBackup, bool doPerformance)
+                        : ILongRunningTask{"Performing Database Maintenance", true}
+                        , m_doBackup{doBackup}
+                        , m_doPerformance{doPerformance}
+                    {
+                    }
+
+                    void run(ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel) override
+                    {
+                        theBackgroundTaskService.pause();
+
+                        // Step 1: Backup if requested
+                        if (m_doBackup)
+                        {
+                            progressCb(0, "Creating database backup...");
+                            spdlog::info("Creating database backup before maintenance...");
+
+                            auto dbPath = expandPath(config::theSettings.database.filename.get());
+                            database::DatabaseBackupManager backupManager;
+                            // Force create a backup (user explicitly requested it)
+                            // dryRunPruning is the inverse of enablePruning setting
+                            const bool dryRunPruning = !config::theSettings.backupSettings.enablePruning.get();
+                            backupManager.performBackupCheck(config::theSettings, dbPath, false, dryRunPruning, true);
+
+                            if (shouldCancel)
+                            {
+                                completionCb(false, "Database maintenance cancelled.");
+                                theBackgroundTaskService.resume();
+                                return;
+                            }
+                        }
+
+                        // Step 2: Run performance operations if requested
+                        if (m_doPerformance)
+                        {
+                            auto maintenanceProgressCb = [&progressCb, this](int percentComplete, const std::string &statusMessage)
+                            {
+                                // Adjust progress if we did backup first
+                                int adjustedPercent = m_doBackup ? (10 + (percentComplete * 90 / 100)) : percentComplete;
+                                progressCb(adjustedPercent, statusMessage);
+                            };
+
+                            const bool success = theTrackLibrary.runMaintenanceTasks(shouldCancel, maintenanceProgressCb);
+
+                            if (shouldCancel)
+                            {
+                                completionCb(false, "Database maintenance cancelled.");
+                            }
+                            else if (success)
+                            {
+                                completionCb(true, "Database maintenance completed successfully.");
+                            }
+                            else
+                            {
+                                completionCb(false, "Database maintenance failed.");
+                            }
+                        }
+                        else
+                        {
+                            completionCb(true, "Database backup completed successfully.");
+                        }
+
+                        theBackgroundTaskService.resume();
+                    }
+
+                private:
+                    bool m_doBackup;
+                    bool m_doPerformance;
+                };
+
+                auto *task = new DatabaseMaintenanceTask{options.backupBeforeMaintenance, options.runPerformanceOperations};
+                TaskDialog::launch("Database Maintenance", task, TaskDialog::AutoCloseMode::NoAutoClose, 500, this);
+                task->release(REFCOUNT_DEBUG_ARGS);
+            });
+
+            return true;
+        }
+
+        void MainComponent::performDatabaseRestore(const std::filesystem::path& backupPath)
+        {
+            class DatabaseRestoreTask final : public ILongRunningTask
             {
             public:
-                DatabaseMaintenanceTask()
-                    : ILongRunningTask{"Performing Database Maintenance", true} // Changed to cancellable
+                DatabaseRestoreTask(const std::filesystem::path& backup)
+                    : ILongRunningTask{"Restoring Database from Backup", false}
+                    , m_backupPath{backup}
                 {
                 }
 
-                void run(ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel) override
+                void run(ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool>& /*shouldCancel*/) override
                 {
                     theBackgroundTaskService.pause();
 
-                    // Convert our ProgressCallback to MaintenanceProgressCallback
-                    auto maintenanceProgressCb = [&progressCb](int percentComplete, const std::string &statusMessage)
-                    {
-                        progressCb(percentComplete, statusMessage);
-                    };
+                    progressCb(10, "Closing database...");
+                    spdlog::info("Restoring database from backup: {}", m_backupPath.string());
 
-                    // Call the new overloaded method with progress callback
-                    const bool success = theTrackLibrary.runMaintenanceTasks(shouldCancel, maintenanceProgressCb);
+                    // Get current database path
+                    auto dbPath = expandPath(config::theSettings.database.filename.get());
 
-                    if (shouldCancel)
+                    progressCb(30, "Copying backup file...");
+
+                    try
                     {
-                        completionCb(false, "Database maintenance cancelled.");
+                        // Close the database first
+                        theTrackLibrary.shutdown();
+
+                        // Copy backup over current database
+                        std::filesystem::copy_file(m_backupPath, dbPath,
+                            std::filesystem::copy_options::overwrite_existing);
+
+                        progressCb(70, "Reopening database...");
+
+                        // Reopen the database
+                        if (theTrackLibrary.initialise(dbPath))
+                        {
+                            progressCb(100, "Restore complete.");
+                            completionCb(true, "Database restored successfully.");
+                        }
+                        else
+                        {
+                            completionCb(false, "Failed to reopen database after restore.");
+                        }
                     }
-                    else if (success)
+                    catch (const std::exception& e)
                     {
-                        completionCb(true, "Database maintenance completed successfully.");
+                        spdlog::error("Database restore failed: {}", e.what());
+                        completionCb(false, std::string("Restore failed: ") + e.what());
                     }
-                    else
-                    {
-                        completionCb(false, "Database maintenance failed.");
-                    }
+
                     theBackgroundTaskService.resume();
                 }
+
+            private:
+                std::filesystem::path m_backupPath;
             };
 
-            auto *task = new DatabaseMaintenanceTask{};
-            TaskDialog::launch("Database Maintenance", task, TaskDialog::AutoCloseMode::NoAutoClose, 500, this);
+            auto* task = new DatabaseRestoreTask{backupPath};
+            TaskDialog::launch("Database Restore", task, TaskDialog::AutoCloseMode::NoAutoClose, 400, this,
+                [this]()
+                {
+                    // Schedule UI reinitialization on the message thread
+                    // This is called after dialog closes (on success or close button)
+                    juce::MessageManager::callAsync([this]()
+                    {
+                        reinitializeAfterRestore();
+                    });
+                });
             task->release(REFCOUNT_DEBUG_ARGS);
-            return true;
+        }
+
+        void MainComponent::reinitializeAfterRestore()
+        {
+            // Only reinitialize if the database was successfully restored
+            if (!theTrackLibrary.isInitialised())
+            {
+                spdlog::warn("Database not initialized after restore - UI not reinitialized");
+                return;
+            }
+
+            spdlog::info("Reinitializing UI after database restore...");
+
+            // 1. Stop any playback
+            m_playbackController.stop();
+
+            // 2. Clear the current node reference
+            if (m_currentNode)
+            {
+                m_currentNode->release(REFCOUNT_DEBUG_ARGS);
+                m_currentNode = nullptr;
+            }
+
+            // 3. Clear the DataViewComponent's current node
+            m_dataViewComponent.setCurrentNode(nullptr);
+
+            // 4. Reinitialize the navigation tree (this releases old root and creates new one)
+            if (!m_navigationTree.initialize())
+            {
+                spdlog::error("Failed to reinitialize navigation tree after restore");
+                m_statusPanel.getStatusBar().postMessage("Failed to reinitialize navigation - please restart", true);
+                return;
+            }
+
+            // 5. Update track count status
+            updateTrackCountStatus();
+
+            // 6. Post success message
+            m_statusPanel.getStatusBar().postMessage("Database restored successfully", false);
+            spdlog::info("UI reinitialized after database restore");
         }
 
         void MainComponent::showMarkerDialog(TrackId trackId, std::chrono::milliseconds position, bool isNewMarker)

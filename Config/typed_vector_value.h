@@ -17,7 +17,7 @@ namespace jucyaudio
                   m_parentSection{parentSection}
             {
                 if(logger)
-                logger->info("{}: creating TypedValueVector ({}, {}) at {}", __FUNCTION__, (const void*) parentSection, keyName, (const void *) this);
+                logger->debug("{}: creating TypedValueVector ({}, {}) at {}", __FUNCTION__, (const void*) parentSection, keyName, (const void *) this);
 
                 if (parentSection)
                 {
@@ -27,7 +27,7 @@ namespace jucyaudio
 
             ~TypedValueVector() override
             {
-                logger->info("{}: destroying TypedValueVector ({}, {}) at {}", __FUNCTION__, (const void*) m_parentSection, m_keyName, (const void *) this);
+                logger->debug("{}: destroying TypedValueVector ({}, {}) at {}", __FUNCTION__, (const void*) m_parentSection, m_keyName, (const void *) this);
             }
 
             // Access methods
@@ -53,12 +53,12 @@ namespace jucyaudio
 
             SectionType *addNew()
             {
-                logger->info("{} Adding new item to vector: {}", __FUNCTION__, m_keyName);
+                logger->debug("{} Adding new item to vector: {}", __FUNCTION__, m_keyName);
                 auto item = std::make_unique<SectionType>(nullptr, m_keyName + "/" + std::to_string(m_items.size()));
                 SectionType *ptr = item.get();
-                logger->info("{}: Created new item {} at path: {}", __FUNCTION__, (const void*) ptr, ptr->getConfigPath());
+                logger->debug("{}: Created new item {} at path: {}", __FUNCTION__, (const void*) ptr, ptr->getConfigPath());
                 m_items.push_back(std::move(item));
-                logger->info("{}: Back item nowi s {}", __FUNCTION__, (const void*) m_items.back().get());
+                logger->debug("{}: Back item nowi s {}", __FUNCTION__, (const void*) m_items.back().get());
                 return ptr;
             }
 
@@ -100,14 +100,14 @@ namespace jucyaudio
                     m_items.push_back(std::move(item));
                     index++;
                 }
-                logger->info("Loaded {} items into vector: {}", index, getConfigPath());
+                logger->debug("Loaded {} items into vector: {}", index, getConfigPath());
 
                 return true;
             }
 
             bool save(ConfigBackend &settings) const override
             {
-                logger->info("{}: Saving {} items of vector: {}", __FUNCTION__, m_items.size(), getConfigPath());
+                logger->debug("{}: Saving {} items of vector: {}", __FUNCTION__, m_items.size(), getConfigPath());
 
                 // 1. Determine old count by probing existing sections
                 int oldCount = 0;
@@ -122,7 +122,7 @@ namespace jucyaudio
                     // Update the item's section name to match current index
                     // Note: This assumes SectionType allows updating its group name
 
-                    logger->info("{}: my path: {}, item path: {}", __FUNCTION__, getConfigPath(), m_items[i]->getConfigPath());
+                    logger->debug("{}: my path: {}, item path: {}", __FUNCTION__, getConfigPath(), m_items[i]->getConfigPath());
                     if (!m_items[i]->save(settings))
                     {
                         logger->error("{}: Failed to save vector item at index {}: {}", __FUNCTION__, i, m_items[i]->getConfigPath());

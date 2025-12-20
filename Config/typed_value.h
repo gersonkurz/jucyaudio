@@ -28,7 +28,7 @@ namespace jucyaudio
                   m_value{m_defaultValue}
             {
                 if(logger)
-                logger->info("{}: creating TypedValue ({}, {}) at {}", __FUNCTION__, (const void*) parentSection, keyName, (const void *) this);
+                logger->debug("{}: creating TypedValue ({}, {}) at {}", __FUNCTION__, (const void*) parentSection, keyName, (const void *) this);
                 if (parentSection)
                 {
                     // Forward to a method in Section that knows about
@@ -39,7 +39,7 @@ namespace jucyaudio
 
             ~TypedValue() override
             {
-                logger->info("{}: destroying TypedValue ({}, {}) at {}", __FUNCTION__, (const void*) m_parentSection, m_keyName, (const void *) this);
+                logger->debug("{}: destroying TypedValue ({}, {}) at {}", __FUNCTION__, (const void*) m_parentSection, m_keyName, (const void *) this);
             }
 
             /// @brief Accessor for the value

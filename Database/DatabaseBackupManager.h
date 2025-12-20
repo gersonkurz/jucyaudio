@@ -21,13 +21,14 @@ namespace jucyaudio
 
             /**
              * @brief Checks if a database backup is needed and performs the backup and pruning process.
-             * 
+             *
              * @param appSettings The application's root settings object.
              * @param databaseFile The full path to the database file to be backed up.
              * @param dryRunCreation If true, backup file creation will be logged but not performed.
              * @param dryRunPruning If true, old backup file deletion will be logged but not performed.
+             * @param forceCreation If true, create a backup regardless of whether one is needed.
              */
-            void performBackupCheck(const config::RootSettings& appSettings, const std::filesystem::path& databaseFile, bool dryRunCreation, bool dryRunPruning);
+            void performBackupCheck(const config::RootSettings& appSettings, const std::filesystem::path& databaseFile, bool dryRunCreation, bool dryRunPruning, bool forceCreation = false);
 
         private:
             /**
