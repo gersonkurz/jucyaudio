@@ -32,11 +32,13 @@ namespace jucyaudio
          * Thread-safety: The atomic pointer in MixPlaybackEngine ensures only one thread
          * can modify the pointer at a time. The audio thread only reads.
          *
-         * Ownership model:
+         * Ownership model (Double-Buffer Pattern):
          * - PlaybackState is refcounted (starts with refcount=1)
-         * - m_currentPlaybackState atomic pointer "owns" one reference
-         * - Audio thread reads pointer atomically - no retain/release needed
-         * - UI thread swaps pointer atomically - old state queued for deletion on message thread
+         * - m_currentPlaybackState atomic pointer holds the active state
+         * - m_previousState holds the prior state (from previous swap)
+         * - On swap: old m_previousState is deleted, current becomes previous
+         * - This guarantees audio thread finishes with old state before deletion
+         * - Audio thread reads atomically - no retain/release needed in callback
          */
         struct PlaybackState : public database::RefCountImpl
         {
@@ -159,8 +161,9 @@ namespace jucyaudio
             // Refcounted playback state (atomic swap for lock-free audio thread)
             std::atomic<PlaybackState*> m_currentPlaybackState{nullptr};
 
-            // Deferred deletion queue (accessed only from message thread)
-            std::vector<PlaybackState*> m_statesToDelete;
+            // Double-buffer pattern: keep previous state alive until next swap
+            // This ensures audio thread always has a valid state during transitions
+            PlaybackState* m_previousState{nullptr};
 
             // DEPRECATED: Old members kept temporarily for compatibility with non-audio methods
             // TODO: Remove these after updating all non-audio-callback methods to use PlaybackState
@@ -190,7 +193,7 @@ namespace jucyaudio
 
             // Helper methods
             PlaybackState* buildPlaybackState(MixProjectLoader* mixLoader);  // Build new PlaybackState from MixProjectLoader
-            void cleanupOldStates();  // Called on message thread to safely delete old PlaybackState objects
+            void retireState(PlaybackState* oldState);  // Double-buffer: retire old state, delete previous
             void mixActiveTracksForBlock(juce::AudioBuffer<float> &buffer, juce::int64 startSample, int numSamples);
             float getEnvelopeGainForTrack(const MixTrack &mixTrack, Duration_t timeInTrack);
             void unloadMixInternal(); // Internal version that doesn't lock

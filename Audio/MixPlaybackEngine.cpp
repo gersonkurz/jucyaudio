@@ -143,18 +143,20 @@ namespace jucyaudio
             return state;
         }
 
-        void MixPlaybackEngine::cleanupOldStates()
+        void MixPlaybackEngine::retireState(PlaybackState* oldState)
         {
-            spdlog::debug("[PlaybackEngine] cleanupOldStates -> Cleaning up {} old states", m_statesToDelete.size());
+            // Double-buffer pattern: delete the state from 2 swaps ago,
+            // then keep the just-retired state alive until next swap.
+            // This guarantees audio thread has finished with oldState.
 
-            for (auto* state : m_statesToDelete)
+            if (m_previousState)
             {
-                if (state)
-                {
-                    state->release(REFCOUNT_DEBUG_ARGS);  // May trigger deletion
-                }
+                spdlog::debug("[PlaybackEngine] retireState -> Deleting previous state");
+                m_previousState->release(REFCOUNT_DEBUG_ARGS);
             }
-            m_statesToDelete.clear();
+
+            m_previousState = oldState;
+            spdlog::debug("[PlaybackEngine] retireState -> Retired state kept alive until next swap");
         }
 
         PlaybackTrackSource::PlaybackTrackSource(TrackId id, const TrackInfo *ti, const MixTrack& mt)
@@ -234,6 +236,13 @@ namespace jucyaudio
         MixPlaybackEngine::~MixPlaybackEngine()
         {
             unloadMix();
+
+            // Clean up any remaining previous state from double-buffer
+            if (m_previousState)
+            {
+                m_previousState->release(REFCOUNT_DEBUG_ARGS);
+                m_previousState = nullptr;
+            }
         }
 
         bool MixPlaybackEngine::loadMix(MixProjectLoader *mixLoader)
@@ -281,16 +290,10 @@ namespace jucyaudio
 
             spdlog::warn("=== GAIN CHANGE === [PlaybackEngine] Atomic swap complete, oldState={}", oldState ? "exists" : "null");
 
-            // Queue old state for deletion on message thread
+            // Double-buffer: retire old state (keeps it alive until next swap)
             if (oldState)
             {
-                spdlog::debug("[PlaybackEngine] loadMix -> Queueing old state for deletion");
-                m_statesToDelete.push_back(oldState);
-
-                // Trigger cleanup on message thread
-                juce::MessageManager::callAsync([this]() {
-                    this->cleanupOldStates();
-                });
+                retireState(oldState);
             }
 
             spdlog::info("[PlaybackEngine] loadMix -> Exit (success)");
@@ -308,17 +311,11 @@ namespace jucyaudio
             spdlog::debug("[PlaybackEngine] unloadMixInternal -> Entry");
             m_isPaused = true;
 
-            // Atomic swap to null - old state will be deleted via deferred deletion queue
+            // Atomic swap to null - old state retired via double-buffer
             auto* oldState = m_currentPlaybackState.exchange(nullptr);
             if (oldState)
             {
-                spdlog::debug("[PlaybackEngine] unloadMixInternal -> Queueing old state for deletion");
-                m_statesToDelete.push_back(oldState);
-
-                // Trigger cleanup on message thread
-                juce::MessageManager::callAsync([this]() {
-                    this->cleanupOldStates();
-                });
+                retireState(oldState);
             }
 
             m_mixLoader = nullptr;
@@ -624,7 +621,7 @@ namespace jucyaudio
                             numChannels, numSamples);
             }
 
-            // Use state->trackSources (safe because state is refcounted and won't be deleted while audio thread has the pointer)
+            // Use state->trackSources (safe: double-buffer pattern guarantees state survives until next loadMix())
             for (size_t i = 0; i < state->trackSources.size(); ++i)
             {
                 auto &source = state->trackSources[i];
