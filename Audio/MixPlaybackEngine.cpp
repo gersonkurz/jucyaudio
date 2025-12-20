@@ -664,26 +664,56 @@ namespace jucyaudio
 
                 // Get raw pointers for efficient sample access (avoids per-sample bounds checking)
                 const float masterGain = m_masterGain.load();
+                const float trackGain = masterGain * mixTrack.gainAdjustment;
                 float* outLeft = buffer.getWritePointer(0);
                 float* outRight = (numChannels > 1) ? buffer.getWritePointer(1) : nullptr;
                 const float* srcLeft = m_scratchBuffer.getReadPointer(0);
                 const float* srcRight = (numChannels > 1) ? m_scratchBuffer.getReadPointer(1) : nullptr;
 
-                for (int sample = 0; sample < samplesToRead; ++sample)
+                // Calculate envelope gain at block boundaries (avoids per-sample envelope calls)
+                Duration_t startTimeInTrack{static_cast<int64_t>((trackReadStart * 1000.0) / m_sampleRate)};
+                Duration_t endTimeInTrack{static_cast<int64_t>(((trackReadStart + samplesToRead - 1) * 1000.0) / m_sampleRate)};
+                const float startEnvGain = getEnvelopeGainForTrack(mixTrack, startTimeInTrack);
+                const float endEnvGain = getEnvelopeGainForTrack(mixTrack, endTimeInTrack);
+
+                // Check if gain is constant across the block (within tolerance)
+                const bool constantGain = std::abs(startEnvGain - endEnvGain) < 0.0001f;
+
+                if (constantGain)
                 {
-                    const auto sampleInTrack = trackReadStart + sample;
-                    Duration_t timeInTrack{static_cast<int64_t>((sampleInTrack * 1000.0) / m_sampleRate)};
-
-                    float gain = getEnvelopeGainForTrack(mixTrack, timeInTrack) * masterGain * mixTrack.gainAdjustment;
-
-                    int outputSample = outputOffset + sample;
-                    if (outputSample >= 0 && outputSample < numSamples)
+                    // Constant gain - simple multiply-add
+                    const float gain = startEnvGain * trackGain;
+                    for (int sample = 0; sample < samplesToRead; ++sample)
                     {
-                        outLeft[outputSample] += srcLeft[sample] * gain;
-                        if (outRight && srcRight)
+                        int outputSample = outputOffset + sample;
+                        if (outputSample >= 0 && outputSample < numSamples)
                         {
-                            outRight[outputSample] += srcRight[sample] * gain;
+                            outLeft[outputSample] += srcLeft[sample] * gain;
+                            if (outRight && srcRight)
+                            {
+                                outRight[outputSample] += srcRight[sample] * gain;
+                            }
                         }
+                    }
+                }
+                else
+                {
+                    // Gain is changing (fade) - use linear interpolation
+                    const float gainDelta = (endEnvGain - startEnvGain) / static_cast<float>(samplesToRead - 1);
+                    float envGain = startEnvGain;
+                    for (int sample = 0; sample < samplesToRead; ++sample)
+                    {
+                        const float gain = envGain * trackGain;
+                        int outputSample = outputOffset + sample;
+                        if (outputSample >= 0 && outputSample < numSamples)
+                        {
+                            outLeft[outputSample] += srcLeft[sample] * gain;
+                            if (outRight && srcRight)
+                            {
+                                outRight[outputSample] += srcRight[sample] * gain;
+                            }
+                        }
+                        envGain += gainDelta;
                     }
                 }
             }
