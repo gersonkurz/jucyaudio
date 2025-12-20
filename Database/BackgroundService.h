@@ -43,10 +43,9 @@ namespace jucyaudio
             std::atomic<bool> m_shouldExit{false};
 
             std::vector<IBackgroundTask *> m_tasks;
-            std::mutex m_tasksMutex; // Replaces juce::CriticalSection
+            std::mutex m_tasksMutex; // Protects m_tasks and used with m_condition
 
             std::condition_variable m_condition; // Replaces juce::WaitableEvent
-            std::mutex m_conditionMutex;
             std::atomic<bool> m_isPaused{false};
             std::atomic<bool> m_isProcessing{false};
         };
