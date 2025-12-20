@@ -229,4 +229,43 @@ namespace jucyaudio
      * @return A UTF-8 encoded, normalized, case-folded string.
      */
     std::string normalizeForCache(std::string_view input);
+
+    /**
+     * @brief Expands environment variables in a path string and normalizes separators.
+     *
+     * Recognizes ${VAR} syntax on all platforms.
+     * Forward slashes are normalized to backslashes on Windows.
+     *
+     * @param path Path string potentially containing ${VAR} patterns
+     * @return Expanded and normalized filesystem path
+     *
+     * @example expandPath("${LOCALAPPDATA}/jucyaudio/db.sqlite")
+     *          -> "C:\\Users\\John\\AppData\\Local\\jucyaudio\\db.sqlite" (on Windows)
+     */
+    std::filesystem::path expandPath(const std::string& path);
+
+    /**
+     * @brief Gets the default configuration root directory for the current platform.
+     *
+     * If JUCYAUDIO_CONFIG environment variable is set, returns that path.
+     * Otherwise returns platform-specific default:
+     * - Windows: ${LOCALAPPDATA}/jucyaudio
+     * - macOS: ${HOME}/Library/Application Support/jucyaudio
+     * - Linux: ${HOME}/.config/jucyaudio
+     *
+     * @return The configuration root directory path (already expanded)
+     */
+    std::filesystem::path getConfigRoot();
+
+    /**
+     * @brief Gets the default configuration root path string (unexpanded) for the current platform.
+     *
+     * Returns the unexpanded path template with ${VAR} syntax.
+     * - Windows: "${LOCALAPPDATA}/jucyaudio"
+     * - macOS: "${HOME}/Library/Application Support/jucyaudio"
+     * - Linux: "${HOME}/.config/jucyaudio"
+     *
+     * @return The default config root path template string
+     */
+    std::string getDefaultConfigRootTemplate();
 } // namespace jucyaudio

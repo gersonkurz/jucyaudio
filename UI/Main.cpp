@@ -14,6 +14,7 @@
 #include <UI/SplashScreenComponent.h>
 #include <Database/DatabaseBackupManager.h>
 #include <filesystem>
+#include <fstream>
 #include <tuple>
 #include <unordered_map>
 #include <functional>
@@ -153,8 +154,9 @@ namespace jucyaudio
             //==============================================================================
             void initialise([[maybe_unused]] const juce::String &commandLine) override
             {
-                setupPropertiesFile();
+                initializeConfigRoot();
                 setupLogging();
+                generateSampleConfigIfNeeded();
                 
                 spdlog::info("Creating splash screen...");
                
@@ -190,29 +192,19 @@ namespace jucyaudio
                 config::TomlBackend backend{g_strConfigFilename};
                 config::theSettings.load(backend);
 
-                // Determine database path (configurable or default)
-                juce::File appDataDir{juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("jucyaudioApp_Dev")};
-                std::filesystem::path dbPath;
+                // Determine database path using expandPath for ${VAR} expansion
                 const auto& configuredDbFilename = config::theSettings.database.filename.get();
+                std::filesystem::path dbPath;
                 if (!configuredDbFilename.empty())
                 {
-                    // Use configured database path (can be absolute or relative to app data dir)
-                    std::filesystem::path configuredPath{configuredDbFilename};
-                    if (configuredPath.is_absolute())
-                    {
-                        dbPath = configuredPath;
-                    }
-                    else
-                    {
-                        dbPath = std::filesystem::path{appDataDir.getFullPathName().toStdString()} / configuredPath;
-                    }
+                    // Expand environment variables in configured path
+                    dbPath = expandPath(configuredDbFilename);
                     spdlog::info("Using configured database path: {}", dbPath.string());
                 }
                 else
                 {
-                    // Default database filename
-                    juce::File dbJuceFile{appDataDir.getChildFile("jucyaudio_library_dev.sqlite")};
-                    dbPath = std::filesystem::path{dbJuceFile.getFullPathName().toStdString()};
+                    // Default database filename in config root
+                    dbPath = m_configRoot / "jucyaudio.db";
                     spdlog::info("Using default database path: {}", dbPath.string());
                 }
 
@@ -222,14 +214,8 @@ namespace jucyaudio
                     // Enable creation (false) but keep pruning in dry-run mode (true) for now.
                     backupManager.performBackupCheck(config::theSettings, dbPath, false, true);
                 }
-                
+
                 theThemeManager.initialize(getThemesDirectoryPath(), config::theSettings.uiSettings.theme.get());
-                
-                // Initialize database
-                if (!appDataDir.exists())
-                {
-                    appDataDir.createDirectory();
-                }
                 
                 if (theTrackLibrary.initialise(dbPath))
                 {
@@ -267,46 +253,126 @@ namespace jucyaudio
                 spdlog::info("Initialization complete");
             }
         private:
-            void setupPropertiesFile()
+            std::filesystem::path m_configRoot;  // Cached config root path
+
+            void initializeConfigRoot()
             {
-                juce::File appDataDir{
-                    juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("jucyaudioApp_Dev")}; // Same base as your DB
+                // Get the config root directory (from JUCYAUDIO_CONFIG env var or platform default)
+                m_configRoot = getConfigRoot();
 
-                assert(appDataDir.exists()); // should have been created by the spdlog setup
+                // Create the directory if it doesn't exist
+                if (!std::filesystem::exists(m_configRoot))
+                {
+                    std::error_code ec;
+                    std::filesystem::create_directories(m_configRoot, ec);
+                    if (ec)
+                    {
+                        std::cerr << "FATAL: Could not create config directory: " << m_configRoot.string()
+                                  << " Error: " << ec.message() << std::endl;
+                    }
+                }
 
-                // Create the settings file in the same directory
-                g_strConfigFilename = appDataDir.getChildFile("settings.toml").getFullPathName().toStdString();
+                // Set JUCYAUDIO_CONFIG environment variable so ${JUCYAUDIO_CONFIG} expands in config files
+                // This ensures expandPath() can resolve ${JUCYAUDIO_CONFIG} references
+#if defined(_WIN32) || defined(_WIN64)
+                _putenv_s("JUCYAUDIO_CONFIG", m_configRoot.string().c_str());
+#else
+                setenv("JUCYAUDIO_CONFIG", m_configRoot.string().c_str(), 1);
+#endif
 
-                spdlog::info("Properties file location: {}", g_strConfigFilename);
+                // Set the config filename
+                g_strConfigFilename = (m_configRoot / "jucyaudio.toml").string();
+            }
+
+            void generateSampleConfigIfNeeded()
+            {
+                std::filesystem::path configPath{g_strConfigFilename};
+                if (std::filesystem::exists(configPath))
+                {
+                    return;  // Config already exists
+                }
+
+                spdlog::info("Generating sample configuration file: {}", g_strConfigFilename);
+
+                // Generate sample config with documented defaults
+                std::ofstream configFile(configPath);
+                if (!configFile)
+                {
+                    spdlog::error("Failed to create sample config file: {}", g_strConfigFilename);
+                    return;
+                }
+
+                configFile << "# JucyAudio Configuration File\n";
+                configFile << "# Generated automatically on first run\n";
+                configFile << "# Paths use ${VAR} syntax for environment variables\n";
+                configFile << "# Forward slashes (/) work on all platforms\n";
+                configFile << "#\n";
+                configFile << "# Config root: " << getDefaultConfigRootTemplate() << "\n";
+                configFile << "# Override with JUCYAUDIO_CONFIG environment variable\n";
+                configFile << "\n";
+                configFile << "[Database]\n";
+                configFile << "# Database file path (relative to config root or absolute)\n";
+                configFile << "Filename = \"${JUCYAUDIO_CONFIG}/jucyaudio.db\"\n";
+                configFile << "\n";
+                configFile << "[UI]\n";
+                configFile << "Theme = \"light\"\n";
+                configFile << "ShowOfflineTracks = false\n";
+                configFile << "\n";
+                configFile << "[Export]\n";
+                configFile << "DefaultArtist = \"Unknown Artist\"\n";
+                configFile << "DefaultAlbum = \"Unknown Album\"\n";
+                configFile << "DefaultYear = \"2025\"\n";
+                configFile << "DefaultGenre = \"Electronic\"\n";
+                configFile << "\n";
+                configFile << "[MixEditing]\n";
+                configFile << "RemoveFromWorkingSetOnDelete = true\n";
+                configFile << "AskBeforeRemovingFromWorkingSet = true\n";
+                configFile << "ClearWorkingSetAfterExport = true\n";
+                configFile << "PreloadWaveformsOnMixOpen = true\n";
+                configFile << "DrawStereoWaveforms = false\n";
+                configFile << "LinkEnvelopePointsToAttachPoints = true\n";
+                configFile << "\n";
+                configFile << "[Logging]\n";
+                configFile << "# Log levels: trace, debug, info, warn, error, critical, off\n";
+                configFile << "log_level = \"info\"\n";
+                configFile << "\n";
+                configFile << "[Backup]\n";
+                configFile << "NumberOfBackups = 5\n";
+                configFile << "\n";
+                configFile << "[Audio]\n";
+                configFile << "EqualizerBypassed = true\n";
+                configFile << "ReverbBypassed = true\n";
+                configFile << "\n";
+                configFile << "[TileRendering]\n";
+                configFile << "TileCacheSizeMB = 512\n";
+                configFile << "WaveformVerticalZoomPercent = 90\n";
+                configFile << "EnableTileCache = true\n";
+                configFile << "DebugTileRendering = false\n";
+
+                configFile.close();
+                spdlog::info("Sample configuration file created successfully");
             }
 
             void setupLogging()
             {
-
                 // --- Setup Logging ---
                 try
                 {
-                    // 1. Determine Log File Path (platform-aware, next to DB)
-                    juce::File appDataDir{
-                        juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("jucyaudioApp_Dev")}; // Same base as your DB
-
-                    if (!appDataDir.exists())
+                    // 1. Determine Log File Path (uses config root from initializeConfigRoot)
+                    auto logDir = m_configRoot / "Logs";
+                    if (!std::filesystem::exists(logDir))
                     {
-                        auto result = appDataDir.createDirectory();
-                        if (!result.wasOk())
+                        std::error_code ec;
+                        std::filesystem::create_directories(logDir, ec);
+                        if (ec)
                         {
-                            std::cerr << "FATAL: Could not create app data directory: " << appDataDir.getFullPathName().toStdString() << std::endl;
+                            std::cerr << "FATAL: Could not create log directory: " << logDir.string()
+                                      << " Error: " << ec.message() << std::endl;
                         }
                     }
 
-                    juce::File logDir{appDataDir.getChildFile("Logs")};
-                    if (!logDir.exists())
-                    {
-                        logDir.createDirectory();
-                    }
-
-                    juce::File logFile{logDir.getChildFile("jucyaudio.log")};
-                    const std::string logFilePath_std = logFile.getFullPathName().toStdString(); // For spdlog
+                    auto logFile = logDir / "jucyaudio.log";
+                    const std::string logFilePath_std = logFile.string();
 
                     // 2. Create Sinks
                     std::vector<spdlog::sink_ptr> sinks;

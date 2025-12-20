@@ -102,7 +102,9 @@ namespace jucyaudio
                 {
                 }
 
-                TypedValue<std::string> filename{this, "Filename", ""};
+                // Database path using ${VAR} syntax for environment variables
+                // Default: ${JUCYAUDIO_CONFIG}/jucyaudio.db
+                TypedValue<std::string> filename{this, "Filename", "${JUCYAUDIO_CONFIG}/jucyaudio.db"};
 
             } database{this};
 

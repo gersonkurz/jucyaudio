@@ -1,7 +1,9 @@
 #include <Database/Includes/Constants.h>
 #include <Utils/AssortedUtils.h>
 #include <cassert>
+#include <cstdlib>
 #include <ranges>
+#include <regex>
 #include <spdlog/spdlog.h>
 // ICU headers are C-style, so we wrap them for C++ compatibility.
 #include <unicode/unorm2.h> // For NFC normalization
@@ -234,5 +236,83 @@ namespace jucyaudio
         // Use our robust normalization function. It handles case-folding and
         // all other Unicode normalization forms for us.
         return normalizeForCache(extensionString);
+    }
+
+    std::filesystem::path expandPath(const std::string& path)
+    {
+        if (path.empty())
+        {
+            return {};
+        }
+
+        std::string result = path;
+
+        // Expand ${VAR} syntax (works on all platforms)
+        std::regex envVarPattern(R"(\$\{([^}]+)\})");
+        std::smatch match;
+        std::string::const_iterator searchStart = result.cbegin();
+
+        std::string expanded;
+        size_t lastPos = 0;
+
+        while (std::regex_search(searchStart, result.cend(), match, envVarPattern))
+        {
+            // Append text before the match
+            size_t matchPos = static_cast<size_t>(match.position()) + lastPos;
+            expanded += result.substr(lastPos, matchPos - lastPos);
+
+            // Get environment variable value
+            std::string varName = match[1].str();
+            const char* envValue = std::getenv(varName.c_str());
+            if (envValue)
+            {
+                expanded += envValue;
+            }
+            else
+            {
+                spdlog::warn("Environment variable ${} not found, leaving as-is", varName);
+                expanded += match[0].str();  // Keep original ${VAR} if not found
+            }
+
+            lastPos = matchPos + match[0].length();
+            searchStart = match.suffix().first;
+        }
+
+        // Append remaining text after last match
+        expanded += result.substr(lastPos);
+        result = expanded;
+
+#if defined(_WIN32) || defined(_WIN64)
+        // Normalize forward slashes to backslashes on Windows
+        std::replace(result.begin(), result.end(), '/', '\\');
+#endif
+
+        return std::filesystem::path{result};
+    }
+
+    std::string getDefaultConfigRootTemplate()
+    {
+#if defined(_WIN32) || defined(_WIN64)
+        return "${LOCALAPPDATA}/jucyaudio";
+#elif defined(__APPLE__)
+        return "${HOME}/Library/Application Support/jucyaudio";
+#else
+        // Linux and other Unix-like systems
+        return "${HOME}/.config/jucyaudio";
+#endif
+    }
+
+    std::filesystem::path getConfigRoot()
+    {
+        // Check for JUCYAUDIO_CONFIG environment variable override
+        const char* configOverride = std::getenv("JUCYAUDIO_CONFIG");
+        if (configOverride && configOverride[0] != '\0')
+        {
+            spdlog::info("Using JUCYAUDIO_CONFIG override: {}", configOverride);
+            return expandPath(configOverride);
+        }
+
+        // Use platform-specific default
+        return expandPath(getDefaultConfigRootTemplate());
     }
 } // namespace jucyaudio
