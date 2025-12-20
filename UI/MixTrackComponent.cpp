@@ -87,12 +87,12 @@ namespace jucyaudio
             auto timeSinceReport = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastReportTime);
             if (timeSinceReport.count() >= 1000) // Report every second
             {
-                spdlog::info("MixTrackComponent paint stats:");
-                spdlog::info("  Total paint calls: {} (visible: {}, culled: {})", 
+                spdlog::debug("MixTrackComponent paint stats:");
+                spdlog::debug("  Total paint calls: {} (visible: {}, culled: {})",
                             paintCallCount, visiblePaintCount, culledPaintCount);
                 if (visiblePaintCount > 0)
                 {
-                    spdlog::info("  Avg paint time: {} µs/paint", totalPaintMicros / visiblePaintCount);
+                    spdlog::debug("  Avg paint time: {} µs/paint", totalPaintMicros / visiblePaintCount);
                 }
                 paintCallCount = 0;
                 visiblePaintCount = 0;
@@ -172,8 +172,8 @@ namespace jucyaudio
                                           : lf.findColour(jucyaudio::ui::waveformColourId).withAlpha(0.7f);
                 g.setColour(waveformColour);
 
-                // Log zoom-related info for debugging
-                spdlog::info("MixTrackComponent paint - track {}: component width={}, waveformDrawRect width={}, pixelsPerSecond={}, bounds=({},{},{},{})",
+                // Log zoom-related info for debugging (debug level to avoid impacting paint performance)
+                spdlog::debug("MixTrackComponent paint - track {}: component width={}, waveformDrawRect width={}, pixelsPerSecond={}, bounds=({},{},{},{})",
                              m_mixTrack.orderInMix, getWidth(), waveformDrawRect.getWidth(), m_pixelsPerSecond,
                              getBounds().getX(), getBounds().getY(), getBounds().getWidth(), getBounds().getHeight());
 
@@ -364,7 +364,7 @@ namespace jucyaudio
             auto timeSinceReport = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastReportTime);
             if (timeSinceReport.count() >= 1000)
             {
-                spdlog::info("MixTrackComponent::resized called {} times in last second", resizedCallCount);
+                spdlog::debug("MixTrackComponent::resized called {} times in last second", resizedCallCount);
                 resizedCallCount = 0;
                 lastReportTime = now;
             }

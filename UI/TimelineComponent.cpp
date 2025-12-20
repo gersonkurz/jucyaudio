@@ -697,7 +697,7 @@ namespace jucyaudio
             auto timeSinceReport = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastReportTime);
             if (timeSinceReport.count() >= 1000)
             {
-                spdlog::info("TimelineComponent paint calls: {} in last second", paintCount);
+                spdlog::debug("TimelineComponent paint calls: {} in last second", paintCount);
                 paintCount = 0;
                 lastReportTime = now;
             }
@@ -864,7 +864,7 @@ namespace jucyaudio
 
         void TimelineComponent::repositionTrack(TrackId trackId)
         {
-            spdlog::info("[REPOSITION] repositionTrack called for TrackId={}", trackId);
+            spdlog::debug("[REPOSITION] repositionTrack called for TrackId={}", trackId);
 
             // Find which track index this is
             int trackIndex = -1;
@@ -873,8 +873,8 @@ namespace jucyaudio
                 if (m_trackViews[i].mixTrackData && m_trackViews[i].mixTrackData->trackId == trackId)
                 {
                     trackIndex = static_cast<int>(i);
-                    spdlog::info("[REPOSITION]   Found track at index {}, OrderInMix={}", i, m_trackViews[i].mixTrackData->orderInMix);
-                    spdlog::info("[REPOSITION]   Current values: CueStart={}ms, CueEnd={}ms, AttachFrom={}ms, AttachTo={}ms",
+                    spdlog::debug("[REPOSITION]   Found track at index {}, OrderInMix={}", i, m_trackViews[i].mixTrackData->orderInMix);
+                    spdlog::debug("[REPOSITION]   Current values: CueStart={}ms, CueEnd={}ms, AttachFrom={}ms, AttachTo={}ms",
                                 m_trackViews[i].mixTrackData->cueStart.count(),
                                 m_trackViews[i].mixTrackData->cueEnd.count(),
                                 m_trackViews[i].mixTrackData->attachFrom.count(),
@@ -901,7 +901,7 @@ namespace jucyaudio
                 needsFullRecalculation = true;
             }
 
-            spdlog::info("[REPOSITION] Needs full recalculation: {}", needsFullRecalculation);
+            spdlog::debug("[REPOSITION] Needs full recalculation: {}", needsFullRecalculation);
 
             if (needsFullRecalculation)
             {
@@ -914,7 +914,7 @@ namespace jucyaudio
                 auto &view = m_trackViews[trackIndex];
                 view.componentStartTime = view.audioStartTime + view.mixTrackData->cueStart;
 
-                spdlog::info("[REPOSITION] Updated last track only - componentStartTime={}ms", view.componentStartTime.count());
+                spdlog::debug("[REPOSITION] Updated last track only - componentStartTime={}ms", view.componentStartTime.count());
 
                 // Trigger a layout update to reposition the component
                 resized();
@@ -930,14 +930,14 @@ namespace jucyaudio
                 return;
             }
 
-            spdlog::info("[RECALC] recalculateTrackPositions - Processing {} tracks", m_trackViews.size());
+            spdlog::debug("[RECALC] recalculateTrackPositions - Processing {} tracks", m_trackViews.size());
 
             // Calculate the global offset from the first track's cueStart
             Duration_t globalOffset{0};
             if (m_trackViews[0].mixTrackData && m_trackViews[0].mixTrackData->cueStart < Duration_t{0})
             {
                 globalOffset = -m_trackViews[0].mixTrackData->cueStart;
-                spdlog::info("[RECALC]   First track has negative cueStart, globalOffset={}ms", globalOffset.count());
+                spdlog::debug("[RECALC]   First track has negative cueStart, globalOffset={}ms", globalOffset.count());
             }
 
             // Recalculate positions for all tracks
@@ -963,7 +963,7 @@ namespace jucyaudio
                 // Update component start time
                 view.componentStartTime = view.audioStartTime + view.mixTrackData->cueStart;
 
-                spdlog::info("[RECALC]   Track {} (OrderInMix={}): CueStart={}ms, AttachFrom={}ms, AttachTo={}ms, audioStartTime={}ms, componentStartTime={}ms",
+                spdlog::debug("[RECALC]   Track {} (OrderInMix={}): CueStart={}ms, AttachFrom={}ms, AttachTo={}ms, audioStartTime={}ms, componentStartTime={}ms",
                             view.mixTrackData->trackId, view.mixTrackData->orderInMix,
                             view.mixTrackData->cueStart.count(),
                             view.mixTrackData->attachFrom.count(),
@@ -975,12 +975,12 @@ namespace jucyaudio
             }
 
             // Refresh the layout with the new positions
-            spdlog::info("[RECALC] Calling refreshLayout()");
+            spdlog::debug("[RECALC] Calling refreshLayout()");
             refreshLayout();
 
             // Synchronize all MixTrackComponent internal data with the updated MixProjectLoader data
             // This prevents stale data from being used when components fire callbacks
-            spdlog::info("[RECALC] Synchronizing component data after recalculation");
+            spdlog::debug("[RECALC] Synchronizing component data after recalculation");
             for (auto &view : m_trackViews)
             {
                 if (view.component && view.mixTrackData)
@@ -1335,7 +1335,7 @@ namespace jucyaudio
             // Clear zoom change flag if it was set
             m_zoomHasChanged = false;
             
-            spdlog::info("TimelineComponent::resized - Recalculating {} tracks for {} lanes (was {})", 
+            spdlog::debug("TimelineComponent::resized - Recalculating {} tracks for {} lanes (was {})",
                         m_trackViews.size(), numLanes, m_cachedNumLanes);
             
             // Cache the new lane count
@@ -1369,7 +1369,7 @@ namespace jucyaudio
                     const int startX = static_cast<int>(startTime * m_pixelsPerSecond);
                     const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
                     const int width = static_cast<int>(effectiveDuration * m_pixelsPerSecond);
-                    spdlog::info("TimelineComponent::resized - setting bounds for track {}: x={}, width={}, pixelsPerSecond={}",
+                    spdlog::debug("TimelineComponent::resized - setting bounds for track {}: x={}, width={}, pixelsPerSecond={}",
                                  view.mixTrackData->orderInMix, startX, width, m_pixelsPerSecond);
                     view.component->setBounds(startX, yPos, width, trackHeight);
                 }
@@ -1415,14 +1415,14 @@ namespace jucyaudio
             const auto loopDuration = std::chrono::duration_cast<std::chrono::microseconds>(loopEndTime - loopStartTime);
             const auto totalDuration = std::chrono::duration_cast<std::chrono::microseconds>(totalEndTime - startTime);
             
-            spdlog::info("TimelineComponent::resized - Performance Report:");
-            spdlog::info("  Total tracks: {}", m_trackViews.size());
-            spdlog::info("  Initial layouts: {}, Fast path: {}, Full recalc: {}", 
+            spdlog::debug("TimelineComponent::resized - Performance Report:");
+            spdlog::debug("  Total tracks: {}", m_trackViews.size());
+            spdlog::debug("  Initial layouts: {}, Fast path: {}, Full recalc: {}",
                         initialLayoutCount, fastPathCount, fullRecalcCount);
-            spdlog::info("  Track loop took: {} µs ({} µs/track)", 
-                        loopDuration.count(), 
+            spdlog::debug("  Track loop took: {} µs ({} µs/track)",
+                        loopDuration.count(),
                         m_trackViews.empty() ? 0 : loopDuration.count() / m_trackViews.size());
-            spdlog::info("  Total resized() took: {} µs", totalDuration.count());
+            spdlog::debug("  Total resized() took: {} µs", totalDuration.count());
         }
 
         bool TimelineComponent::populateFrom(audio::MixProjectLoader *mixLoader)

@@ -654,14 +654,21 @@ namespace jucyaudio
                     // Handle mono-to-stereo conversion if needed
                     if (sourceChannels == 1 && numChannels == 2) {
                         // Source is mono but output is stereo - duplicate mono channel to right channel
+                        const float* monoIn = m_scratchBuffer.getReadPointer(0);
+                        float* rightOut = m_scratchBuffer.getWritePointer(1);
                         for (int sample = 0; sample < samplesToRead; ++sample) {
-                            const float monoSample = m_scratchBuffer.getSample(0, sample);
-                            m_scratchBuffer.setSample(1, sample, monoSample);
+                            rightOut[sample] = monoIn[sample];
                         }
                     }
                 }
 
+                // Get raw pointers for efficient sample access (avoids per-sample bounds checking)
                 const float masterGain = m_masterGain.load();
+                float* outLeft = buffer.getWritePointer(0);
+                float* outRight = (numChannels > 1) ? buffer.getWritePointer(1) : nullptr;
+                const float* srcLeft = m_scratchBuffer.getReadPointer(0);
+                const float* srcRight = (numChannels > 1) ? m_scratchBuffer.getReadPointer(1) : nullptr;
+
                 for (int sample = 0; sample < samplesToRead; ++sample)
                 {
                     const auto sampleInTrack = trackReadStart + sample;
@@ -672,11 +679,10 @@ namespace jucyaudio
                     int outputSample = outputOffset + sample;
                     if (outputSample >= 0 && outputSample < numSamples)
                     {
-                        for (int channel = 0; channel < numChannels; ++channel)
+                        outLeft[outputSample] += srcLeft[sample] * gain;
+                        if (outRight && srcRight)
                         {
-                            float trackSample = m_scratchBuffer.getSample(channel, sample);
-                            float existingSample = buffer.getSample(channel, outputOffset + sample);
-                            buffer.setSample(channel, outputOffset + sample, existingSample + (trackSample * gain));
+                            outRight[outputSample] += srcRight[sample] * gain;
                         }
                     }
                 }
