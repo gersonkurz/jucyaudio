@@ -127,7 +127,17 @@ namespace jucyaudio
 
         bool SqliteStatement::addParam(const std::vector<unsigned char> &blob)
         {
-            const int rc = sqlite3_bind_blob(m_statement, m_param_index++, &blob[0], (int)blob.size(), SQLITE_STATIC);
+            if (blob.empty())
+            {
+                // Bind zero-length blob (not NULL) - use nullptr with size 0
+                const int rc = sqlite3_bind_blob(m_statement, m_param_index++, nullptr, 0, SQLITE_STATIC);
+                if (rc)
+                {
+                    return m_db.raiseError(__LINE__, rc, "sqlite3_bind_blob() failed");
+                }
+                return true;
+            }
+            const int rc = sqlite3_bind_blob(m_statement, m_param_index++, blob.data(), (int)blob.size(), SQLITE_STATIC);
             if (rc)
             {
                 return m_db.raiseError(__LINE__, rc, "sqlite3_bind_blob() failed");
