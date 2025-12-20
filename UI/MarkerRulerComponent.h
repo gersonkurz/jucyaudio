@@ -55,6 +55,10 @@ namespace jucyaudio
             double m_playbackPosition{0.0};
             std::optional<MarkerId> m_hoveredMarkerId;
             juce::String m_currentTooltip;
+            mutable juce::Image m_tickCache;
+            mutable int m_tickCacheWidth{0};
+            mutable int m_tickCacheHeight{0};
+            mutable int64_t m_tickCacheDurationMs{0};
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MarkerRulerComponent)
         };
