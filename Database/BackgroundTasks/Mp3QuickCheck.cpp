@@ -75,11 +75,17 @@ namespace jucyaudio
                 file.seekg(dataStart);
 
                 // Read potential VBR header location
-                std::array<char, 200> buffer;
+                std::array<char, 200> buffer{};  // Zero-initialize
                 file.read(buffer.data(), buffer.size());
+                const auto bytesRead = static_cast<size_t>(file.gcount());
 
-                // Check for Xing or Info tag
-                for (size_t i = 0; i < buffer.size() - 4; ++i)
+                if (bytesRead < 40)  // Minimum needed for VBRI check at offset 36
+                {
+                    return false;
+                }
+
+                // Check for Xing or Info tag (only in bytes actually read)
+                for (size_t i = 0; i + 4 <= bytesRead; ++i)
                 {
                     if (memcmp(buffer.data() + i, "Xing", 4) == 0 || memcmp(buffer.data() + i, "Info", 4) == 0)
                     {
@@ -88,7 +94,7 @@ namespace jucyaudio
                 }
 
                 // Check for VBRI tag (usually at offset 36 from frame start)
-                if (buffer.size() > 40)
+                if (bytesRead >= 40)
                 {
                     if (memcmp(buffer.data() + 36, "VBRI", 4) == 0)
                     {
@@ -146,8 +152,14 @@ namespace jucyaudio
 
                     // Read first MP3 frame header
                     file.seekg(dataStart);
-                    unsigned char header_bytes[4];
+                    unsigned char header_bytes[4] = {0};
                     file.read(reinterpret_cast<char *>(header_bytes), 4);
+
+                    if (file.gcount() < 4)
+                    {
+                        spdlog::debug("MP3 file too short for header: {}", path.string());
+                        return std::nullopt;
+                    }
 
                     uint32_t header = (header_bytes[0] << 24) | (header_bytes[1] << 16) | (header_bytes[2] << 8) | header_bytes[3];
 
