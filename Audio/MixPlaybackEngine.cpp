@@ -451,6 +451,9 @@ namespace jucyaudio
             m_blockSize = samplesPerBlockExpected;
             m_isPrepared = true;
 
+            // Pre-allocate scratch buffer for audio callback (stereo, block size)
+            m_scratchBuffer.setSize(2, samplesPerBlockExpected);
+
             if (m_mixLoader)
             {
                 if (m_trackStartTimes.empty())
@@ -588,40 +591,16 @@ namespace jucyaudio
 
         void MixPlaybackEngine::mixActiveTracksForBlock(juce::AudioBuffer<float> &buffer, juce::int64 startSample, int numSamples)
         {
-            // CRITICAL: Audio callback - NO LOCKS, NO ALLOCATION, NO RETAIN/RELEASE
+            // CRITICAL: Audio callback - NO LOCKS, NO ALLOCATION, NO LOGGING
             // Just atomic pointer read for lock-free access
 
-            static int callCount = 0;
-            if (++callCount <= 3)
-            {
-                spdlog::info("[PlaybackEngine] mixActiveTracksForBlock -> Call #{} (NEW REFCOUNTING CODE)", callCount);
-            }
-
-            auto* state = m_currentPlaybackState.load();  // Atomic read - safe, lock-free
+            auto* state = m_currentPlaybackState.load();
             if (!state)
             {
-                if (callCount <= 3)
-                {
-                    spdlog::warn("[PlaybackEngine] mixActiveTracksForBlock -> No PlaybackState loaded!");
-                }
                 return;  // No mix loaded
             }
 
-            if (callCount <= 3)
-            {
-                spdlog::info("[PlaybackEngine] mixActiveTracksForBlock -> PlaybackState has {} track sources", state->trackSources.size());
-            }
-
             const int numChannels = buffer.getNumChannels();
-            int activeTracksThisBlock = 0;
-
-            static int mixBlockCount = 0;
-            const bool shouldLogDetails = (++mixBlockCount % 100 == 1);
-
-            if (shouldLogDetails) {
-                spdlog::debug("mixActiveTracksForBlock: output buffer channels={}, numSamples={}",
-                            numChannels, numSamples);
-            }
 
             // Use state->trackSources (safe: double-buffer pattern guarantees state survives until next loadMix())
             for (size_t i = 0; i < state->trackSources.size(); ++i)
@@ -633,7 +612,7 @@ namespace jucyaudio
                     continue;
                 }
 
-                const MixTrack &mixTrack = source->mixTrack;  // Access by-value copy (safe)
+                const MixTrack &mixTrack = source->mixTrack;
 
                 if (source->mixTrackIndex >= state->trackStartTimes.size())
                 {
@@ -651,7 +630,6 @@ namespace jucyaudio
                     continue;
                 }
 
-                activeTracksThisBlock++;
                 const auto trackReadStart = std::max(startSample - trackStartSamples, juce::int64(0));
                 const auto trackReadEnd = std::min(blockEndSample - trackStartSamples, trackDurationSamples);
                 int samplesToRead = static_cast<int>(trackReadEnd - trackReadStart);
@@ -661,22 +639,13 @@ namespace jucyaudio
 
                 int outputOffset = static_cast<int>(std::max(trackStartSamples - startSample, juce::int64(0)));
 
-                // Check if this track has special characters in filename
-                const bool hasSpecialChars = source->trackInfo &&
-                                            (source->trackInfo->filename.find('{') != std::string::npos ||
-                                             source->trackInfo->filename.find('}') != std::string::npos);
-                
-                // Create track buffer - check if we need to handle mono->stereo conversion
+                // Use pre-allocated scratch buffer (avoids allocation in audio callback)
                 const int sourceChannels = source->reader ? source->reader->numChannels : numChannels;
-                juce::AudioBuffer<float> trackBuffer(numChannels, samplesToRead);
-                trackBuffer.clear();
+                // setSize with avoidReallocating=true won't allocate if current capacity is sufficient
+                m_scratchBuffer.setSize(numChannels, samplesToRead, false, false, true);
+                m_scratchBuffer.clear();
 
-                if (shouldLogDetails && hasSpecialChars) {
-                    spdlog::debug("Processing track {} with special chars, source channels={}, buffer channels={}",
-                                source->trackId, sourceChannels, numChannels);
-                }
-
-                juce::AudioSourceChannelInfo trackInfo(&trackBuffer, 0, samplesToRead);
+                juce::AudioSourceChannelInfo trackInfo(&m_scratchBuffer, 0, samplesToRead);
 
                 if (auto *audioSource = source->getAudioSource())
                 {
@@ -686,27 +655,9 @@ namespace jucyaudio
                     if (sourceChannels == 1 && numChannels == 2) {
                         // Source is mono but output is stereo - duplicate mono channel to right channel
                         for (int sample = 0; sample < samplesToRead; ++sample) {
-                            const float monoSample = trackBuffer.getSample(0, sample);
-                            trackBuffer.setSample(1, sample, monoSample);
+                            const float monoSample = m_scratchBuffer.getSample(0, sample);
+                            m_scratchBuffer.setSample(1, sample, monoSample);
                         }
-                        
-                        if (shouldLogDetails && hasSpecialChars) {
-                            spdlog::debug("Duplicated mono channel to stereo for track {}", source->trackId);
-                        }
-                    }
-                    
-                    // Log if we're getting mono data when we expect stereo
-                    if (shouldLogDetails && hasSpecialChars && numChannels == 2) {
-                        // Check if right channel is silent (indicating mono playback)
-                        float leftMax = 0.0f, rightMax = 0.0f;
-                        for (int s = 0; s < std::min(100, samplesToRead); ++s) {
-                            leftMax = std::max(leftMax, std::abs(trackBuffer.getSample(0, s)));
-                            if (numChannels > 1) {
-                                rightMax = std::max(rightMax, std::abs(trackBuffer.getSample(1, s)));
-                            }
-                        }
-                        spdlog::debug("Track {} channel levels after conversion: L={:.4f}, R={:.4f}",
-                                    source->trackId, leftMax, rightMax);
                     }
                 }
 
@@ -716,23 +667,19 @@ namespace jucyaudio
                     const auto sampleInTrack = trackReadStart + sample;
                     Duration_t timeInTrack{static_cast<int64_t>((sampleInTrack * 1000.0) / m_sampleRate)};
 
-                    float gain = getEnvelopeGainForTrack(mixTrack, timeInTrack) * masterGain * mixTrack.gainAdjustment; // Apply per-track gain adjustment
+                    float gain = getEnvelopeGainForTrack(mixTrack, timeInTrack) * masterGain * mixTrack.gainAdjustment;
 
                     int outputSample = outputOffset + sample;
                     if (outputSample >= 0 && outputSample < numSamples)
                     {
                         for (int channel = 0; channel < numChannels; ++channel)
                         {
-                            float trackSample = trackBuffer.getSample(channel, sample);
-                            float outputSample = buffer.getSample(channel, outputOffset + sample);
-                            buffer.setSample(channel, outputOffset + sample, outputSample + (trackSample * gain));
+                            float trackSample = m_scratchBuffer.getSample(channel, sample);
+                            float existingSample = buffer.getSample(channel, outputOffset + sample);
+                            buffer.setSample(channel, outputOffset + sample, existingSample + (trackSample * gain));
                         }
                     }
                 }
-            }
-            
-            if (shouldLogDetails) {
-                spdlog::debug("mixActiveTracksForBlock: {} active tracks processed", activeTracksThisBlock);
             }
         }
 
@@ -755,13 +702,6 @@ namespace jucyaudio
             buffer.clear();
             
             juce::AudioSourceChannelInfo info(&buffer, 0, numSamples);
-
-            static int blockCount = 0;
-            if (++blockCount % 100 == 1) { // Log every 100 blocks
-                spdlog::debug("JUCYAUDIO: audioDeviceIOCallback -> paused={}, prepared={}, pos={}, samples={}", 
-                    m_isPaused.load(), m_isPrepared.load(), m_currentPositionSamples.load(), numSamples);
-            }
-
             getNextAudioBlock(info);
         }
 

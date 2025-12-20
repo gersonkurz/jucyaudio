@@ -189,6 +189,9 @@ namespace jucyaudio
             int m_blockSize{512};
             std::atomic<float> m_masterGain{1.0f};
 
+            // Pre-allocated scratch buffer for audio callback (avoids allocation in real-time thread)
+            juce::AudioBuffer<float> m_scratchBuffer;
+
             // Thread safety
             mutable juce::CriticalSection m_critSec;
 
