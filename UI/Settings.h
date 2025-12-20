@@ -114,7 +114,7 @@ namespace jucyaudio
                     : Section{parent, "UI"}
                 {
                 }
-                TypedValue<std::string> theme{this, "Theme", "light"};
+                TypedValue<std::string> theme{this, "Theme", "gruvbox-dark"};
                 TypedValue<bool> showOfflineTracks{this, "ShowOfflineTracks", false};  // Default to hiding offline tracks
                 TypedValueVector<DataViewColumnSection> libraryViewColumns{this, "LibraryViewColumns"};
                 TypedValueVector<DataViewColumnSection> workingSetsViewColumns{this, "WorkingSetsViewColumns"};

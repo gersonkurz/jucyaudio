@@ -1,4 +1,4 @@
-name = "Orange Light"
+name = "Jucy Orange Light"
 
 [colors]
 "Label::textWhenEditingColourId"           = "#FF212121"  # Dark text when editing labels/sliders

@@ -1,0 +1,20 @@
+name = "Dracula"
+
+[colors]
+"Label::textWhenEditingColourId"           = "#FFf8f8f2"  # Foreground when editing
+"Label::backgroundWhenEditingColourId"     = "#FF44475a"  # Current line background
+"ListBox::outlineColourId"                 = "#FF44475a"  # Selection border
+"TabbedComponent::outlineColourId"         = "#FF44475a"
+"TabbedButtonBar::tabOutlineColourId"      = "#FF44475a"
+"Slider::trackColourId"                    = "#FF44475a"
+"Slider::textBoxOutlineColourId"           = "#FF44475a"
+"ScrollBar::trackColourId"                 = "#FF44475a"
+"TextButton::buttonColourId"               = "#FF44475a"
+"TextEditor::outlineColourId"              = "#FF44475a"
+"TreeView::linesColourId"                  = "#FF6272a4"  # Comment color for lines
+"waveformColourId"                         = "#FFbd93f9"  # Purple waveform
+"accent"                                   = "#FFff79c6"  # Pink accent
+"mainBackground"                           = "#FF282a36"  # Dracula background
+"alternateBackground"                      = "#FF44475a"  # Current line / selection
+"mainForeground"                           = "#FFf8f8f2"  # Foreground
+"disabledForeground"                       = "#FF6272a4"  # Comment color

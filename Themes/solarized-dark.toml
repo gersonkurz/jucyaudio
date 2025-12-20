@@ -1,0 +1,20 @@
+name = "Solarized Dark"
+
+[colors]
+"Label::textWhenEditingColourId"           = "#FF839496"  # Base0 text when editing
+"Label::backgroundWhenEditingColourId"     = "#FF073642"  # Base02 background when editing
+"ListBox::outlineColourId"                 = "#FF073642"  # Base02 border
+"TabbedComponent::outlineColourId"         = "#FF073642"
+"TabbedButtonBar::tabOutlineColourId"      = "#FF073642"
+"Slider::trackColourId"                    = "#FF073642"
+"Slider::textBoxOutlineColourId"           = "#FF073642"
+"ScrollBar::trackColourId"                 = "#FF073642"
+"TextButton::buttonColourId"               = "#FF073642"
+"TextEditor::outlineColourId"              = "#FF073642"
+"TreeView::linesColourId"                  = "#FF073642"
+"waveformColourId"                         = "#FF268bd2"  # Blue waveform
+"accent"                                   = "#FF268bd2"  # Solarized Blue accent
+"mainBackground"                           = "#FF002b36"  # Base03 - main background
+"alternateBackground"                      = "#FF073642"  # Base02 - alternate rows
+"mainForeground"                           = "#FF839496"  # Base0 - main text
+"disabledForeground"                       = "#FF586e75"  # Base01 - disabled/comments

@@ -1,0 +1,20 @@
+name = "Nord"
+
+[colors]
+"Label::textWhenEditingColourId"           = "#FFeceff4"  # Snow Storm text when editing
+"Label::backgroundWhenEditingColourId"     = "#FF3b4252"  # Polar Night lighter
+"ListBox::outlineColourId"                 = "#FF3b4252"  # Border
+"TabbedComponent::outlineColourId"         = "#FF3b4252"
+"TabbedButtonBar::tabOutlineColourId"      = "#FF3b4252"
+"Slider::trackColourId"                    = "#FF3b4252"
+"Slider::textBoxOutlineColourId"           = "#FF3b4252"
+"ScrollBar::trackColourId"                 = "#FF3b4252"
+"TextButton::buttonColourId"               = "#FF3b4252"
+"TextEditor::outlineColourId"              = "#FF3b4252"
+"TreeView::linesColourId"                  = "#FF4c566a"  # Polar Night lightest
+"waveformColourId"                         = "#FF88c0d0"  # Frost cyan waveform
+"accent"                                   = "#FF88c0d0"  # Nord Frost accent
+"mainBackground"                           = "#FF2e3440"  # Polar Night origin
+"alternateBackground"                      = "#FF3b4252"  # Polar Night lighter
+"mainForeground"                           = "#FFeceff4"  # Snow Storm brightest
+"disabledForeground"                       = "#FF4c566a"  # Polar Night lightest

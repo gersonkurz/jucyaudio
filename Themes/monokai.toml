@@ -1,0 +1,20 @@
+name = "Monokai"
+
+[colors]
+"Label::textWhenEditingColourId"           = "#FFf8f8f2"  # Foreground when editing
+"Label::backgroundWhenEditingColourId"     = "#FF3e3d32"  # Line highlight
+"ListBox::outlineColourId"                 = "#FF3e3d32"  # Border
+"TabbedComponent::outlineColourId"         = "#FF3e3d32"
+"TabbedButtonBar::tabOutlineColourId"      = "#FF3e3d32"
+"Slider::trackColourId"                    = "#FF3e3d32"
+"Slider::textBoxOutlineColourId"           = "#FF3e3d32"
+"ScrollBar::trackColourId"                 = "#FF3e3d32"
+"TextButton::buttonColourId"               = "#FF3e3d32"
+"TextEditor::outlineColourId"              = "#FF3e3d32"
+"TreeView::linesColourId"                  = "#FF75715e"  # Comment color
+"waveformColourId"                         = "#FFa6e22e"  # Green waveform
+"accent"                                   = "#FFa6e22e"  # Monokai Green accent
+"mainBackground"                           = "#FF272822"  # Monokai background
+"alternateBackground"                      = "#FF3e3d32"  # Line highlight
+"mainForeground"                           = "#FFf8f8f2"  # Foreground
+"disabledForeground"                       = "#FF75715e"  # Comment color

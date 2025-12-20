@@ -1,0 +1,20 @@
+name = "Gruvbox Dark"
+
+[colors]
+"Label::textWhenEditingColourId"           = "#FFebdbb2"  # Light text when editing
+"Label::backgroundWhenEditingColourId"     = "#FF3c3836"  # Dark1 background
+"ListBox::outlineColourId"                 = "#FF3c3836"  # Border
+"TabbedComponent::outlineColourId"         = "#FF3c3836"
+"TabbedButtonBar::tabOutlineColourId"      = "#FF3c3836"
+"Slider::trackColourId"                    = "#FF3c3836"
+"Slider::textBoxOutlineColourId"           = "#FF3c3836"
+"ScrollBar::trackColourId"                 = "#FF3c3836"
+"TextButton::buttonColourId"               = "#FF3c3836"
+"TextEditor::outlineColourId"              = "#FF3c3836"
+"TreeView::linesColourId"                  = "#FF504945"  # Dark2
+"waveformColourId"                         = "#FFfe8019"  # Orange waveform
+"accent"                                   = "#FFfe8019"  # Gruvbox Orange accent
+"mainBackground"                           = "#FF282828"  # Dark0 background
+"alternateBackground"                      = "#FF3c3836"  # Dark1
+"mainForeground"                           = "#FFebdbb2"  # Light1 foreground
+"disabledForeground"                       = "#FF928374"  # Gray
