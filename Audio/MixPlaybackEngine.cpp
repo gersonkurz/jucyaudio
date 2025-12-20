@@ -127,7 +127,7 @@ namespace jucyaudio
 
                     auto source = std::make_unique<PlaybackTrackSource>(mixTrack.trackId, i, trackInfo, mixTrack);
 
-                    if (source->prepare(m_formatManager, m_sampleRate, m_blockSize))
+                    if (source->prepare(m_formatManager, m_sampleRate, m_blockSize, state->trackStartTimes[i]))
                     {
                         state->trackSources.push_back(std::move(source));
                     }
@@ -168,31 +168,32 @@ namespace jucyaudio
         {
         }
 
-        bool PlaybackTrackSource::prepare(juce::AudioFormatManager &formatManager, double targetSampleRate, int blockSize)
+        bool PlaybackTrackSource::prepare(juce::AudioFormatManager &formatManager, double targetSampleRate, int blockSize,
+                                           Duration_t trackStartTime)
         {
             const auto trackPath{trackInfo->reconstructFullPath()};
             juce::File sourceFile{ui::jucePathFromFs(trackPath)};
-            
+
             // Check if filename has special characters
             const bool hasSpecialChars = trackInfo->filename.find('{') != std::string::npos ||
                                         trackInfo->filename.find('}') != std::string::npos;
-            
+
             if (hasSpecialChars) {
-                spdlog::debug("Track {} has special chars in filename: {}", 
+                spdlog::debug("Track {} has special chars in filename: {}",
                             trackId, trackInfo->filename);
                 spdlog::debug("Full reconstructed path: {}", trackPath.string());
                 spdlog::debug("JUCE file path: {}", sourceFile.getFullPathName().toStdString());
             }
-            
-            spdlog::debug("Preparing track {} from file: {}", 
+
+            spdlog::debug("Preparing track {} from file: {}",
                         trackId, trackPath.string());
-            
+
             if (!sourceFile.exists())
             {
                 spdlog::error("[AUDIO DEBUG] File does not exist: {}", trackPath.string());
                 return false;
             }
-            
+
             reader.reset(formatManager.createReaderFor(sourceFile));
 
             if (!reader)
@@ -225,6 +226,11 @@ namespace jucyaudio
                             trackId, reader->sampleRate);
                 readerSource->prepareToPlay(blockSize, targetSampleRate);
             }
+
+            // Pre-calculate sample positions at target sample rate (avoids per-block math)
+            startSampleAtTargetRate = static_cast<juce::int64>((trackStartTime.count() / 1000.0) * targetSampleRate);
+            const auto durationSamples = static_cast<juce::int64>((trackInfo->duration.count() / 1000.0) * targetSampleRate);
+            endSampleAtTargetRate = startSampleAtTargetRate + durationSamples;
 
             return true;
         }
@@ -544,7 +550,8 @@ namespace jucyaudio
 
                 auto source = std::make_unique<PlaybackTrackSource>(mixTrack.trackId, i, trackInfo, mixTrack);
 
-                if (source->prepare(m_formatManager, m_sampleRate, m_blockSize))
+                Duration_t trackStartTime = (i < m_trackStartTimes.size()) ? m_trackStartTimes[i] : Duration_t{0};
+                if (source->prepare(m_formatManager, m_sampleRate, m_blockSize, trackStartTime))
                 {
                     m_trackSources.push_back(std::move(source));
                 }
@@ -614,14 +621,10 @@ namespace jucyaudio
 
                 const MixTrack &mixTrack = source->mixTrack;
 
-                if (source->mixTrackIndex >= state->trackStartTimes.size())
-                {
-                    continue;
-                }
-
-                const auto trackStartSamples = static_cast<juce::int64>((state->trackStartTimes[source->mixTrackIndex].count() / 1000.0) * m_sampleRate);
-                const auto trackDurationSamples = static_cast<juce::int64>((source->trackInfo->duration.count() / 1000.0) * m_sampleRate);
-                const auto trackEndSamples = trackStartSamples + trackDurationSamples;
+                // Use pre-calculated sample positions (avoids per-block ms-to-samples math)
+                const auto trackStartSamples = source->startSampleAtTargetRate;
+                const auto trackEndSamples = source->endSampleAtTargetRate;
+                const auto trackDurationSamples = trackEndSamples - trackStartSamples;
 
                 const auto blockEndSample = startSample + numSamples;
 

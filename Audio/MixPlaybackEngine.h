@@ -71,10 +71,15 @@ namespace jucyaudio
             // Current playback position in samples (in source file's sample rate)
             std::atomic<juce::int64> currentPositionInSourceSamples{0};
 
+            // Pre-calculated sample positions at target sample rate (avoids per-block math)
+            juce::int64 startSampleAtTargetRate{0};
+            juce::int64 endSampleAtTargetRate{0};
+
             PlaybackTrackSource(TrackId id, size_t index, const TrackInfo *ti, const MixTrack& mt);
             ~PlaybackTrackSource() = default;
 
-            bool prepare(juce::AudioFormatManager &formatManager, double targetSampleRate, int blockSize);
+            bool prepare(juce::AudioFormatManager &formatManager, double targetSampleRate, int blockSize,
+                        Duration_t trackStartTime);  // trackStartTime from trackStartTimes array
             juce::AudioSource *getAudioSource()
             {
                 return resampler ? static_cast<juce::AudioSource*>(resampler.get())
