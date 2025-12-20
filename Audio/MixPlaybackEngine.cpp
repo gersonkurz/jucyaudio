@@ -639,11 +639,9 @@ namespace jucyaudio
 
                 int outputOffset = static_cast<int>(std::max(trackStartSamples - startSample, juce::int64(0)));
 
-                // Use pre-allocated scratch buffer (avoids allocation in audio callback)
+                // Use pre-allocated scratch buffer - just clear the portion we need (no resize)
                 const int sourceChannels = source->reader ? source->reader->numChannels : numChannels;
-                // setSize with avoidReallocating=true won't allocate if current capacity is sufficient
-                m_scratchBuffer.setSize(numChannels, samplesToRead, false, false, true);
-                m_scratchBuffer.clear();
+                m_scratchBuffer.clear(0, samplesToRead);
 
                 juce::AudioSourceChannelInfo trackInfo(&m_scratchBuffer, 0, samplesToRead);
 
