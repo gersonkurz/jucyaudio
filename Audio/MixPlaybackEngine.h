@@ -60,6 +60,7 @@ namespace jucyaudio
         struct PlaybackTrackSource
         {
             TrackId trackId;
+            size_t mixTrackIndex;        // Original index into mixTracks/trackStartTimes (for correct timing lookup)
             const TrackInfo *trackInfo;  // SAFE: Points into PlaybackState->trackInfos (owned by PlaybackState)
             MixTrack mixTrack;           // OWNED copy (MixTrack is POD, cheap to copy)
 
@@ -70,7 +71,7 @@ namespace jucyaudio
             // Current playback position in samples (in source file's sample rate)
             std::atomic<juce::int64> currentPositionInSourceSamples{0};
 
-            PlaybackTrackSource(TrackId id, const TrackInfo *ti, const MixTrack& mt);
+            PlaybackTrackSource(TrackId id, size_t index, const TrackInfo *ti, const MixTrack& mt);
             ~PlaybackTrackSource() = default;
 
             bool prepare(juce::AudioFormatManager &formatManager, double targetSampleRate, int blockSize);

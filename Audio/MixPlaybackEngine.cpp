@@ -115,8 +115,9 @@ namespace jucyaudio
                 spdlog::debug("[PlaybackEngine] buildPlaybackState -> Engine is prepared, creating track sources");
                 state->trackSources.reserve(mixTracks.size());
 
-                for (const auto& mixTrack : mixTracks)
+                for (size_t i = 0; i < mixTracks.size(); ++i)
                 {
+                    const auto& mixTrack = mixTracks[i];
                     const auto* trackInfo = state->getTrackInfo(mixTrack.trackId);
                     if (!trackInfo)
                     {
@@ -124,7 +125,7 @@ namespace jucyaudio
                         continue;
                     }
 
-                    auto source = std::make_unique<PlaybackTrackSource>(mixTrack.trackId, trackInfo, mixTrack);
+                    auto source = std::make_unique<PlaybackTrackSource>(mixTrack.trackId, i, trackInfo, mixTrack);
 
                     if (source->prepare(m_formatManager, m_sampleRate, m_blockSize))
                     {
@@ -159,8 +160,9 @@ namespace jucyaudio
             spdlog::debug("[PlaybackEngine] retireState -> Retired state kept alive until next swap");
         }
 
-        PlaybackTrackSource::PlaybackTrackSource(TrackId id, const TrackInfo *ti, const MixTrack& mt)
+        PlaybackTrackSource::PlaybackTrackSource(TrackId id, size_t index, const TrackInfo *ti, const MixTrack& mt)
             : trackId{id},
+              mixTrackIndex{index},
               trackInfo{ti},
               mixTrack{mt}  // Copy MixTrack by value
         {
@@ -379,17 +381,17 @@ namespace jucyaudio
 
             m_currentPositionSamples = positionSamples;
 
-            // Reposition all track sources using PlaybackState (NEW REFCOUNTING CODE)
+            // Reposition all track sources using PlaybackState
             for (size_t i = 0; i < state->trackSources.size(); ++i)
             {
                 auto &source = state->trackSources[i];
 
-                if (i >= state->trackStartTimes.size())
+                if (source->mixTrackIndex >= state->trackStartTimes.size())
                 {
                     continue;
                 }
 
-                Duration_t trackStartMs = state->trackStartTimes[i];
+                Duration_t trackStartMs = state->trackStartTimes[source->mixTrackIndex];
                 juce::int64 trackStartSamples = static_cast<juce::int64>((trackStartMs.count() / 1000.0) * m_sampleRate);
 
                 if (positionSamples >= trackStartSamples)
@@ -537,7 +539,7 @@ namespace jucyaudio
                 }
                 const auto trackPath{trackInfo->reconstructFullPath()};
 
-                auto source = std::make_unique<PlaybackTrackSource>(mixTrack.trackId, trackInfo, mixTrack);
+                auto source = std::make_unique<PlaybackTrackSource>(mixTrack.trackId, i, trackInfo, mixTrack);
 
                 if (source->prepare(m_formatManager, m_sampleRate, m_blockSize))
                 {
@@ -548,17 +550,17 @@ namespace jucyaudio
             if (m_currentPositionSamples > 0)
             {
                 Duration_t currentPosMs{static_cast<int64_t>((m_currentPositionSamples.load() / m_sampleRate) * 1000.0)};
-                
+
                 for (size_t i = 0; i < m_trackSources.size(); ++i)
                 {
                     auto &source = m_trackSources[i];
-                    
-                    if (i >= m_trackStartTimes.size())
+
+                    if (source->mixTrackIndex >= m_trackStartTimes.size())
                     {
                         continue;
                     }
                     
-                    Duration_t trackStartMs = m_trackStartTimes[i];
+                    Duration_t trackStartMs = m_trackStartTimes[source->mixTrackIndex];
                     juce::int64 trackStartSamples = static_cast<juce::int64>((trackStartMs.count() / 1000.0) * m_sampleRate);
                     
                     if (m_currentPositionSamples >= trackStartSamples)
@@ -633,12 +635,12 @@ namespace jucyaudio
 
                 const MixTrack &mixTrack = source->mixTrack;  // Access by-value copy (safe)
 
-                if (i >= state->trackStartTimes.size())
+                if (source->mixTrackIndex >= state->trackStartTimes.size())
                 {
                     continue;
                 }
 
-                const auto trackStartSamples = static_cast<juce::int64>((state->trackStartTimes[i].count() / 1000.0) * m_sampleRate);
+                const auto trackStartSamples = static_cast<juce::int64>((state->trackStartTimes[source->mixTrackIndex].count() / 1000.0) * m_sampleRate);
                 const auto trackDurationSamples = static_cast<juce::int64>((source->trackInfo->duration.count() / 1000.0) * m_sampleRate);
                 const auto trackEndSamples = trackStartSamples + trackDurationSamples;
 
