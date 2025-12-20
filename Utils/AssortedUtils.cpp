@@ -73,52 +73,56 @@ namespace jucyaudio
         assert(!svseparators.empty());
         std::vector<std::string> result;
 
-        if (auto text = svtext.data())
+        if (svtext.empty())
         {
-            bool is_recording_quoted_string = false;
-            auto start = text;
-            for (;;)
-            {
-                char c = *(text++);
-                if (!c)
-                {
-                    if (*start)
-                    {
-                        result.push_back(start);
-                    }
-                    break;
-                }
-                if (is_recording_quoted_string)
-                {
-                    if (c == '"')
-                    {
-                        assert(text - start >= 1);
-                        result.push_back(std::string{start, (size_t)(text - start - 1)});
-                        start = text;
-                        is_recording_quoted_string = false;
-                    }
-                    continue;
-                }
-                else if (handle_quotation_marks && (c == '"'))
-                {
-                    assert(text - start >= 1);
-                    if (text - start > 1)
-                    {
-                        result.push_back(std::string{start, (size_t)(text - start - 1)});
-                    }
-                    start = text;
-                    is_recording_quoted_string = true;
-                    continue;
-                }
+            return result;
+        }
 
-                if (std::strchr(svseparators.data(), c))
+        bool is_recording_quoted_string = false;
+        size_t start = 0;
+
+        for (size_t i = 0; i < svtext.size(); ++i)
+        {
+            const char c = svtext[i];
+
+            if (is_recording_quoted_string)
+            {
+                if (c == '"')
                 {
-                    assert(text - start >= 1);
-                    result.push_back(std::string{start, (size_t)(text - start - 1)});
-                    start = text;
+                    // End of quoted string - don't include the closing quote
+                    result.push_back(std::string{svtext.substr(start, i - start)});
+                    start = i + 1;
+                    is_recording_quoted_string = false;
                 }
+                continue;
+            }
+
+            if (handle_quotation_marks && c == '"')
+            {
+                // Start of quoted string - save any preceding content
+                if (i > start)
+                {
+                    result.push_back(std::string{svtext.substr(start, i - start)});
+                }
+                start = i + 1;
+                is_recording_quoted_string = true;
+                continue;
+            }
+
+            // Check if c is a separator (using find instead of strchr for safety)
+            if (svseparators.find(c) != std::string_view::npos)
+            {
+                result.push_back(std::string{svtext.substr(start, i - start)});
+                start = i + 1;
             }
         }
+
+        // Add remaining content after last separator
+        if (start < svtext.size())
+        {
+            result.push_back(std::string{svtext.substr(start)});
+        }
+
         return result;
     }
 
