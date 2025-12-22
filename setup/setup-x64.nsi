@@ -56,6 +56,11 @@ Section  "-Jucyaudio (required)"
     SetRegView 64
     SetOutPath $INSTDIR
     File /R ..\out\install\X64-Release\bin\*
+    SetOutPath $INSTDIR\licenses
+    File ..\THIRD_PARTY_NOTICES.txt
+    File ..\LICENSE
+    File /R ..\licenses\*
+    SetOutPath $INSTDIR
     
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\jucyaudio" "DisplayName" "jucyaudio (Remove only)"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\jucyaudio" "UninstallString" '"$INSTDIR\uninstall.exe"'

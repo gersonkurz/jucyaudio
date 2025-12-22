@@ -47,6 +47,7 @@ debug:
 # Build release configuration  
 release:
     @just build Release
+    @just bundle-licenses {{arch}} Release
 
 # Build release with debug info
 relwithdebinfo:
@@ -117,6 +118,7 @@ compile-commands:
 # Package the application (macOS DMG) - native architecture
 package config="Release":
     @just build {{config}}
+    @just bundle-licenses {{arch}} {{config}}
     cmake --install build --prefix install-{{arch}}
     cd build && cpack -G DragNDrop
     @echo "✓ DMG created: build/*.dmg"
@@ -125,6 +127,7 @@ package config="Release":
 # Package Intel version as DMG
 package-intel config="Release":
     @just build-intel {{config}}
+    @just bundle-licenses x86_64 {{config}}
     cmake --install build-x86_64 --prefix install-x86_64
     cd build-x86_64 && cpack -G DragNDrop
     @echo "✓ Intel DMG created: build-x86_64/JucyAudio-*.dmg"
@@ -133,6 +136,7 @@ package-intel config="Release":
 # Package Universal Binary as DMG
 package-universal config="Release":
     @just build-universal {{config}}
+    @just bundle-licenses-universal {{config}}
     cmake --install build-universal --prefix install-universal
     cd build-universal && cpack -G DragNDrop
     @echo "✓ Universal DMG created: build-universal/JucyAudio-*.dmg"
@@ -185,6 +189,30 @@ publish: clean-packages
 # ============================================================================
 # Information Commands
 # ============================================================================
+
+# Copy license notices into the app bundle (macOS)
+bundle-licenses arch_target config:
+    @app_path="build-{{arch_target}}/{{arch_target}}-{{config}}/jucyaudio.app/Contents/Resources"; \
+    if [ ! -d "$$app_path" ]; then \
+        echo "! App bundle not found: $$app_path"; \
+        exit 1; \
+    fi; \
+    mkdir -p "$$app_path/licenses"; \
+    cp -f LICENSE THIRD_PARTY_NOTICES.txt "$$app_path/licenses/"; \
+    cp -R licenses/* "$$app_path/licenses/"; \
+    echo "V Licenses copied to $$app_path/licenses"
+
+# Copy license notices into the universal app bundle (macOS)
+bundle-licenses-universal config:
+    @app_path="build-universal/arm64_x86_64-{{config}}/jucyaudio.app/Contents/Resources"; \
+    if [ ! -d "$$app_path" ]; then \
+        echo "! App bundle not found: $$app_path"; \
+        exit 1; \
+    fi; \
+    mkdir -p "$$app_path/licenses"; \
+    cp -f LICENSE THIRD_PARTY_NOTICES.txt "$$app_path/licenses/"; \
+    cp -R licenses/* "$$app_path/licenses/"; \
+    echo "V Licenses copied to $$app_path/licenses"
 
 # Show build sizes for all configurations
 sizes:

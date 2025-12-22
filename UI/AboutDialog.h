@@ -29,6 +29,8 @@ namespace jucyaudio
             juce::Label m_titleLabel;
             juce::Label m_versionLabel;
             juce::Label m_copyrightLabel;
+            juce::Label m_licenseLabel;
+            juce::TextEditor m_licenseEditor;
             
             // Hyperlink button for website
             juce::HyperlinkButton m_websiteButton;

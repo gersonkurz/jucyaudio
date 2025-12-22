@@ -1,0 +1,72 @@
+JucyAudio - Third-Party Notices
+================================
+
+This product includes third-party components. The license texts are provided
+in the "licenses" directory of this distribution (unless otherwise noted).
+
+Project: JucyAudio
+Main license: GNU GPLv3 (see LICENSE)
+
+Dependencies
+------------
+
+JUCE
+  License: GPLv3 or Commercial (project uses GPLv3)
+  Source: https://juce.com/
+  Notes: If using a commercial JUCE license, replace this notice accordingly.
+
+LAME
+  License: LGPL-2.0
+  License file: licenses/lame.txt
+  Source: https://lame.sourceforge.io/
+
+SQLite
+  License: Public Domain
+  License file: licenses/mit.txt (placeholder - replace with SQLite notice if desired)
+  Source: https://www.sqlite.org/
+
+spdlog
+  License: MIT
+  License file: licenses/spdlog.txt
+  Source: https://github.com/gabime/spdlog
+
+ICU
+  License: ICU License
+  License file: licenses/icu.txt
+  Source: https://icu.unicode.org/
+
+aubio
+  License: GPLv3
+  License file: licenses/aubio.txt
+  Source: https://aubio.org/
+
+libsndfile
+  License: LGPL-2.1
+  License file: licenses/libsndfile.txt
+  Source: http://www.mega-nerd.com/libsndfile/
+
+FFTW
+  License: GPL (or commercial)
+  License file: licenses/fftw.txt
+  Source: http://www.fftw.org/
+
+TagLib
+  License: LGPL/MPL
+  License file: licenses/taglib.txt
+  Source: https://taglib.org/
+
+tomlplusplus
+  License: MIT
+  License file: licenses/mit.txt
+  Source: https://github.com/marzer/tomlplusplus
+
+pthreads-w32
+  License: LGPL
+  License file: licenses/pthreads32-w32.txt
+  Source: https://sourceware.org/pthreads-win32/
+
+Notes
+-----
+- Update version numbers and URLs as needed for each dependency.
+- If a dependency is removed or replaced, update this list and remove its
+  license file from "licenses/".

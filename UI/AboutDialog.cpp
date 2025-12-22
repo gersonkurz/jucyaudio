@@ -12,11 +12,25 @@ namespace jucyaudio
 {
     namespace ui
     {
+        static juce::File getThirdPartyNoticesFile()
+        {
+            auto appFile = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
+#if JUCE_MAC
+            // currentApplicationFile points to .../Contents/MacOS/jucyaudio
+            auto resourcesDir = appFile.getParentDirectory().getParentDirectory().getChildFile("Resources");
+            return resourcesDir.getChildFile("licenses").getChildFile("THIRD_PARTY_NOTICES.txt");
+#else
+            // Windows: licenses folder next to the executable
+            return appFile.getParentDirectory().getChildFile("licenses").getChildFile("THIRD_PARTY_NOTICES.txt");
+#endif
+        }
+
         AboutDialog::AboutDialog()
             : m_titleLabel{"titleLabel", "JucyAudio"},
               m_versionLabel{"versionLabel", "Version " PROJECT_VERSION},
               m_copyrightLabel{"copyrightLabel",
                   juce::CharPointer_UTF8("\xc2\xa9 2025 JucyAudio\n\nThis is free software, licensed under the\nGNU General Public License v3.0 or later")},
+              m_licenseLabel{"licenseLabel", "Third-party notices"},
               m_websiteButton{"https://jucyaudio.com", juce::URL("https://jucyaudio.com")},
               m_closeButton{"Close"}
         {
@@ -41,6 +55,32 @@ namespace jucyaudio
             m_copyrightLabel.setJustificationType(juce::Justification::centred);
             m_copyrightLabel.setColour(juce::Label::textColourId, juce::Colours::white);
 
+            // Third-party notices
+            addAndMakeVisible(m_licenseLabel);
+            m_licenseLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(12.0f)}.boldened());
+            m_licenseLabel.setJustificationType(juce::Justification::centred);
+            m_licenseLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+
+            addAndMakeVisible(m_licenseEditor);
+            m_licenseEditor.setReadOnly(true);
+            m_licenseEditor.setMultiLine(true);
+            m_licenseEditor.setScrollbarsShown(true);
+            m_licenseEditor.setCaretVisible(false);
+            m_licenseEditor.setFont(juce::Font{juce::FontOptions{}.withHeight(11.0f)});
+            m_licenseEditor.setColour(juce::TextEditor::textColourId, juce::Colours::white);
+            m_licenseEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xFFF96E00).darker(0.25f));
+            m_licenseEditor.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xFFF96E00).darker(0.35f));
+
+            const auto noticesFile = getThirdPartyNoticesFile();
+            if (noticesFile.existsAsFile())
+            {
+                m_licenseEditor.setText(noticesFile.loadFileAsString());
+            }
+            else
+            {
+                m_licenseEditor.setText("Third-party notices file not found.\nExpected: " + noticesFile.getFullPathName());
+            }
+
             // Website hyperlink - white with underline
             addAndMakeVisible(m_websiteButton);
             m_websiteButton.setFont(juce::Font{juce::FontOptions{}.withHeight(14.0f).withUnderline()}, false);
@@ -51,7 +91,7 @@ namespace jucyaudio
             m_closeButton.addListener(this);
 
             // Set dialog size (increased height for license text)
-            setSize(400, 350);
+            setSize(420, 520);
 
             // Set initial focus to close button
             juce::MessageManager::callAsync(
@@ -108,6 +148,12 @@ namespace jucyaudio
 
             // Copyright and License (needs more height for multi-line text)
             m_copyrightLabel.setBounds(area.removeFromTop(60));
+            area.removeFromTop(10);
+
+            // Third-party notices
+            m_licenseLabel.setBounds(area.removeFromTop(20));
+            area.removeFromTop(5);
+            m_licenseEditor.setBounds(area.removeFromTop(170));
             area.removeFromTop(10);
 
             // Website link

@@ -860,6 +860,14 @@ if(APPLE)
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes"
             DESTINATION "jucyaudio.app/Contents/Resources")
 
+    # Install license notices to the bundle
+    install(FILES
+            "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+            "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.txt"
+            DESTINATION "jucyaudio.app/Contents/Resources/licenses")
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/licenses"
+            DESTINATION "jucyaudio.app/Contents/Resources")
+
     # Code signing support (optional)
     if(DEFINED ENV{MACOS_CODESIGN_IDENTITY})
         set(CODESIGN_IDENTITY "$ENV{MACOS_CODESIGN_IDENTITY}")
@@ -886,9 +894,21 @@ if(APPLE)
 elseif(WIN32)
     install(TARGETS jucyaudio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes" DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES
+            "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+            "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.txt"
+            DESTINATION ${CMAKE_INSTALL_BINDIR}/licenses)
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/licenses"
+            DESTINATION ${CMAKE_INSTALL_BINDIR})
 else()
     install(TARGETS jucyaudio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes" DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES
+            "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+            "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.txt"
+            DESTINATION ${CMAKE_INSTALL_BINDIR}/licenses)
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/licenses"
+            DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 # ============================================================================
