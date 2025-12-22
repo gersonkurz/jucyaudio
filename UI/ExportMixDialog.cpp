@@ -316,7 +316,18 @@ namespace jucyaudio
             m_commentLabel.setVisible(isMp3);
             m_commentEditor.setVisible(isMp3);
 
-            if (!isMp3)
+            if (isMp3)
+            {
+                // Repopulate m_settings from text editors when switching back to MP3
+                m_settings.artist = m_artistEditor.getText().toStdString();
+                m_settings.album = m_albumEditor.getText().toStdString();
+                m_settings.title = m_trackTitleEditor.getText().toStdString();
+                m_settings.trackNumber = m_trackNumberEditor.getText().toStdString();
+                m_settings.year = m_yearEditor.getText().toStdString();
+                m_settings.genre = m_genreEditor.getText().toStdString();
+                m_settings.comment = m_commentEditor.getText().toStdString();
+            }
+            else
             {
                 // Clear tag fields for non-MP3 exports
                 m_settings.artist.clear();
