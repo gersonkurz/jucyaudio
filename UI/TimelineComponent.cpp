@@ -1140,17 +1140,20 @@ namespace jucyaudio
                         // IMPORTANT: We must defer the reload to avoid deleting components during their event handlers
                         // The MixTrackComponent that initiated this drag is still in its mouseUp handler,
                         // so we can't destroy it yet. Use MessageManager::callAsync to defer the reload.
-                        juce::MessageManager::callAsync([this]() {
-                            if (m_mixLoader)
+                        juce::Component::SafePointer<TimelineComponent> safeThis = this;
+                        juce::MessageManager::callAsync([safeThis]() {
+                            if (!safeThis)
+                                return;
+                            if (safeThis->m_mixLoader)
                             {
                                 spdlog::info("[Timeline] Reloading mix after reorder");
-                                m_mixLoader->reloadFromDatabase();
-                                populateFrom(m_mixLoader);
+                                safeThis->m_mixLoader->reloadFromDatabase();
+                                safeThis->populateFrom(safeThis->m_mixLoader);
 
                                 // Trigger mix reload for audio engine if playing
-                                if (onMixPlaybackReloadRequested)
+                                if (safeThis->onMixPlaybackReloadRequested)
                                 {
-                                    onMixPlaybackReloadRequested();
+                                    safeThis->onMixPlaybackReloadRequested();
                                 }
                             }
                         });
