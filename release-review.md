@@ -4,7 +4,7 @@
 ### High
 h1 - DONE - Potential invalid mix data for short tracks when appending to an existing mix: fixed 5s/2s crossfade math can yield negative `attachTo`/envelope times if `trackInfo.duration < 5000ms`, which can propagate into playback/export and timeline math. `UI/CreateMixDialogComponent.cpp:251`
 h2 - DONE - Use-after-free risk from async UI callbacks in long-running tasks: background thread calls `MessageManager::callAsync` capturing raw `this` without a `Component::SafePointer`, so closing the dialog while a task is running can crash. `UI/TaskDialog.cpp:185`
-h3 - MP3 export assumes stereo when building interleaved samples; `outputNumChannels()==1` still reads channel 1 and interleaves stereo data, which can crash or encode garbage for mono exports. `Audio/ExportMixToMp3.cpp:170`
+h3 - N/A - MP3 export assumes stereo when building interleaved samples; `outputNumChannels()==1` still reads channel 1 and interleaves stereo data, which can crash or encode garbage for mono exports. `Audio/ExportMixToMp3.cpp:170` - FALSE POSITIVE: outputNumChannels() is hardcoded to 2, mono export path never executes
 h4 - BPM analysis can detach worker threads after a timeout; detached threads can keep running and access task-owned data after completion, risking use-after-free. `Database/BackgroundTasks/BpmAnalysisTask.cpp:356`
 
 ### Medium
