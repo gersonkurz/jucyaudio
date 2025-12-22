@@ -120,12 +120,13 @@ namespace jucyaudio
             setSize(600, 550);
 
             // Set initial focus
+            juce::Component::SafePointer<ExportMixDialog> safeThis = this;
             juce::MessageManager::callAsync(
-                [this]()
+                [safeThis]()
                 {
-                    if (isShowing())
+                    if (safeThis && safeThis->isShowing())
                     {
-                        m_filenameComponent->grabKeyboardFocus();
+                        safeThis->m_filenameComponent->grabKeyboardFocus();
                     }
                 });
         }

@@ -33,7 +33,7 @@ m22 - DONE - NavigationTree crashes on empty database: `children.front()` called
 - DONE - Cue point edits bypass read-only check: `updateCuePointsInData()` has no `m_isReadOnly` guard unlike `updateCueAttachInData()`, allowing modification of exported/locked mixes. `UI/MixEditorComponent.cpp:681` - Fixed as part of m11
 
 ### Low
-l1 - Dialogs use `MessageManager::callAsync` for focus after show, capturing raw `this` without a guard; rapid close paths could still race to a dangling pointer. `UI/CreateMixDialogComponent.cpp:82`, `UI/CreateWorkingSetDialogComponent.cpp:75`, `UI/ExportMixDialog.cpp:123`
+l1 - DONE - Dialogs use `MessageManager::callAsync` for focus after show, capturing raw `this` without a guard; rapid close paths could still race to a dangling pointer. `UI/CreateMixDialogComponent.cpp:82`, `UI/CreateWorkingSetDialogComponent.cpp:75`, `UI/ExportMixDialog.cpp:123`
 l2 - Export pipeline logs mono-track debug at info level during normal operation, which can add overhead and bloat logs on large exports. `Audio/ExportMixImplementation.cpp:381`
 l3 - Export resampling uses simple linear interpolation without low-pass filtering, which can introduce aliasing on rate conversion. `Audio/ExportMixImplementation.cpp:445`
 l4 - Missing-file reporting counts folders, not tracks; `existingTrackCache.size()` is the number of folder buckets, and empty buckets keep the map non-empty, so logs can claim missing tracks even when none remain. `Database/TrackScanner.cpp:181`

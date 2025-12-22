@@ -79,12 +79,13 @@ namespace jucyaudio
             m_cancelButton.addListener(this);
 
             // Set initial focus to name editor after dialog is shown
+            juce::Component::SafePointer<CreateMixDialogComponent> safeThis = this;
             juce::MessageManager::callAsync(
-                [this]()
+                [safeThis]()
                 {
-                    if (isShowing())
+                    if (safeThis && safeThis->isShowing())
                     {
-                        m_nameEditor.grabKeyboardFocus();
+                        safeThis->m_nameEditor.grabKeyboardFocus();
                     }
                 });
         }
