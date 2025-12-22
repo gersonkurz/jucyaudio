@@ -367,7 +367,7 @@ namespace jucyaudio
             // Debug logging for mono tracks
             if (readerChannels == 1)
             {
-                spdlog::info("MTE: Processing MONO track ID {} - reader channels: {}, output channels: {}", 
+                spdlog::debug("MTE: Processing MONO track ID {} - reader channels: {}, output channels: {}",
                     mixTrackDef.trackId, readerChannels, outputNumChannels());
             }
 
@@ -486,7 +486,7 @@ namespace jucyaudio
                     {
                         maxSample = std::max(maxSample, std::abs(sourceData0[i]));
                     }
-                    spdlog::info("MTE: Mono track {} - max sample in first 100: {}, copying {} samples to offset {}", 
+                    spdlog::debug("MTE: Mono track {} - max sample in first 100: {}, copying {} samples to offset {}",
                         mixTrackDef.trackId, maxSample, numSamplesToReadForThisTrackInBlock, destStartOffset);
                     
                     m_sourceTrackBlock.copyFrom(0, destStartOffset, sourceData0, (int)numSamplesToReadForThisTrackInBlock);

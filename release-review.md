@@ -34,7 +34,7 @@ m22 - DONE - NavigationTree crashes on empty database: `children.front()` called
 
 ### Low
 l1 - DONE - Dialogs use `MessageManager::callAsync` for focus after show, capturing raw `this` without a guard; rapid close paths could still race to a dangling pointer. `UI/CreateMixDialogComponent.cpp:82`, `UI/CreateWorkingSetDialogComponent.cpp:75`, `UI/ExportMixDialog.cpp:123`
-l2 - Export pipeline logs mono-track debug at info level during normal operation, which can add overhead and bloat logs on large exports. `Audio/ExportMixImplementation.cpp:381`
+l2 - DONE - Export pipeline logs mono-track debug at info level during normal operation, which can add overhead and bloat logs on large exports. `Audio/ExportMixImplementation.cpp:381`
 l3 - Export resampling uses simple linear interpolation without low-pass filtering, which can introduce aliasing on rate conversion. `Audio/ExportMixImplementation.cpp:445`
 l4 - Missing-file reporting counts folders, not tracks; `existingTrackCache.size()` is the number of folder buckets, and empty buckets keep the map non-empty, so logs can claim missing tracks even when none remain. `Database/TrackScanner.cpp:181`
 l5 - Mix editor resize logs detailed timing at info level on every resize, which can hurt responsiveness and spam logs during window drags. `UI/MixEditorComponent.cpp:548`
