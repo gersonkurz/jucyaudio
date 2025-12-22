@@ -100,7 +100,7 @@ namespace jucyaudio
                 std::string artistTitle;
                 if (!trackInfo->artist_name.empty() && !trackInfo->title.empty())
                 {
-                    artistTitle = std::format("{} - ", trackInfo->artist_name, trackInfo->title);
+                    artistTitle = std::format("{} - {}", trackInfo->artist_name, trackInfo->title);
                 }
                 else if (!trackInfo->title.empty())
                 {
