@@ -169,41 +169,45 @@ namespace jucyaudio
             // ... (initial setup) ...
             m_taskIsRunning = true; // Set this before starting thread
 
+            // Create SafePointer BEFORE starting thread - this must be done on the message thread
+            juce::Component::SafePointer<TaskDialog> safeThis = this;
+
             m_taskThread = std::thread(
-                [this, taskPtr = m_task]
+                [safeThis, taskPtr = m_task, shouldCancelPtr = &m_shouldCancel]
                 {
                     bool cb_called_by_task = false;
-                    std::atomic<bool> *shouldCancelPtr = &m_shouldCancel; // Capture pointer to atomic
 
-                    // Create a ComponentSafePointer to 'this' for safer async calls if needed AFTER run()
-                    // However, completion should ideally be the last thing.
-                    // For now, let's assume taskPtr->run() calls completionCb synchronously from its thread context.
-
-                    ProgressCallback progressCbWrapper = [this, currentTaskName = taskPtr->m_taskName](int progressPercent, const std::string &statusMsg)
+                    ProgressCallback progressCbWrapper = [safeThis, currentTaskName = taskPtr->m_taskName](int progressPercent, const std::string &statusMsg)
                     {
                         std::string msgCopy(statusMsg);
                         juce::MessageManager::callAsync(
-                            [this, progressPercent, message = std::move(msgCopy), taskName = currentTaskName]()
+                            [safeThis, progressPercent, message = std::move(msgCopy), taskName = currentTaskName]()
                             {
-                                // Check if task is still relevant (m_task might have been cleared if dialog is closing)
-                                if (m_task && m_task->m_taskName == taskName && !m_taskHasCompleted)
+                                // Check if dialog still exists before accessing any members
+                                if (!safeThis)
+                                    return;
+                                // Check if task is still relevant
+                                if (safeThis->m_task && safeThis->m_task->m_taskName == taskName && !safeThis->m_taskHasCompleted)
                                 {
-                                    this->handleProgressUpdate(progressPercent, message);
+                                    safeThis->handleProgressUpdate(progressPercent, message);
                                 }
                             });
                     };
 
-                    CompletionCallback completionCbWrapper = [&, this, currentTaskName = taskPtr->m_taskName](bool success, const std::string &resultMsg)
+                    CompletionCallback completionCbWrapper = [&cb_called_by_task, safeThis, currentTaskName = taskPtr->m_taskName](bool success, const std::string &resultMsg)
                     {
                         cb_called_by_task = true;
                         std::string msgCopy(resultMsg);
                         juce::MessageManager::callAsync(
-                            [this, success, message = std::move(msgCopy), taskName = currentTaskName]()
+                            [safeThis, success, message = std::move(msgCopy), taskName = currentTaskName]()
                             {
+                                // Check if dialog still exists before accessing any members
+                                if (!safeThis)
+                                    return;
                                 // Check if task is still relevant
-                                if (m_task && m_task->m_taskName == taskName)
-                                { // No need to check m_taskHasCompleted here, handleTaskCompleted does.
-                                    this->handleTaskCompleted(success, message);
+                                if (safeThis->m_task && safeThis->m_task->m_taskName == taskName)
+                                {
+                                    safeThis->handleTaskCompleted(success, message);
                                 }
                             });
                     };
@@ -222,10 +226,10 @@ namespace jucyaudio
                         {
                             std::string errorMsg = "Task failed with exception: " + std::string(e.what());
                             juce::MessageManager::callAsync(
-                                [this, message = std::move(errorMsg), taskName = taskPtr->m_taskName]()
+                                [safeThis, message = std::move(errorMsg), taskName = taskPtr->m_taskName]()
                                 {
-                                    if (m_task && m_task->m_taskName == taskName)
-                                        this->handleTaskCompleted(false, message);
+                                    if (safeThis && safeThis->m_task && safeThis->m_task->m_taskName == taskName)
+                                        safeThis->handleTaskCompleted(false, message);
                                 });
                         }
                         cb_called_by_task = true;
@@ -237,10 +241,10 @@ namespace jucyaudio
                         {
                             std::string errorMsg = "Task failed with unknown exception.";
                             juce::MessageManager::callAsync(
-                                [this, message = std::move(errorMsg), taskName = taskPtr->m_taskName]()
+                                [safeThis, message = std::move(errorMsg), taskName = taskPtr->m_taskName]()
                                 {
-                                    if (m_task && m_task->m_taskName == taskName)
-                                        this->handleTaskCompleted(false, message);
+                                    if (safeThis && safeThis->m_task && safeThis->m_task->m_taskName == taskName)
+                                        safeThis->handleTaskCompleted(false, message);
                                 });
                         }
                         cb_called_by_task = true;
@@ -252,18 +256,20 @@ namespace jucyaudio
                         spdlog::warn("TaskDialog: Task '{}' finished run() without calling completion callback. Triggering fallback.", taskPtr->m_taskName);
 
                         // Capture the CURRENT state of m_shouldCancel by value for this async call.
-                        // m_shouldCancel is a member std::atomic<bool>.
-                        bool was_cancelled_at_this_point = m_shouldCancel.load(); // Read the atomic's value
+                        bool was_cancelled_at_this_point = shouldCancelPtr->load();
 
                         juce::MessageManager::callAsync(
-                            [this, cancelled_flag = was_cancelled_at_this_point, task_name_capture = taskPtr->m_taskName]() { // Capture by value
-                            // Critical: Check m_task *before* dereferencing `this` implicitly in handleTaskCompleted
-                            // And also check if the task name matches, in case m_task was reassigned quickly (unlikely here but good practice)
-                            if (m_task && m_task->m_taskName == task_name_capture && !m_taskHasCompleted.load()) {
-                                 std::string finalMsg = cancelled_flag ? "Task cancelled by user (fallback)." : "Task finished unexpectedly (fallback).";
-                                 this->handleTaskCompleted(false, finalMsg);
-                            }
-                        });
+                            [safeThis, cancelled_flag = was_cancelled_at_this_point, task_name_capture = taskPtr->m_taskName]()
+                            {
+                                // Check if dialog still exists before accessing any members
+                                if (!safeThis)
+                                    return;
+                                if (safeThis->m_task && safeThis->m_task->m_taskName == task_name_capture && !safeThis->m_taskHasCompleted.load())
+                                {
+                                    std::string finalMsg = cancelled_flag ? "Task cancelled by user (fallback)." : "Task finished unexpectedly (fallback).";
+                                    safeThis->handleTaskCompleted(false, finalMsg);
+                                }
+                            });
                     }
 
                     // Signal that the thread's main work is done. The UI thread will handle m_taskIsRunning.
