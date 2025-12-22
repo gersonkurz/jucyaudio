@@ -359,29 +359,13 @@ namespace jucyaudio
                     spdlog::info("BPM Analysis: Cancel detected, waiting for worker threads");
                 }
 
-                // Wait for all threads with a timeout
-                auto waitStart = std::chrono::steady_clock::now();
-                const auto maxWaitTime = std::chrono::seconds(2);
-
+                // Always join all threads - never detach, as detached threads would access
+                // freed data (tracksToProcess, resultsQueue, atomics, etc.)
                 for (auto &worker : workers)
                 {
                     if (worker.joinable())
                     {
-                        // Calculate remaining time
-                        auto elapsed = std::chrono::steady_clock::now() - waitStart;
-                        if (elapsed < maxWaitTime)
-                        {
-                            // Try to join with remaining timeout
-                            // Note: std::thread doesn't have timed join, so we just join
-                            // The threads should exit quickly due to shouldCancel check
-                            worker.join();
-                        }
-                        else
-                        {
-                            // Timeout exceeded, detach remaining threads
-                            spdlog::warn("Detaching worker thread due to timeout");
-                            worker.detach();
-                        }
+                        worker.join();
                     }
                 }
 
