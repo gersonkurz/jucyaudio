@@ -430,14 +430,26 @@ namespace jucyaudio
                 
                 // Defer scrolling to ensure the tree has finished laying out
                 // This is especially important when items have just been expanded
-                juce::MessageManager::callAsync([this, currentItem]()
+                // Capture the node (refcounted) and re-resolve TreeViewItem in async to avoid stale pointer
+                auto* navItem = dynamic_cast<NavTreeViewItem*>(currentItem);
+                if (navItem && navItem->getNode())
                 {
-                    if (currentItem != nullptr && currentItem->isSelected())
+                    auto* node = navItem->getNode();
+                    node->retain(REFCOUNT_DEBUG_ARGS);
+                    juce::Component::SafePointer<NavigationPanelComponent> safeThis = this;
+                    juce::MessageManager::callAsync([safeThis, node]()
                     {
-                        m_treeView.scrollToKeepItemVisible(currentItem);
-                        spdlog::info("selectNode: Scrolled to keep item visible.");
-                    }
-                });
+                        if (safeThis)
+                        {
+                            if (auto* item = safeThis->findTreeViewItemForNode(node))
+                            {
+                                safeThis->m_treeView.scrollToKeepItemVisible(item);
+                                spdlog::info("selectNode: Scrolled to keep item visible.");
+                            }
+                        }
+                        node->release(REFCOUNT_DEBUG_ARGS);
+                    });
+                }
                 
                 spdlog::info("selectNode: Successfully selected item.");
             }
@@ -696,15 +708,25 @@ namespace jucyaudio
                     // Ensure the item is visible - do it both immediately and async
                     // Immediate scroll for already laid out items
                     m_treeView.scrollToKeepItemVisible(navItem);
-                    
+
                     // Also do async scroll in case the tree needs to finish layout after expansion
-                    juce::MessageManager::callAsync([this, navItem]()
+                    // Capture the node (refcounted) and re-resolve TreeViewItem in async to avoid stale pointer
+                    if (auto* node = navItem->getNode())
                     {
-                        if (navItem != nullptr && navItem->isSelected())
+                        node->retain(REFCOUNT_DEBUG_ARGS);
+                        juce::Component::SafePointer<NavigationPanelComponent> safeThis = this;
+                        juce::MessageManager::callAsync([safeThis, node]()
                         {
-                            m_treeView.scrollToKeepItemVisible(navItem);
-                        }
-                    });
+                            if (safeThis)
+                            {
+                                if (auto* item = safeThis->findTreeViewItemForNode(node))
+                                {
+                                    safeThis->m_treeView.scrollToKeepItemVisible(item);
+                                }
+                            }
+                            node->release(REFCOUNT_DEBUG_ARGS);
+                        });
+                    }
                     
                     spdlog::info("expandPathAndSelectTarget: Successfully navigated to target folder");
                     return true;

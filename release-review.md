@@ -9,7 +9,7 @@ h4 - DONE - BPM analysis can detach worker threads after a timeout; detached thr
 
 ### Medium
 m1 - DONE - Export tag settings can silently desync from the visible fields: switching away from MP3 clears `m_settings.*`, but switching back to MP3 does not repopulate settings from the still-visible text editors unless the user re-types, resulting in empty tags on export. `UI/ExportMixDialog.cpp:297`
-m2 - Async UI callbacks capture raw `this`/`TreeViewItem*` without lifetime guards; if the tree rebuilds or the component closes before the callback runs, it can dereference freed objects. `UI/NavigationPanelComponent.cpp:433`
+m2 - DONE - Async UI callbacks capture raw `this`/`TreeViewItem*` without lifetime guards; if the tree rebuilds or the component closes before the callback runs, it can dereference freed objects. `UI/NavigationPanelComponent.cpp:433`
 m3 - Render-thread tile updates schedule a repaint per tile via `callAsync` without a lifetime guard, which risks use-after-free on teardown and can flood the message queue during heavy rendering. `UI/VirtualTimelineComponent.cpp:2518`
 m4 - Export mixing loops ignore read failures from `contributeFromActiveSource`, so I/O errors can silently produce partial silence while the export still reports success. `Audio/ExportMixToWav.cpp:97`, `Audio/ExportMixToMp3.cpp:143`
 m5 - MP3 export allocates an interleaved buffer on every block; this per-block heap allocation is avoidable and can significantly slow large exports. `Audio/ExportMixToMp3.cpp:168`
