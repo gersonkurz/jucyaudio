@@ -2545,6 +2545,9 @@ namespace jucyaudio
 
         void MainComponent::onExportMixSettingsReceived(const MixInfo &mixInfo, const audio::ActiveExportSettings &settings)
         {
+            // Stop any ongoing playback before starting export
+            stopMixPlayback();
+
             spdlog::info("Finalizing and exporting mix ID: {} (Name: '{}') to: {}", mixInfo.mixId, mixInfo.name, pathToString(settings.outputPath));
 
             auto *task = new FinalizeAndExportTask{mixInfo, m_audioLibrary.getMixExporter(), settings};
