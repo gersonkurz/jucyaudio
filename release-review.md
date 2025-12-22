@@ -22,7 +22,7 @@ m11 - DONE - Cue point edits don't reload playback state and bypass the read-onl
 m12 - DONE - M3U export builds the "artist - title" string with a malformed format call, so titles are omitted and output lines are incorrect. `Audio/ExportMixToM3U.cpp:86`
 m13 - DONE - Mix playback/export ignore cueStart/cueEnd and always use full track duration, so edits to cue points don't affect actual audio output. `Audio/ExportMixImplementation.cpp:363`, `Audio/MixPlaybackEngine.cpp:636`
 m14 - DONE - Navigation tree assumes the root has at least one child; `children.front()` is called without checking for empty, which can crash on an empty database. `UI/NavigationTree.cpp:34`
-m15 - Post-restore UI reinitialization is scheduled with `callAsync` capturing raw `this`; closing the main window before the async runs can UAF. `UI/MainComponent.cpp:3520`
+m15 - DONE - Post-restore UI reinitialization is scheduled with `callAsync` capturing raw `this`; closing the main window before the async runs can UAF. `UI/MainComponent.cpp:3520`
 m16 - Library root scan completion posts nested `callAsync` callbacks capturing raw `this`, risking UAF if the component closes during a scan. `UI/LibraryRootsComponent.cpp:505`
 m17 - Database backup task calls `performBackupCheck` with the wrong signature (missing database path and flags), so backups may never run or this unit fails to compile if enabled. `Database/BackgroundTasks/DatabaseBackupTask.cpp:27`
 m18 - Thread safety violation in cue point updates: `updateCuePointsInData` uses `const_cast` to modify `MixProjectLoader` data that may be accessed concurrently by the audio playback thread, risking data races or corrupted playback. `UI/MixEditorComponent.cpp:693`

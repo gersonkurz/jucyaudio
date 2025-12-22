@@ -3512,14 +3512,16 @@ namespace jucyaudio
             };
 
             auto* task = new DatabaseRestoreTask{backupPath};
+            juce::Component::SafePointer<MainComponent> safeThis = this;
             TaskDialog::launch("Database Restore", task, TaskDialog::AutoCloseMode::NoAutoClose, 400, this,
-                [this]()
+                [safeThis]()
                 {
                     // Schedule UI reinitialization on the message thread
                     // This is called after dialog closes (on success or close button)
-                    juce::MessageManager::callAsync([this]()
+                    juce::MessageManager::callAsync([safeThis]()
                     {
-                        reinitializeAfterRestore();
+                        if (safeThis)
+                            safeThis->reinitializeAfterRestore();
                     });
                 });
             task->release(REFCOUNT_DEBUG_ARGS);
