@@ -77,8 +77,6 @@ namespace jucyaudio
         {
             while (!m_shouldExit)
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds{500}); // Simulate work
-
                 // --- Wait for work or notification ---
                 std::vector<IBackgroundTask *> tasksCopy;
                 {
