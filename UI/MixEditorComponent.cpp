@@ -462,10 +462,10 @@ namespace jucyaudio
             const auto timelineDuration = std::chrono::duration_cast<std::chrono::microseconds>(timelineEnd - timelineStart);
             const auto totalDuration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
             
-            spdlog::info("MixEditorComponent::resized - Performance:");
-            spdlog::info("  Viewport.setBounds: {} µs", viewportDuration.count());
-            spdlog::info("  Timeline.viewportResized: {} µs", timelineDuration.count());
-            spdlog::info("  Total: {} µs", totalDuration.count());
+            spdlog::debug("MixEditorComponent::resized - Performance:");
+            spdlog::debug("  Viewport.setBounds: {} µs", viewportDuration.count());
+            spdlog::debug("  Timeline.viewportResized: {} µs", timelineDuration.count());
+            spdlog::debug("  Total: {} µs", totalDuration.count());
         }
 
         void MixEditorComponent::updateCueAttachInData(int orderInMix, const database::MixTrack& updatedTrack)
