@@ -127,6 +127,9 @@ namespace jucyaudio
                 return totalTracks;
             };
             
+            // Track I/O errors during export
+            int readFailures = 0;
+
             // Iterate through the output mix timeline, block by block
             while (context.samplesWrittenTotal < m_totalOutputSamples)
             {
@@ -140,7 +143,10 @@ namespace jucyaudio
                 // Fill the master output block by iterating through each track by its index
                 for (size_t i = 0; i < m_activeSources.size(); ++i)
                 {
-                    contributeFromActiveSource(i, context, masterOutputBlock);
+                    if (!contributeFromActiveSource(i, context, masterOutputBlock))
+                    {
+                        ++readFailures;
+                    }
                 }
 
                 // --- MP3 Encoding with LAME (NOT using m_writer) ---
@@ -231,9 +237,17 @@ namespace jucyaudio
             size_t id3v1bytes = lame_get_id3v1_tag(m_lameFlags, id3v1, sizeof id3v1);
             m_outputStream->write(id3v1, id3v1bytes);
 
-            spdlog::info("MP3 export finished for mix ID: {}", m_mixId);
+            if (readFailures > 0)
+            {
+                spdlog::warn("MP3 export completed with {} read failures for mix ID: {} - some audio may be missing", readFailures, m_mixId);
+            }
+            else
+            {
+                spdlog::info("MP3 export finished for mix ID: {}", m_mixId);
+            }
+
             if (m_progressCallback)
-                m_progressCallback(1.0f, "MP3 export complete!");
+                m_progressCallback(1.0f, readFailures > 0 ? "MP3 export complete (with warnings)" : "MP3 export complete!");
 
             return true;
         }

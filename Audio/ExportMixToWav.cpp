@@ -81,6 +81,9 @@ namespace jucyaudio
             };
 
             //const auto overallStart = clock::now();
+            // Track I/O errors during export
+            int readFailures = 0;
+
             // Iterate through the output mix timeline, block by block
             while (context.samplesWrittenTotal < m_totalOutputSamples)
             {
@@ -94,7 +97,10 @@ namespace jucyaudio
                 // For each block in the output timeline, iterate through all active sources by index
                 for (size_t i = 0; i < m_activeSources.size(); ++i)
                 {
-                    contributeFromActiveSource(i, context, masterOutputBlock);
+                    if (!contributeFromActiveSource(i, context, masterOutputBlock))
+                    {
+                        ++readFailures;
+                    }
                 }
 
                 // Write the processed masterOutputBlock to the file
@@ -105,21 +111,26 @@ namespace jucyaudio
                 {
                     float progress = (float)context.samplesWrittenTotal / (float)m_totalOutputSamples;
                     currentTrackNumber = getCurrentTrackNumber();
-                    const auto progressMessage = std::format("Exporting WAV... Track {}/{} ({:.0f}%)", 
+                    const auto progressMessage = std::format("Exporting WAV... Track {}/{} ({:.0f}%)",
                         currentTrackNumber, totalTracks, progress * 100.0f);
                     m_progressCallback(progress, progressMessage);
                 }
-                // const auto overallEnd = clock::now();
-                // const auto overallDuration = std::chrono::duration_cast<std::chrono::milliseconds>(overallEnd - overallStart).count();
-                //  spdlog::debug("MTE: overall elapsed {} ms ({})", overallDuration, durationToString((Duration_t)overallDuration));
-
             } // end while samplesWrittenTotal < m_totalOutputSamples
 
             m_writer->flush();
             // Writer (and its owned stream) and readers are cleaned up by unique_ptr.
-            spdlog::info("WAV export finished for mix ID: {}", m_mixId);
+
+            if (readFailures > 0)
+            {
+                spdlog::warn("WAV export completed with {} read failures for mix ID: {} - some audio may be missing", readFailures, m_mixId);
+            }
+            else
+            {
+                spdlog::info("WAV export finished for mix ID: {}", m_mixId);
+            }
+
             if (m_progressCallback)
-                m_progressCallback(1.0f, "WAV export complete!");
+                m_progressCallback(1.0f, readFailures > 0 ? "WAV export complete (with warnings)" : "WAV export complete!");
             return true;
         }
     } // namespace audio

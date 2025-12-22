@@ -13,3 +13,5 @@
 
 - **Refactor: Extract crossfade calculation helper** - The crossfade/envelope logic in `UI/CreateMixDialogComponent.cpp` (append to mix) and `Database/Sqlite/SqliteMixManager.cpp` (createAndSaveAutoMix) are near-duplicates. Extract to a shared helper like `Database/Includes/MixTrackUtils.h` with a `calculateCrossfadeForTrack()` function to avoid drift if thresholds or envelope curves change.
 
+- **Export I/O errors should show user-visible warning** - Export now tracks read failures and logs them to spdlog, but the user doesn't see a warning dialog. Should either return a status object with success/warning/failure states, or have the export store warning messages that the caller can display in a dialog. Currently only shows "(with warnings)" in progress message which is easily missed.
+
