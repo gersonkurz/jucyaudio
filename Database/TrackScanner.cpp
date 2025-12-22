@@ -219,12 +219,16 @@ namespace jucyaudio
                 }
                 else
                 {
-                    /* spdlog::info("Marking missing files in the database.");
-                    for (const auto &[key, track] : existingTrackCache)
+                    size_t missingCount = 0;
+                    for (const auto& item : existingTrackCache)
                     {
-                        m_db.setTrackPathMissing(track.trackId, true);
+                        for (const auto& track : item.second)
+                        {
+                            m_db.setTrackPathMissing(track.second, true);
+                            ++missingCount;
+                        }
                     }
-                    */
+                    spdlog::info("Marked {} missing files in the database.", missingCount);
                 }
             }
 
