@@ -131,7 +131,7 @@ namespace jucyaudio
                 // Store the calculated position
                 TrackTimelinePosition pos;
                 pos.startTime = trackStart;
-                pos.endTime = trackStart + trackInfo->duration;
+                pos.endTime = trackStart + mixTrack.getEffectiveDuration(trackInfo->duration);
                 m_trackPositions[i] = pos;
                 
                 // Remember this track's start for the next iteration
@@ -348,8 +348,8 @@ namespace jucyaudio
             // --- Calculate timing for *this specific track* based on calculated positions ---
             juce::int64 trackMixStartSamples = static_cast<juce::int64>((trackPos.startTime.count() / 1000.0) * outputSampleRate());
 
-            // With envelope system, tracks play their full duration
-            Duration_t trackFileEffectiveDurationMs = trackInfo.duration;
+            // Use effective duration from cue points
+            Duration_t trackFileEffectiveDurationMs = mixTrackDef.getEffectiveDuration(trackInfo.duration);
             const juce::int64 trackFileEffectiveDurationSamples =
                 static_cast<juce::int64>((trackFileEffectiveDurationMs.count() / 1000.0) * outputSampleRate());
             juce::int64 trackMixEndSamples = trackMixStartSamples + trackFileEffectiveDurationSamples;
@@ -406,9 +406,12 @@ namespace jucyaudio
             }
             m_sourceTrackBlock.clear();
 
-            // With envelope system, we start reading from the beginning of the track file
-            // The envelope controls volume, not which part of the file to read
-            juce::int64 readOffsetInSourceFileSamples = (readStartInOutputTimeline - trackMixStartSamples) * reader->sampleRate / outputSampleRate();
+            // Account for cueStart when reading from file
+            // If cueStart > 0, we skip that portion of the file
+            // If cueStart < 0, we're in a pre-silence region (handle as zero offset until past silence)
+            juce::int64 positionWithinEffectiveRegion = (readStartInOutputTimeline - trackMixStartSamples) * reader->sampleRate / outputSampleRate();
+            juce::int64 cueStartSamples = static_cast<juce::int64>((mixTrackDef.cueStart.count() / 1000.0) * reader->sampleRate);
+            juce::int64 readOffsetInSourceFileSamples = std::max(juce::int64(0), positionWithinEffectiveRegion + cueStartSamples);
 
             // Debug logging for mono tracks - show what we're reading
             const int destStartOffset = (int)(readStartInOutputTimeline - overallContext.currentBlockStartTimeSamples);

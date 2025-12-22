@@ -105,6 +105,7 @@ namespace jucyaudio
             }
 
             // Calculate total duration using O(1) map lookups
+            // Use effective duration from cue points
             Duration_t maxEndTime{0};
             for (size_t i = 0; i < mixTracks.size(); ++i)
             {
@@ -113,7 +114,7 @@ namespace jucyaudio
                 if (it != trackInfoMap.end())
                 {
                     Duration_t trackStartTime = state->trackStartTimes[i];
-                    Duration_t trackEndTime = trackStartTime + it->second->duration;
+                    Duration_t trackEndTime = trackStartTime + mixTrack.getEffectiveDuration(it->second->duration);
                     maxEndTime = std::max(maxEndTime, trackEndTime);
                 }
             }
@@ -239,9 +240,14 @@ namespace jucyaudio
             }
 
             // Pre-calculate sample positions at target sample rate (avoids per-block math)
+            // Use effective duration from cue points
             startSampleAtTargetRate = static_cast<juce::int64>((trackStartTime.count() / 1000.0) * targetSampleRate);
-            const auto durationSamples = static_cast<juce::int64>((trackInfo->duration.count() / 1000.0) * targetSampleRate);
+            const auto effectiveDuration = mixTrack.getEffectiveDuration(trackInfo->duration);
+            const auto durationSamples = static_cast<juce::int64>((effectiveDuration.count() / 1000.0) * targetSampleRate);
             endSampleAtTargetRate = startSampleAtTargetRate + durationSamples;
+
+            // Store cueStart in SOURCE sample rate (reader's rate) for file read offset calculations
+            cueStartSamples = static_cast<juce::int64>((mixTrack.cueStart.count() / 1000.0) * reader->sampleRate);
 
             return true;
         }
@@ -418,7 +424,9 @@ namespace jucyaudio
                     juce::int64 positionInSourceSamples = 0;
                     if (source->reader)
                     {
+                        // Account for cueStart when calculating file position
                         positionInSourceSamples = static_cast<juce::int64>(positionInTrack * source->reader->sampleRate / m_sampleRate);
+                        positionInSourceSamples = std::max(juce::int64(0), positionInSourceSamples + source->cueStartSamples);
                     }
 
                     source->currentPositionInSourceSamples = positionInSourceSamples;
@@ -430,10 +438,12 @@ namespace jucyaudio
                 }
                 else
                 {
-                    source->currentPositionInSourceSamples = 0;
+                    // Before this track starts - position at cueStart (or 0 if negative cueStart)
+                    juce::int64 initialPosition = std::max(juce::int64(0), source->cueStartSamples);
+                    source->currentPositionInSourceSamples = initialPosition;
                     if (source->readerSource)
                     {
-                        source->readerSource->setNextReadPosition(0);
+                        source->readerSource->setNextReadPosition(initialPosition);
                     }
                 }
             }
@@ -568,39 +578,38 @@ namespace jucyaudio
                 }
             }
 
-            if (m_currentPositionSamples > 0)
+            // Set initial read positions for all tracks, accounting for cueStart
+            for (size_t i = 0; i < m_trackSources.size(); ++i)
             {
-                Duration_t currentPosMs{static_cast<int64_t>((m_currentPositionSamples.load() / m_sampleRate) * 1000.0)};
+                auto &source = m_trackSources[i];
 
-                for (size_t i = 0; i < m_trackSources.size(); ++i)
+                if (source->mixTrackIndex >= m_trackStartTimes.size())
                 {
-                    auto &source = m_trackSources[i];
+                    continue;
+                }
 
-                    if (source->mixTrackIndex >= m_trackStartTimes.size())
+                Duration_t trackStartMs = m_trackStartTimes[source->mixTrackIndex];
+                juce::int64 trackStartSamples = static_cast<juce::int64>((trackStartMs.count() / 1000.0) * m_sampleRate);
+
+                juce::int64 positionInSourceSamples = 0;
+                if (m_currentPositionSamples >= trackStartSamples)
+                {
+                    juce::int64 positionInTrack = m_currentPositionSamples - trackStartSamples;
+
+                    if (source->reader)
                     {
-                        continue;
+                        positionInSourceSamples = static_cast<juce::int64>(positionInTrack * source->reader->sampleRate / m_sampleRate);
                     }
-                    
-                    Duration_t trackStartMs = m_trackStartTimes[source->mixTrackIndex];
-                    juce::int64 trackStartSamples = static_cast<juce::int64>((trackStartMs.count() / 1000.0) * m_sampleRate);
-                    
-                    if (m_currentPositionSamples >= trackStartSamples)
-                    {
-                        juce::int64 positionInTrack = m_currentPositionSamples - trackStartSamples;
-                        
-                        juce::int64 positionInSourceSamples = 0;
-                        if (source->reader)
-                        {
-                            positionInSourceSamples = static_cast<juce::int64>(positionInTrack * source->reader->sampleRate / m_sampleRate);
-                        }
-                        
-                        source->currentPositionInSourceSamples = positionInSourceSamples;
-                        
-                        if (source->readerSource)
-                        {
-                            source->readerSource->setNextReadPosition(positionInSourceSamples);
-                        }
-                    }
+                }
+
+                // Account for cueStart offset
+                positionInSourceSamples = std::max(juce::int64(0), positionInSourceSamples + source->cueStartSamples);
+
+                source->currentPositionInSourceSamples = positionInSourceSamples;
+
+                if (source->readerSource)
+                {
+                    source->readerSource->setNextReadPosition(positionInSourceSamples);
                 }
             }
             

@@ -74,6 +74,7 @@ namespace jucyaudio
             // Pre-calculated sample positions at target sample rate (avoids per-block math)
             juce::int64 startSampleAtTargetRate{0};
             juce::int64 endSampleAtTargetRate{0};
+            juce::int64 cueStartSamples{0};  // File read offset for cueStart (in SOURCE sample rate)
 
             PlaybackTrackSource(TrackId id, size_t index, const TrackInfo *ti, const MixTrack& mt);
             ~PlaybackTrackSource() = default;
