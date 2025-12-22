@@ -114,6 +114,10 @@ namespace jucyaudio
             };
             std::vector<TrackTimelinePosition> m_trackPositions;
 
+            // Reusable buffers to avoid per-block heap allocation in contributeFromActiveSource
+            mutable juce::AudioBuffer<float> m_tempReadBuffer;
+            mutable juce::AudioBuffer<float> m_sourceTrackBlock;
+
             // TBD: Determine Output Format Properties (Sample Rate, Channels)
             //    - Iterate through tracks, find the highest sample rate, max channels, or enforce a standard.
             //    - For simplicity, let's try to use the sample rate/channels of the first track,

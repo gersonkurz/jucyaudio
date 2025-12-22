@@ -280,21 +280,10 @@ namespace jucyaudio
                         }
                     }
 
-                    // Wait, I need to reconsider. The sourceTrackBlock was filled starting at destStartOffset
-                    // So when reading, we need to read from destStartOffset + s_idx_in_block
-                    // But destStartOffset was already calculated in contributeFromActiveSource
-                    // Let's just use s_idx_in_block directly since the loop already accounts for the offset
-                    
+                    // sourceTrackBlock was filled starting at destStartOffset in contributeFromActiveSource
+                    // destStartOffset = readStartInOutputTimeline - currentBlockStartTimeSamples
                     for (unsigned int chan = 0; chan < outputNumChannels(); ++chan)
                     {
-                        // Actually, let me think about this more carefully
-                        // In contributeFromActiveSource, we copy data to sourceTrackBlock at position destStartOffset
-                        // But sourceTrackBlock is sized for the full block (overallContext.samplesToProcessInThisBlock)
-                        // So the actual data is at indices [destStartOffset ... destStartOffset + numSamplesToReadForThisTrackInBlock - 1]
-                        // But wait, when we iterate in applyMixTrackSpecs, s_idx_in_block goes from 0 to numSamplesToReadFromSource-1
-                        // So we need to read from destStartOffset + s_idx_in_block
-                        // But context doesn't give us destStartOffset directly...
-                        // Actually, destStartOffset = readStartInOutputTimeline - currentBlockStartTimeSamples
                         const int actualSourceIndex = (int)(context.readStartInOutputTimeline - context.currentBlockStartTimeSamples) + (int)s_idx_in_block;
                         masterOutputBlock.addSample(chan, (int)targetSampleInMasterBlock, sourceTrackBlock.getSample(chan, actualSourceIndex) * envelopeGain);
                     }
@@ -402,12 +391,20 @@ namespace jucyaudio
                 samplesToReadFromFile = (numSamplesToReadForThisTrackInBlock * reader->sampleRate) / outputSampleRate();
             }
             
-            juce::AudioBuffer<float> tempReadBuffer(readerChannels, (int)samplesToReadFromFile);
-            tempReadBuffer.clear();
-            
-            // This will be our final buffer with the output channel count
-            juce::AudioBuffer<float> sourceTrackBlock(outputNumChannels(), (int)overallContext.samplesToProcessInThisBlock);
-            sourceTrackBlock.clear();
+            // Resize reusable buffers only if needed (avoids per-block heap allocation)
+            if (m_tempReadBuffer.getNumChannels() < readerChannels || m_tempReadBuffer.getNumSamples() < (int)samplesToReadFromFile)
+            {
+                m_tempReadBuffer.setSize(readerChannels, (int)samplesToReadFromFile, false, false, true);
+            }
+            m_tempReadBuffer.clear();
+
+            // Resize output buffer only if needed
+            const int neededSamples = (int)overallContext.samplesToProcessInThisBlock;
+            if (m_sourceTrackBlock.getNumChannels() < (int)outputNumChannels() || m_sourceTrackBlock.getNumSamples() < neededSamples)
+            {
+                m_sourceTrackBlock.setSize(outputNumChannels(), neededSamples, false, false, true);
+            }
+            m_sourceTrackBlock.clear();
 
             // With envelope system, we start reading from the beginning of the track file
             // The envelope controls volume, not which part of the file to read
@@ -426,7 +423,7 @@ namespace jucyaudio
             // Read into temp buffer with proper channel count
             // For mono files, we should only read the left channel (true, false)
             // For stereo files, we read both channels (true, true)
-            const auto readSuccess = reader->read(&tempReadBuffer, 0, (int)samplesToReadFromFile, readOffsetInSourceFileSamples, true, readerChannels > 1);
+            const auto readSuccess = reader->read(&m_tempReadBuffer, 0, (int)samplesToReadFromFile, readOffsetInSourceFileSamples, true, readerChannels > 1);
             
             if (readSuccess)
             {
@@ -434,20 +431,20 @@ namespace jucyaudio
                 
                 // If we need to resample, do it now
                 juce::AudioBuffer<float> resampledBuffer;
-                const float* sourceData0 = tempReadBuffer.getReadPointer(0);
-                const float* sourceData1 = (readerChannels > 1) ? tempReadBuffer.getReadPointer(1) : nullptr;
+                const float* sourceData0 = m_tempReadBuffer.getReadPointer(0);
+                const float* sourceData1 = (readerChannels > 1) ? m_tempReadBuffer.getReadPointer(1) : nullptr;
                 
                 if (samplesToReadFromFile != numSamplesToReadForThisTrackInBlock)
                 {
                     // Need to resample - create a resampled buffer
                     resampledBuffer.setSize(readerChannels, (int)numSamplesToReadForThisTrackInBlock);
-                    
+
                     // Simple linear interpolation resampling
                     const double ratio = (double)samplesToReadFromFile / (double)numSamplesToReadForThisTrackInBlock;
-                    
+
                     for (int ch = 0; ch < readerChannels; ++ch)
                     {
-                        const float* src = tempReadBuffer.getReadPointer(ch);
+                        const float* src = m_tempReadBuffer.getReadPointer(ch);
                         float* dst = resampledBuffer.getWritePointer(ch);
                         
                         for (int i = 0; i < numSamplesToReadForThisTrackInBlock; ++i)
@@ -489,19 +486,19 @@ namespace jucyaudio
                     spdlog::info("MTE: Mono track {} - max sample in first 100: {}, copying {} samples to offset {}", 
                         mixTrackDef.trackId, maxSample, numSamplesToReadForThisTrackInBlock, destStartOffset);
                     
-                    sourceTrackBlock.copyFrom(0, destStartOffset, sourceData0, (int)numSamplesToReadForThisTrackInBlock);
-                    sourceTrackBlock.copyFrom(1, destStartOffset, sourceData0, (int)numSamplesToReadForThisTrackInBlock);
+                    m_sourceTrackBlock.copyFrom(0, destStartOffset, sourceData0, (int)numSamplesToReadForThisTrackInBlock);
+                    m_sourceTrackBlock.copyFrom(1, destStartOffset, sourceData0, (int)numSamplesToReadForThisTrackInBlock);
                 }
                 else if (readerChannels == 2 && outputNumChannels() == 2)
                 {
                     // Stereo to stereo: direct copy
-                    sourceTrackBlock.copyFrom(0, destStartOffset, sourceData0, (int)numSamplesToReadForThisTrackInBlock);
-                    sourceTrackBlock.copyFrom(1, destStartOffset, sourceData1, (int)numSamplesToReadForThisTrackInBlock);
+                    m_sourceTrackBlock.copyFrom(0, destStartOffset, sourceData0, (int)numSamplesToReadForThisTrackInBlock);
+                    m_sourceTrackBlock.copyFrom(1, destStartOffset, sourceData1, (int)numSamplesToReadForThisTrackInBlock);
                 }
                 else if (readerChannels == 2 && outputNumChannels() == 1)
                 {
                     // Stereo to mono: mix down
-                    auto* monoOut = sourceTrackBlock.getWritePointer(0);
+                    auto* monoOut = m_sourceTrackBlock.getWritePointer(0);
                     for (int i = 0; i < (int)numSamplesToReadForThisTrackInBlock; ++i)
                     {
                         monoOut[destStartOffset + i] = (sourceData0[i] + sourceData1[i]) * 0.5f;
@@ -510,7 +507,7 @@ namespace jucyaudio
                 else if (readerChannels == 1 && outputNumChannels() == 1)
                 {
                     // Mono to mono: direct copy
-                    sourceTrackBlock.copyFrom(0, destStartOffset, sourceData0, (int)numSamplesToReadForThisTrackInBlock);
+                    m_sourceTrackBlock.copyFrom(0, destStartOffset, sourceData0, (int)numSamplesToReadForThisTrackInBlock);
                 }
             }
             else
@@ -527,7 +524,7 @@ namespace jucyaudio
             trackContext.trackMixStartSamples = trackMixStartSamples;
             trackContext.trackFileEffectiveDurationSamples = trackFileEffectiveDurationSamples;
 
-            return applyMixTrackSpecs(mixTrackDef, trackContext, masterOutputBlock, sourceTrackBlock);
+            return applyMixTrackSpecs(mixTrackDef, trackContext, masterOutputBlock, m_sourceTrackBlock);
         }
 
     } // namespace audio
