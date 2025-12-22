@@ -553,8 +553,6 @@ target_sources(jucyaudio PRIVATE
     UI/MixTrackComponent.h
     UI/TimelineComponent.cpp
     UI/TimelineComponent.h
-    UI/VirtualTimelineComponent.cpp
-    UI/VirtualTimelineComponent.h
     UI/OverlayComponent.cpp
     UI/OverlayComponent.h
     UI/TrackRenderer.cpp

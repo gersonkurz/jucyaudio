@@ -9,8 +9,8 @@ namespace jucyaudio::ui {
 /**
     Lightweight overlay component for rendering transient graphics like
     playhead, drag previews, and selection marquees.
-    
-    This component sits on top of the VirtualTimelineComponent and only
+
+    This component sits on top of the TimelineComponent and only
     repaints small regions for optimal performance.
 */
 class OverlayComponent : public juce::Component

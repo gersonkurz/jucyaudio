@@ -20,7 +20,6 @@ namespace jucyaudio
     {
         // Forward declarations
         class PlaybackController;
-        class VirtualTimelineComponent;
         
         // Lightweight overlay component that only draws the playhead
         class PlayheadOverlay : public juce::Component
@@ -131,22 +130,14 @@ namespace jucyaudio
             void scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) override;
             void updatePlayheadOverlayPosition();
             
-            // Virtual timeline methods
-            void setupVirtualTimeline();
-            bool isUsingVirtualTimeline() const { return m_useVirtualTimeline; }
-
             juce::AudioFormatManager m_formatManager;
             juce::AudioThumbnailCache m_thumbnailCache{200}; // 200 items in the cache - enough for large mixes
 
             MarkerRulerComponent m_markerRuler;
             TimelineComponent m_timeline;
-            std::unique_ptr<VirtualTimelineComponent> m_virtualTimeline;
             PlayheadOverlay m_playheadOverlay;  // Separate component for playhead
             juce::Viewport m_viewport;
             database::MixNode *m_node{nullptr};
-
-            // Virtual timeline toggle
-            bool m_useVirtualTimeline{true};
 
             // Read-only mode for exported mixes
             bool m_isReadOnly{false};

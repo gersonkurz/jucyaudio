@@ -6,7 +6,6 @@
 #include <UI/PlaybackController.h>
 #include <UI/Settings.h>
 #include <UI/TaskDialog.h>
-#include <UI/VirtualTimelineComponent.h>
 #include <Utils/StringWriter.h>
 #include <Utils/UiUtils.h>
 #include <Database/TrackLibrary.h>
@@ -22,15 +21,6 @@ namespace jucyaudio
         {
             m_formatManager.registerBasicFormats();
             setWantsKeyboardFocus(true);
-            
-            // Check config for virtual timeline preference
-            m_useVirtualTimeline = config::theSettings.mixEditingSettings.useVirtualTimeline;
-            
-            // Setup virtual timeline if enabled
-            if (m_useVirtualTimeline)
-            {
-                setupVirtualTimeline();
-            }
 
             // Add the marker ruler at the top
             addAndMakeVisible(m_markerRuler);
@@ -47,14 +37,7 @@ namespace jucyaudio
             };
 
             // Set the timeline as the component to be viewed by the viewport.
-            if (m_useVirtualTimeline && m_virtualTimeline)
-            {
-                m_viewport.setViewedComponent(m_virtualTimeline.get(), false);
-            }
-            else
-            {
-                m_viewport.setViewedComponent(&m_timeline, false); // false = don't delete when replaced
-            }
+            m_viewport.setViewedComponent(&m_timeline, false); // false = don't delete when replaced
             m_viewport.setScrollBarsShown(true, true);
             
             // Listen for scroll events
@@ -109,14 +92,8 @@ namespace jucyaudio
                 // Update overlay when zoom changes to keep playhead in sync
                 updatePlayheadOverlayPosition();
                 
-                if (m_useVirtualTimeline && m_virtualTimeline)
-                {
-                    const double pixelsPerSecond = m_timeline.getPixelsPerSecond();
-                    const double secondsPerPixel = 1.0 / pixelsPerSecond;
-                    m_virtualTimeline->setZoomLevel(secondsPerPixel);
-                }
             };
-            
+
             // Set up seek callback for clicking on timeline
             m_timeline.onSeekRequested = [this](double timePosition)
             {
@@ -124,11 +101,6 @@ namespace jucyaudio
                 {
                     m_playbackController->seek(timePosition);
                     m_timeline.setMixPlaybackPosition(timePosition);
-                    
-                    if (m_useVirtualTimeline && m_virtualTimeline)
-                    {
-                        m_virtualTimeline->setPlayheadPosition(timePosition);
-                    }
                 }
             };
         }
@@ -158,11 +130,6 @@ namespace jucyaudio
                     spdlog::info("[MixEditor] Read-only state changed from {} to {} for mix {}",
                                 wasReadOnly, m_isReadOnly, m_node->getMixInfo().mixId);
                     m_timeline.setReadOnly(m_isReadOnly);
-                    if (m_virtualTimeline)
-                    {
-                        // If we add setReadOnly to VirtualTimelineComponent later
-                        // m_virtualTimeline->setReadOnly(m_isReadOnly);
-                    }
                 }
             }
 
@@ -244,16 +211,9 @@ namespace jucyaudio
                                 spdlog::debug("[UNDO] Reloading mix in playback controller");
                                 m_playbackController->loadMix(&mixLoader);
 
-                                // Refresh the appropriate timeline
-                                if (m_useVirtualTimeline && m_virtualTimeline)
-                                {
-                                    m_virtualTimeline->loadMixProject(&mixLoader);
-                                }
-                                else
-                                {
-                                    m_timeline.populateFrom(&mixLoader);
-                                    m_timeline.repaint();
-                                }
+                                // Refresh timeline
+                                m_timeline.populateFrom(&mixLoader);
+                                m_timeline.repaint();
                                 m_viewport.repaint();
 
                                 // Resume playback if it was playing
@@ -267,15 +227,8 @@ namespace jucyaudio
                             {
                                 // No playback controller, just refresh timeline
                                 auto& mixLoader = m_node->getMixProjectLoader();
-                                if (m_useVirtualTimeline && m_virtualTimeline)
-                                {
-                                    m_virtualTimeline->loadMixProject(&mixLoader);
-                                }
-                                else
-                                {
-                                    m_timeline.populateFrom(&mixLoader);
-                                    m_timeline.repaint();
-                                }
+                                m_timeline.populateFrom(&mixLoader);
+                                m_timeline.repaint();
                                 m_viewport.repaint();
                             }
                         }
@@ -323,16 +276,9 @@ namespace jucyaudio
                                 spdlog::debug("[REDO] Reloading mix in playback controller");
                                 m_playbackController->loadMix(&mixLoader);
 
-                                // Refresh the appropriate timeline
-                                if (m_useVirtualTimeline && m_virtualTimeline)
-                                {
-                                    m_virtualTimeline->loadMixProject(&mixLoader);
-                                }
-                                else
-                                {
-                                    m_timeline.populateFrom(&mixLoader);
-                                    m_timeline.repaint();
-                                }
+                                // Refresh timeline
+                                m_timeline.populateFrom(&mixLoader);
+                                m_timeline.repaint();
                                 m_viewport.repaint();
 
                                 // Resume playback if it was playing
@@ -346,15 +292,8 @@ namespace jucyaudio
                             {
                                 // No playback controller, just refresh timeline
                                 auto& mixLoader = m_node->getMixProjectLoader();
-                                if (m_useVirtualTimeline && m_virtualTimeline)
-                                {
-                                    m_virtualTimeline->loadMixProject(&mixLoader);
-                                }
-                                else
-                                {
-                                    m_timeline.populateFrom(&mixLoader);
-                                    m_timeline.repaint();
-                                }
+                                m_timeline.populateFrom(&mixLoader);
+                                m_timeline.repaint();
                                 m_viewport.repaint();
                             }
                         }
@@ -375,12 +314,6 @@ namespace jucyaudio
             if (m_node)
             {
                 m_timeline.releaseMixLoader();
-                
-                if (m_useVirtualTimeline && m_virtualTimeline)
-                {
-                    m_virtualTimeline->loadMixProject(nullptr); // Clear the project
-                }
-                
                 m_node->release(REFCOUNT_DEBUG_ARGS);
                 m_node = nullptr;
             }
@@ -389,15 +322,6 @@ namespace jucyaudio
         void MixEditorComponent::loadMix(database::MixNode *node)
         {
             spdlog::info("[MixEditor] loadMix called with node: {}", node ? "valid" : "null");
-
-            // Special case: run performance harness if node is null and virtual timeline is enabled
-            if (!node && m_useVirtualTimeline && m_virtualTimeline)
-            {
-                spdlog::info("[MixEditor] Running performance harness with 282 tracks");
-                m_virtualTimeline->runPerfHarness(282);
-                return;
-            }
-
             assert(node != nullptr && "MixNode should not be null in loadMix()");
 
             if (m_node)
@@ -422,12 +346,7 @@ namespace jucyaudio
             
             // Configure timeline for read-only mode
             m_timeline.setReadOnly(m_isReadOnly);
-            if (m_virtualTimeline)
-            {
-                // If we add setReadOnly to VirtualTimelineComponent later
-                // m_virtualTimeline->setReadOnly(m_isReadOnly);
-            }
-            
+
             auto& loader = node->getMixProjectLoader();
             spdlog::info("[MixEditor] Loading mix with {} tracks into timeline", loader.getMixTracks().size());
             
@@ -534,23 +453,7 @@ namespace jucyaudio
             
             // Notify the timeline that the viewport has resized
             const auto timelineStart = std::chrono::high_resolution_clock::now();
-            if (m_useVirtualTimeline && m_virtualTimeline)
-            {
-                const auto viewBounds = m_viewport.getViewArea();
-                // Use the actual viewport widget bounds for height, not the viewed component's size
-                const auto actualViewportBounds = juce::Rectangle<int>(
-                    viewBounds.getX(), 
-                    viewBounds.getY(),
-                    viewBounds.getWidth(),
-                    m_viewport.getHeight()  // Use the viewport widget's actual height
-                );
-                m_virtualTimeline->setViewportBounds(actualViewportBounds);
-            }
-            else
-            {
-                m_timeline.viewportResized();
-            }
-            
+            m_timeline.viewportResized();
             const auto timelineEnd = std::chrono::high_resolution_clock::now();
             
             const auto endTime = std::chrono::high_resolution_clock::now();
@@ -654,13 +557,7 @@ namespace jucyaudio
 
                     // Tell timeline to reposition this specific track
                     m_timeline.repositionTrack(track.trackId);
-                    
-                    if (m_useVirtualTimeline && m_virtualTimeline)
-                    {
-                        auto& mixLoader = m_node->getMixProjectLoader();
-                        m_virtualTimeline->loadMixProject(&mixLoader);
-                    }
-                    
+
                     // Tell playback controller to reload if positions changed
                     // Note: cueStart of first track affects global offset, attach points affect all positions
                     const auto isFirstTrack = (track.orderInMix == 0);
@@ -797,13 +694,6 @@ namespace jucyaudio
                     if (saveToDatabase)
                     {
                         saveMixChanges();
-
-                        // Update the virtual timeline's internal data after saving
-                        if (m_virtualTimeline)
-                        {
-                            auto& mixLoader = m_node->getMixProjectLoader();
-                            m_virtualTimeline->loadMixProject(&mixLoader);
-                        }
                     }
 
                     break;
@@ -944,31 +834,17 @@ namespace jucyaudio
         {
             spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Entry");
             
-            // Get the track ID to remove - handle both timeline implementations
+            // Get the track ID to remove
             int trackIdToRemove = -1;
-            
-            if (m_useVirtualTimeline && m_virtualTimeline)
+
+            auto* selectedTrackComponent = m_timeline.getSelectedTrack();
+            if (!selectedTrackComponent)
             {
-                const auto selectedTracks = m_virtualTimeline->getSelectedDatabaseTrackIds();
-                if (selectedTracks.empty())
-                {
-                    spdlog::warn("handleDeleteSelectedTrack called but no track selected (virtual timeline).");
-                    spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> No track selected, exiting.");
-                    return;
-                }
-                trackIdToRemove = selectedTracks[0]; // For now, delete the first selected track
+                spdlog::warn("handleDeleteSelectedTrack called but no track selected.");
+                spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> No track selected, exiting.");
+                return;
             }
-            else
-            {
-                auto* selectedTrackComponent = m_timeline.getSelectedTrack();
-                if (!selectedTrackComponent)
-                {
-                    spdlog::warn("handleDeleteSelectedTrack called but no track selected.");
-                    spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> No track selected, exiting.");
-                    return;
-                }
-                trackIdToRemove = selectedTrackComponent->getTrackId();
-            }
+            trackIdToRemove = selectedTrackComponent->getTrackId();
             
             if (!m_node)
             {
@@ -1125,10 +1001,6 @@ namespace jucyaudio
                 spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Refreshing timeline UI.");
                 m_timeline.refreshAfterDeletion(trackIdToRemove);
 
-                if (m_useVirtualTimeline && m_virtualTimeline)
-                {
-                    m_virtualTimeline->loadMixProject(&mixLoader);
-                }
             }
             
             // 7. Re-load mix in playback controller only if needed
@@ -1154,10 +1026,6 @@ namespace jucyaudio
                 spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Refreshing timeline UI after playback resume.");
                 m_timeline.refreshAfterDeletion(trackIdToRemove);
                 
-                if (m_useVirtualTimeline && m_virtualTimeline)
-                {
-                    m_virtualTimeline->loadMixProject(&mixLoader);
-                }
             }
             
             // 8. Ready for playback
@@ -1284,16 +1152,8 @@ namespace jucyaudio
                 );
 
                 // Refresh the timeline
-                if (m_useVirtualTimeline && m_virtualTimeline)
-                {
-                    spdlog::info("[PASTE_DB] Refreshing virtual timeline with updated mix");
-                    m_virtualTimeline->loadMixProject(&mixLoader);
-                }
-                else
-                {
-                    spdlog::info("[PASTE_DB] Refreshing regular timeline with updated mix");
-                    m_timeline.populateFrom(&mixLoader);
-                }
+                spdlog::info("[PASTE_DB] Refreshing timeline with updated mix");
+                m_timeline.populateFrom(&mixLoader);
 
                 // Resume playback if it was playing
                 if (wasPlaying)
@@ -1386,10 +1246,6 @@ namespace jucyaudio
                 }
                 
                 // Refresh the timeline
-                if (m_useVirtualTimeline && m_virtualTimeline)
-                {
-                    m_virtualTimeline->loadMixProject(&mixLoader);
-                }
                 else
                 {
                     m_timeline.populateFrom(&mixLoader);
@@ -1450,15 +1306,7 @@ namespace jucyaudio
                     
                     if (isPlayheadVisible)
                     {
-                        // Update playhead position - at 30Hz for balanced performance/smoothness
-                        if (m_useVirtualTimeline && m_virtualTimeline)
-                        {
-                            m_virtualTimeline->setPlayheadPosition(positionSeconds);
-                        }
-                        else
-                        {
-                            m_playheadOverlay.setPlayheadPosition(positionSeconds, pixelsPerSecond);
-                        }
+                        m_playheadOverlay.setPlayheadPosition(positionSeconds, pixelsPerSecond);
                         m_markerRuler.setPlaybackPosition(positionSeconds * 1000.0);
                     }
                     // If playhead is not visible, skip the expensive repaint operations
@@ -1469,40 +1317,19 @@ namespace jucyaudio
                     {
                         spdlog::info("Playback reached end of mix");
                         m_playbackController->stop();
-                        if (m_useVirtualTimeline && m_virtualTimeline)
-                        {
-                            m_virtualTimeline->setPlayheadPosition(-1.0);
-                        }
-                        else
-                        {
-                            m_playheadOverlay.setPlayheadPosition(-1.0, pixelsPerSecond);
-                        }
+                        m_playheadOverlay.setPlayheadPosition(-1.0, pixelsPerSecond);
                     }
                 }
                 else
                 {
                     // Not playing - hide playhead
-                    if (m_useVirtualTimeline && m_virtualTimeline)
-                    {
-                        m_virtualTimeline->setPlayheadPosition(-1.0);
-                    }
-                    else
-                    {
-                        m_playheadOverlay.setPlayheadPosition(-1.0, m_timeline.getPixelsPerSecond());
-                    }
+                    m_playheadOverlay.setPlayheadPosition(-1.0, m_timeline.getPixelsPerSecond());
                 }
             }
             else
             {
                 // Not in mix mode - hide playhead
-                if (m_useVirtualTimeline && m_virtualTimeline)
-                {
-                    m_virtualTimeline->setPlayheadPosition(-1.0);
-                }
-                else
-                {
-                    m_playheadOverlay.setPlayheadPosition(-1.0, m_timeline.getPixelsPerSecond());
-                }
+                m_playheadOverlay.setPlayheadPosition(-1.0, m_timeline.getPixelsPerSecond());
             }
         }
         
@@ -1686,69 +1513,6 @@ namespace jucyaudio
             }
         }
 
-        void MixEditorComponent::setupVirtualTimeline()
-        {
-            spdlog::info("Setting up virtual timeline component");
-            
-            // Create the virtual timeline with required dependencies
-            m_virtualTimeline = std::make_unique<VirtualTimelineComponent>(m_formatManager, m_thumbnailCache);
-            
-            // Wire up callbacks for database updates
-            m_virtualTimeline->onCueAttachChanged = [this](int orderInMix, const database::MixTrack& updatedTrack)
-            {
-                updateCueAttachInData(orderInMix, updatedTrack);
-            };
-            
-            m_virtualTimeline->onEnvelopeChanged = [this](int orderInMix, const std::vector<database::EnvelopePoint>& points)
-            {
-                updateEnvelopeInData(orderInMix, points);
-            };
-            
-            m_virtualTimeline->onCuePointsChanged = [this](int orderInMix, jucyaudio::Duration_t cueStart, jucyaudio::Duration_t cueEnd)
-            {
-                updateCuePointsInData(orderInMix, cueStart, cueEnd);
-            };
-            
-            // Wire up playback callbacks
-            m_virtualTimeline->onMixPlaybackRequested = [this](double startTime)
-            {
-                handleMixPlayback(startTime, false);  // Toggle play/pause
-            };
-            
-            m_virtualTimeline->onMixPlaybackAlwaysRequested = [this](double startTime)
-            {
-                handleMixPlayback(startTime, true);  // Always play
-            };
-            
-            m_virtualTimeline->onSeekRequested = [this](double timePosition)
-            {
-                if (m_playbackController)
-                {
-                    m_playbackController->seek(timePosition);
-                }
-            };
-            
-            m_virtualTimeline->onDeleteTracksRequested = [this]()
-            {
-                handleDeleteSelectedTrack();
-            };
-            
-            m_virtualTimeline->onPasteTracksRequested = [this](const std::vector<database::MixTrack>& tracks, int position, bool before)
-            {
-                handlePasteTracks(tracks, position, before);
-            };
-            
-            m_virtualTimeline->onRemoveFollowingTracksRequested = [this](int afterOrder)
-            {
-                handleRemoveFollowingTracks(afterOrder);
-            };
-            
-            m_virtualTimeline->onGainAdjustmentChanged = [this](int orderInMix, float newGain, bool saveToDatabase)
-            {
-                updateGainAdjustmentInData(orderInMix, newGain, saveToDatabase);
-            };
-        }
-        
         std::vector<std::pair<int, bool>> MixEditorComponent::collectWaveformRequests(audio::MixProjectLoader* loader)
         {
             std::vector<std::pair<int, bool>> requests;
@@ -1790,21 +1554,8 @@ namespace jucyaudio
                 m_viewport.setViewPosition(0, 0);
             }
 
-            // Load the mix into the correct timeline
-            if (m_useVirtualTimeline && m_virtualTimeline)
-            {
-                m_virtualTimeline->loadMixProject(loader);
-                // Set initial viewport bounds to ensure tiles are generated
-                const auto viewBounds = m_viewport.getViewArea();
-                if (!viewBounds.isEmpty())
-                {
-                    m_virtualTimeline->setViewportBounds(viewBounds);
-                }
-            }
-            else
-            {
-                m_timeline.populateFrom(loader);
-            }
+            // Load the mix into the timeline
+            m_timeline.populateFrom(loader);
 
             // Calculate mix duration and set it on the ruler
             const auto mixDuration = loader->calculateMixDuration();
@@ -1812,16 +1563,9 @@ namespace jucyaudio
 
             // Load markers for this mix
             loadMixMarkers();
-            
+
             // Ensure timeline has keyboard focus for playback controls
-            if (m_useVirtualTimeline && m_virtualTimeline)
-            {
-                m_virtualTimeline->grabKeyboardFocus();
-            }
-            else
-            {
-                m_timeline.grabKeyboardFocus();
-            }
+            m_timeline.grabKeyboardFocus();
         }
         
     } // namespace ui
