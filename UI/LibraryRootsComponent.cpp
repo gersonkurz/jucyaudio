@@ -500,15 +500,18 @@ namespace jucyaudio
             if (idsToScan.empty())
                 return;
 
-            auto onScanCompleteCallback = [this]()
+            juce::Component::SafePointer<LibraryRootsComponent> safeThis = this;
+            auto onScanCompleteCallback = [safeThis]()
             {
                 juce::MessageManager::callAsync(
-                    [this]()
+                    [safeThis]()
                     {
-                        this->loadRoots();
-                        if (this->onScanCompleted)
+                        if (!safeThis)
+                            return;
+                        safeThis->loadRoots();
+                        if (safeThis->onScanCompleted)
                         {
-                            this->onScanCompleted();
+                            safeThis->onScanCompleted();
                         }
                     });
             };
