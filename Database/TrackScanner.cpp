@@ -178,9 +178,16 @@ namespace jucyaudio
                 }
             }
 
-            if (!existingTrackCache.empty())
+            // Count actual missing tracks (not folder buckets)
+            size_t missingTrackCount = 0;
+            for (const auto& item : existingTrackCache)
             {
-                spdlog::info("Found {} tracks in the database that are missing from the filesystem.", existingTrackCache.size());
+                missingTrackCount += item.second.size();
+            }
+
+            if (missingTrackCount > 0)
+            {
+                spdlog::info("Found {} tracks in the database that are missing from the filesystem.", missingTrackCount);
 
                 if (m_removeMissingFiles)
                 {
@@ -205,7 +212,7 @@ namespace jucyaudio
                     {
                         spdlog::error("Failed to remove missing tracks from the database: {}", removeTrackSuccess.errorMessage);
                     }
-                    
+
                     // the database needs to check if the folders are empty. so:
                     const auto removeFoldersSuccess = folderDatabase.removeEmptyFolders();
                     if (removeFoldersSuccess)
@@ -219,16 +226,14 @@ namespace jucyaudio
                 }
                 else
                 {
-                    size_t missingCount = 0;
                     for (const auto& item : existingTrackCache)
                     {
                         for (const auto& track : item.second)
                         {
                             m_db.setTrackPathMissing(track.second, true);
-                            ++missingCount;
                         }
                     }
-                    spdlog::info("Marked {} missing files in the database.", missingCount);
+                    spdlog::info("Marked {} missing files in the database.", missingTrackCount);
                 }
             }
 
