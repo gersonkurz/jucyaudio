@@ -17,7 +17,7 @@ m6 - DONE - Background task loop sleeps for 500ms even when work is available; t
 m7 - DONE - Export mixing allocates per-track temporary buffers on every block, which can cause significant heap churn on large mixes and slow exports. `Audio/ExportMixImplementation.cpp:405`
 m8 - DONE - Track scan missing-file handling is effectively disabled when `removeMissingFiles` is false; the code that should mark missing tracks is commented out, so missing files remain marked as present. `Database/TrackScanner.cpp:225`
 m9 - DONE - Timeline reorder reload uses `MessageManager::callAsync` capturing raw `this` and assumes `m_mixLoader` stays valid; if the component is closed or reloads while pending, this can UAF/crash. `UI/TimelineComponent.cpp:1142`
-m10 - Master EQ/Reverb processing uses an `AudioBlock` that spans from `startSample` to the end of the buffer, not just `numSamples`, so DSP runs on data outside the active region and can corrupt audio. `UI/PlaybackController.cpp:64`
+m10 - DONE - Master EQ/Reverb processing uses an `AudioBlock` that spans from `startSample` to the end of the buffer, not just `numSamples`, so DSP runs on data outside the active region and can corrupt audio. `UI/PlaybackController.cpp:64`
 m11 - Cue point edits don’t reload playback state and bypass the read-only check, so the UI can update while playback uses stale data and read-only mixes can still be modified. `UI/MixEditorComponent.cpp:681`
 m12 - M3U export builds the “artist - title” string with a malformed format call, so titles are omitted and output lines are incorrect. `Audio/ExportMixToM3U.cpp:86`
 m13 - Mix playback/export ignore cueStart/cueEnd and always use full track duration, so edits to cue points don’t affect actual audio output. `Audio/ExportMixImplementation.cpp:363`, `Audio/MixPlaybackEngine.cpp:636`
@@ -28,7 +28,7 @@ m17 - Database backup task calls `performBackupCheck` with the wrong signature (
 m18 - Thread safety violation in cue point updates: `updateCuePointsInData` uses `const_cast` to modify `MixProjectLoader` data that may be accessed concurrently by the audio playback thread, risking data races or corrupted playback. `UI/MixEditorComponent.cpp:693`
 m19 - Export loop silently ignores errors: `contributeFromActiveSource()` return value is discarded in MP3 export loop; I/O failures produce silence but export reports success. `Audio/ExportMixToMp3.cpp:143`
 m20 - DatabaseBackupTask signature mismatch: Call `performBackupCheck(m_settings, true)` doesn't match the 5-parameter signature `(RootSettings&, path, bool, bool, bool)`. This is likely a compile error or dead code path. `Database/BackgroundTasks/DatabaseBackupTask.cpp:27`
-m21 - PlaybackController AudioBlock spans wrong region: DSP block is created from `startSample` to buffer end instead of using `numSamples`, processing data outside the active region. `UI/PlaybackController.cpp:114-117`
+m21 - DONE - PlaybackController AudioBlock spans wrong region: DSP block is created from `startSample` to buffer end instead of using `numSamples`, processing data outside the active region. `UI/PlaybackController.cpp:114-117` - DUPLICATE of m10
 m22 - NavigationTree crashes on empty database: `children.front()` called without checking `children.empty()` after `m_root->expand()`. `UI/NavigationTree.cpp:47`
 - Cue point edits bypass read-only check: `updateCuePointsInData()` has no `m_isReadOnly` guard unlike `updateCueAttachInData()`, allowing modification of exported/locked mixes. `UI/MixEditorComponent.cpp:681`
 

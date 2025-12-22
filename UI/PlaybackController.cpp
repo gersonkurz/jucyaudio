@@ -111,10 +111,11 @@ namespace jucyaudio
             // Apply master EQ and reverb to the audio (after getting the source audio)
             if (m_currentState == PlayerState::TrackPlaying || m_currentState == PlayerState::MixPlaying)
             {
-                juce::dsp::AudioBlock<float> block(*bufferToFill.buffer, 
-                                                  static_cast<size_t>(bufferToFill.startSample));
-                m_masterEqualizer.process(block);
-                m_masterReverb.process(block);
+                juce::dsp::AudioBlock<float> block(*bufferToFill.buffer);
+                auto subBlock = block.getSubBlock(static_cast<size_t>(bufferToFill.startSample),
+                                                  static_cast<size_t>(bufferToFill.numSamples));
+                m_masterEqualizer.process(subBlock);
+                m_masterReverb.process(subBlock);
             }
         }
 
