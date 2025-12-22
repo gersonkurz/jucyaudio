@@ -44,9 +44,12 @@ namespace jucyaudio
             if (m_root->expand(children))
             {
                 // now we can add the children to the navigation panel
-                if (const auto child{ children.front() })
+                if (!children.empty())
                 {
-                    m_npc.selectNode(child);
+                    if (const auto child{ children.front() })
+                    {
+                        m_npc.selectNode(child);
+                    }
                 }
                 for (const auto child : children)
                 {

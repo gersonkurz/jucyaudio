@@ -21,7 +21,7 @@ m10 - DONE - Master EQ/Reverb processing uses an `AudioBlock` that spans from `s
 m11 - DONE - Cue point edits don't reload playback state and bypass the read-only check, so the UI can update while playback uses stale data and read-only mixes can still be modified. `UI/MixEditorComponent.cpp:681`
 m12 - DONE - M3U export builds the "artist - title" string with a malformed format call, so titles are omitted and output lines are incorrect. `Audio/ExportMixToM3U.cpp:86`
 m13 - DONE - Mix playback/export ignore cueStart/cueEnd and always use full track duration, so edits to cue points don't affect actual audio output. `Audio/ExportMixImplementation.cpp:363`, `Audio/MixPlaybackEngine.cpp:636`
-m14 - Navigation tree assumes the root has at least one child; `children.front()` is called without checking for empty, which can crash on an empty database. `UI/NavigationTree.cpp:34`
+m14 - DONE - Navigation tree assumes the root has at least one child; `children.front()` is called without checking for empty, which can crash on an empty database. `UI/NavigationTree.cpp:34`
 m15 - Post-restore UI reinitialization is scheduled with `callAsync` capturing raw `this`; closing the main window before the async runs can UAF. `UI/MainComponent.cpp:3520`
 m16 - Library root scan completion posts nested `callAsync` callbacks capturing raw `this`, risking UAF if the component closes during a scan. `UI/LibraryRootsComponent.cpp:505`
 m17 - Database backup task calls `performBackupCheck` with the wrong signature (missing database path and flags), so backups may never run or this unit fails to compile if enabled. `Database/BackgroundTasks/DatabaseBackupTask.cpp:27`
@@ -29,7 +29,7 @@ m18 - Thread safety violation in cue point updates: `updateCuePointsInData` uses
 m19 - Export loop silently ignores errors: `contributeFromActiveSource()` return value is discarded in MP3 export loop; I/O failures produce silence but export reports success. `Audio/ExportMixToMp3.cpp:143`
 m20 - DatabaseBackupTask signature mismatch: Call `performBackupCheck(m_settings, true)` doesn't match the 5-parameter signature `(RootSettings&, path, bool, bool, bool)`. This is likely a compile error or dead code path. `Database/BackgroundTasks/DatabaseBackupTask.cpp:27`
 m21 - DONE - PlaybackController AudioBlock spans wrong region: DSP block is created from `startSample` to buffer end instead of using `numSamples`, processing data outside the active region. `UI/PlaybackController.cpp:114-117` - DUPLICATE of m10
-m22 - NavigationTree crashes on empty database: `children.front()` called without checking `children.empty()` after `m_root->expand()`. `UI/NavigationTree.cpp:47`
+m22 - DONE - NavigationTree crashes on empty database: `children.front()` called without checking `children.empty()` after `m_root->expand()`. `UI/NavigationTree.cpp:47` - DUPLICATE of m14
 - Cue point edits bypass read-only check: `updateCuePointsInData()` has no `m_isReadOnly` guard unlike `updateCueAttachInData()`, allowing modification of exported/locked mixes. `UI/MixEditorComponent.cpp:681`
 
 ### Low
