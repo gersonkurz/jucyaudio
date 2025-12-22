@@ -130,6 +130,9 @@ namespace jucyaudio
             // Track I/O errors during export
             int readFailures = 0;
 
+            // Pre-allocate interleaved buffer outside the loop to avoid per-block heap allocation
+            std::vector<float> interleaved(static_cast<size_t>(processingBlockSize * 2));
+
             // Iterate through the output mix timeline, block by block
             while (context.samplesWrittenTotal < m_totalOutputSamples)
             {
@@ -167,11 +170,7 @@ namespace jucyaudio
                                   rightChannelData[juce::jmin(100, numPcmSamplesForLame - 1)]);
                 }
                 // Encode with LAME
-                // int bytes_encoded =
-                //    lame_encode_buffer_float(m_lameFlags, leftChannelData, rightChannelData, numPcmSamplesForLame, m_mp3Buffer, m_mp3BufferSize);
                 const int n = static_cast<int>(context.samplesToProcessInThisBlock);
-
-                std::vector<float> interleaved(static_cast<size_t>(n * 2));
                 const float *L = masterOutputBlock.getReadPointer(0);
                 const float *R = masterOutputBlock.getReadPointer(1);
                 for (int i = 0; i < n; ++i)
@@ -180,8 +179,8 @@ namespace jucyaudio
                     interleaved[2 * i + 1] = R[i];
                 }
                 int bytes_encoded = lame_encode_buffer_interleaved_ieee_float(m_lameFlags,
-                                                                              interleaved.data(), // the array we just built
-                                                                              n,                  // samples *per channel*
+                                                                              interleaved.data(),
+                                                                              n,
                                                                               m_mp3Buffer, m_mp3BufferSize);
                 if (bytes_encoded < 0)
                 {
