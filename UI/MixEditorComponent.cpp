@@ -582,13 +582,20 @@ namespace jucyaudio
                 spdlog::error("MixEditorComponent::updateCuePointsInData - No mix node loaded");
                 return;
             }
-            
-            spdlog::info("Updating cue points for track at position {}: cueStart={}, cueEnd={}", 
+
+            // Check if mix is read-only
+            if (m_isReadOnly)
+            {
+                showMoveBackDialog();
+                return;
+            }
+
+            spdlog::info("Updating cue points for track at position {}: cueStart={}, cueEnd={}",
                         orderInMix, cueStart.count(), cueEnd.count());
-            
+
             // Get access to the mix tracks
             auto& mixTracks = const_cast<audio::MixProjectLoader&>(m_node->getMixProjectLoader()).getMixTracks();
-            
+
             // Find and update the track by orderInMix
             for (auto& track : mixTracks)
             {
@@ -596,7 +603,7 @@ namespace jucyaudio
                 {
                     track.cueStart = cueStart;
                     track.cueEnd = cueEnd;
-                    
+
                     // Save changes to database
                     if (theTrackLibrary.getMixManager().updateMixTrack(m_node->getMixProjectLoader().getMixId(), track))
                     {
@@ -606,9 +613,16 @@ namespace jucyaudio
                     {
                         spdlog::error("Failed to update cue points in database for track {}", track.trackId);
                     }
-                    
+
                     break;
                 }
+            }
+
+            // Reload mix to update playback state
+            if (m_playbackController)
+            {
+                auto& mixLoader = m_node->getMixProjectLoader();
+                m_playbackController->loadMix(&mixLoader);
             }
         }
 
