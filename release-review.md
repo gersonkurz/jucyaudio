@@ -38,10 +38,10 @@ l2 - DONE - Export pipeline logs mono-track debug at info level during normal op
 l3 - DEFERRED - Export resampling uses simple linear interpolation without low-pass filtering, which can introduce aliasing on rate conversion. `Audio/ExportMixImplementation.cpp:445` - Post-1.0
 l4 - DONE - Missing-file reporting counts folders, not tracks; `existingTrackCache.size()` is the number of folder buckets, and empty buckets keep the map non-empty, so logs can claim missing tracks even when none remain. `Database/TrackScanner.cpp:181`
 l5 - DONE - Mix editor resize logs detailed timing at info level on every resize, which can hurt responsiveness and spam logs during window drags. `UI/MixEditorComponent.cpp:548`
-l6 - Per-track update path (`updateMixTrack`) doesn't recompute mix total duration; cue-only edits can leave mix summaries stale. `Database/Sqlite/SqliteMixManager.cpp:676`
-l7 - Mix number counter can skip values: `getNextMixNumber()` called in dialog constructor, but `incrementMixNumber()` only called on success; canceling and reopening may show skipped numbers. `UI/CreateMixDialogComponent.cpp:374`
-l8 - Inconsistent null checks for `getTrackDatabase()`: Some call sites check for null, others don't. `UI/CreateMixDialogComponent.cpp:216` checks, but similar patterns elsewhere may not.
-l9 - Debug logging at INFO level: Several places log debug-level messages as INFO during normal operation, bloating logs. `Audio/ExportMixImplementation.cpp:489`, `UI/PlaybackController.cpp:218`
+l6 - DEFERRED - Per-track update path (`updateMixTrack`) doesn't recompute mix total duration; cue-only edits can leave mix summaries stale. `Database/Sqlite/SqliteMixManager.cpp:676` - Post-1.0
+l7 - N/A - Mix number counter can skip values: `getNextMixNumber()` called in dialog constructor, but `incrementMixNumber()` only called on success; canceling and reopening may show skipped numbers. `UI/CreateMixDialogComponent.cpp:374` - FALSE POSITIVE: getNextMixNumber only reads, increment only on success
+l8 - DEFERRED - Inconsistent null checks for `getTrackDatabase()`: Some call sites check for null, others don't. `UI/CreateMixDialogComponent.cpp:216` checks, but similar patterns elsewhere may not. - Post-1.0
+l9 - DONE - Debug logging at INFO level: Several places log debug-level messages as INFO during normal operation, bloating logs. `Audio/ExportMixImplementation.cpp:489`, `UI/PlaybackController.cpp:218` - Fixed as part of l2, PlaybackController logs appropriate
 
 ### Dependencies and Licensing
 The following third-party libraries are in use and need license files for distribution:
