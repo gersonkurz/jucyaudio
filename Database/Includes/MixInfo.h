@@ -214,7 +214,6 @@ namespace jucyaudio
                 for (size_t i = 0; i < envelopePoints.size(); ++i)
                 {
                     auto& point = envelopePoints[i];
-                    const auto oldTime = point.time;
 
                     // Scale fade-in points (between cueStart and attachFrom)
                     if (point.time >= cueStart && point.time <= oldAttachFrom)

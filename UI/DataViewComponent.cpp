@@ -313,7 +313,6 @@ namespace jucyaudio
 
         int DataViewComponent::getNumRows()
         {
-            //const auto start{std::chrono::high_resolution_clock::now()};
             if (!m_currentNode)
             {
                 return 0;
@@ -321,10 +320,6 @@ namespace jucyaudio
             int64_t count = 0;
             if (m_currentNode->getNumberOfRows(count))
             {
-                //const auto end{std::chrono::high_resolution_clock::now()};
-                //const auto duration{std::chrono::duration_cast<std::chrono::microseconds>(end - start)};
-                //if (duration.count() > 100)
-                //    spdlog::info("DataViewComponent::getNumRows took {} us", duration.count());
                 return static_cast<int>(count);
             }
             return 0;
@@ -434,7 +429,6 @@ namespace jucyaudio
 
         void DataViewComponent::paintCell(juce::Graphics &g, int rowNumber, int columnId, int width, int height, bool rowIsSelected)
         {
-            // const auto start{std::chrono::high_resolution_clock::now()};
             //  columns are 1-based in the TableListBoxModel, so we need to adjust
             const int dataColumnIndex = columnId - 1;
 

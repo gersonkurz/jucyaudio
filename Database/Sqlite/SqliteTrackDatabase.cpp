@@ -138,6 +138,8 @@ namespace
             mix_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, timestamp INTEGER,
             track_count INTEGER, total_length INTEGER, source_ws_id INTEGER, status TEXT DEFAULT 'New',
             undo_stack_position INTEGER DEFAULT 0,
+            exported_at INTEGER,
+            export_folder TEXT,
             FOREIGN KEY(source_ws_id) REFERENCES WorkingSets(ws_id)
         );)SQL",
         R"SQL(

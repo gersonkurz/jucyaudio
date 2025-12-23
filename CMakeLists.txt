@@ -873,6 +873,24 @@ if(APPLE)
         set(CODESIGN_IDENTITY "$ENV{MACOS_CODESIGN_IDENTITY}")
         message(STATUS "Will sign with identity: ${CODESIGN_IDENTITY}")
 
+        install(CODE [[
+            file(GLOB dylibs "${CMAKE_INSTALL_PREFIX}/jucyaudio.app/Contents/libs/*.dylib")
+            foreach(dylib ${dylibs})
+                execute_process(
+                    COMMAND codesign --force --verify --verbose
+                            --sign "${CODESIGN_IDENTITY}"
+                            --options runtime
+                            "${dylib}"
+                    RESULT_VARIABLE result
+                    OUTPUT_VARIABLE output
+                    ERROR_VARIABLE error
+                )
+                if(NOT result EQUAL 0)
+                    message(WARNING "Code signing dylib failed: ${dylib} ${error}")
+                endif()
+            endforeach()
+        ]])
+
         install(CODE "
             execute_process(
                 COMMAND codesign --deep --force --verify --verbose

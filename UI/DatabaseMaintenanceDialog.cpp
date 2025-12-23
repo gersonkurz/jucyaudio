@@ -17,7 +17,7 @@ namespace jucyaudio
         {
             // Title
             m_titleLabel.setText("Database Maintenance Options", juce::dontSendNotification);
-            m_titleLabel.setFont(juce::Font(18.0f, juce::Font::bold));
+            m_titleLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(18.0f)}.boldened());
             m_titleLabel.setJustificationType(juce::Justification::centred);
             addAndMakeVisible(m_titleLabel);
 
@@ -66,7 +66,7 @@ namespace jucyaudio
             // Note label
             m_noteLabel.setText("Note: Restore will only restore the database; other options will be ignored.",
                                juce::dontSendNotification);
-            m_noteLabel.setFont(juce::Font(12.0f, juce::Font::italic));
+            m_noteLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(12.0f)}.italicised());
             m_noteLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
             addAndMakeVisible(m_noteLabel);
 

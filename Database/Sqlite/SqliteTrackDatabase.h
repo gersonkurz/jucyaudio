@@ -128,7 +128,7 @@ namespace jucyaudio
             bool getTotalTrackCountForFolders(const std::unordered_set<FolderId> &folderIds, int64_t &outCount) const override;
 
             // Get all folders (including ancestors) that contain tracks matching the search terms
-            std::unordered_set<FolderId> getFoldersContainingMatchingTracks(const std::vector<std::string> &searchTerms) const;
+            std::unordered_set<FolderId> getFoldersContainingMatchingTracks(const std::vector<std::string> &searchTerms) const override;
 
         private:
             template <typename T>

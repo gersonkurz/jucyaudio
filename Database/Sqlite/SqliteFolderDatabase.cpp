@@ -31,7 +31,7 @@ namespace jucyaudio
                 AllCompare
             };
 
-            constexpr CacheBuildMode kBuildMode = CacheBuildMode::CodexOnly;
+            constexpr CacheBuildMode kBuildMode = CacheBuildMode::GersonOnly;
 
             switch (kBuildMode)
             {
@@ -1007,21 +1007,6 @@ namespace jucyaudio
                 snapshot.childrenFromParents = m_childrenFromParents;
                 snapshot.parentsFromChildren = m_parentsFromChildren;
                 return snapshot;
-            };
-
-            auto runTimed = [&](const char *label, auto &&buildFn, CacheSnapshot &snapshot) -> bool
-            {
-                clearAllCaches();
-                const auto start = Clock::now();
-                const bool ok = buildFn();
-                const auto end = Clock::now();
-                const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-                spdlog::info("buildCacheIfNeededCompare: {} build took {} ms, ok={}", label, elapsedMs, ok);
-                if (ok)
-                {
-                    snapshot = snapshotCache();
-                }
-                return ok;
             };
 
             auto logSnapshotStats = [&](const char *label, const CacheSnapshot &snapshot)

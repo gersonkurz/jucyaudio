@@ -157,30 +157,27 @@ namespace jucyaudio
                 initializeConfigRoot();
                 setupLogging();
                 generateSampleConfigIfNeeded();
-                
-                spdlog::info("Creating splash screen...");
-               
-                // Create splash screen and take ownership with a ScopedPointer.
-                splashScreen = std::make_unique<JucyAudioSplashScreen>();
 
-                // Make the splash screen always on top
+                spdlog::info("Creating splash screen...");
+
+                // Create splash screen
+                splashScreen = std::make_unique<JucyAudioSplashScreen>();
                 splashScreen->setAlwaysOnTop(true);
                 splashScreen->addToDesktop(juce::ComponentPeer::windowHasDropShadow);
                 splashScreen->setVisible(true);
                 splashScreen->toFront(true);
-                
-                spdlog::info("Splash screen created, visible: {}, bounds: {},{},{},{}", 
+
+                spdlog::info("Splash screen created, visible: {}, bounds: {},{},{},{}",
                     splashScreen->isVisible(),
                     splashScreen->getX(), splashScreen->getY(),
                     splashScreen->getWidth(), splashScreen->getHeight());
-                
-                // Process any pending messages to ensure the splash screen is drawn
-                juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
 
-                // Start a one-shot timer. The callback will do the heavy work.
-                // Small delay to ensure splash is rendered before heavy work begins
+                // NOTE: Removed runDispatchLoopUntil - it causes beachball on macOS
+                // The splash will be drawn when the event loop runs after initialise() returns
+
+                // Start a one-shot timer for deferred initialization
                 m_initPhase = 1;
-                startTimer(10); 
+                startTimer(50);  // Slightly longer delay to ensure splash is rendered
             }
 
             void timerCallback() override
@@ -239,18 +236,13 @@ namespace jucyaudio
                 
                 // Position window
                 mainWindow->centreWithSize(1200, 800);
-                
-                // Force the main window to paint itself while hidden
-                mainWindow->repaint();
-                juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
-                
+
                 // Now switch windows
                 spdlog::info("Switching from splash to main...");
                 splashScreen->setVisible(false);
                 mainWindow->setVisible(true);
                 mainWindow->toFront(true);
                 splashScreen = nullptr;
-                
                 spdlog::info("Initialization complete");
             }
         private:
