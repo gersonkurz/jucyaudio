@@ -162,6 +162,15 @@ namespace
         );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_mixundohistory_mix_id ON MixUndoHistory (mix_id);",
         "CREATE INDEX IF NOT EXISTS idx_mixundohistory_operation_id ON MixUndoHistory (operation_id);",
+        R"SQL(
+        CREATE TABLE IF NOT EXISTS ExportFolders (
+            folder_id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            display_order INTEGER,
+            created_at INTEGER NOT NULL,
+            description TEXT
+        );)SQL",
+        "CREATE INDEX IF NOT EXISTS idx_export_folders_order ON ExportFolders(display_order);",
         "CREATE TABLE IF NOT EXISTS LibraryRoots (root_id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, file_count INTEGER DEFAULT 0, last_scanned INTEGER);",
         R"SQL(
         CREATE TABLE IF NOT EXISTS WaveformCache (
@@ -720,6 +729,8 @@ namespace jucyaudio
         {
             if (!isOpen())
                 return 0; // Or -1 to indicate error
+            if (!m_db.doesTableExist("SchemaInfo"))
+                return 0;
             SqliteStatement stmt{m_db, "SELECT value FROM SchemaInfo WHERE key = 'schema_version';"};
             if (stmt.isValid() && stmt.getNextResult())
             {
