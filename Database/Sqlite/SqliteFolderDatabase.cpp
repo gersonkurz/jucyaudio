@@ -31,7 +31,7 @@ namespace jucyaudio
                 AllCompare
             };
 
-            constexpr CacheBuildMode kBuildMode = CacheBuildMode::GersonOnly;
+            constexpr CacheBuildMode kBuildMode = CacheBuildMode::CodexOnly;
 
             switch (kBuildMode)
             {
