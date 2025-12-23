@@ -132,9 +132,9 @@ brew install dylibbundler
 - Get jucyaudio from GIT: `git clone git@github.com:gersonkurz/jucyaudio.git`
 - Download `jucyaudio_deps_win32_x64.7z` and extract it to `C:\Projects`, so that you end up with a folder `C:\Projects\jucyaudio_deps_win32_x64` that includes all the Windows x64 dependencies. (Go ahead, try to compile everything on your own, I dare you. I did it, so you don't have to. And I am not going to document it, because I don't want to do it again. If you want to do it, go ahead and PR me the instructions.)
 
-### Building with Visual Studio 2022
+### Building with Visual Studio 2022/2026
 
-- Open Visual Studio 2022 
+- Open Visual Studio 2022/2026
 - Select "Open folder" (not: "Open project or solution")
 - Navigate to the `jucyaudio` folder you just cloned
 - Visual Studio will automatically detect the CMakeLists.txt file and configure the project

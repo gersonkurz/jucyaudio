@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="orange-light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JucyAudio - Audio Player, Mix Editor & Library Manager</title>
+    <meta name="description" content="Open-source audio player, mix editor, and library manager for macOS and Windows. Manage your music collection, create mixes, and export high-quality audio.">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Left Column - Logo -->
+        <aside class="sidebar left-sidebar">
+            <div class="logo-container">
+                <img src="images/logo.png" alt="JucyAudio Logo" class="logo">
+            </div>
+            <div class="version-info">
+                <span class="version-badge">v1.0.0</span>
+                <span class="release-date">December 23, 2025</span>
+            </div>
+            <nav class="nav-links">
+                <a href="https://github.com/gersonkurz/jucyaudio/releases" class="nav-link download-link">Download</a>
+                <a href="https://github.com/gersonkurz/jucyaudio" class="nav-link">GitHub</a>
+                <a href="https://github.com/gersonkurz/jucyaudio/issues" class="nav-link">Report Issue</a>
+            </nav>
+        </aside>
+
+        <!-- Middle Column - Main Content -->
+        <main class="main-content">
+            <header class="hero">
+                <h1>JucyAudio</h1>
+                <p class="tagline">Audio Player, Mix Editor & Library Manager</p>
+                <p class="description">
+                    An open-source application for macOS and Windows. Built for music enthusiasts,
+                    DJs, and anyone with a large local digital audio collection who needs sophisticated
+                    tools to manage, curate, and mix their music.
+                </p>
+            </header>
+
+            <!-- Workflow Section -->
+            <section class="workflow">
+                <h2>How It Works</h2>
+
+                <div class="workflow-step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Add & Scan Folders</h3>
+                        <p>
+                            Point JucyAudio at your music folders. The app scans your collection,
+                            extracting metadata, detecting BPM, and building a fast, searchable database.
+                            Supports MP3, FLAC, WAV, and more.
+                        </p>
+                        <div class="screenshot-placeholder" data-screenshot="scan">
+                            <img src="images/scan-library.png" width="1024"/>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="workflow-step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Create Working Sets</h3>
+                        <p>
+                            Organize tracks into flexible "Working Sets" - temporary collections for
+                            evaluating music, planning sets, or grouping tracks by mood, genre, or project.
+                            Your library stays untouched.
+                        </p>
+                        <div class="screenshot-placeholder" data-screenshot="workingsets">
+                            <img src="images/create-workingset.png" width="1024"/>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="workflow-step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Create Mixes</h3>
+                        <p>
+                            Drag tracks onto the visual timeline editor. Arrange, set cue points,
+                            adjust crossfades, and fine-tune transitions. Add EQ and reverb effects
+                            with built-in presets. See your mix take shape with waveform visualization.
+                        </p>
+                        <div class="screenshot-placeholder" data-screenshot="mixeditor">
+                            <img src="images/edit-mix.png" width="1024"/>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="workflow-step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h3>Export Mixes</h3>
+                        <p>
+                            Export your finished mixes to high-quality MP3 or WAV. Organize exports
+                            into folders by category. Exported mixes are automatically protected from
+                            accidental edits while remaining accessible for playback.
+                        </p>
+                        <div class="screenshot-placeholder" data-screenshot="export">
+                            <img src="images/export-mix.png" width="1024"/>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Features Section -->
+            <section class="features">
+                <h2>Features</h2>
+                <div class="feature-grid">
+                    <div class="feature">
+                        <h4>Fast Library Navigation</h4>
+                        <p>In-memory caching for instant folder browsing, even with massive collections.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>Automatic BPM Detection</h4>
+                        <p>Background analysis detects tempo for all your tracks.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>Waveform Display</h4>
+                        <p>Visual waveforms with cue point markers for precise editing.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>Built-in Effects</h4>
+                        <p>Equalizer and reverb with saveable presets.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>Multiple Themes</h4>
+                        <p>Dark and light themes in multiple color schemes.</p>
+                    </div>
+                    <div class="feature">
+                        <h4>Automatic Backups</h4>
+                        <p>Your database is automatically backed up weekly.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Download Section -->
+            <section class="download-section">
+                <h2>Download</h2>
+                <div class="download-options">
+                    <a href="https://github.com/gersonkurz/jucyaudio/releases" class="download-button macos">
+                        <span class="platform">macOS</span>
+                        <span class="detail">Apple Silicon (DMG)</span>
+                    </a>
+                    <a href="https://github.com/gersonkurz/jucyaudio/releases" class="download-button windows">
+                        <span class="platform">Windows</span>
+                        <span class="detail">64-bit Installer</span>
+                    </a>
+                </div>
+                <p class="source-note">
+                    Or <a href="https://github.com/gersonkurz/jucyaudio">build from source</a> -
+                    it's open source (GPL).
+                </p>
+            </section>
+
+            <footer class="footer">
+                <p>
+                    Made by <a href="https://bandcamp.com/gersonk">gersonk</a> -
+                    support the project via my <a href="https://bandcamp.com/gersonk">Bandcamp wishlist</a>
+                </p>
+            </footer>
+        </main>
+
+        <!-- Right Column - Theme Selector -->
+        <aside class="sidebar right-sidebar">
+            <div class="theme-selector">
+                <h3>Theme</h3>
+                <div class="theme-options">
+                    <button class="theme-button active" data-theme="orange-light" title="Orange Light">
+                        <span class="theme-preview orange-light-preview"></span>
+                        <span class="theme-name">Orange Light</span>
+                    </button>
+                    <button class="theme-button" data-theme="gruvbox-dark" title="Gruvbox Dark">
+                        <span class="theme-preview gruvbox-dark-preview"></span>
+                        <span class="theme-name">Gruvbox Dark</span>
+                    </button>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script src="js/script.js"></script>
+</body>
+</html>
