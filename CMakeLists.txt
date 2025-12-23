@@ -300,11 +300,14 @@ juce_add_gui_app(jucyaudio
     COMPANY_COPYRIGHT "Copyright (c) 2025 P-nand-Q"
 )
 
-configure_file(
-    "${CMAKE_SOURCE_DIR}/setup/version.nsi.in"
-    "${CMAKE_SOURCE_DIR}/setup/version.nsi"
-    @ONLY
-)
+# Generate version.nsi only on Windows (used by NSIS installer)
+if(WIN32)
+    configure_file(
+        "${CMAKE_SOURCE_DIR}/setup/version.nsi.in"
+        "${CMAKE_SOURCE_DIR}/setup/version.nsi"
+        @ONLY
+    )
+endif()
 
 # Add Windows resource file for icon
 if(WIN32)
