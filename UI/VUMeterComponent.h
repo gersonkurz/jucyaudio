@@ -24,6 +24,7 @@ namespace jucyaudio
             bool isLedStyle() const { return m_ledStyle; }
 
         private:
+            static constexpr float kLevelEpsilon = 0.001f;
             float m_level = 0.0f;
             float m_peak = 0.0f;
             float m_peakHoldTime = 0.0f;

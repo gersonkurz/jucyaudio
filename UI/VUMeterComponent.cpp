@@ -125,19 +125,29 @@ namespace jucyaudio
             // Validate the input to prevent crashes from NaN or infinite values
             if (!std::isfinite(newLevel))
             {
-                m_level = 0.0f;
-                return;
+                newLevel = 0.0f;
             }
-            
+
             // Clamp the level to valid range [0.0, 1.0]
-            m_level = std::clamp(newLevel, 0.0f, 1.0f);
-            
+            const float clampedLevel = std::clamp(newLevel, 0.0f, 1.0f);
+            const bool levelChanged = std::abs(clampedLevel - m_level) > kLevelEpsilon;
+            if (levelChanged)
+            {
+                m_level = clampedLevel;
+            }
+
+            bool peakChanged = false;
             if (m_level > m_peak)
             {
                 m_peak = m_level;
                 m_peakHoldTime = 2.0f; // Hold peak for 2 seconds
+                peakChanged = true;
             }
-            repaint();
+
+            if (levelChanged || peakChanged)
+            {
+                repaint();
+            }
         }
 
         void VUMeterComponent::updateDecay()

@@ -527,20 +527,7 @@ namespace jucyaudio
                 [this]()
                 {
                     m_statusPanel.updateVUMeters();
-                });
-
-            // Update VU meter decay animation at 25Hz
-            m_timerMultiplexer.registerClient(&m_statusPanel.getVUMeterLeft(),
-                25.0f,
-                [this]()
-                {
                     m_statusPanel.getVUMeterLeft().updateDecay();
-                });
-
-            m_timerMultiplexer.registerClient(&m_statusPanel.getVUMeterRight(),
-                25.0f,
-                [this]()
-                {
                     m_statusPanel.getVUMeterRight().updateDecay();
                 });
 
