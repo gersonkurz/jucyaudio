@@ -30,11 +30,6 @@ spdlog
   License file: licenses/spdlog.txt
   Source: https://github.com/gabime/spdlog
 
-ICU
-  License: ICU License
-  License file: licenses/icu.txt
-  Source: https://icu.unicode.org/
-
 SoundTouch
   License: LGPL-2.1
   License file: licenses/soundtouch.txt
@@ -45,11 +40,6 @@ libsndfile
   License file: licenses/libsndfile.txt
   Source: http://www.mega-nerd.com/libsndfile/
 
-FFTW
-  License: GPL (or commercial)
-  License file: licenses/fftw.txt
-  Source: http://www.fftw.org/
-
 TagLib
   License: LGPL/MPL
   License file: licenses/taglib.txt
@@ -59,11 +49,6 @@ tomlplusplus
   License: MIT
   License file: licenses/mit.txt
   Source: https://github.com/marzer/tomlplusplus
-
-pthreads-w32
-  License: LGPL
-  License file: licenses/pthreads32-w32.txt
-  Source: https://sourceware.org/pthreads-win32/
 
 Notes
 -----

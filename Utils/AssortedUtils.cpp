@@ -5,9 +5,15 @@
 #include <ranges>
 #include <regex>
 #include <spdlog/spdlog.h>
-// ICU headers are C-style, so we wrap them for C++ compatibility.
-#include <unicode/unorm2.h> // For NFC normalization
-#include <unicode/ustring.h> // For case-folding and string conversions
+
+// Platform-specific headers for Unicode normalization and case folding
+#if defined(_WIN32) || defined(_WIN64)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <CoreFoundation/CoreFoundation.h>
+#endif
 
 namespace jucyaudio
 {
@@ -128,6 +134,8 @@ namespace jucyaudio
         return result;
     }
 
+#if defined(_WIN32) || defined(_WIN64)
+    // Windows implementation using NormalizeString and LCMapStringEx
     std::string normalizeForCache(std::string_view input)
     {
         if (input.empty())
@@ -135,92 +143,126 @@ namespace jucyaudio
             return std::string{input};
         }
 
-        UErrorCode status = U_ZERO_ERROR;
-
-        // --- Step 1: Normalize to NFC (Unchanged, this part is correct) ---
-        const UNormalizer2 *nfcNormalizer = unorm2_getNFCInstance(&status);
-        if (U_FAILURE(status))
-        { 
-            spdlog::error("normalizeForCache: Failed to get NFC normalizer. ICU Error: {}", u_errorName(status));
-            return std::string{input};
-        }
-
-        int32_t utf16_len = 0;
-        u_strFromUTF8(nullptr, 0, &utf16_len, input.data(), static_cast<int32_t>(input.size()), &status);
-        if (status != U_BUFFER_OVERFLOW_ERROR)
+        // --- Step 1: Convert UTF-8 to UTF-16 (Windows uses wide strings) ---
+        int utf16_len = MultiByteToWideChar(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), nullptr, 0);
+        if (utf16_len == 0)
         {
-            spdlog::error("normalizeForCache: Pre-flight UTF-8 to UTF-16 conversion failed for input '{}'. ICU Error: {}", input, u_errorName(status));
+            spdlog::error("normalizeForCache: UTF-8 to UTF-16 conversion failed for input '{}'. Error: {}", input, GetLastError());
             return std::string{input};
         }
 
-        status = U_ZERO_ERROR;
-        std::vector<UChar> utf16_buffer(utf16_len + 1);
-        u_strFromUTF8(utf16_buffer.data(), utf16_buffer.size(), nullptr, input.data(), static_cast<int32_t>(input.size()), &status);
-        if (U_FAILURE(status))
+        std::wstring utf16_buffer(utf16_len, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), utf16_buffer.data(), utf16_len);
+
+        // --- Step 2: NFC Normalization ---
+        int normalized_len = NormalizeString(NormalizationC, utf16_buffer.data(), utf16_len, nullptr, 0);
+        if (normalized_len <= 0)
         {
-            spdlog::error("normalizeForCache: UTF-8 to UTF-16 conversion failed for input '{}'. ICU Error: {}", input, u_errorName(status));
+            spdlog::error("normalizeForCache: NFC normalization pre-flight failed for input '{}'. Error: {}", input, GetLastError());
             return std::string{input};
         }
 
-        std::vector<UChar> normalized_buffer(utf16_len + 1);
-        int32_t normalized_len = unorm2_normalize(nfcNormalizer, utf16_buffer.data(), utf16_len, normalized_buffer.data(), normalized_buffer.size(), &status);
-        if (U_FAILURE(status))
+        std::wstring normalized_buffer(normalized_len, L'\0');
+        normalized_len = NormalizeString(NormalizationC, utf16_buffer.data(), utf16_len, normalized_buffer.data(), normalized_len);
+        if (normalized_len <= 0)
         {
-            spdlog::error("normalizeForCache: NFC normalization failed for input '{}'. ICU Error: {}", input, u_errorName(status));
+            spdlog::error("normalizeForCache: NFC normalization failed for input '{}'. Error: {}", input, GetLastError());
             return std::string{input};
         }
+        normalized_buffer.resize(normalized_len);
 
-        // --- Step 2: Case-Fold (Corrected Logic) ---
-        int32_t folded_len_needed = 0;
-        status = U_ZERO_ERROR;
-        folded_len_needed = u_strFoldCase(nullptr, 0, normalized_buffer.data(), normalized_len, U_FOLD_CASE_DEFAULT, &status);
-
-        // ***** THIS IS THE FIX *****
-        // Check for the two valid outcomes: overflow (string grew) or success (string is same size or smaller).
-        if (status != U_BUFFER_OVERFLOW_ERROR && U_SUCCESS(status))
+        // --- Step 3: Case folding using LCMapStringEx with invariant locale ---
+        int folded_len = LCMapStringEx(LOCALE_NAME_INVARIANT, LCMAP_LOWERCASE,
+                                        normalized_buffer.data(), normalized_len, nullptr, 0, nullptr, nullptr, 0);
+        if (folded_len == 0)
         {
-            // This is the "no-op" case. The string didn't need to expand.
-            // The required length is just the original length.
-            folded_len_needed = normalized_len;
-        }
-        else if (status != U_BUFFER_OVERFLOW_ERROR)
-        {
-            // Any other failure is a real error.
-            spdlog::error("normalizeForCache: Case-folding pre-flight failed for input '{}'. ICU Error: {}", input, u_errorName(status));
-            return std::string{input};
-        }
-        // If we get here, folded_len_needed has the correct required size.
-
-        status = U_ZERO_ERROR;
-        std::vector<UChar> folded_buffer(folded_len_needed + 1);
-        int32_t folded_len = u_strFoldCase(folded_buffer.data(), folded_buffer.size(), normalized_buffer.data(), normalized_len, U_FOLD_CASE_DEFAULT, &status);
-        if (U_FAILURE(status))
-        {
-            spdlog::error("normalizeForCache: Case-folding failed for input '{}'. ICU Error: {}", input, u_errorName(status));
+            spdlog::error("normalizeForCache: Case folding pre-flight failed for input '{}'. Error: {}", input, GetLastError());
             return std::string{input};
         }
 
-        // --- Step 3: Convert back to UTF-8 (Unchanged, this logic is correct) ---
-        int32_t utf8_len_needed = 0;
-        status = U_ZERO_ERROR;
-        u_strToUTF8(nullptr, 0, &utf8_len_needed, folded_buffer.data(), folded_len, &status);
-        if (status != U_BUFFER_OVERFLOW_ERROR)
-        { 
-            spdlog::error("normalizeForCache: Pre-flight UTF-16 to UTF-8 conversion failed for input '{}'. ICU Error: {}", input, u_errorName(status));
+        std::wstring folded_buffer(folded_len, L'\0');
+        folded_len = LCMapStringEx(LOCALE_NAME_INVARIANT, LCMAP_LOWERCASE,
+                                   normalized_buffer.data(), normalized_len, folded_buffer.data(), folded_len, nullptr, nullptr, 0);
+        if (folded_len == 0)
+        {
+            spdlog::error("normalizeForCache: Case folding failed for input '{}'. Error: {}", input, GetLastError());
             return std::string{input};
         }
 
-        status = U_ZERO_ERROR;
-        std::string result(utf8_len_needed, '\0');
-        u_strToUTF8(result.data(), result.size(), nullptr, folded_buffer.data(), folded_len, &status);
-        if (U_FAILURE(status))
+        // --- Step 4: Convert back to UTF-8 ---
+        int utf8_len = WideCharToMultiByte(CP_UTF8, 0, folded_buffer.data(), folded_len, nullptr, 0, nullptr, nullptr);
+        if (utf8_len == 0)
         {
-            spdlog::error("normalizeForCache: UTF-16 to UTF-8 conversion failed for input '{}'. ICU Error: {}", input, u_errorName(status));
+            spdlog::error("normalizeForCache: UTF-16 to UTF-8 conversion failed for input '{}'. Error: {}", input, GetLastError());
             return std::string{input};
         }
+
+        std::string result(utf8_len, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, folded_buffer.data(), folded_len, result.data(), utf8_len, nullptr, nullptr);
 
         return result;
     }
+
+#elif defined(__APPLE__)
+    // macOS implementation using CoreFoundation
+    std::string normalizeForCache(std::string_view input)
+    {
+        if (input.empty())
+        {
+            return std::string{input};
+        }
+
+        // Create CFString from UTF-8 input
+        CFStringRef cfStr = CFStringCreateWithBytes(kCFAllocatorDefault,
+                                                     reinterpret_cast<const UInt8*>(input.data()),
+                                                     input.size(),
+                                                     kCFStringEncodingUTF8,
+                                                     false);
+        if (!cfStr)
+        {
+            spdlog::error("normalizeForCache: Failed to create CFString for input '{}'", input);
+            return std::string{input};
+        }
+
+        // Create a mutable copy for in-place operations
+        CFMutableStringRef mutableStr = CFStringCreateMutableCopy(kCFAllocatorDefault, 0, cfStr);
+        CFRelease(cfStr);
+
+        if (!mutableStr)
+        {
+            spdlog::error("normalizeForCache: Failed to create mutable CFString for input '{}'", input);
+            return std::string{input};
+        }
+
+        // --- Step 1: NFC Normalization ---
+        CFStringNormalize(mutableStr, kCFStringNormalizationFormC);
+
+        // --- Step 2: Case folding ---
+        CFStringFold(mutableStr, kCFCompareCaseInsensitive, nullptr);
+
+        // --- Step 3: Convert back to UTF-8 ---
+        CFIndex length = CFStringGetLength(mutableStr);
+        CFIndex maxSize = CFStringGetMaximumSizeForEncoding(length, kCFStringEncodingUTF8) + 1;
+
+        std::string result(maxSize, '\0');
+        if (!CFStringGetCString(mutableStr, result.data(), maxSize, kCFStringEncodingUTF8))
+        {
+            spdlog::error("normalizeForCache: Failed to convert result to UTF-8 for input '{}'", input);
+            CFRelease(mutableStr);
+            return std::string{input};
+        }
+
+        CFRelease(mutableStr);
+
+        // Resize to actual string length (remove null padding)
+        result.resize(std::strlen(result.c_str()));
+
+        return result;
+    }
+
+#else
+    #error "Unsupported platform - normalizeForCache requires Windows or macOS"
+#endif
 
     std::string getLowercaseExtension(const std::filesystem::path &path)
     {

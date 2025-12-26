@@ -198,6 +198,7 @@ add_compile_definitions(
     SQLITE_ENABLE_JSON1
     SQLITE_ENABLE_STAT4
     SQLITE_DQS=0
+    SQLITE_THREADSAFE=1  # Use native OS mutex (Win32 CRITICAL_SECTION / pthreads)
     SPDLOG_USE_STD_FORMAT
 )
 
@@ -218,8 +219,6 @@ if(WIN32)
     # taglib is now handled by FetchContent
     # soundtouch is now handled by FetchContent
     set(LAME_LIB_PATH "${WIN32_DEPS_ROOT}/lame")
-    set(PTHREADS_LIB_PATH "${WIN32_DEPS_ROOT}/pthreads-w32/lib")
-    set(FFTW_LIB_PATH "${WIN32_DEPS_ROOT}/fftw")
     # libsndfile is now handled by FetchContent
     set(FFMPEG_LIB_PATH "${WIN32_DEPS_ROOT}/ffmpeg/lib")
 
@@ -228,29 +227,14 @@ if(WIN32)
     # soundtouch is now handled by FetchContent
     set(LAME_INCLUDE_PATH "${WIN32_DEPS_ROOT}/lame/include")
     # tomlplusplus is now handled by FetchContent
-    set(PTHREADS_INCLUDE_PATH "${WIN32_DEPS_ROOT}/pthreads-w32/include")
-    set(FFTW_INCLUDE_PATH "${WIN32_DEPS_ROOT}/fftw")
     # libsndfile is now handled by FetchContent
     set(FFMPEG_INCLUDE_PATH "${WIN32_DEPS_ROOT}/ffmpeg/include")
-    set(ICU_LIB_PATH_DEBUG "${WIN32_DEPS_ROOT}/icu/lib")
-    set(ICU_LIB_PATH_RELEASE "${WIN32_DEPS_ROOT}/icu/lib")
-    set(ICU_INCLUDE_PATH "${WIN32_DEPS_ROOT}/icu/include")
-
-    # Use debug or release paths based on build type
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set(ICU_LIB_PATH ${ICU_LIB_PATH_DEBUG})
-    else()
-        set(ICU_LIB_PATH ${ICU_LIB_PATH_RELEASE})
-    endif()
 
     # Find libraries on Windows
     # spdlog is now handled by FetchContent
     # taglib is now handled by FetchContent
     # soundtouch is now handled by FetchContent
-    find_library(PTHREADS_LIBRARY pthreadVC2 PATHS ${PTHREADS_LIB_PATH} REQUIRED)
     find_library(LAME_LIBRARY mp3lame PATHS ${LAME_LIB_PATH} REQUIRED)
-    find_library(FFTW3F_LIBRARY libfftw3f-3 PATHS ${FFTW_LIB_PATH} REQUIRED)
-    find_library(FFTW3_LIBRARY libfftw3-3 PATHS ${FFTW_LIB_PATH})
     # libsndfile is now handled by FetchContent
 
     # Find FFmpeg libraries
@@ -259,15 +243,6 @@ if(WIN32)
     find_library(AVUTIL_LIBRARY avutil PATHS ${FFMPEG_LIB_PATH} REQUIRED)
     find_library(SWRESAMPLE_LIBRARY swresample PATHS ${FFMPEG_LIB_PATH} REQUIRED)
     find_library(LAME_LIBRARY libmp3lame PATHS ${LAME_LIB_PATH} REQUIRED)
-
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set(ICU_UC_LIBRARY "${ICU_LIB_PATH_DEBUG}/icuucd.lib")
-        set(ICU_I18N_LIBRARY "${ICU_LIB_PATH_DEBUG}/icuind.lib")
-    else() # Release or other build types
-        set(ICU_UC_LIBRARY "${ICU_LIB_PATH_RELEASE}/icuuc.lib")
-        set(ICU_I18N_LIBRARY "${ICU_LIB_PATH_RELEASE}/icuin.lib")
-    endif()
-    message(STATUS "JucyAudio ICU Check: Found UC='${ICU_UC_LIBRARY}' and I18N='${ICU_I18N_LIBRARY}'")
     # Windows external includes
     set(EXTERNAL_INCLUDES
         ${SOUNDTOUCH_INCLUDE_DIRS}
@@ -275,22 +250,13 @@ if(WIN32)
         ${TAGLIB_INCLUDE_DIRS}
         ${LAME_INCLUDE_PATH}
         # tomlplusplus is now handled by FetchContent
-        ${PTHREADS_INCLUDE_PATH}
-        ${FFTW_INCLUDE_PATH}
         # libsndfile is now handled by FetchContent
-        ${ICU_INCLUDE_PATH}
         ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
     # Find pkg-config only on non-Windows platforms
 else()
     find_package(PkgConfig REQUIRED)
-
-    # Set ICU root path for Homebrew installation
-    set(ICU_ROOT "/opt/homebrew/opt/icu4c@77")
-
-    # Find ICU (International Components for Unicode)
-    find_package(ICU REQUIRED COMPONENTS uc i18n)
 
     # macOS/Linux paths (original)
     # spdlog is now handled by FetchContent
@@ -670,13 +636,8 @@ if(WIN32)
         SoundTouch
         spdlog::spdlog
         tag
-        ${PTHREADS_LIBRARY}
         ${LAME_LIBRARY}
-        ${FFTW3F_LIBRARY}
         SndFile::sndfile
-
-        ${ICU_UC_LIBRARY}
-        ${ICU_I18N_LIBRARY}
     )
 else()
     target_link_libraries(jucyaudio PRIVATE
@@ -715,8 +676,8 @@ else()
 
         z  # zlib
 
-        ICU::uc
-        ICU::i18n
+        # CoreFoundation for Unicode normalization/case folding
+        "-framework CoreFoundation"
     )
 endif()
 

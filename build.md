@@ -23,11 +23,8 @@ brew install cmake just dylibbundler
 # Audio processing libraries
 brew install taglib lame
 
-# Unicode support
-brew install icu4c
-
 # Audio utilities
-brew install libsndfile rubberband libsamplerate fftw
+brew install libsndfile rubberband libsamplerate
 ```
 
 Note: SoundTouch (for BPM detection) is automatically downloaded via CMake's FetchContent during the build process.
@@ -111,7 +108,7 @@ The bundled .app includes all dependencies and will run on any Mac without requi
 **Problem**: Build fails with missing library errors
 ```bash
 # Reinstall dependencies
-brew reinstall taglib lame icu4c libsndfile rubberband libsamplerate fftw
+brew reinstall taglib lame libsndfile rubberband libsamplerate
 ```
 
 **Problem**: dylibbundler not found

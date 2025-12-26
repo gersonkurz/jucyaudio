@@ -159,8 +159,8 @@ namespace jucyaudio
     /**
      * @brief Gets the lowercased, normalized file extension from a path.
      *
-     * This function is Unicode-aware. It uses the ICU-powered normalizeForCache
-     * function to correctly handle extensions in any script or case.
+     * This function is Unicode-aware. It uses the platform's native Unicode APIs
+     * to correctly handle extensions in any script or case.
      *
      * @param path The filesystem path to process.
      * @return A UTF-8 encoded, lowercased, and normalized string of the extension.
@@ -221,7 +221,8 @@ namespace jucyaudio
      /**
      * @brief Creates a canonical, normalized, case-folded key for a given string.
      *
-     * This function is the core of the case-insensitive lookup strategy. It uses ICU
+     * This function is the core of the case-insensitive lookup strategy. It uses
+     * platform-native APIs (Windows: NormalizeString/LCMapStringEx, macOS: CoreFoundation)
      * to perform Unicode-aware NFC normalization followed by case-folding. The resulting
      * string is suitable for use as a key in caches and for comparison.
      *

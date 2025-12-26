@@ -18,7 +18,7 @@
 **The "Pure Cache" Model:**
 - `Folders` table with `parent_id` and cached `path` column for hierarchy
 - `Tracks` table stores `filename` and `folder_id` only
-- Case-insensitive lookups via `normalizeForCache()` (ICU-powered)
+- Case-insensitive lookups via `normalizeForCache()` (platform-native Unicode APIs)
 - In-memory cache built on startup for instant navigation
 
 **Navigation System:**
