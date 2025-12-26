@@ -219,30 +219,10 @@ if(WIN32)
     # taglib is now handled by FetchContent
     # soundtouch is now handled by FetchContent
     set(LAME_LIB_PATH "${WIN32_DEPS_ROOT}/lame")
-    # libsndfile is now handled by FetchContent
-    set(FFMPEG_LIB_PATH "${WIN32_DEPS_ROOT}/ffmpeg/lib")
-
-    # spdlog is now handled by FetchContent
-    # taglib is now handled by FetchContent
-    # soundtouch is now handled by FetchContent
     set(LAME_INCLUDE_PATH "${WIN32_DEPS_ROOT}/lame/include")
-    # tomlplusplus is now handled by FetchContent
-    # libsndfile is now handled by FetchContent
-    set(FFMPEG_INCLUDE_PATH "${WIN32_DEPS_ROOT}/ffmpeg/include")
 
     # Find libraries on Windows
-    # spdlog is now handled by FetchContent
-    # taglib is now handled by FetchContent
-    # soundtouch is now handled by FetchContent
     find_library(LAME_LIBRARY mp3lame PATHS ${LAME_LIB_PATH} REQUIRED)
-    # libsndfile is now handled by FetchContent
-
-    # Find FFmpeg libraries
-    find_library(AVCODEC_LIBRARY avcodec PATHS ${FFMPEG_LIB_PATH} REQUIRED)
-    find_library(AVFORMAT_LIBRARY avformat PATHS ${FFMPEG_LIB_PATH} REQUIRED)
-    find_library(AVUTIL_LIBRARY avutil PATHS ${FFMPEG_LIB_PATH} REQUIRED)
-    find_library(SWRESAMPLE_LIBRARY swresample PATHS ${FFMPEG_LIB_PATH} REQUIRED)
-    find_library(LAME_LIBRARY libmp3lame PATHS ${LAME_LIB_PATH} REQUIRED)
     # Windows external includes
     set(EXTERNAL_INCLUDES
         ${SOUNDTOUCH_INCLUDE_DIRS}
