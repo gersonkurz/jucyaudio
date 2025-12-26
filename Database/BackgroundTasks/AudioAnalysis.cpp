@@ -2,7 +2,7 @@
 #include <Database/TrackLibrary.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
-#include <aubio/aubio.h>
+#include <BPMDetect.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <spdlog/spdlog.h>
@@ -124,66 +124,42 @@ namespace jucyaudio
 
                 static float detectBPM(const juce::AudioBuffer<float> &buffer, double sampleRate)
                 {
-                    // Convert to mono if needed
-                    juce::AudioBuffer<float> monoBuffer;
+                    // SoundTouch BPMDetect works with mono audio
+                    const int numChannels = 1;
+                    soundtouch::BPMDetect bpmDetector(numChannels, static_cast<int>(sampleRate));
+
+                    // Convert to mono if needed and feed to BPMDetect
                     if (buffer.getNumChannels() > 1)
                     {
-                        monoBuffer.setSize(1, buffer.getNumSamples());
-                        monoBuffer.copyFrom(0, 0, buffer, 0, 0, buffer.getNumSamples());
-                        for (int ch = 1; ch < buffer.getNumChannels(); ++ch)
+                        // Mix down to mono
+                        std::vector<float> monoSamples(buffer.getNumSamples());
+                        for (int i = 0; i < buffer.getNumSamples(); ++i)
                         {
-                            monoBuffer.addFrom(0, 0, buffer, ch, 0, buffer.getNumSamples());
+                            float sample = 0.0f;
+                            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                            {
+                                sample += buffer.getReadPointer(ch)[i];
+                            }
+                            monoSamples[i] = sample / buffer.getNumChannels();
                         }
-                        monoBuffer.applyGain(1.0f / buffer.getNumChannels());
+                        bpmDetector.inputSamples(monoSamples.data(), buffer.getNumSamples());
                     }
                     else
                     {
-                        monoBuffer.makeCopyOf(buffer);
+                        bpmDetector.inputSamples(buffer.getReadPointer(0), buffer.getNumSamples());
                     }
 
-                    // Initialize Aubio tempo detection
-                    aubio_tempo_t *tempo = new_aubio_tempo("default", WINDOW_SIZE, HOP_SIZE, static_cast<uint_t>(sampleRate));
-                    fvec_t *input = new_fvec(HOP_SIZE);
-                    fvec_t *output = new_fvec(1);
+                    // Get BPM result
+                    float bpm = bpmDetector.getBpm();
 
-                    std::vector<float> bpmCandidates;
-                    const float *audioData = monoBuffer.getReadPointer(0);
-
-                    // Process audio in chunks
-                    for (int i = 0; i < monoBuffer.getNumSamples() - HOP_SIZE; i += HOP_SIZE)
+                    // SoundTouch returns 0 if it couldn't detect BPM
+                    // Filter to reasonable range (60-200 BPM for most music)
+                    if (bpm < 60.0f || bpm > 200.0f)
                     {
-                        // Copy audio data to aubio vector
-                        for (int j = 0; j < HOP_SIZE; ++j)
-                        {
-                            input->data[j] = audioData[i + j];
-                        }
-
-                        // Process the chunk
-                        aubio_tempo_do(tempo, input, output);
-
-                        // Check if a beat was detected
-                        if (output->data[0] > 0)
-                        {
-                            float currentBPM = aubio_tempo_get_bpm(tempo);
-                            if (currentBPM > 60.0f && currentBPM < 200.0f) // Reasonable BPM range
-                            {
-                                bpmCandidates.push_back(currentBPM);
-                            }
-                        }
+                        return 0.0f;
                     }
 
-                    // Cleanup
-                    del_fvec(input);
-                    del_fvec(output);
-                    del_aubio_tempo(tempo);
-
-                    // Calculate median BPM
-                    if (bpmCandidates.empty())
-                        return 0.0f;
-
-                    std::sort(bpmCandidates.begin(), bpmCandidates.end());
-                    size_t medianIndex = bpmCandidates.size() / 2;
-                    return bpmCandidates[medianIndex];
+                    return bpm;
                 }
 
                 static std::pair<double, double> detectIntro(const std::vector<EnergyFrame> &frames, double totalDuration)

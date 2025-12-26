@@ -133,6 +133,14 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
+# Add SoundTouch for BPM detection
+FetchContent_Declare(
+    soundtouch
+    GIT_REPOSITORY https://codeberg.org/soundtouch/soundtouch.git
+    GIT_TAG 2.3.3
+    GIT_SHALLOW TRUE
+)
+
 # Allow libsndfile's older CMake version requirement
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 
@@ -149,7 +157,17 @@ set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(ENABLE_EXTERNAL_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_MPEG OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog tomlplusplus taglib libsndfile)
+# Configure SoundTouch options
+set(SOUNDTOUCH_DLL OFF CACHE BOOL "" FORCE)
+set(SOUNDSTRETCH OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog tomlplusplus taglib libsndfile soundtouch)
+
+# Get SoundTouch source directory for include paths
+FetchContent_GetProperties(soundtouch)
+if(soundtouch_POPULATED)
+    set(SOUNDTOUCH_INCLUDE_DIRS ${soundtouch_SOURCE_DIR}/include)
+endif()
 
 # Restore BUILD_SHARED_LIBS
 if(DEFINED BUILD_SHARED_LIBS_SAVED)
@@ -196,46 +214,45 @@ if(WIN32)
      set(WIN32_DEPS_ROOT "C:/Projects/jucyaudio_deps_win32_x64")
 
     # Windows paths from jucer file
-    set(AUBIO_LIB_PATH "${WIN32_DEPS_ROOT}/aubio/lib")
     # spdlog is now handled by FetchContent
     # taglib is now handled by FetchContent
+    # soundtouch is now handled by FetchContent
     set(LAME_LIB_PATH "${WIN32_DEPS_ROOT}/lame")
     set(PTHREADS_LIB_PATH "${WIN32_DEPS_ROOT}/pthreads-w32/lib")
     set(FFTW_LIB_PATH "${WIN32_DEPS_ROOT}/fftw")
     # libsndfile is now handled by FetchContent
     set(FFMPEG_LIB_PATH "${WIN32_DEPS_ROOT}/ffmpeg/lib")
 
-
-    set(AUBIO_INCLUDE_PATH "${WIN32_DEPS_ROOT}/aubio/include")
     # spdlog is now handled by FetchContent
     # taglib is now handled by FetchContent
+    # soundtouch is now handled by FetchContent
     set(LAME_INCLUDE_PATH "${WIN32_DEPS_ROOT}/lame/include")
     # tomlplusplus is now handled by FetchContent
     set(PTHREADS_INCLUDE_PATH "${WIN32_DEPS_ROOT}/pthreads-w32/include")
     set(FFTW_INCLUDE_PATH "${WIN32_DEPS_ROOT}/fftw")
     # libsndfile is now handled by FetchContent
-    set(FFMPEG_INCLUDE_PATH "${WIN32_DEPS_ROOT}/ffmpeg/include")   
+    set(FFMPEG_INCLUDE_PATH "${WIN32_DEPS_ROOT}/ffmpeg/include")
     set(ICU_LIB_PATH_DEBUG "${WIN32_DEPS_ROOT}/icu/lib")
     set(ICU_LIB_PATH_RELEASE "${WIN32_DEPS_ROOT}/icu/lib")
     set(ICU_INCLUDE_PATH "${WIN32_DEPS_ROOT}/icu/include")
-    
+
     # Use debug or release paths based on build type
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         set(ICU_LIB_PATH ${ICU_LIB_PATH_DEBUG})
     else()
         set(ICU_LIB_PATH ${ICU_LIB_PATH_RELEASE})
     endif()
-    
+
     # Find libraries on Windows
-    find_library(AUBIO_LIBRARY aubio PATHS ${AUBIO_LIB_PATH} REQUIRED)
     # spdlog is now handled by FetchContent
     # taglib is now handled by FetchContent
+    # soundtouch is now handled by FetchContent
     find_library(PTHREADS_LIBRARY pthreadVC2 PATHS ${PTHREADS_LIB_PATH} REQUIRED)
     find_library(LAME_LIBRARY mp3lame PATHS ${LAME_LIB_PATH} REQUIRED)
     find_library(FFTW3F_LIBRARY libfftw3f-3 PATHS ${FFTW_LIB_PATH} REQUIRED)
     find_library(FFTW3_LIBRARY libfftw3-3 PATHS ${FFTW_LIB_PATH})
     # libsndfile is now handled by FetchContent
-    
+
     # Find FFmpeg libraries
     find_library(AVCODEC_LIBRARY avcodec PATHS ${FFMPEG_LIB_PATH} REQUIRED)
     find_library(AVFORMAT_LIBRARY avformat PATHS ${FFMPEG_LIB_PATH} REQUIRED)
@@ -253,7 +270,7 @@ if(WIN32)
     message(STATUS "JucyAudio ICU Check: Found UC='${ICU_UC_LIBRARY}' and I18N='${ICU_I18N_LIBRARY}'")
     # Windows external includes
     set(EXTERNAL_INCLUDES
-        ${AUBIO_INCLUDE_PATH}
+        ${SOUNDTOUCH_INCLUDE_DIRS}
         # spdlog is now handled by FetchContent
         ${TAGLIB_INCLUDE_DIRS}
         ${LAME_INCLUDE_PATH}
@@ -264,26 +281,26 @@ if(WIN32)
         ${ICU_INCLUDE_PATH}
         ${CMAKE_CURRENT_SOURCE_DIR}
     )
-    
+
     # Find pkg-config only on non-Windows platforms
 else()
     find_package(PkgConfig REQUIRED)
-    
+
     # Set ICU root path for Homebrew installation
     set(ICU_ROOT "/opt/homebrew/opt/icu4c@77")
-    
+
     # Find ICU (International Components for Unicode)
     find_package(ICU REQUIRED COMPONENTS uc i18n)
-    
+
     # macOS/Linux paths (original)
-    find_library(AUBIO_LIBRARY aubio PATHS /Users/gersonkurz/development/aubio_install_macos/lib)
     # spdlog is now handled by FetchContent
     # taglib is now handled by FetchContent
+    # soundtouch is now handled by FetchContent
     find_library(MP3LAME_LIBRARY mp3lame PATHS /opt/homebrew/lib)
-    
+
     # macOS/Linux external includes
     set(EXTERNAL_INCLUDES
-        /Users/gersonkurz/development/aubio_install_macos/include
+        ${SOUNDTOUCH_INCLUDE_DIRS}
         # spdlog is now handled by FetchContent
         ${TAGLIB_INCLUDE_DIRS}
         # tomlplusplus is now handled by FetchContent
@@ -487,8 +504,6 @@ target_sources(jucyaudio PRIVATE
     Database/Nodes/ExportMonthNode.h
     
     # Database Scanners
-    Database/Scanners/AubioScanner.cpp
-    Database/Scanners/AubioScanner.h
     Database/Scanners/Id3TagScanner.cpp
     Database/Scanners/Id3TagScanner.h
     
@@ -652,7 +667,7 @@ if(WIN32)
         tomlplusplus::tomlplusplus
 
         # External libraries (Windows)
-        ${AUBIO_LIBRARY}
+        SoundTouch
         spdlog::spdlog
         tag
         ${PTHREADS_LIBRARY}
@@ -692,7 +707,7 @@ else()
         tomlplusplus::tomlplusplus
 
         # External libraries (macOS/Linux)
-        ${AUBIO_LIBRARY}
+        SoundTouch
         spdlog::spdlog_header_only
         tag
         ${MP3LAME_LIBRARY}

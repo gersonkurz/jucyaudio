@@ -21,10 +21,7 @@ If you don't have Homebrew installed:
 brew install cmake just dylibbundler
 
 # Audio processing libraries
-brew install aubio taglib lame
-
-# Required by aubio
-brew install ffmpeg
+brew install taglib lame
 
 # Unicode support
 brew install icu4c
@@ -32,6 +29,8 @@ brew install icu4c
 # Audio utilities
 brew install libsndfile rubberband libsamplerate fftw
 ```
+
+Note: SoundTouch (for BPM detection) is automatically downloaded via CMake's FetchContent during the build process.
 
 #### 4. Install JUCE
 JUCE is automatically downloaded via CMake's FetchContent during the build process. No manual installation is required.
@@ -92,7 +91,7 @@ just publish
 The DMG will be created in the `releases/` directory with the format:
 - `JucyAudio-{version}-macOS-arm64.dmg` (Apple Silicon)
 
-The bundled .app includes all dependencies (aubio, ffmpeg, etc.) and will run on any Mac without requiring Homebrew.
+The bundled .app includes all dependencies and will run on any Mac without requiring Homebrew.
 
 ### Architecture Notes
 
@@ -112,7 +111,7 @@ The bundled .app includes all dependencies (aubio, ffmpeg, etc.) and will run on
 **Problem**: Build fails with missing library errors
 ```bash
 # Reinstall dependencies
-brew reinstall aubio taglib lame ffmpeg icu4c libsndfile rubberband libsamplerate fftw
+brew reinstall taglib lame icu4c libsndfile rubberband libsamplerate fftw
 ```
 
 **Problem**: dylibbundler not found

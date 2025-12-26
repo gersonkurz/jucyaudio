@@ -35,10 +35,10 @@ ICU
   License file: licenses/icu.txt
   Source: https://icu.unicode.org/
 
-aubio
-  License: GPLv3
-  License file: licenses/aubio.txt
-  Source: https://aubio.org/
+SoundTouch
+  License: LGPL-2.1
+  License file: licenses/soundtouch.txt
+  Source: https://www.surina.net/soundtouch/
 
 libsndfile
   License: LGPL-2.1

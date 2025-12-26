@@ -15,11 +15,11 @@
     "C_Cpp.default.includePath": [
         "${workspaceFolder}/**",
         "${workspaceFolder}/JuceLibraryCode",
-        "/Users/gersonkurz/development/jucyaudio/jucyaudio/build/_deps/juce-src/modules",
-        "/Users/gersonkurz/development/aubio_install_macos/include",
-        "/Users/gersonkurz/development/spdlog/include",
-        "/Users/gersonkurz/development/taglib_install/include",
-        "/Users/gersonkurz/development/tomlplusplus-master/include",
+        "${workspaceFolder}/build/_deps/juce-src/modules",
+        "${workspaceFolder}/build/_deps/soundtouch-src/include",
+        "${workspaceFolder}/build/_deps/spdlog-src/include",
+        "${workspaceFolder}/build/_deps/taglib-src",
+        "${workspaceFolder}/build/_deps/tomlplusplus-src/include",
         "/opt/homebrew/include"
     ],
     "C_Cpp.default.defines": [
