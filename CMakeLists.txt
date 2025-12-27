@@ -125,14 +125,6 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
-# Add libsndfile for audio file I/O
-FetchContent_Declare(
-    libsndfile
-    GIT_REPOSITORY https://github.com/libsndfile/libsndfile.git
-    GIT_TAG 1.2.2
-    GIT_SHALLOW TRUE
-)
-
 # Add SoundTouch for BPM detection
 FetchContent_Declare(
     soundtouch
@@ -150,7 +142,7 @@ FetchContent_Declare(
 )
 
 
-# Allow libsndfile's older CMake version requirement
+# Allow SoundTouch's older CMake version requirement
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 
 # Configure taglib options (must be before MakeAvailable)
@@ -160,17 +152,11 @@ set(TAGLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(TAGLIB_BUILD_BINDINGS OFF CACHE BOOL "" FORCE)
 
-# Configure libsndfile options
-set(BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
-set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(ENABLE_EXTERNAL_LIBS OFF CACHE BOOL "" FORCE)
-set(ENABLE_MPEG OFF CACHE BOOL "" FORCE)
-
 # Configure SoundTouch options
 set(SOUNDTOUCH_DLL OFF CACHE BOOL "" FORCE)
 set(SOUNDSTRETCH OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog tomlplusplus taglib libsndfile soundtouch lame)
+FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog tomlplusplus taglib soundtouch lame)
 
 # Get SoundTouch source directory for include paths
 FetchContent_GetProperties(soundtouch)
@@ -590,7 +576,6 @@ if(WIN32)
         spdlog::spdlog
         tag
         mp3lame-static
-        SndFile::sndfile
     )
 else()
     target_link_libraries(jucyaudio PRIVATE
@@ -625,7 +610,6 @@ else()
         spdlog::spdlog_header_only
         tag
         mp3lame-static
-        SndFile::sndfile
 
         z  # zlib
 

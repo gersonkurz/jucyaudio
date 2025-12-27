@@ -55,9 +55,9 @@ RequestExecutionLevel admin
 Section  "-Jucyaudio (required)"
     SetRegView 64
     SetOutPath $INSTDIR
-    File ..\build-x64\jucyaudio_artefacts\Release\\JucyAudio.exe
+    File ..\build-x64\jucyaudio_artefacts\Release\JucyAudio.exe
     SetOutPath $INSTDIR\themes
-    File /nonfatal /R ..\build-x64\jucyaudio_artefacts\Release\\themes\*
+    File /nonfatal /R ..\build-x64\jucyaudio_artefacts\Release\themes\*
     SetOutPath $INSTDIR\licenses
     File ..\THIRD_PARTY_NOTICES.txt
     File ..\LICENSE

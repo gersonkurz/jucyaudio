@@ -3,7 +3,7 @@ setlocal
 
 :: Get version from CMakeLists.txt
 for /f "tokens=2 delims=()" %%a in ('findstr /c:"project(jucyaudio VERSION" CMakeLists.txt') do (
-    for /f "tokens=2" %%v in ("%%a") do set VERSION=%%v
+    for /f "tokens=3" %%v in ("%%a") do set VERSION=%%v
 )
 
 if "%PROCESSOR_ARCHITECTURE%"=="AMD64" (
@@ -20,4 +20,4 @@ echo OS: windows
 echo Architecture: %ARCH%
 echo Version: %VERSION%
 echo CPU cores: %NUMBER_OF_PROCESSORS%
-echo Default build type: RelWithDebInfo
+echo Default build type: Release

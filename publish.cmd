@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 :: Get version from CMakeLists.txt
 for /f "tokens=2 delims=()" %%a in ('findstr /c:"project(jucyaudio VERSION" CMakeLists.txt') do (
-    for /f "tokens=2" %%v in ("%%a") do set VERSION=%%v
+    for /f "tokens=3" %%v in ("%%a") do set VERSION=%%v
 )
 
 :: Parse version parts
@@ -86,8 +86,8 @@ cmake -B build-%ARCH% -A %CMAKE_ARCH% -DCMAKE_BUILD_TYPE=%CONFIG%
 cmake --build build-%ARCH% --config %CONFIG% --parallel %NUMBER_OF_PROCESSORS%
 
 :: Copy themes to build output
-if not exist "build-%ARCH%\%CONFIG%\themes" mkdir "build-%ARCH%\%CONFIG%\themes"
-xcopy /s /y /q "themes\*" "build-%ARCH%\%CONFIG%\themes\" 2>nul
+if not exist "build-%ARCH%\jucyaudio_artefacts\%CONFIG%\themes" mkdir "build-%ARCH%\jucyaudio_artefacts\%CONFIG%\themes"
+xcopy /s /y /q "themes\*" "build-%ARCH%\jucyaudio_artefacts\%CONFIG%\themes\" 2>nul
 
 :: Create installer
 echo Creating installer for %ARCH%...

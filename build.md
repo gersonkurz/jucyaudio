@@ -24,7 +24,7 @@ brew install cmake just dylibbundler
 brew install rubberband libsamplerate
 ```
 
-Note: All dependencies (JUCE, SoundTouch, TagLib, LAME, libsndfile, spdlog, etc.) are automatically downloaded via CMake's FetchContent during the build process.
+Note: All dependencies (JUCE, SoundTouch, TagLib, LAME, spdlog, etc.) are automatically downloaded via CMake's FetchContent during the build process.
 
 #### 4. Install JUCE
 JUCE is automatically downloaded via CMake's FetchContent during the build process. No manual installation is required.

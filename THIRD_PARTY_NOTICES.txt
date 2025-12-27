@@ -35,11 +35,6 @@ SoundTouch
   License file: licenses/soundtouch.txt
   Source: https://www.surina.net/soundtouch/
 
-libsndfile
-  License: LGPL-2.1
-  License file: licenses/libsndfile.txt
-  Source: http://www.mega-nerd.com/libsndfile/
-
 TagLib
   License: LGPL/MPL
   License file: licenses/taglib.txt
