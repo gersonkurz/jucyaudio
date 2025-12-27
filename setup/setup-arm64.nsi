@@ -1,4 +1,4 @@
-SetCompressor /SOLID LZMA 
+SetCompressor /SOLID LZMA
 
 ; Include the generated version file from the build directory
 ; Note: This assumes the script is run from the build directory context
@@ -6,11 +6,11 @@ SetCompressor /SOLID LZMA
 
 !include "MUI2.nsh"
 
-XPStyle on 
+XPStyle on
 
 
-Name "jucyaudio ${CURRENT_VERSION}" 
-OutFile "jucyaudio-${CURRENT_VERSION}-setup-x64.exe"
+Name "jucyaudio ${CURRENT_VERSION}"
+OutFile "jucyaudio-${CURRENT_VERSION}-setup-arm64.exe"
 InstallDir "$PROGRAMFILES64\jucyaudio"
 InstallDirRegKey HKLM SOFTWARE\p-nand-q.com\jucyaudio "Install_Dir"
 
@@ -33,7 +33,7 @@ InstallDirRegKey HKLM SOFTWARE\p-nand-q.com\jucyaudio "Install_Dir"
 !insertmacro MUI_UNPAGE_WELCOME
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
-!insertmacro MUI_UNPAGE_FINISH  
+!insertmacro MUI_UNPAGE_FINISH
 
 !insertmacro MUI_LANGUAGE "English"
 
@@ -49,21 +49,21 @@ RequestExecutionLevel admin
   VIAddVersionKey /LANG=${LANG_ENGLISH} "CompanyName" "p-nand-q.com"
   VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalTrademarks" ""
   VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalCopyright" "(C) p-nand-q.com"
-  VIAddVersionKey /LANG=${LANG_ENGLISH} "FileDescription" "jucyaudio"
+  VIAddVersionKey /LANG=${LANG_ENGLISH} "FileDescription" "jucyaudio (ARM64)"
   VIAddVersionKey /LANG=${LANG_ENGLISH} "FileVersion" ${CURRENT_VERSION}
 
 Section  "-Jucyaudio (required)"
     SetRegView 64
     SetOutPath $INSTDIR
-    File ..\build-x64\jucyaudio_artefacts\Release\\JucyAudio.exe
+    File ..\build-arm64\jucyaudio_artefacts\Release\JucyAudio.exe
     SetOutPath $INSTDIR\themes
-    File /nonfatal /R ..\build-x64\jucyaudio_artefacts\Release\\themes\*
+    File /nonfatal /R ..\build-arm64\jucyaudio_artefacts\Release\themes\*
     SetOutPath $INSTDIR\licenses
     File ..\THIRD_PARTY_NOTICES.txt
     File ..\LICENSE
     File /nonfatal /R ..\licenses\*
     SetOutPath $INSTDIR
-    
+
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\jucyaudio" "DisplayName" "jucyaudio (Remove only)"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\jucyaudio" "UninstallString" '"$INSTDIR\uninstall.exe"'
     WriteUninstaller "$INSTDIR\uninstall.exe"

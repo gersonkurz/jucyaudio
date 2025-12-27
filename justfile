@@ -1,268 +1,284 @@
 # Build automation for JucyAudio project
-# Requires: just (brew install just)
+# Cross-platform: Windows and macOS
+# Requires: just (https://github.com/casey/just)
 
-# Get architecture for build directory
-arch := `uname -m`
+# Set shell for Windows (PowerShell)
+set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 
-# Default build type (RelWithDebInfo for optimized builds with debug symbols)
+# ============================================================================
+# Platform Detection
+# ============================================================================
+
+# Detect OS: "windows", "macos", or "linux"
+os := os()
+
+# Detect native architecture
+native_arch := if os == "windows" {
+    env_var_or_default("PROCESSOR_ARCHITECTURE", "AMD64")
+} else {
+    `uname -m`
+}
+
+# Normalize architecture names
+arch := if native_arch == "AMD64" { "x64" } else if native_arch == "x86_64" { "x64" } else if native_arch == "arm64" { "arm64" } else if native_arch == "aarch64" { "arm64" } else { native_arch }
+
+# Default build type
 default_build_type := "RelWithDebInfo"
 
-# Get version from CMakeLists.txt
-version := `grep "project(jucyaudio VERSION" CMakeLists.txt | sed 's/.*VERSION \([0-9.]*\).*/\1/'`
+# Get version from CMakeLists.txt (uses sh from Git)
+version := `grep "project(jucyaudio VERSION" CMakeLists.txt | grep -o "[0-9]*\.[0-9]*\.[0-9]*"`
+
+# CPU count for parallel builds
+cpu_count := if os == "windows" {
+    env_var_or_default("NUMBER_OF_PROCESSORS", "8")
+} else {
+    `sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 8`
+}
 
 # ============================================================================
-# Build Commands
+# Common Build Commands
 # ============================================================================
 
-# Build with specified configuration (Debug, Release, or RelWithDebInfo)
+# Default: show help
+default:
+    @just --list
+
+# Build with specified configuration
 build config=default_build_type:
-    cmake -B build -DCMAKE_BUILD_TYPE={{config}} -DCMAKE_OSX_ARCHITECTURES={{arch}}
-    cmake --build build -j`sysctl -n hw.ncpu`
-    @echo "✓ Build complete: build/{{arch}}-{{config}}/"
-
-# Cross-compile for a specific architecture
-build-cross arch_target config=default_build_type:
-    cmake -B build-{{arch_target}} \
-        -DCMAKE_BUILD_TYPE={{config}} \
-        -DCMAKE_OSX_ARCHITECTURES={{arch_target}}
-    cmake --build build-{{arch_target}} -j`sysctl -n hw.ncpu`
-    @echo "✓ Cross-compile complete: build-{{arch_target}}/{{arch_target}}-{{config}}/"
-
-# Build Intel version on Apple Silicon
-build-intel config=default_build_type:
-    @just build-cross x86_64 {{config}}
-
-# Build Universal Binary (both architectures)
-build-universal config=default_build_type:
-    cmake -B build-universal \
-        -DCMAKE_BUILD_TYPE={{config}} \
-        -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
-    cmake --build build-universal -j`sysctl -n hw.ncpu`
-    @echo "✓ Universal build complete: build-universal/arm64_x86_64-{{config}}/"
+    @just _build-{{os}} {{config}} {{arch}}
 
 # Build debug configuration
 debug:
     @just build Debug
 
-# Build release configuration  
+# Build release configuration
 release:
     @just build Release
-    @just bundle-licenses {{arch}} Release
 
-# Build release with debug info
-relwithdebinfo:
-    @just build RelWithDebInfo
-
-# ============================================================================
-# Clean Commands
-# ============================================================================
-
-# Clean build directory
+# Clean build directories
+[windows]
 clean:
-    rm -rf build build-* install-*
+    if (Test-Path build) { Remove-Item -Recurse -Force build }
+    if (Test-Path build-x64) { Remove-Item -Recurse -Force build-x64 }
+    if (Test-Path build-x86) { Remove-Item -Recurse -Force build-x86 }
+    if (Test-Path build-arm64) { Remove-Item -Recurse -Force build-arm64 }
+    if (Test-Path releases) { Remove-Item -Recurse -Force releases }
 
-# Clean and rebuild
-rebuild config=default_build_type:
-    @just clean
-    @just build {{config}}
-
-# Clean all package files
-clean-packages:
-    @echo "🧹 Cleaning old packages..."
-    @rm -rf releases
-    @find . -name "*.dmg" -type f -delete 2>/dev/null || true
+[unix]
+clean:
+    rm -rf build build-* install-* releases
 
 # ============================================================================
-# Run Commands
+# Windows-Specific Build Commands
 # ============================================================================
 
-# Run the application
+[windows]
+_build-windows config arch_target:
+    cmake -B build-{{arch_target}} -A {{ if arch_target == "x64" { "x64" } else if arch_target == "x86" { "Win32" } else { "ARM64" } }} -DCMAKE_BUILD_TYPE={{config}}
+    cmake --build build-{{arch_target}} --config {{config}} --parallel {{cpu_count}}
+    Write-Host "Build complete: build-{{arch_target}}/{{config}}/"
+
+[windows]
+build-x64 config=default_build_type:
+    @just _build-windows {{config}} x64
+
+[windows]
+build-x86 config=default_build_type:
+    @just _build-windows {{config}} x86
+
+[windows]
+build-arm64 config=default_build_type:
+    @just _build-windows {{config}} arm64
+
+[windows]
+build-all config="Release":
+    Write-Host "Building all Windows architectures..."
+    just build-x64 {{config}}
+    just build-x86 {{config}}
+    just build-arm64 {{config}}
+    Write-Host "All builds complete!"
+
+# Run the application (Windows)
+[windows]
+run config=default_build_type:
+    just build {{config}}
+    & "build-{{arch}}/{{config}}/JucyAudio.exe"
+
+# ============================================================================
+# macOS-Specific Build Commands
+# ============================================================================
+
+[macos]
+_build-macos config arch_target:
+    cmake -B build-{{arch_target}} -DCMAKE_BUILD_TYPE={{config}} -DCMAKE_OSX_ARCHITECTURES={{arch_target}}
+    cmake --build build-{{arch_target}} -j{{cpu_count}}
+    @echo "Build complete: build-{{arch_target}}/{{arch_target}}-{{config}}/"
+
+[macos]
+build-arm64 config=default_build_type:
+    @just _build-macos {{config}} arm64
+
+[macos]
+build-x64 config=default_build_type:
+    @just _build-macos {{config}} x86_64
+
+[macos]
+build-universal config=default_build_type:
+    cmake -B build-universal -DCMAKE_BUILD_TYPE={{config}} -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+    cmake --build build-universal -j{{cpu_count}}
+    @echo "Universal build complete!"
+
+[macos]
+build-all config="Release":
+    @echo "Building all macOS architectures..."
+    @just build-arm64 {{config}}
+    @just build-x64 {{config}}
+    @echo "All builds complete!"
+
+# Run the application (macOS)
+[macos]
 run config=default_build_type:
     @just build {{config}}
-    ./build/{{arch}}-{{config}}/jucyaudio.app/Contents/MacOS/jucyaudio
-
-# Run debug build
-run-debug:
-    @just run Debug
-
-# Run release build
-run-release:
-    @just run Release
-
-# Open the app bundle in Finder
-open config=default_build_type:
-    @just build {{config}}
-    open ./build/{{arch}}-{{config}}/jucyaudio.app
+    ./build-{{arch}}/{{arch}}-{{config}}/jucyaudio.app/Contents/MacOS/jucyaudio
 
 # ============================================================================
-# Development Commands
+# Package Commands - Windows
 # ============================================================================
 
-# Configure and generate Xcode project
-xcode:
-    cmake -B build-xcode -G Xcode
-    open build-xcode/jucyaudio.xcodeproj
+[windows]
+_package-windows arch_target config="Release":
+    just _build-windows {{config}} {{arch_target}}
+    if (-not (Test-Path releases)) { New-Item -ItemType Directory -Path releases | Out-Null }
+    if (-not (Test-Path "build-{{arch_target}}/{{config}}/themes")) { New-Item -ItemType Directory -Path "build-{{arch_target}}/{{config}}/themes" -Force | Out-Null }
+    Copy-Item -Path "themes/*" -Destination "build-{{arch_target}}/{{config}}/themes" -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "Creating installer for {{arch_target}}..."
+    Push-Location setup; makensis "setup-{{arch_target}}.nsi"; Pop-Location
+    Move-Item -Force "setup/jucyaudio-{{version}}-setup-{{arch_target}}.exe" "releases/"
+    Write-Host "Installer created: releases/jucyaudio-{{version}}-setup-{{arch_target}}.exe"
 
-# Generate compile_commands.json for IDE support
-compile-commands:
-    cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-    @if [ -f build/compile_commands.json ]; then \
-        ln -sf build/compile_commands.json .; \
-        echo "✓ compile_commands.json linked to project root"; \
-    fi
+[windows]
+package-x64:
+    @just _package-windows x64 Release
 
-# ============================================================================
-# Package Commands
-# ============================================================================
+[windows]
+package-x86:
+    @just _package-windows x86 Release
 
-# Package the application (macOS DMG) - native architecture
-package config="Release":
-    @just build {{config}}
-    @just bundle-licenses {{arch}} {{config}}
-    cmake --install build --prefix install-{{arch}}
-    cd build && cpack -G DragNDrop
-    @echo "✓ DMG created: build/*.dmg"
-    @ls -lh build/*.dmg 2>/dev/null || true
-
-# Package Intel version as DMG
-package-intel config="Release":
-    @just build-intel {{config}}
-    @just bundle-licenses x86_64 {{config}}
-    cmake --install build-x86_64 --prefix install-x86_64
-    cd build-x86_64 && cpack -G DragNDrop
-    @echo "✓ Intel DMG created: build-x86_64/JucyAudio-*.dmg"
-    @ls -lh build-x86_64/*.dmg 2>/dev/null || true
-
-# Package Universal Binary as DMG
-package-universal config="Release":
-    @just build-universal {{config}}
-    @just bundle-licenses-universal {{config}}
-    cmake --install build-universal --prefix install-universal
-    cd build-universal && cpack -G DragNDrop
-    @echo "✓ Universal DMG created: build-universal/JucyAudio-*.dmg"
-    @ls -lh build-universal/*.dmg 2>/dev/null || true
+[windows]
+package-arm64:
+    @just _package-windows arm64 Release
 
 # ============================================================================
-# Release Publishing
+# Package Commands - macOS
 # ============================================================================
 
-# Publish release build for native architecture (macOS)
-publish: clean-packages
-    @echo "🚀 Starting JucyAudio release build process..."
-    @echo "Version: {{version}}"
-    @echo "Architecture: {{arch}}"
-    @echo ""
-
-    # Build and package native architecture version
-    @echo "📦 Building {{arch}} release..."
-    rm -rf build
-    @just build Release
-    @echo "📦 Bundling dependencies..."
-    @echo "Note: Dependencies are bundled during build via POST_BUILD"
-    cmake --build build --target package
+[macos]
+_package-macos arch_target config="Release":
+    @just _build-macos {{config}} {{arch_target}}
+    @just _bundle-licenses-macos {{arch_target}} {{config}}
+    cd build-{{arch_target}} && cpack -G DragNDrop
     @mkdir -p releases
-    @if [ -f build/JucyAudio-*.dmg ]; then \
-        mv build/JucyAudio-*.dmg releases/; \
-        echo "✅ DMG created successfully"; \
-    else \
-        echo "❌ Failed to create DMG"; \
-        exit 1; \
+    @mv build-{{arch_target}}/*.dmg releases/ 2>/dev/null || true
+    @echo "Package created in releases/"
+
+[macos]
+_bundle-licenses-macos arch_target config:
+    #!/usr/bin/env bash
+    app_path="build-{{arch_target}}/{{arch_target}}-{{config}}/jucyaudio.app/Contents/Resources"
+    if [ -d "$app_path" ]; then
+        mkdir -p "$app_path/licenses"
+        cp -f LICENSE THIRD_PARTY_NOTICES.txt "$app_path/licenses/"
+        cp -R licenses/* "$app_path/licenses/" 2>/dev/null || true
+        echo "Licenses bundled into app"
     fi
 
-    # Generate checksums
-    @echo ""
-    @echo "🔐 Generating checksums..."
-    @cd releases && shasum -a 256 *.dmg > checksums.txt
+[macos]
+package-arm64:
+    @just _package-macos arm64 Release
 
-    # Summary
-    @echo ""
-    @echo "✨ JucyAudio Release Build Complete!"
-    @echo ""
-    @echo "📦 Release artifacts in ./releases/:"
-    @ls -lh releases/*.dmg | awk '{print "  " $9 " (" $5 ")"}'
-    @echo ""
-    @echo "🔐 Checksums:"
-    @cat releases/checksums.txt | sed 's/^/  /'
-    @echo ""
-    @echo "🎵 Ready for distribution! 🎉"
+[macos]
+package-x64:
+    @just _package-macos x86_64 Release
+
+# ============================================================================
+# Publish Commands
+# ============================================================================
+
+# Publish all releases for current platform
+[windows]
+publish:
+    @just _generate-version-nsi
+    Write-Host "========================================`nJucyAudio Release Build - Windows`nVersion: {{version}}`n========================================"
+    if (Test-Path releases) { Remove-Item -Recurse -Force releases }
+    New-Item -ItemType Directory -Path releases | Out-Null
+    Write-Host "`n[1/3] Building x64..."
+    just package-x64
+    Write-Host "`n[2/3] Building x86..."
+    just package-x86
+    Write-Host "`n[3/3] Building ARM64..."
+    just package-arm64
+    Write-Host "`n========================================`nGenerating checksums..."
+    Get-ChildItem releases/*.exe | ForEach-Object { $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash; "$hash  $($_.Name)" } | Out-File -Encoding ASCII releases/checksums.txt
+    Write-Host "`nRelease artifacts in releases/:"
+    Get-ChildItem releases/*.exe | ForEach-Object { Write-Host "  $($_.Name)" }
+    Write-Host "`nChecksums:"
+    Get-Content releases/checksums.txt | ForEach-Object { Write-Host "  $_" }
+    Write-Host "`n========================================`nJucyAudio Windows Release Complete!`n========================================"
+
+[windows]
+_generate-version-nsi:
+    @$content = @"; Auto-generated by justfile`n!define CURRENT_VERSION `"{{version}}`"`n!define VERSION_MAJOR " + "{{version}}".Split('.')[0] + "`n!define VERSION_MINOR " + "{{version}}".Split('.')[1] + "`n!define VERSION_PATCH " + "{{version}}".Split('.')[2] + "`n`n; Build information`n!define BUILD_TYPE `"Release`"`n!define COMPILER_ID `"MSVC`"`n!define SYSTEM_NAME `"Windows`"`n`n; Product information`n!define PRODUCT_NAME `"JucyAudio`"`n!define PRODUCT_PUBLISHER `"P-nand-Q`"`n!define PRODUCT_WEB_SITE `"https://github.com/p-nand-q/jucyaudio`"`n!define PRODUCT_UNINST_KEY `"Software\Microsoft\Windows\CurrentVersion\Uninstall\`${PRODUCT_NAME}`"`n!define PRODUCT_UNINST_ROOT_KEY `"HKLM`""; Set-Content -Path "setup/version.nsi" -Value $content
+
+[macos]
+publish:
+    #!/usr/bin/env bash
+    echo "========================================"
+    echo "JucyAudio Release Build - macOS"
+    echo "Version: {{version}}"
+    echo "========================================"
+    echo ""
+    rm -rf releases
+    mkdir -p releases
+    echo ""
+    echo "[1/2] Building ARM64 (Apple Silicon)..."
+    just package-arm64
+    echo ""
+    echo "[2/2] Building x64 (Intel)..."
+    just package-x64
+    echo ""
+    echo "========================================"
+    echo "Generating checksums..."
+    cd releases && shasum -a 256 *.dmg > checksums.txt
+    echo ""
+    echo "Release artifacts in releases/:"
+    ls -lh releases/*.dmg
+    echo ""
+    echo "Checksums:"
+    cat releases/checksums.txt
+    echo ""
+    echo "========================================"
+    echo "JucyAudio macOS Release Complete!"
+    echo "========================================"
 
 # ============================================================================
 # Information Commands
 # ============================================================================
 
-# Copy license notices into the app bundle (macOS)
-bundle-licenses arch_target config:
-    @app_path="build-{{arch_target}}/{{arch_target}}-{{config}}/jucyaudio.app/Contents/Resources"; \
-    if [ ! -d "$$app_path" ]; then \
-        echo "! App bundle not found: $$app_path"; \
-        exit 1; \
-    fi; \
-    mkdir -p "$$app_path/licenses"; \
-    cp -f LICENSE THIRD_PARTY_NOTICES.txt "$$app_path/licenses/"; \
-    cp -R licenses/* "$$app_path/licenses/"; \
-    echo "V Licenses copied to $$app_path/licenses"
+# Show build information
+[windows]
+info:
+    @Write-Host "JucyAudio Build Information`n============================`nOS: {{os}}`nArchitecture: {{arch}}`nVersion: {{version}}`nCPU cores: {{cpu_count}}`nDefault build type: {{default_build_type}}"
 
-# Copy license notices into the universal app bundle (macOS)
-bundle-licenses-universal config:
-    @app_path="build-universal/arm64_x86_64-{{config}}/jucyaudio.app/Contents/Resources"; \
-    if [ ! -d "$$app_path" ]; then \
-        echo "! App bundle not found: $$app_path"; \
-        exit 1; \
-    fi; \
-    mkdir -p "$$app_path/licenses"; \
-    cp -f LICENSE THIRD_PARTY_NOTICES.txt "$$app_path/licenses/"; \
-    cp -R licenses/* "$$app_path/licenses/"; \
-    echo "V Licenses copied to $$app_path/licenses"
-
-# Show build sizes for all configurations
-sizes:
-    @echo "Binary sizes by configuration:"
-    @for config in Debug Release RelWithDebInfo; do \
-        if [ -f "build/{{arch}}-$config/jucyaudio.app/Contents/MacOS/jucyaudio" ]; then \
-            echo -n "  $config: "; \
-            ls -lh "build/{{arch}}-$config/jucyaudio.app/Contents/MacOS/jucyaudio" | awk '{print $5}'; \
-        fi; \
-    done
-
-# List all generated DMGs
-list-packages:
-    @echo "Available packages:"
-    @find . -name "*.dmg" -type f 2>/dev/null | while read dmg; do \
-        echo "  $$dmg ($$(du -h "$$dmg" | cut -f1))"; \
-    done
-
-# Show current configuration
+[unix]
 info:
     @echo "JucyAudio Build Information"
     @echo "============================"
-    @echo "Version: {{version}}"
+    @echo "OS: {{os}}"
     @echo "Architecture: {{arch}}"
+    @echo "Version: {{version}}"
+    @echo "CPU cores: {{cpu_count}}"
     @echo "Default build type: {{default_build_type}}"
-    @if [ -d build ]; then \
-        echo "Current build configuration:"; \
-        grep CMAKE_BUILD_TYPE build/CMakeCache.txt 2>/dev/null | cut -d= -f2 || echo "  Not configured"; \
-        echo "Build directories:"; \
-        ls -d build* 2>/dev/null | while read dir; do \
-            echo "  $$dir"; \
-        done; \
-    else \
-        echo "No build directory found"; \
-    fi
 
-# Install the application (requires admin privileges)
-install config="Release":
-    @just build {{config}}
-    sudo cmake --install build
-    @echo "✓ JucyAudio installed to system"
-
-# Verify the build works
-verify:
-    @echo "🔍 Verifying JucyAudio build..."
-    @just clean
-    @just build Release
-    @if [ -f "build/{{arch}}-Release/jucyaudio.app/Contents/MacOS/jucyaudio" ]; then \
-        echo "✅ Build verification successful"; \
-    else \
-        echo "❌ Build verification failed"; \
-        exit 1; \
-    fi
+# List available recipes
+help:
+    @just --list
