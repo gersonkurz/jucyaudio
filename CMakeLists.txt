@@ -141,6 +141,15 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
+# Add LAME for MP3 encoding (properly-scoped CMake wrapper)
+FetchContent_Declare(
+    lame
+    GIT_REPOSITORY https://github.com/gersonkurz/lamers-paradise.git
+    GIT_TAG main
+    GIT_SHALLOW TRUE
+)
+
+
 # Allow libsndfile's older CMake version requirement
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 
@@ -161,13 +170,14 @@ set(ENABLE_MPEG OFF CACHE BOOL "" FORCE)
 set(SOUNDTOUCH_DLL OFF CACHE BOOL "" FORCE)
 set(SOUNDSTRETCH OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog tomlplusplus taglib libsndfile soundtouch)
+FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog tomlplusplus taglib libsndfile soundtouch lame)
 
 # Get SoundTouch source directory for include paths
 FetchContent_GetProperties(soundtouch)
 if(soundtouch_POPULATED)
     set(SOUNDTOUCH_INCLUDE_DIRS ${soundtouch_SOURCE_DIR}/include)
 endif()
+
 
 # Restore BUILD_SHARED_LIBS
 if(DEFINED BUILD_SHARED_LIBS_SAVED)
@@ -210,49 +220,12 @@ if(WIN32)
     )
 endif()
 
-# Platform-specific library paths and includes
-if(WIN32)
-     set(WIN32_DEPS_ROOT "C:/Projects/jucyaudio_deps_win32_x64")
-
-    # Windows paths from jucer file
-    # spdlog is now handled by FetchContent
-    # taglib is now handled by FetchContent
-    # soundtouch is now handled by FetchContent
-    set(LAME_LIB_PATH "${WIN32_DEPS_ROOT}/lame")
-    set(LAME_INCLUDE_PATH "${WIN32_DEPS_ROOT}/lame/include")
-
-    # Find libraries on Windows
-    find_library(LAME_LIBRARY mp3lame PATHS ${LAME_LIB_PATH} REQUIRED)
-    # Windows external includes
-    set(EXTERNAL_INCLUDES
-        ${SOUNDTOUCH_INCLUDE_DIRS}
-        # spdlog is now handled by FetchContent
-        ${TAGLIB_INCLUDE_DIRS}
-        ${LAME_INCLUDE_PATH}
-        # tomlplusplus is now handled by FetchContent
-        # libsndfile is now handled by FetchContent
-        ${CMAKE_CURRENT_SOURCE_DIR}
-    )
-
-    # Find pkg-config only on non-Windows platforms
-else()
-    find_package(PkgConfig REQUIRED)
-
-    # macOS/Linux paths (original)
-    # spdlog is now handled by FetchContent
-    # taglib is now handled by FetchContent
-    # soundtouch is now handled by FetchContent
-    find_library(MP3LAME_LIBRARY mp3lame PATHS /opt/homebrew/lib)
-
-    # macOS/Linux external includes
-    set(EXTERNAL_INCLUDES
-        ${SOUNDTOUCH_INCLUDE_DIRS}
-        # spdlog is now handled by FetchContent
-        ${TAGLIB_INCLUDE_DIRS}
-        # tomlplusplus is now handled by FetchContent
-        /opt/homebrew/include
-    )
-endif()
+# Platform-specific includes (LAME headers come from mp3lame-static target)
+set(EXTERNAL_INCLUDES
+    ${SOUNDTOUCH_INCLUDE_DIRS}
+    ${TAGLIB_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
 # Create the main application
 juce_add_gui_app(jucyaudio
@@ -616,7 +589,7 @@ if(WIN32)
         SoundTouch
         spdlog::spdlog
         tag
-        ${LAME_LIBRARY}
+        mp3lame-static
         SndFile::sndfile
     )
 else()
@@ -651,7 +624,7 @@ else()
         SoundTouch
         spdlog::spdlog_header_only
         tag
-        ${MP3LAME_LIBRARY}
+        mp3lame-static
         SndFile::sndfile
 
         z  # zlib

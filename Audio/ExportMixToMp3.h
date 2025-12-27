@@ -15,7 +15,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include <filesystem>
-#include <lame/lame.h>
+#include <lame.h>
 #include <spdlog/fmt/chrono.h>
 #include <spdlog/spdlog.h>
 

@@ -52,6 +52,7 @@ tomlplusplus
 
 Notes
 -----
+- Most dependencies are built from source via CMake FetchContent.
 - Update version numbers and URLs as needed for each dependency.
 - If a dependency is removed or replaced, update this list and remove its
   license file from "licenses/".

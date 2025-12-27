@@ -17,7 +17,7 @@
 #include <filesystem>
 #include <spdlog/fmt/chrono.h>
 #include <spdlog/spdlog.h>
-#include <lame/lame.h>
+#include <lame.h>
 
 namespace jucyaudio
 {

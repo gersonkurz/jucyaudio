@@ -7,7 +7,7 @@
 !define VERSION_PATCH 0
 
 ; Build information
-!define BUILD_TYPE "Release"
+!define BUILD_TYPE "Debug"
 !define COMPILER_ID "MSVC"
 !define SYSTEM_NAME "Windows"
 !define SYSTEM_PROCESSOR "AMD64"
