@@ -774,15 +774,15 @@ if(APPLE)
 
     # Install themes to the bundle
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes"
-            DESTINATION "jucyaudio.app/Contents/Resources")
+            DESTINATION "JucyAudio.app/Contents/Resources")
 
     # Install license notices to the bundle
     install(FILES
             "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
             "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.txt"
-            DESTINATION "jucyaudio.app/Contents/Resources/licenses")
+            DESTINATION "JucyAudio.app/Contents/Resources/licenses")
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/licenses"
-            DESTINATION "jucyaudio.app/Contents/Resources")
+            DESTINATION "JucyAudio.app/Contents/Resources")
 
     # Code signing support (optional)
     if(DEFINED ENV{MACOS_CODESIGN_IDENTITY})
@@ -790,7 +790,7 @@ if(APPLE)
         message(STATUS "Will sign with identity: ${CODESIGN_IDENTITY}")
 
         install(CODE [[
-            file(GLOB dylibs "${CMAKE_INSTALL_PREFIX}/jucyaudio.app/Contents/libs/*.dylib")
+            file(GLOB dylibs "${CMAKE_INSTALL_PREFIX}/JucyAudio.app/Contents/libs/*.dylib")
             foreach(dylib ${dylibs})
                 execute_process(
                     COMMAND codesign --force --verify --verbose
@@ -812,7 +812,7 @@ if(APPLE)
                 COMMAND codesign --deep --force --verify --verbose
                         --sign \"${CODESIGN_IDENTITY}\"
                         --options runtime
-                        \"\${CMAKE_INSTALL_PREFIX}/jucyaudio.app\"
+                        \"\${CMAKE_INSTALL_PREFIX}/JucyAudio.app\"
                 RESULT_VARIABLE result
                 OUTPUT_VARIABLE output
                 ERROR_VARIABLE error

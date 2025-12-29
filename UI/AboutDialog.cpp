@@ -15,10 +15,19 @@ namespace jucyaudio
         static juce::File getThirdPartyNoticesFile()
         {
             auto appFile = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
+            spdlog::info("AboutDialog: currentApplicationFile = {}", appFile.getFullPathName().toStdString());
 #if JUCE_MAC
-            // currentApplicationFile points to .../Contents/MacOS/jucyaudio
-            auto resourcesDir = appFile.getParentDirectory().getParentDirectory().getChildFile("Resources");
-            return resourcesDir.getChildFile("licenses").getChildFile("THIRD_PARTY_NOTICES.txt");
+            // On macOS, currentApplicationFile returns the .app bundle path (e.g., /Applications/JucyAudio.app)
+            auto resourcesDir = appFile.getChildFile("Contents").getChildFile("Resources");
+            spdlog::info("AboutDialog: resourcesDir = {}", resourcesDir.getFullPathName().toStdString());
+            spdlog::info("AboutDialog: resourcesDir exists = {}", resourcesDir.isDirectory());
+            auto licensesDir = resourcesDir.getChildFile("licenses");
+            spdlog::info("AboutDialog: licensesDir = {}", licensesDir.getFullPathName().toStdString());
+            spdlog::info("AboutDialog: licensesDir exists = {}", licensesDir.isDirectory());
+            auto result = licensesDir.getChildFile("THIRD_PARTY_NOTICES.txt");
+            spdlog::info("AboutDialog: noticesFile = {}", result.getFullPathName().toStdString());
+            spdlog::info("AboutDialog: noticesFile exists = {}", result.existsAsFile());
+            return result;
 #else
             // Windows: licenses folder next to the executable
             return appFile.getParentDirectory().getChildFile("licenses").getChildFile("THIRD_PARTY_NOTICES.txt");
@@ -31,7 +40,7 @@ namespace jucyaudio
               m_copyrightLabel{"copyrightLabel",
                   juce::CharPointer_UTF8("\xc2\xa9 2025 JucyAudio\n\nThis is free software, licensed under the\nGNU General Public License v3.0 or later")},
               m_licenseLabel{"licenseLabel", "Third-party notices"},
-              m_websiteButton{"https://jucyaudio.com", juce::URL("https://jucyaudio.com")},
+              m_websiteButton{"https://www.jucyaudio.com", juce::URL("https://www.jucyaudio.com")},
               m_closeButton{"Close"}
         {
             theThemeManager.applyCurrentTheme(m_lookAndFeel, this);
