@@ -66,3 +66,8 @@ JucyAudio is licensed under the GPL. See [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_N
 Found a bug or have a feature request? Open an issue on [GitHub](https://github.com/gersonkurz/jucyaudio/issues).
 
 Want to support the project? Check out my [Bandcamp wishlist](https://bandcamp.com/gersonk) - you know what to do.
+
+## SAST Tools
+
+[PVS-Studio](https://pvs-studio.com/en/pvs-studio/?utm_source=website&utm_medium=github&utm_campaign=open_source) - static analyzer for C, C++, C#, and Java code.
+
