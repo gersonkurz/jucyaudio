@@ -7,6 +7,7 @@
 #include <Utils/StringWriter.h>
 #include <algorithm>
 #include <cassert>
+#include <forward_list>
 #include <chrono>
 #include <numeric>
 #include <random>
@@ -89,7 +90,7 @@ namespace jucyaudio
                     registerAsParent(info.parentId, info.folderId);
 
                     std::vector<FolderId> parentIds;
-                    std::list<std::string> pathSegments;
+                    std::forward_list<std::string> pathSegments;
                     for (auto currentId = info.folderId;;)
                     {
                         parentIds.push_back(currentId);
@@ -835,6 +836,11 @@ namespace jucyaudio
 
             struct NewAlbumInfo
             {
+                NewAlbumInfo(const std::string& artist, const std::string& title, FolderId id)
+                    : albumArtist{artist}, title{title}, folderId{id} 
+                {
+                }
+
                 std::string albumArtist;
                 std::string title;
                 FolderId folderId;
@@ -884,7 +890,7 @@ namespace jucyaudio
                             !lastKnownArtistName.empty() && !lastKnownAlbumName.empty())
                         {
                             albumFolders.insert(lastKnownFolderId);
-                            albums.push_back({lastKnownArtistName, lastKnownAlbumName, lastKnownFolderId});
+                            albums.emplace_back(NewAlbumInfo{lastKnownArtistName, lastKnownAlbumName, lastKnownFolderId});
                         }
                     }
                     lastKnownArtistName.clear();
@@ -944,7 +950,7 @@ namespace jucyaudio
                 if (!albumFolders.contains(lastKnownFolderId) &&
                     !lastKnownArtistName.empty() && !lastKnownAlbumName.empty())
                 {
-                    albums.push_back({lastKnownArtistName, lastKnownAlbumName, lastKnownFolderId});
+                    albums.emplace_back(NewAlbumInfo{lastKnownArtistName, lastKnownAlbumName, lastKnownFolderId});
                 }
             }
 
