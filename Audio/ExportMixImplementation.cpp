@@ -89,7 +89,7 @@ namespace jucyaudio
                 if (!success)
                 {
                     if (m_progressCallback)
-                        m_progressCallback(1.0f, "Error: " + opdef.name);
+                        m_progressCallback(1.0f, std::format("Error: {}", opdef.name));
                     return fail(std::format("Operation '{}' failed after {} ms ({}).", opdef.name, duration, durationToString((Duration_t)duration)));
                 }
                 else
