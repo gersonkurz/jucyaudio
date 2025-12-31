@@ -13,7 +13,7 @@ namespace jucyaudio
         struct DataColumnWithIndex
         {
             /// @brief Pointer to the actual DataColumn.
-            DataColumn *column{nullptr}; 
+            const DataColumn *column{nullptr}; 
         };
 
     } // namespace database

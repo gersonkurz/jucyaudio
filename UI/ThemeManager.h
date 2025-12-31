@@ -60,7 +60,7 @@ namespace jucyaudio
                 {
                     if (m_availableThemes[i].name == themeName)
                     {
-                        return static_cast<int>(i);
+                        return i;
                     }
                 }
                 return 0; // Not found => revert to default theme

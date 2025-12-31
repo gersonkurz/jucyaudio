@@ -98,7 +98,7 @@ namespace jucyaudio
                 if (c == '"')
                 {
                     // End of quoted string - don't include the closing quote
-                    result.push_back(std::string{svtext.substr(start, i - start)});
+                    result.emplace_back(std::string{svtext.substr(start, i - start)});
                     start = i + 1;
                     is_recording_quoted_string = false;
                 }
@@ -110,7 +110,7 @@ namespace jucyaudio
                 // Start of quoted string - save any preceding content
                 if (i > start)
                 {
-                    result.push_back(std::string{svtext.substr(start, i - start)});
+                    result.emplace_back(std::string{svtext.substr(start, i - start)});
                 }
                 start = i + 1;
                 is_recording_quoted_string = true;
@@ -120,7 +120,7 @@ namespace jucyaudio
             // Check if c is a separator (using find instead of strchr for safety)
             if (svseparators.find(c) != std::string_view::npos)
             {
-                result.push_back(std::string{svtext.substr(start, i - start)});
+                result.emplace_back(std::string{svtext.substr(start, i - start)});
                 start = i + 1;
             }
         }
@@ -128,7 +128,7 @@ namespace jucyaudio
         // Add remaining content after last separator
         if (start < svtext.size())
         {
-            result.push_back(std::string{svtext.substr(start)});
+            result.emplace_back(std::string{svtext.substr(start)});
         }
 
         return result;

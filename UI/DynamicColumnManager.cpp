@@ -24,7 +24,7 @@ namespace jucyaudio
                 {
                     const auto &col = allColumns[i];
                     DataColumnWithIndex colWithIndex;
-                    colWithIndex.column = const_cast<DataColumn *>(&col); // Cast away constness, as we need to modify it
+                    colWithIndex.column = &col;
 
                     columns.push_back(colWithIndex);
                 }
@@ -71,7 +71,7 @@ namespace jucyaudio
                     {
                         spdlog::debug("DynamicColumnManager: Found column '{}' in node '{}'", cc->columnName.get(), node->getName());
                         DataColumnWithIndex colWithIndex;
-                        colWithIndex.column = const_cast<DataColumn *>(&(*it)); // Cast away constness, as we need to modify it
+                        colWithIndex.column = &(*it);
                         columns.push_back(colWithIndex);
                     }
                 }

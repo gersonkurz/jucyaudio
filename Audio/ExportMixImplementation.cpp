@@ -62,20 +62,21 @@ namespace jucyaudio
 
         bool ExportMixImplementation::run()
         {
-            typedef bool (ExportMixImplementation::*OperationStep)();
+            using OperationStep = bool (ExportMixImplementation::*)();
+
             struct OperationDefinition
             {
-                std::string name;
+                std::string_view name;
                 OperationStep step;
             };
 
-            const std::vector<OperationDefinition> steps{
+            const std::array<OperationDefinition, 5> steps{{
                 {"Calculate Mix Duration", &ExportMixImplementation::calculateMixDuration},
                 {"Calculate Total Output Samples", &ExportMixImplementation::calculateTotalOutputSamples},
                 {"Setup Juce AudioFormatManage & Writer", &ExportMixImplementation::setupAudioFormatManagerAndWriter},
                 {"Preparing active track sources", &ExportMixImplementation::prepareActiveTrackSources},
                 {"Run Mixing Loop", &ExportMixImplementation::runMixingLoop},
-            };
+            }};
 
             using clock = std::chrono::steady_clock;
             for (const auto &opdef : steps)
