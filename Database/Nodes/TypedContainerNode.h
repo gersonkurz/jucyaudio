@@ -88,7 +88,6 @@ namespace jucyaudio
                     //      - that means, we remove it from existingChildrenMap
                     // if a child is new, it needs to be added.
                     //      - that means, it never was in existingChildrenMap
-                    std::vector<INavigationNode *> updatedChildren;
                     m_clientCreationMethod(this, m_children);
                     const auto maxIndex = m_children.size();
                     for (size_t index = 0; index < maxIndex; ++index)
