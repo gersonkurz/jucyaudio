@@ -43,15 +43,18 @@ namespace jucyaudio
             }
 
             // Handle audio format exports
-            ExportMixImplementation *implementation = nullptr;
+            spdlog::info("MTE: Initializing export for mix {} -> {}", mixId, pathToString(settings.outputPath));
 
+            bool success{false};
             if (targetExtension == ".mp3")
             {
-                implementation = new ExportMp3MixImplementation{mixId, settings, progressCallback};
+                ExportMp3MixImplementation implementation{mixId, settings, progressCallback};
+                success = implementation.run();
             }
             else if (targetExtension == ".wav")
             {
-                implementation = new ExportWavMixImplementation{mixId, settings, progressCallback};
+                ExportWavMixImplementation implementation{mixId, settings, progressCallback};
+                success = implementation.run();
             }
             else
             {
@@ -60,10 +63,6 @@ namespace jucyaudio
                     progressCallback(1.0f, "Error: Unsupported output format.");
                 return false;
             }
-            assert(implementation != nullptr && "Implementation should not be null for valid extensions");
-            spdlog::info("MTE: Initializing export for mix {} -> {}", mixId, pathToString(settings.outputPath));
-            const auto success{implementation->run()};
-            delete implementation; // Clean up the implementation
             
             // Mark the mix as exported if successful
             if (success && !settings.exportFolder.empty())

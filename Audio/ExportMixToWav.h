@@ -32,6 +32,7 @@ namespace jucyaudio
                 : ExportMixImplementation{mixId, settings, progressCallback}
             {
             }
+            ~ExportWavMixImplementation() = default;
             JUCE_DECLARE_NON_COPYABLE(ExportWavMixImplementation)
 
         private:

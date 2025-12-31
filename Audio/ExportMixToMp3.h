@@ -31,6 +31,7 @@ namespace jucyaudio
                 : ExportMixImplementation{mixId, settings, progressCallback}
             {
             }
+            ~ExportMp3MixImplementation() override;
             JUCE_DECLARE_NON_COPYABLE(ExportMp3MixImplementation)
         private:
             bool onSetupAudioFormatManagerAndWriter() override;
@@ -41,9 +42,6 @@ namespace jucyaudio
             std::unique_ptr<juce::FileOutputStream> m_outputStream;
             unsigned char *m_mp3Buffer = nullptr;
             int m_mp3BufferSize = 0;
-
-            // Override destructor to clean up LAME
-            ~ExportMp3MixImplementation() override;
         };
     } // namespace audio
 } // namespace jucyaudio
