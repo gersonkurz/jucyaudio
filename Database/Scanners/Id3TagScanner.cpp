@@ -88,14 +88,14 @@ namespace jucyaudio
                 }
 
                 // Extract Bandcamp URL from comments (example)
-                if (!tag->comment().isEmpty())
-                {
-                    std::string comment_str = tag->comment().to8Bit(true);
+                //if (!tag->comment().isEmpty())
+                //{
+                    //std::string comment_str = tag->comment().to8Bit(true);
                     // Look for "bandcamp.com" in comment_str
                     // if (comment_str.find("bandcamp.com") != std::string::npos) {
                     //    info.user_notes += "\nBandcamp URL found in comments."; // Or extract the URL
                     // }
-                }
+                //}
 
                 // Audio Properties (TagLib can also provide these)
                 const auto properties = f.audioProperties();
