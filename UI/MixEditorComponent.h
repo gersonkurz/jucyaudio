@@ -29,7 +29,8 @@ namespace jucyaudio
             
             void setPlayheadPosition(double positionSeconds, double pixelsPerSecond)
             {
-                if (m_positionSeconds != positionSeconds || m_pixelsPerSecond != pixelsPerSecond)
+                constexpr double epsilon = 1e-9;
+                if (std::abs(m_positionSeconds - positionSeconds) > epsilon || std::abs(m_pixelsPerSecond - pixelsPerSecond) > epsilon)
                 {
                     // Calculate old and new x positions
                     const int oldX = (m_positionSeconds >= 0) ? static_cast<int>(m_positionSeconds * m_pixelsPerSecond) : -1;

@@ -257,7 +257,10 @@ namespace
             else if (statusStr == "bad_format")
                 info.status = TrackStatus::BadFormat;
             else
-                info.status = TrackStatus::Unknown;
+            {
+                assert(info.status == TrackStatus::Unknown);
+            }
+                
         }
         col++;
 
@@ -2165,7 +2168,7 @@ CREATE TABLE MixUndoHistory (
                     spdlog::debug("Inserted track ID: {}, Path: {}", trackInfo.trackId, pathToString(trackInfo.reconstructFullPath()));
                     success = true;
                 }
-                m_cachedTotalTrackCount = false;
+                m_cachedTotalTrackCount = 0;
             }
             else
             { // UPDATE

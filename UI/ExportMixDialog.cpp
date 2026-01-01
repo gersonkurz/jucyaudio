@@ -289,8 +289,7 @@ namespace jucyaudio
                     m_genreEditor.setText(folderName);
 
                     // Update settings
-                    m_settings.album = folderName.toStdString();
-                    m_settings.genre = folderName.toStdString();
+                    m_settings.genre = m_settings.album = folderName.toStdString();
                 }
             }
         }

@@ -50,7 +50,8 @@ void OverlayComponent::mouseUp(const juce::MouseEvent& event)
 //==============================================================================
 void OverlayComponent::setPlayheadPosition(double seconds)
 {
-    if (seconds != playheadSeconds_)
+    constexpr double epsilon = 1e-9;
+    if (std::abs(seconds - playheadSeconds_) > epsilon)
     {
         // Calculate old and new positions
         const int newX = secondsToPixels(seconds);
@@ -70,7 +71,8 @@ void OverlayComponent::setPlayheadPosition(double seconds)
 
 void OverlayComponent::setSecondsPerPixel(double secondsPerPixel)
 {
-    if (secondsPerPixel != secondsPerPixel_ && secondsPerPixel > 0.0)
+    constexpr double epsilon = 1e-9;
+    if (std::abs(secondsPerPixel - secondsPerPixel_) > epsilon && secondsPerPixel > 0.0)
     {
         // Clear old playhead position
         if (previousPlayheadX_ >= 0)

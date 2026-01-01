@@ -309,7 +309,7 @@ typedef sqlite_uint64 sqlite3_uint64;
 ** substitute integer for floating-point.
 */
 #ifdef SQLITE_OMIT_FLOATING_POINT
-# define double sqlite3_int64
+# define double sqlite3_int64 //-V1059
 #endif
 
 /*

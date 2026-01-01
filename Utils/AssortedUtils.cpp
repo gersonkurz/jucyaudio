@@ -56,26 +56,6 @@ namespace jucyaudio
         return oss.str();
     }
 
-    std::string durationToString(const Timestamp_t &tp, const std::string &format)
-    {
-        if (tp == Timestamp_t{})
-        { // Check for default/uninitialized
-            return "Never";
-        }
-        std::time_t t = std::chrono::system_clock::to_time_t(tp);
-        std::tm tm_struct{};
-// Use localtime_s on Windows, localtime_r on POSIX for thread-safety
-#if defined(_WIN32) || defined(_WIN64)
-        localtime_s(&tm_struct, &t);
-#else
-        localtime_r(&t, &tm_struct);
-#endif
-
-        std::ostringstream oss;
-        oss << std::put_time(&tm_struct, format.c_str());
-        return oss.str();
-    }
-
     std::vector<std::string> splitString(std::string_view svtext, std::string_view svseparators, bool handle_quotation_marks)
     {
         assert(!svseparators.empty());

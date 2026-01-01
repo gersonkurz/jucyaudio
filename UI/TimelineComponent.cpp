@@ -1037,8 +1037,7 @@ namespace jucyaudio
                         spdlog::info("[Timeline] Initiating drag for track reorder");
                         m_isDraggingTrackForReorder = true;
                         m_draggedTrackForReorder = clickedTrack;
-                        m_trackDragStartPosition = event.position.toInt();
-                        m_currentDragPosition = event.position.toInt(); // Initialize at start position
+                        m_currentDragPosition = m_trackDragStartPosition = event.position.toInt();
                         m_dropTargetOrderInMix = -1;
                         setSelectedTrack(clickedTrack);
                         return; // Don't process as normal click
@@ -1225,7 +1224,8 @@ namespace jucyaudio
 
         void TimelineComponent::setCurrentTimePosition(double timeInSeconds)
         {
-            if (m_currentTimePosition != timeInSeconds)
+            constexpr double epsilon = 1e-9;
+            if (std::abs(m_currentTimePosition - timeInSeconds) > epsilon)
             {
                 // Dirty rectangle optimization: only repaint the old and new playhead positions
                 const int playheadWidth = 3; // Width of the playhead line plus margin
@@ -1260,7 +1260,8 @@ namespace jucyaudio
             double zoomDelta = wheel.deltaY > 0 ? ZOOM_FACTOR : (1.0 / ZOOM_FACTOR);
             double newZoom = juce::jlimit(MIN_ZOOM, MAX_ZOOM, m_pixelsPerSecond * zoomDelta);
 
-            if (newZoom != m_pixelsPerSecond)
+            constexpr double epsilon = 1e-9;
+            if (std::abs(newZoom - m_pixelsPerSecond) > epsilon)
             {
                 m_pixelsPerSecond = newZoom;
                 refreshLayout();
@@ -1413,10 +1414,9 @@ namespace jucyaudio
             
             // Performance timing report
             const auto loopEndTime = std::chrono::high_resolution_clock::now();
-            const auto totalEndTime = std::chrono::high_resolution_clock::now();
             
             const auto loopDuration = std::chrono::duration_cast<std::chrono::microseconds>(loopEndTime - loopStartTime);
-            const auto totalDuration = std::chrono::duration_cast<std::chrono::microseconds>(totalEndTime - startTime);
+            const auto totalDuration = std::chrono::duration_cast<std::chrono::microseconds>(loopEndTime - startTime);
             
             spdlog::debug("TimelineComponent::resized - Performance Report:");
             spdlog::debug("  Total tracks: {}", m_trackViews.size());

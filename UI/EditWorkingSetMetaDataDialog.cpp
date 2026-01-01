@@ -44,7 +44,7 @@ namespace jucyaudio
             auto bounds = getLocalBounds().reduced(10);
 
             // Skip past the existing fields (title + name + 3 stats + spacing)
-            bounds.removeFromTop(30);  // title
+            bounds.removeFromTop(30);  // title //-V525
             bounds.removeFromTop(10);  // spacing
             bounds.removeFromTop(30);  // name
             bounds.removeFromTop(25);  // tracks

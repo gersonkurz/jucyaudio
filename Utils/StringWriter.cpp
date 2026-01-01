@@ -131,7 +131,7 @@ namespace jucyaudio
         }
 
         // if we are using the dynamic buffer and have enough space left
-        if (space_total < m_dynamic_size)
+        if (m_dynamic_buffer && space_total < m_dynamic_size)
         {
             return m_dynamic_buffer + m_write_position;
         }

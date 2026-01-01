@@ -176,7 +176,7 @@ namespace jucyaudio
                         options.backupToRestore = m_backups[selectedIdx].path;
                     }
                     // When restoring, ignore other options
-                    options.backupBeforeMaintenance = false;
+                    assert(options.backupBeforeMaintenance == false);
                     options.runPerformanceOperations = false;
                 }
                 else

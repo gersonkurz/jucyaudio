@@ -461,11 +461,9 @@ namespace jucyaudio
             m_timeline.viewportResized();
             const auto timelineEnd = std::chrono::high_resolution_clock::now();
             
-            const auto endTime = std::chrono::high_resolution_clock::now();
-            
             const auto viewportDuration = std::chrono::duration_cast<std::chrono::microseconds>(viewportEnd - viewportStart);
             const auto timelineDuration = std::chrono::duration_cast<std::chrono::microseconds>(timelineEnd - timelineStart);
-            const auto totalDuration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
+            const auto totalDuration = std::chrono::duration_cast<std::chrono::microseconds>(timelineEnd - startTime);
             
             spdlog::debug("MixEditorComponent::resized - Performance:");
             spdlog::debug("  Viewport.setBounds: {} µs", viewportDuration.count());
@@ -1471,7 +1469,7 @@ namespace jucyaudio
                         if (!comment.empty())
                         {
                             database::MixMarker marker;
-                            marker.marker_id = 0; // New marker
+                            assert(marker.marker_id == 0); // New marker
                             marker.mix_id = m_node->getMixProjectLoader().getMixId();
                             marker.position = position;
                             marker.comment = comment;

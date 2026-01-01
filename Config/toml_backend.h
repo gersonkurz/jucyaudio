@@ -147,80 +147,14 @@ namespace jucyaudio
             {
                 auto loc = std::source_location::current();
                 logger->debug("{}: called for {}", loc.function_name(), path);
-                auto parts = splitPath(path);
-                if (parts.empty())
-                    return false;
-
-                toml::table *current = &m_config;
-
-                // Navigate to parent table
-                for (size_t i = 0; i < parts.size() - 1; ++i)
-                {
-                    auto it = current->find(parts[i]);
-                    if (it != current->end())
-                    {
-                        if (auto table = it->second.as_table())
-                        {
-                            current = table;
-                        }
-                        else
-                        {
-                            return false; // Path doesn't exist or not a table
-                        }
-                    }
-                    else
-                    {
-                        return false; // Path doesn't exist
-                    }
-                }
-
-                // Remove the final key
-                bool success = current->erase(parts.back());
-                if (success)
-                {
-                    saveToFile();
-                }
-                return success;
+                return deletePathInternal(path);
             }
 
-            bool deleteSection(const std::string &path) override
+            bool deleteSection(const std::string &path) override //-V524
             {
                 auto loc = std::source_location::current();
                 logger->debug("{}: called for {}", loc.function_name(), path);
-                auto parts = splitPath(path);
-                if (parts.empty())
-                    return false;
-
-                toml::table *current = &m_config;
-
-                // Navigate to parent table
-                for (size_t i = 0; i < parts.size() - 1; ++i)
-                {
-                    auto it = current->find(parts[i]);
-                    if (it != current->end())
-                    {
-                        if (auto table = it->second.as_table())
-                        {
-                            current = table;
-                        }
-                        else
-                        {
-                            return false; // Path doesn't exist or not a table
-                        }
-                    }
-                    else
-                    {
-                        return false; // Path doesn't exist
-                    }
-                }
-
-                // Remove the entire section
-                bool success = current->erase(parts.back());
-                if (success)
-                {
-                    saveToFile();
-                }
-                return success;
+                return deletePathInternal(path);
             }
 
         private:
@@ -251,7 +185,45 @@ namespace jucyaudio
                     file << m_config;
                 }
             }
+            // Helper function for both deleteKey and deleteSection
+            // In TOML, there's no structural difference between deleting a key or a section
+            bool deletePathInternal(const std::string &path)
+            {
+                auto parts = splitPath(path);
+                if (parts.empty())
+                    return false;
 
+                toml::table *current = &m_config;
+
+                // Navigate to parent table
+                for (size_t i = 0; i < parts.size() - 1; ++i)
+                {
+                    auto it = current->find(parts[i]);
+                    if (it != current->end())
+                    {
+                        if (auto table = it->second.as_table())
+                        {
+                            current = table;
+                        }
+                        else
+                        {
+                            return false; // Path doesn't exist or not a table
+                        }
+                    }
+                    else
+                    {
+                        return false; // Path doesn't exist
+                    }
+                }
+
+                // Remove the entry (key or section)
+                bool success = current->erase(parts.back());
+                if (success)
+                {
+                    saveToFile();
+                }
+                return success;
+            }
             static std::vector<std::string> splitPath(const std::string &path)
             {
                 std::vector<std::string> parts;

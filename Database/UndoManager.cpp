@@ -69,7 +69,7 @@ namespace jucyaudio
             // this is here to prevent recursion as createOrUpdateMix calls back into recordMixChange
             m_undoOperationInProgress = true;
             theTrackLibrary.getMixManager().createOrUpdateMix(previousState->mixInfo, previousState->tracks);
-            m_undoOperationInProgress = false;
+            m_undoOperationInProgress = false; //-V519
             mixState.redoOperations.push_back(currentState); // move current to redo stack
             mixState.undoOperations.pop_back();              // remove current state from undo stack
             spdlog::info("After undo, state for mixId has {} undo ops, {} redo ops", mixState.undoOperations.size(), mixState.redoOperations.size());
@@ -157,7 +157,7 @@ namespace jucyaudio
             // Restore the redo state
             m_undoOperationInProgress = true;
             theTrackLibrary.getMixManager().createOrUpdateMix(redoState->mixInfo, redoState->tracks);
-            m_undoOperationInProgress = false;
+            m_undoOperationInProgress = false; //-V519
 
             // Move redo state back to undo stack
             mixState.undoOperations.push_back(redoState);

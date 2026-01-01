@@ -159,7 +159,7 @@ namespace jucyaudio
                     currentTrackInfo.date_added = std::chrono::system_clock::now();
                     currentTrackInfo.last_modified_fs = timestampFromInt64(file.getLastModificationTime().toMilliseconds());
                     currentTrackInfo.filesize_bytes = file.getSize();
-                    currentTrackInfo.is_missing = false;
+                    assert(currentTrackInfo.is_missing == false);
                     currentTrackInfo.last_scanned = std::chrono::system_clock::now();
 
                     for (const auto& scanner : m_scanners)

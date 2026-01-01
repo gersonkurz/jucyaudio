@@ -272,7 +272,6 @@ namespace jucyaudio
                 resultsBatch.reserve(batchSize);
 
                 auto lastCommitTime = std::chrono::steady_clock::now();
-                auto lastProgressTime = std::chrono::steady_clock::now();
 
                 while (!shouldCancel) // -V1044 this loop can be exited via external break signal
                 {
@@ -324,7 +323,7 @@ namespace jucyaudio
                     }
 
                     // Update progress periodically
-                    auto timeSinceLastProgress = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastProgressTime);
+                    auto timeSinceLastProgress = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastCommitTime);
                     if (timeSinceLastProgress.count() > 500)
                     { // Every 500ms
                         size_t processed = tracksProcessed.load();
@@ -335,7 +334,7 @@ namespace jucyaudio
                             ui::formatStandardStringNumber(tracksWritten),
                             ui::formatStandardStringNumber(tracksSkipped.load()));
                         progressCb(progressPercent, status);
-                        lastProgressTime = now;
+                        lastCommitTime = now;
                     }
 
                     // Check if we're done

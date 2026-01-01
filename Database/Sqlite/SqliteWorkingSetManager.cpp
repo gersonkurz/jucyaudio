@@ -317,10 +317,7 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
         {
             if (SqliteTransaction transaction{m_db})
             {
-                if (transaction.execute("UPDATE WorkingSets SET name=? WHERE ws_id=?;", name, workingSetId))
-                {
-                    return transaction.commit();
-                }
+                std::ignore = transaction.execute("UPDATE WorkingSets SET name=? WHERE ws_id=?;", name, workingSetId);
                 return transaction.commit();
             }
             return false;

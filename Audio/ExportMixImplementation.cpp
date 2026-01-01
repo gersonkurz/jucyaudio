@@ -386,7 +386,8 @@ namespace jucyaudio
             // Create buffers with the ACTUAL number of samples we'll read, not the full block size
             // If the source sample rate is different, we need to adjust the number of samples to read
             juce::int64 samplesToReadFromFile = numSamplesToReadForThisTrackInBlock;
-            if (reader->sampleRate != outputSampleRate())
+            constexpr double epsilon = 1e-9;
+            if (std::abs(reader->sampleRate - outputSampleRate()) > epsilon)
             {
                 // Adjust for sample rate difference
                 samplesToReadFromFile = (numSamplesToReadForThisTrackInBlock * reader->sampleRate) / outputSampleRate();

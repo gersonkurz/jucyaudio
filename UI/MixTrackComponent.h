@@ -101,7 +101,8 @@ namespace jucyaudio
              */
             void setPixelsPerSecond(double pixelsPerSecond)
             {
-                if (m_pixelsPerSecond != pixelsPerSecond)
+                constexpr double epsilon = 1e-9;
+                if (std::abs(m_pixelsPerSecond - pixelsPerSecond) > epsilon)
                 {
                     spdlog::info("MixTrackComponent::setPixelsPerSecond - track {}: changing from {} to {}",
                                  m_mixTrack.orderInMix, m_pixelsPerSecond, pixelsPerSecond);

@@ -683,7 +683,8 @@ namespace jucyaudio
 
         void EnhancedPlayerComponent::WaveformDisplay::setPlaybackPosition(double position)
         {
-            if (m_playbackPosition != position)
+            constexpr double epsilon = 1e-9;
+            if (std::abs(m_playbackPosition - position) > epsilon)
             {
                 m_playbackPosition = juce::jlimit(0.0, 1.0, position);
                 repaint();

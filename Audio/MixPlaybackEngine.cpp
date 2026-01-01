@@ -710,7 +710,7 @@ namespace jucyaudio
                         if (outputSample >= 0 && outputSample < numSamples)
                         {
                             outLeft[outputSample] += srcLeft[sample] * gain;
-                            if (outRight && srcRight)
+                            if (outRight && srcRight) //-V1051
                             {
                                 outRight[outputSample] += srcRight[sample] * gain;
                             }
@@ -729,7 +729,7 @@ namespace jucyaudio
                         if (outputSample >= 0 && outputSample < numSamples)
                         {
                             outLeft[outputSample] += srcLeft[sample] * gain;
-                            if (outRight && srcRight)
+                            if (outRight && srcRight) //-V1051
                             {
                                 outRight[outputSample] += srcRight[sample] * gain;
                             }

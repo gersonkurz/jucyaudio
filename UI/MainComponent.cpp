@@ -2751,10 +2751,10 @@ namespace jucyaudio
                             {
                                 // Create new MixInfo for the clone
                                 database::MixInfo cloneMixInfo;
-                                cloneMixInfo.mixId = 0; // New mix (use 0, not -1)
+                                assert(cloneMixInfo.mixId == 0); // New mix (use 0, not -1)
                                 cloneMixInfo.name = cloneName.toStdString();
                                 cloneMixInfo.status = "New"; // Clone starts as editable
-                                cloneMixInfo.source_ws_id = 0; // No source working set
+                                assert(cloneMixInfo.source_ws_id == 0); // No source working set
                                 cloneMixInfo.exportFolder = {}; // Not exported
                                 cloneMixInfo.totalDuration = mixInfo.totalDuration; // Copy duration from original
                                 cloneMixInfo.numberOfTracks = mixInfo.numberOfTracks; // Copy track count
@@ -2766,7 +2766,7 @@ namespace jucyaudio
                                 for (const auto& originalTrack : mixTracks)
                                 {
                                     database::MixTrack clonedTrack;
-                                    clonedTrack.mixId = 0; // Will be set by createOrUpdateMix (use 0, not -1)
+                                    assert(clonedTrack.mixId == 0); // Will be set by createOrUpdateMix (use 0, not -1)
                                     clonedTrack.trackId = originalTrack.trackId; // Keep the actual track reference
                                     clonedTrack.orderInMix = originalTrack.orderInMix;
                                     clonedTrack.cueStart = originalTrack.cueStart;
