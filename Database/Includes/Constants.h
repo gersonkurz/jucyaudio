@@ -174,7 +174,7 @@ namespace jucyaudio
         struct SortOrderInfo
         {
             std::string columnName; ///< Column name from DataColumn::name
-            bool descending;        ///< true for descending order, false for ascending
+            bool descending{false}; ///< true for descending order, false for ascending
         };
 
         /**

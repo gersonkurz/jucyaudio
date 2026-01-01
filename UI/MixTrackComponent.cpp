@@ -18,7 +18,8 @@ namespace jucyaudio
             const MixTrack &mixTrack, const TrackInfo &trackInfo, juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache)
             : m_mixTrack{mixTrack},  // Copy the MixTrack
               m_trackInfo{trackInfo},  // Copy the TrackInfo
-              m_thumbnail{2048, formatManager, thumbnailCache}
+              m_thumbnail{2048, formatManager, thumbnailCache},
+              m_originalEnvelopePoint{}
         {
             m_thumbnail.addChangeListener(this);
 

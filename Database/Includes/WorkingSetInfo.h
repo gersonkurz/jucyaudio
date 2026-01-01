@@ -17,11 +17,11 @@ namespace jucyaudio
          */
         struct WorkingSetInfo
         {
-            WorkingSetId id;                      ///< Unique database identifier
+            WorkingSetId id{0};                   ///< Unique database identifier
             std::string name;                     ///< User-defined name for the working set
             Timestamp_t timestamp;                ///< Creation or last modification time
-            int64_t numberOfTracks;               ///< Number of tracks in the working set
-            Duration_t totalDuration;             ///< Combined duration of all tracks
+            int64_t numberOfTracks{0};            ///< Number of tracks in the working set
+            Duration_t totalDuration{0};          ///< Combined duration of all tracks
             std::vector<SortOrderInfo> sortOrder; ///< Saved sort order for this working set
         };
 

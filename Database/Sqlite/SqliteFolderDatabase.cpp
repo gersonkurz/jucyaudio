@@ -157,7 +157,7 @@ namespace jucyaudio
 
             struct ExistingAlbumInfo
             {
-                AlbumId albumId;
+                AlbumId albumId{0};
                 std::string albumArtist;
                 std::string title;
             };
@@ -166,7 +166,7 @@ namespace jucyaudio
             {
                 std::string albumArtist;
                 std::string title;
-                FolderId folderId;
+                FolderId folderId{0};
             };
 
             // build lookup map of existing albums by folder ID
@@ -495,7 +495,7 @@ namespace jucyaudio
 
             struct ExistingAlbumInfo
             {
-                AlbumId albumId;
+                AlbumId albumId{0};
                 std::string albumArtist;
                 std::string title;
             };
@@ -504,7 +504,7 @@ namespace jucyaudio
             {
                 std::string albumArtist;
                 std::string title;
-                FolderId folderId;
+                FolderId folderId{0};
             };
 
             // build lookup map of existing albums by folder ID
@@ -829,7 +829,7 @@ namespace jucyaudio
 
             struct ExistingAlbumInfo
             {
-                AlbumId albumId;
+                AlbumId albumId{0};
                 std::string albumArtist;
                 std::string title;
             };

@@ -28,9 +28,9 @@ namespace jucyaudio
                  */
                 struct WaveformRequest
                 {
-                    TrackId trackId;
+                    TrackId trackId{0};
                     std::filesystem::path filePath;
-                    bool needsLoading;  // false if already cached
+                    bool needsLoading{true}; // false if already cached
                     std::string trackName; // For progress reporting
                 };
 
