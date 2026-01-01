@@ -21,7 +21,7 @@ namespace jucyaudio
         {
             if (!s_instance)
             {
-                s_instance = std::unique_ptr<CheckboxLookAndFeel>(new CheckboxLookAndFeel{});
+                s_instance = std::make_unique<CheckboxLookAndFeel>();
             }
             return s_instance.get();
         }

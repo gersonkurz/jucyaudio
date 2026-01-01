@@ -60,7 +60,6 @@ namespace jucyaudio
         BaseNode::~BaseNode()
         {
             assert(m_refCount.load() == 0); // Ensure no leaks
-            clear();
             for (const auto child : m_children)
             {
                 child->release(REFCOUNT_DEBUG_ARGS);

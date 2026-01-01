@@ -10,12 +10,11 @@ namespace jucyaudio
         // Custom LookAndFeel class to fix checkbox rendering in light theme
         class CheckboxLookAndFeel final : public juce::LookAndFeel_V4
         {
-        protected:
-            CheckboxLookAndFeel();
 
         public:
             static CheckboxLookAndFeel* getInstance();
             static void releaseMemory();
+            CheckboxLookAndFeel();
 
         private:
             void drawToggleButton(juce::Graphics &g, juce::ToggleButton &button, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;

@@ -214,7 +214,7 @@ namespace jucyaudio
                             {
                                 spdlog::warn("Folder {} already has an album, skipping for folder ID {}", lastKnownFolderId, lastKnownFolderId);
                             }
-                            else if (!lastKnownArtistName.empty() && !lastKnownArtistName.empty())
+                            else if (!lastKnownArtistName.empty())
                             {
                                 // Create a new album info entry
                                 albumFolders.insert(lastKnownFolderId);
@@ -554,7 +554,7 @@ namespace jucyaudio
                             {
                                 spdlog::warn("Folder {} already has an album, skipping for folder ID {}", lastKnownFolderId, lastKnownFolderId);
                             }
-                            else if (!lastKnownArtistName.empty() && !lastKnownArtistName.empty())
+                            else if (!lastKnownArtistName.empty())
                             {
                                 albumFolders.insert(lastKnownFolderId);
 

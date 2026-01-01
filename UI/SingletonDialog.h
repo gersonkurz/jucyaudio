@@ -244,7 +244,6 @@ namespace jucyaudio
                 // Configure launch options
                 launchOptions.content.setOwned(component);
                 launchOptions.dialogTitle = title;
-                launchOptions.componentToCentreAround = launchOptions.componentToCentreAround;
                 launchOptions.escapeKeyTriggersCloseButton = true;
                 launchOptions.useNativeTitleBar = true;
 

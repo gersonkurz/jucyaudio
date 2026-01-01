@@ -383,7 +383,8 @@ namespace jucyaudio
             }
 
             // Create new dialog (which will register itself as the current instance)
-            auto *dialog = new SettingsDialog{};
+            // Note: Dialog manages its own lifetime via closeButtonPressed() - not a leak
+            auto *dialog = new SettingsDialog{}; //-V773
 
             // Apply L&F BEFORE creating content
             if (centreAroundComponent)
@@ -410,6 +411,6 @@ namespace jucyaudio
             dialog->setVisible(true);
             dialog->toFront(true);
             dialog->grabKeyboardFocus();
-        }
+        } //-V773
     } // namespace ui
 } // namespace jucyaudio

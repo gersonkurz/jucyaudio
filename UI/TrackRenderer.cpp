@@ -19,7 +19,7 @@ void TrackRenderer::renderTrack(juce::Graphics& g,
     }
     
     // Fade envelope
-    if (params.fadeInSeconds > 0 || params.fadeOutSeconds > 0)
+    if (params.fadeInSeconds > 0.0 || params.fadeOutSeconds > 0.0)
     {
         renderFadeEnvelope(g, params.waveformBounds,
                          params.fadeInSeconds, params.fadeOutSeconds,

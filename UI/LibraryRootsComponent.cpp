@@ -156,7 +156,7 @@ namespace jucyaudio
             m_titleLabel.setJustificationType(juce::Justification::left);
 
             setWantsKeyboardFocus(true);
-            loadRoots();
+            loadRoots(); //-V1053
         }
 
         LibraryRootsComponent::~LibraryRootsComponent()

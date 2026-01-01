@@ -172,7 +172,7 @@ namespace jucyaudio
 
         bool MixEditorComponent::keyPressed(const juce::KeyPress &key)
         {
-            if (!m_node)
+            if (m_node == nullptr)
                 return false;
 
             // Ctrl+Z for undo
@@ -180,7 +180,7 @@ namespace jucyaudio
             {
                 spdlog::info("MixEditorComponent: Undo requested");
                 
-                const auto mixId = m_node->getMixProjectLoader().getMixId();
+                const auto mixId = m_node->getMixProjectLoader().getMixId(); //-V595
                 
                 if (theUndoManager.canUndo(mixId))
                 {
@@ -246,7 +246,7 @@ namespace jucyaudio
             {
                 spdlog::info("MixEditorComponent: Redo requested");
                 
-                const auto mixId = m_node->getMixProjectLoader().getMixId();                
+                const auto mixId = m_node->getMixProjectLoader().getMixId();                 //-V595
                 if (theUndoManager.canRedo(mixId))
                 {
                     // Check if we're currently playing and store the position

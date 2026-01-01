@@ -1445,6 +1445,8 @@ namespace jucyaudio
             {
                 m_mixLoader = mixLoader;
             }
+            if(!m_mixLoader)
+                return false;
             m_selectedTrack = nullptr;
             m_currentTimePosition = -1.0;
             m_trackViews.clear();
@@ -1499,7 +1501,8 @@ namespace jucyaudio
                         
                         // Find the MixTrack in the loader's vector
                         MixTrack* targetMixTrack = nullptr;
-                        auto& mixTracks = m_mixLoader->getMixTracks(); // Get mutable reference to the vector
+                        // m_mixLoader is checked against nullptr at the beginning of the function, so false PVS Studio positive
+                        auto& mixTracks = m_mixLoader->getMixTracks(); // Get mutable reference to the vector  //-V1053 // -V595
                         for (auto& mt : mixTracks) {
                             if (mt.orderInMix == orderInMix) {
                                 targetMixTrack = &mt;

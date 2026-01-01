@@ -134,6 +134,7 @@ namespace jucyaudio
         MainComponent::MainComponent(juce::ApplicationCommandManager &commandManager)
             : MenuPresenter{commandManager},
               m_commandManager{commandManager},
+              m_dataViewComponent{*this},
               m_navigationPanel{*this},
               m_navigationTree{m_navigationPanel, m_dataViewComponent},
               m_currentMainView{MainViewType::DataView},
@@ -484,7 +485,7 @@ namespace jucyaudio
             const auto &availableThemes = theThemeManager.getAvailableThemes();
             for (size_t i = 0; i < availableThemes.size(); ++i)
             {
-                themeItems.push_back({
+                themeItems.emplace_back(MenuItem{
                     availableThemes[i].name,
                     "Select this theme",
                     [this, i]()
@@ -2223,12 +2224,14 @@ namespace jucyaudio
 
                 return createWorkingSetFromTrackInfos(trackResult.trackInfos);
             }
-            else if (m_currentNode)
+            else // if (m_currentNode)
             {
+                assert(m_currentNode != nullptr);
                 return createWorkingSetFromNode(m_currentNode);
             }
-            m_statusPanel.getStatusBar().postMessage("Internal error: no selection, and no current node?", true);
-            return false;
+            // PVS-Studio detected this as unreadable code: we're returning early if m_currentNode is null at the entry of the method
+            //m_statusPanel.getStatusBar().postMessage("Internal error: no selection, and no current node?", true);
+            //return false;
         }
 
         bool MainComponent::createWorkingSetFromTrackInfos(std::vector<TrackInfo> trackInfos)
@@ -2734,7 +2737,7 @@ namespace jucyaudio
                 juce::ModalCallbackFunction::create(
                     [this, mixInfo, mixTracks, alertWindow](int result)
                     {
-                        std::unique_ptr<juce::AlertWindow> windowDeleter(alertWindow); // Auto-delete on scope exit
+                        std::unique_ptr<juce::AlertWindow> windowDeleter{alertWindow}; // Auto-delete on scope exit //-V824
 
                         if (result == 1) // Create Clone was clicked
                         {

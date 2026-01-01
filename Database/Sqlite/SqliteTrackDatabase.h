@@ -38,7 +38,7 @@ namespace jucyaudio
 
             // --- ITrackDatabase Interface Implementation ---
             DbResult connect(const std::filesystem::path &databaseFilePath) override;
-            void close() override;
+            void close() override final;
             bool isOpen() const override;
             std::string getLastError() const override; // Gets from lastErrorMessage
             bool runMaintenanceTasks(std::atomic<bool> &shouldCancel) override;

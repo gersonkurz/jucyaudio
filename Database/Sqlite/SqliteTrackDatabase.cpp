@@ -355,7 +355,7 @@ namespace jucyaudio
 
         SqliteTrackDatabase::~SqliteTrackDatabase()
         {
-            close(); // m_db.close() will be called by SqliteDatabase destructor
+            close(); // m_db.close() will be called by SqliteDatabase destructor //-V1053
                      // if not already
             spdlog::debug("SqliteTrackDatabase destroyed.");
         }

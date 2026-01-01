@@ -42,12 +42,12 @@ namespace jucyaudio
             {
             }
 
-            const juce::String getApplicationName() override
+            const juce::String getApplicationName() override //-V839
             {
                 return PROJECT_NAME;
             }
 
-            const juce::String getApplicationVersion() override
+            const juce::String getApplicationVersion() override //-V839
             {
                 return PROJECT_VERSION;
             }
@@ -96,7 +96,7 @@ namespace jucyaudio
                     : DocumentWindow(name, lookAndFeel.findColour(ResizableWindow::backgroundColourId), DocumentWindow::allButtons)
                 {
                     // Start with window hidden and small
-                    setVisible(false);
+                    setVisible(false); //-V1053
                     setSize(1, 1);
                     setTopLeftPosition(-100, -100); // Position off-screen
                     

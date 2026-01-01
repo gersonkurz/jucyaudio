@@ -164,14 +164,14 @@ namespace jucyaudio
             juce::ApplicationCommandManager &m_commandManager;
 
             // UI Child Components
-            DynamicToolbarComponent m_dynamicToolbar;
-            NavigationPanelComponent m_navigationPanel;
-            NavigationTree m_navigationTree;
 
             MainViewType m_currentMainView{MainViewType::DataView};
             juce::Component *m_currentMainViewComponent{nullptr};
             DataViewComponent m_dataViewComponent{*this};
             MixEditorComponent m_mixEditorComponent;
+            DynamicToolbarComponent m_dynamicToolbar;
+            NavigationPanelComponent m_navigationPanel;
+            NavigationTree m_navigationTree;
 
             DividerComponent m_verticalDivider;
 

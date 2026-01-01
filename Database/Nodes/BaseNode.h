@@ -33,7 +33,7 @@ namespace jucyaudio
             // IRefCounted interface
             void retain(REFCOUNT_DEBUG_SPEC) const override final;
             void release(REFCOUNT_DEBUG_SPEC) const override final;
-            void clear() override;
+            void clear() override final;
             const std::string &getName() const override final;
 
             // Revised INavigationNode interface

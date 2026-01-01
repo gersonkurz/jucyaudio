@@ -415,11 +415,7 @@ namespace jucyaudio
         const TrackInfo *LibraryNode::getTrackInfoForRow(RowIndex_t rowIndex) const
         {
             const auto start{std::chrono::high_resolution_clock::now()};
-            if (rowIndex < 0)
-            {
-                spdlog::warn("Row index {} is negative, returning nullptr", rowIndex);
-                return nullptr;
-            }
+
             // if the cache is invalid, or the rowIndex is out of bounds, we need to retrieve the rows
             const auto refreshCache = !m_bCacheInitialized || (rowIndex < m_queryArgs.offset) || (rowIndex >= m_queryArgs.offset + QUERY_PAGE_SIZE);
             if (refreshCache)
