@@ -479,6 +479,8 @@ namespace jucyaudio
             m_isPrepared = true;
 
             // Pre-allocate scratch buffer for audio callback (stereo, block size)
+            // Note: getNextAudioBlock handles larger blocks by chunking, but we allocate
+            // the expected size here. The chunking ensures we never exceed this.
             m_scratchBuffer.setSize(2, samplesPerBlockExpected);
 
             if (m_mixLoader)
@@ -532,9 +534,36 @@ namespace jucyaudio
 
             juce::int64 startSample = m_currentPositionSamples.load();
 
-            mixActiveTracksForBlock(*bufferToFill.buffer, startSample, bufferToFill.numSamples);
+            // SAFETY: Process in chunks if host requests more samples than our scratch buffer can handle.
+            // This avoids buffer overflow while remaining fully real-time safe (no allocations).
+            const int totalSamples = bufferToFill.numSamples;
+            int samplesRemaining = totalSamples;
+            int outputOffset = 0;
 
-            m_currentPositionSamples = startSample + bufferToFill.numSamples;
+            // Defensive check: prevent infinite loop if m_blockSize is somehow invalid
+            if (m_blockSize <= 0)
+            {
+                return;
+            }
+
+            while (samplesRemaining > 0)
+            {
+                const int chunkSize = std::min(samplesRemaining, m_blockSize);
+
+                // Create a sub-buffer view for this chunk
+                juce::AudioBuffer<float> chunkBuffer(*bufferToFill.buffer,
+                                                      bufferToFill.startSample + outputOffset,
+                                                      chunkSize);
+
+                mixActiveTracksForBlock(chunkBuffer, startSample, chunkSize);
+
+                startSample += chunkSize;
+                outputOffset += chunkSize;
+                samplesRemaining -= chunkSize;
+            }
+
+            // Update position using the already-incremented startSample (cleaner than re-loading atomic)
+            m_currentPositionSamples = startSample;
 
             Duration_t currentPosMs = getPosition();
             Duration_t totalDuration = state->totalDuration;
