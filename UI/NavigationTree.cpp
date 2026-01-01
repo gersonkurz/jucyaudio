@@ -27,12 +27,8 @@ namespace jucyaudio
                 m_root = nullptr;
             }
 
-            m_root = new RootNode{};           // Create the root node
-            if (!m_root)
-            {
-                spdlog::error("Failed to create root node for NavigationTree.");
-                return false;
-            }
+            m_root = new RootNode{};           // Create the root node (throws std::bad_alloc on failure)
+            
             if (!m_npc.setRootNode(m_root))
             {
                 return false;

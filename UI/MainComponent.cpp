@@ -1636,7 +1636,7 @@ namespace jucyaudio
                 createMix();
                 break;
             case DataAction::Delete:
-                onDataActionRemoveNamedObjects();
+                onDataActionRemoveNamedObjects(); //-V1037
                 break;
             case DataAction::RunBpmAnalysis:
                 onRunBpmAnalysisForSelectedRows();

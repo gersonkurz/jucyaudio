@@ -325,10 +325,10 @@ namespace jucyaudio
                 std::unique_ptr<MixTrackComponent> component;
 
                 /** @brief A non-owning pointer to the mutable mix data (cues, attaches, envelopes). */
-                database::MixTrack *mixTrackData;
+                database::MixTrack *mixTrackData{nullptr};
 
                 /** @brief A non-owning pointer to the immutable source audio file data (duration, title, etc.). */
-                const database::TrackInfo *trackInfoData;
+                const database::TrackInfo *trackInfoData{nullptr};
 
                 /** @brief The calculated absolute start time of the track's *audio content* on the mix timeline. */
                 Duration_t audioStartTime{0};

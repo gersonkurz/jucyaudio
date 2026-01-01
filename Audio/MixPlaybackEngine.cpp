@@ -522,7 +522,7 @@ namespace jucyaudio
 
             // Check if we have a valid PlaybackState (NEW REFCOUNTING CODE)
             auto* state = m_currentPlaybackState.load();
-            if (!state || !m_mixLoader)
+            if (!state)
             {
                 bufferToFill.clearActiveBufferRegion();
                 return;

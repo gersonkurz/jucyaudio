@@ -235,7 +235,9 @@ namespace jucyaudio
             {
                 // Append to existing mix
                 int mixIndex = selectedId - 2;
-                if (mixIndex < 0 || mixIndex >= static_cast<int>(m_availableMixes.size()))
+                // PVS-Studio: selectedId starts at 2, so selectedId - 2 maps to index 0, so the expression
+                // "mixIndex < 0" is always false; removing the check to avoid confusion
+                if (/*mixIndex < 0 || */mixIndex >= static_cast<int>(m_availableMixes.size()))
                 {
                     spdlog::error("Invalid mix selection index: {}", mixIndex);
                     closeThisDialog(false);
@@ -387,7 +389,9 @@ namespace jucyaudio
                 {
                     // Existing mix selected - disable name editor and show mix name
                     int mixIndex = selectedId - 2;
-                    if (mixIndex >= 0 && mixIndex < static_cast<int>(m_availableMixes.size()))
+                    // PVS-Studio: selectedId starts at 2, so selectedId - 2 maps to index 0, so the expression
+                    // "mixIndex >= 0" is always true; removing the check to avoid confusion
+                    if (/*mixIndex >= 0 && */mixIndex < static_cast<int>(m_availableMixes.size()))
                     {
                         m_nameEditor.setText(m_availableMixes[mixIndex].name, false);
                         m_nameEditor.setEnabled(false);

@@ -23,7 +23,7 @@ namespace jucyaudio
             const char *getVersion() const;
             bool open(std::string_view filename);
             void close();
-            bool execute(std::string_view statement);
+            bool execute(std::string_view statement); //-V1071
 
             bool isValid() const
             {

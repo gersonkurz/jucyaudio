@@ -172,13 +172,13 @@ namespace jucyaudio
          * @brief Appends a string view to the current content
          * @param s The string view to append
          * @return true on success, false if memory allocation failed
-         * @note Handles empty/null string views safely
+         * @note Handles empty string views safely
          * @note More efficient than character-by-character appending
          * @note May trigger buffer growth if needed
          */
         bool append(std::string_view s)
         {
-            if (s.empty() || !s.data())
+            if (s.empty())
                 return true;
 
             const auto len = s.size();

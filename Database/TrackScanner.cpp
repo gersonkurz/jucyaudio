@@ -154,7 +154,6 @@ namespace jucyaudio
                     }
 
                     TrackInfo currentTrackInfo;
-                    bool needsFullAnalysis = true;
                     currentTrackInfo.filename = filename;
                     currentTrackInfo.folderId = parentFolderId;
                     currentTrackInfo.date_added = std::chrono::system_clock::now();
@@ -163,12 +162,9 @@ namespace jucyaudio
                     currentTrackInfo.is_missing = false;
                     currentTrackInfo.last_scanned = std::chrono::system_clock::now();
 
-                    if (needsFullAnalysis)
+                    for (const auto& scanner : m_scanners)
                     {
-                        for (const auto& scanner : m_scanners)
-                        {
-                            scanner->processTrack(currentTrackInfo, fullPath);
-                        }
+                        scanner->processTrack(currentTrackInfo, fullPath);
                     }
 
                     if (!m_db.saveTrackInfo(currentTrackInfo).isOk())

@@ -1575,8 +1575,8 @@ namespace jucyaudio
                     }
                 }
 
-                SqliteStatement{m_db, "PRAGMA optimize;"}.execute();
-                SqliteStatement{m_db, "VACUUM;"}.execute();
+                std::ignore = SqliteStatement{m_db, "PRAGMA optimize;"}.execute();
+                std::ignore = SqliteStatement{m_db, "VACUUM;"}.execute();
                 if (transaction.commit())
                 {
                     invalidateCache();
@@ -1681,7 +1681,7 @@ namespace jucyaudio
             }
             newFolder.path = key;
             newFolder.actualPath = pathToString(path); // Store the actual case-preserving path
-            newFolder.trackCount = -1; // not yet known - will be calculated later
+            assert(newFolder.trackCount == -1); // not yet known - will be calculated later
             if (addFolder(newFolder))
             {
                 return newFolder.folderId;
@@ -1705,7 +1705,7 @@ namespace jucyaudio
             // Clear existing contents
             SqliteStatement clearStmt{m_db};
             clearStmt.bindStatement("DELETE FROM temp.OfflineFolders;");
-            clearStmt.execute();
+            std::ignore = clearStmt.execute();
             
             // Get all library roots and their status
             const auto roots = rootManager.getAllRoots();
@@ -1741,7 +1741,7 @@ namespace jucyaudio
                     insertStmt.reset();
                     insertStmt.bindStatement("INSERT INTO temp.OfflineFolders (folder_id) VALUES (?);");
                     insertStmt.addParam(folderId);
-                    insertStmt.execute();
+                    std::ignore = insertStmt.execute();
                 }
                 
                 transaction.commit();
@@ -1762,7 +1762,7 @@ namespace jucyaudio
                     // Clear and populate
                     SqliteStatement clearWsStmt{m_db};
                     clearWsStmt.bindStatement("DELETE FROM temp.OfflineWorkingSets;");
-                    clearWsStmt.execute();
+                    std::ignore = clearWsStmt.execute();
                     
                     // Find working sets with offline tracks
                     SqliteStatement findOfflineWs{m_db};
@@ -1796,7 +1796,7 @@ namespace jucyaudio
                     // Clear and populate
                     SqliteStatement clearMixStmt{m_db};
                     clearMixStmt.bindStatement("DELETE FROM temp.OfflineMixes;");
-                    clearMixStmt.execute();
+                    std::ignore = clearMixStmt.execute();
                     
                     // Find mixes with offline tracks
                     SqliteStatement findOfflineMix{m_db};
@@ -1822,11 +1822,11 @@ namespace jucyaudio
                 // Drop the temp tables if they exist (all roots are online)
                 SqliteStatement dropWsTable{m_db};
                 dropWsTable.bindStatement("DROP TABLE IF EXISTS temp.OfflineWorkingSets;");
-                dropWsTable.execute();
+                std::ignore = dropWsTable.execute();
                 
                 SqliteStatement dropMixTable{m_db};
                 dropMixTable.bindStatement("DROP TABLE IF EXISTS temp.OfflineMixes;");
-                dropMixTable.execute();
+                std::ignore = dropMixTable.execute();
             }
         }
 

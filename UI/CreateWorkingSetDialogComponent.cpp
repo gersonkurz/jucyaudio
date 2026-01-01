@@ -185,7 +185,9 @@ namespace jucyaudio
 
                     // Show selected working set name in the disabled editor
                     int wsIndex = selectedId - 2;
-                    if (wsIndex >= 0 && wsIndex < static_cast<int>(m_availableWorkingSets.size()))
+                    // PVS-Studio: selectedId starts at 2, so selectedId - 2 maps to index 0, so the expression
+                    // "wsIndex >= 0" is always true; removing the check to avoid confusion
+                    if (/*wsIndex >= 0 && */wsIndex < static_cast<int>(m_availableWorkingSets.size()))
                     {
                         m_nameEditor.setText(m_availableWorkingSets[wsIndex].name, false);
                     }
@@ -218,7 +220,9 @@ namespace jucyaudio
             {
                 // Append to existing working set
                 int wsIndex = selectedId - 2;
-                if (wsIndex >= 0 && wsIndex < static_cast<int>(m_availableWorkingSets.size()))
+                // PVS-Studio: selectedId starts at 2, so selectedId - 2 maps to index 0, so the expression
+                // "wsIndex >= 0" is always true; removing the check to avoid confusion
+                if (/*wsIndex >= 0 && */wsIndex < static_cast<int>(m_availableWorkingSets.size()))
                 {
                     WorkingSetId targetWsId = m_availableWorkingSets[wsIndex].id;
                     juce::String wsName = m_availableWorkingSets[wsIndex].name;

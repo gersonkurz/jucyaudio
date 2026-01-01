@@ -131,7 +131,7 @@ namespace jucyaudio
 
             // Check for range operator (..)
             const auto rangePos = valueStr.find("..");
-            if (rangePos != std::string::npos && rangePos > 0 && rangePos < valueStr.length() - 2)
+            if (rangePos != std::string::npos && rangePos > 0 && valueStr.length() > 2 && rangePos < valueStr.length() - 2)
             {
                 criterion.op = "..";
                 criterion.value = valueStr.substr(0, rangePos);

@@ -1018,16 +1018,16 @@ namespace jucyaudio
                         onCueDragInProgress(m_mixTrack.orderInMix, isAttach, std::nullopt);
                     }
 
-                    // Reset drag state
-                    m_draggedMarker = MarkerType::None;
-                    m_isDraggingEnvelopePoint = false;
-                    m_selectedEnvelopePointIndex = std::nullopt;
-
-                    // Restore original envelope point if we were dragging one
+                    // Restore original envelope point if we were dragging one (before resetting state)
                     if (m_selectedEnvelopePointIndex.has_value() && m_selectedEnvelopePointIndex.value() < m_mixTrack.envelopePoints.size())
                     {
                         m_mixTrack.envelopePoints[*m_selectedEnvelopePointIndex] = m_originalEnvelopePoint;
                     }
+
+                    // Reset drag state
+                    m_draggedMarker = MarkerType::None;
+                    m_isDraggingEnvelopePoint = false;
+                    m_selectedEnvelopePointIndex = std::nullopt;
 
                     repaint();
                     return true; // Key was handled

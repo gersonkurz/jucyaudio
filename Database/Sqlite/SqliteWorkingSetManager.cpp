@@ -405,7 +405,7 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             {
                 nlohmann::json sortObj;
                 sortObj["column"] = sort.columnName;
-                sortObj["descending"] = sort.descending;
+                sortObj["descending"] = nlohmann::json(sort.descending);
                 jsonArray.push_back(sortObj);
             }
 

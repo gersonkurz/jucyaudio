@@ -420,7 +420,8 @@ namespace jucyaudio
 
         juce::ApplicationCommandManager &getGlobalCommandManager()
         {
-            return dynamic_cast<jucyaudioApplication *>(juce::JUCEApplication::getInstance())->getGlobalCommandManager();
+            // this is safe because jucyaudioApplication is a singleton
+            return dynamic_cast<jucyaudioApplication *>(juce::JUCEApplication::getInstance())->getGlobalCommandManager(); // -V522
         }
     } // namespace ui
 } // namespace jucyaudio

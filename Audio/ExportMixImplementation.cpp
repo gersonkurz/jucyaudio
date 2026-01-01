@@ -477,8 +477,8 @@ namespace jucyaudio
                     sourceData1 = (readerChannels > 1) ? resampledBuffer.getReadPointer(1) : nullptr;
                 }
                 
-                // Copy/convert from temp buffer to output format at the correct position
-                if (readerChannels == 1 && outputNumChannels() == 2)
+                // Copy/convert from temp buffer to stereo output (outputNumChannels() is always 2)
+                if (readerChannels == 1)
                 {
                     // Mono to stereo: duplicate the mono channel
                     // Debug: Check if we have actual data
@@ -493,25 +493,11 @@ namespace jucyaudio
                     m_sourceTrackBlock.copyFrom(0, destStartOffset, sourceData0, (int)numSamplesToReadForThisTrackInBlock);
                     m_sourceTrackBlock.copyFrom(1, destStartOffset, sourceData0, (int)numSamplesToReadForThisTrackInBlock);
                 }
-                else if (readerChannels == 2 && outputNumChannels() == 2)
+                else // readerChannels == 2
                 {
                     // Stereo to stereo: direct copy
                     m_sourceTrackBlock.copyFrom(0, destStartOffset, sourceData0, (int)numSamplesToReadForThisTrackInBlock);
                     m_sourceTrackBlock.copyFrom(1, destStartOffset, sourceData1, (int)numSamplesToReadForThisTrackInBlock);
-                }
-                else if (readerChannels == 2 && outputNumChannels() == 1)
-                {
-                    // Stereo to mono: mix down
-                    auto* monoOut = m_sourceTrackBlock.getWritePointer(0);
-                    for (int i = 0; i < (int)numSamplesToReadForThisTrackInBlock; ++i)
-                    {
-                        monoOut[destStartOffset + i] = (sourceData0[i] + sourceData1[i]) * 0.5f;
-                    }
-                }
-                else if (readerChannels == 1 && outputNumChannels() == 1)
-                {
-                    // Mono to mono: direct copy
-                    m_sourceTrackBlock.copyFrom(0, destStartOffset, sourceData0, (int)numSamplesToReadForThisTrackInBlock);
                 }
             }
             else

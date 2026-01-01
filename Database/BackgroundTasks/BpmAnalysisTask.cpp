@@ -274,11 +274,11 @@ namespace jucyaudio
                 auto lastCommitTime = std::chrono::steady_clock::now();
                 auto lastProgressTime = std::chrono::steady_clock::now();
 
-                while (!shouldCancel)
+                while (!shouldCancel) // -V1044 this loop can be exited via external break signal
                 {
                     // Collect results from queue
                     {
-                        std::lock_guard<std::mutex> lock(resultsMutex);
+                        std::lock_guard<std::mutex> lock{resultsMutex};
                         while (!resultsQueue.empty() && resultsBatch.size() < batchSize)
                         {
                             resultsBatch.emplace_back(resultsQueue.front().trackId, resultsQueue.front().metadata);

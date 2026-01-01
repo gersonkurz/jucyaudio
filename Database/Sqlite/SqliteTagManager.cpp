@@ -102,7 +102,7 @@ namespace jucyaudio
                 // we can just return all tags from the cache
                 for (const auto &[id, name] : m_tagIdToName)
                 {
-                    if (!nameFilter || (nameFilter && name.find(*nameFilter) != std::string::npos))
+                    if (!nameFilter || name.find(*nameFilter) != std::string::npos)
                     {
                         tags.emplace_back(TagInfo{id, name}); // Return as vector of TagInfo
                     }
@@ -142,9 +142,8 @@ namespace jucyaudio
             }
 
             // After loop, check if getNextResult() returned false due to an error or SQLITE_DONE.
-            // m_done is true in both cases. m_db.getLastError() will contain message on error.
-            if (!stmt.isQueryEmpty() /* this means m_done is false, only possible if loop never ran due to immediate error */ ||
-                (stmt.isQueryEmpty() && !m_db.getLastError().empty()) /* m_done is true, but there was an error */)
+            // isQueryEmpty() is true in both cases. Check for error message.
+            if (!stmt.isQueryEmpty() || !m_db.getLastError().empty())
             {
                 spdlog::error("SqliteTagManager::getAllTags: Error during query execution or loop termination. DB error: {}", m_db.getLastError());
                 // Depending on severity, you might clear 'tags' or return what was gathered.

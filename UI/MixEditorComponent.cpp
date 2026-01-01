@@ -322,7 +322,12 @@ namespace jucyaudio
         void MixEditorComponent::loadMix(database::MixNode *node)
         {
             spdlog::info("[MixEditor] loadMix called with node: {}", node ? "valid" : "null");
-            assert(node != nullptr && "MixNode should not be null in loadMix()");
+            
+            if (!node)
+            {
+                spdlog::error("[MixEditor] loadMix called with null node pointer");
+                return;
+            }
 
             if (m_node)
             {

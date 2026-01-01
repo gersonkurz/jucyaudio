@@ -91,10 +91,10 @@ namespace jucyaudio
             const int processingBlockSize = 4096;
             m_mp3BufferSize = static_cast<int>(1.25 * processingBlockSize) + 7200;
             m_mp3Buffer = new unsigned char[m_mp3BufferSize];
-            if (!m_mp3Buffer)
-            {
-                return fail("MTE: Failed to allocate MP3 buffer");
-            }
+            //if (!m_mp3Buffer)
+            //{
+                //return fail("MTE: Failed to allocate MP3 buffer");
+            //}
 
             spdlog::info("MTE: LAME encoder initialized for MP3 output. Buffer size: {}", m_mp3BufferSize);
             return true;
@@ -190,7 +190,7 @@ namespace jucyaudio
                 if (bytes_encoded > 0)
                 {
                     spdlog::debug("LAME encode: input_samples={}, bytes_out={}, first_bytes=[{:02x} {:02x} {:02x} {:02x}]", numPcmSamplesForLame, bytes_encoded,
-                                  bytes_encoded > 0 ? m_mp3Buffer[0] : 0, bytes_encoded > 1 ? m_mp3Buffer[1] : 0, bytes_encoded > 2 ? m_mp3Buffer[2] : 0,
+                                  m_mp3Buffer[0], bytes_encoded > 1 ? m_mp3Buffer[1] : 0, bytes_encoded > 2 ? m_mp3Buffer[2] : 0,
                                   bytes_encoded > 3 ? m_mp3Buffer[3] : 0);
 
                     if (!m_outputStream->write(m_mp3Buffer, static_cast<size_t>(bytes_encoded)))

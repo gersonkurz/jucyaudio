@@ -61,9 +61,9 @@ namespace jucyaudio
 
                 // Convert to array indices
                 int version_idx = (version == 3) ? 0 : 1; // MPEG-1 or MPEG-2/2.5
-                int layer_idx = 3 - layer;                // Layer I, II, or III
+                int layer_idx = 3 - layer;                // Layer I, II, or III (layer is 2 bits, so layer_idx ∈ [0,3])
 
-                if (layer_idx < 0 || layer_idx > 2)
+                if (layer_idx > 2)
                     return 0;
 
                 return mp3_bitrates[version_idx][layer_idx][bitrate_index];
@@ -94,12 +94,10 @@ namespace jucyaudio
                 }
 
                 // Check for VBRI tag (usually at offset 36 from frame start)
-                if (bytesRead >= 40)
+                // Note: bytesRead is guaranteed >= 40 due to check above
+                if (memcmp(buffer.data() + 36, "VBRI", 4) == 0)
                 {
-                    if (memcmp(buffer.data() + 36, "VBRI", 4) == 0)
-                    {
-                        return true; // VBR detected
-                    }
+                    return true; // VBR detected
                 }
 
                 return false;

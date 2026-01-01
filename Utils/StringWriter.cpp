@@ -23,7 +23,11 @@ namespace jucyaudio
 
     StringWriter &StringWriter::operator=(StringWriter &&source) noexcept
     {
-        assert(this != &source);
+        if (this == &source)
+        {
+            return *this;  // Self-assignment guard
+        }
+        
         if (m_dynamic_buffer)
         {
             free(m_dynamic_buffer);

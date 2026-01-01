@@ -1290,8 +1290,8 @@ namespace jucyaudio
                 const int availableHeightForLanes = viewportHeight - rulerHeight;
                 const int numLanes = std::max(1, availableHeightForLanes / (trackHeight + yGap));
                 
-                // Only proceed if lanes would change or we haven't initialized yet
-                if (numLanes != m_cachedNumLanes || m_cachedNumLanes == -1)
+                // Only proceed if lanes would change (including first initialization when m_cachedNumLanes is -1)
+                if (numLanes != m_cachedNumLanes)
                 {
                     resized();
                 }
@@ -1445,8 +1445,6 @@ namespace jucyaudio
             {
                 m_mixLoader = mixLoader;
             }
-            if(!m_mixLoader)
-                return false;
             m_selectedTrack = nullptr;
             m_currentTimePosition = -1.0;
             m_trackViews.clear();
