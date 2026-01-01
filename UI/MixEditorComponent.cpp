@@ -1358,7 +1358,7 @@ namespace jucyaudio
                 return;
                 
             const auto mixId = m_node->getMixProjectLoader().getMixId();
-            const auto& mixMarkerManager = database::theTrackLibrary.getTrackDatabase()->getMixMarkerManager();
+            const auto& mixMarkerManager = database::theTrackLibrary.getTrackDatabase().getMixMarkerManager();
             const auto markers = mixMarkerManager.getMarkersForMix(mixId);
             
             m_markerRuler.setMarkers(markers);
@@ -1383,7 +1383,7 @@ namespace jucyaudio
         
         void MixEditorComponent::saveMixMarker(const database::MixMarker& marker)
         {
-            auto& mixMarkerManager = database::theTrackLibrary.getTrackDatabase()->getMixMarkerManager();
+            auto& mixMarkerManager = database::theTrackLibrary.getTrackDatabase().getMixMarkerManager();
             const auto result = marker.marker_id == 0 ? 
                 mixMarkerManager.addMarker(marker) : 
                 mixMarkerManager.updateMarker(marker);
@@ -1400,7 +1400,7 @@ namespace jucyaudio
         
         void MixEditorComponent::handleMarkerClick(MarkerId markerId)
         {
-            const auto& mixMarkerManager = database::theTrackLibrary.getTrackDatabase()->getMixMarkerManager();
+            const auto& mixMarkerManager = database::theTrackLibrary.getTrackDatabase().getMixMarkerManager();
             const auto marker = mixMarkerManager.getMarker(markerId);
             
             if (!marker.has_value())
@@ -1424,7 +1424,7 @@ namespace jucyaudio
                 {
                     if (result == 1) // Save
                     {
-                        const auto& mixMarkerManager = database::theTrackLibrary.getTrackDatabase()->getMixMarkerManager();
+                        const auto& mixMarkerManager = database::theTrackLibrary.getTrackDatabase().getMixMarkerManager();
                         auto marker = mixMarkerManager.getMarker(markerId);
                         if (marker.has_value())
                         {
@@ -1434,7 +1434,7 @@ namespace jucyaudio
                     }
                     else if (result == 2) // Delete
                     {
-                        auto& mixMarkerManager = database::theTrackLibrary.getTrackDatabase()->getMixMarkerManager();
+                        auto& mixMarkerManager = database::theTrackLibrary.getTrackDatabase().getMixMarkerManager();
                         const auto deleteResult = mixMarkerManager.deleteMarker(markerId);
                         if (deleteResult.isOk())
                         {

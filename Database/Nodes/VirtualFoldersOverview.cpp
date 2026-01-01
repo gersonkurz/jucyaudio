@@ -236,11 +236,7 @@ namespace jucyaudio
             if (!searchTerms.empty())
             {
                 // Get visible folders from database
-                const auto* trackDb = theTrackLibrary.getTrackDatabase();
-                if (trackDb)
-                {
-                    m_visibleFolderIds = trackDb->getFoldersContainingMatchingTracks(searchTerms);
-                }
+                theTrackLibrary.getTrackDatabase().getFoldersContainingMatchingTracks(searchTerms);
             }
 
             return true;

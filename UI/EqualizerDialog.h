@@ -15,7 +15,7 @@ namespace jucyaudio
         class EqualizerDialog : public SingletonDialog<EqualizerDialog>
         {
         public:
-            EqualizerDialog(database::ITrackDatabase *trackDb,
+            EqualizerDialog(
                 std::function<void(const audio::model::EQSettings &)> onSettingsChanged,
                 const audio::model::EQSettings &initialSettings = {});
             ~EqualizerDialog() override;
@@ -37,7 +37,6 @@ namespace jucyaudio
              * @param onSettingsChanged Callback when settings change
              */
             static void showEqualizerDialog(juce::Component *centreAroundComponent,
-                database::ITrackDatabase *trackDb,
                 std::function<void(const audio::model::EQSettings &)> onSettingsChanged,
                 const audio::model::EQSettings &initialSettings = {});
 

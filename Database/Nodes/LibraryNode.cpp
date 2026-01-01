@@ -128,12 +128,13 @@ namespace jucyaudio
                 return true;
             }
 
-            auto* db = theTrackLibrary.getTrackDatabase();
-            if (!db)
+            if(!theTrackLibrary.isInitialised())
             {
-                spdlog::error("[LibraryNode] Cannot delete tracks: database not initialized");
+                spdlog::error("[LibraryNode] Cannot delete tracks: TrackLibrary not initialised");
                 return false;
             }
+
+            auto& db = theTrackLibrary.getTrackDatabase();
 
             // Step 1: If deleteFiles is true, delete the physical files
             int filesDeleted = 0;
@@ -149,7 +150,7 @@ namespace jucyaudio
                         continue;
                     }
 
-                    const auto fullPath = db->reconstructFullPath(trackInfo.value());
+                    const auto fullPath = db.reconstructFullPath(trackInfo.value());
                     if (fullPath.empty())
                     {
                         spdlog::warn("[LibraryNode] Cannot reconstruct path for track {}, skipping file deletion", trackId);
@@ -185,7 +186,7 @@ namespace jucyaudio
             }
 
             // Step 2: Delete from database (always do this, even if file deletion failed)
-            const auto result = db->deleteTracksFromLibrary(trackIds);
+            const auto result = db.deleteTracksFromLibrary(trackIds);
             if (!result.isOk())
             {
                 spdlog::error("[LibraryNode] Failed to delete tracks from database: {}", result.errorMessage);
@@ -223,14 +224,14 @@ namespace jucyaudio
 
         bool LibraryNode::getAggregateStats(AggregateStats& outStats) const
         {
-            const auto* trackDb = theTrackLibrary.getTrackDatabase();
-            if (!trackDb)
+            if(!theTrackLibrary.isInitialised())
             {
                 outStats.reset();
                 return false;
             }
+            const auto& trackDb = theTrackLibrary.getTrackDatabase();
 
-            return trackDb->getAggregateStats(m_queryArgs, outStats);
+            return trackDb.getAggregateStats(m_queryArgs, outStats);
         }
 
         bool LibraryNode::setSortOrder(const std::vector<SortOrderInfo> &sortOrders)
@@ -480,7 +481,7 @@ namespace jucyaudio
         std::vector<TrackId> LibraryNode::getAllTrackIds() const
         {
             // This will delegate to a new method in the database layer
-            return theTrackLibrary.getTrackDatabase()->getTrackIds(m_queryArgs);
+            return theTrackLibrary.getTrackDatabase().getTrackIds(m_queryArgs);
         }
 
     } // namespace database

@@ -15,7 +15,7 @@ namespace jucyaudio
         class ReverbDialog : public SingletonDialog<ReverbDialog>
         {
         public:
-            ReverbDialog(database::ITrackDatabase *trackDb,
+            ReverbDialog(
                 std::function<void(const audio::model::ReverbSettings &)> onSettingsChanged,
                 const audio::model::ReverbSettings &initialSettings = {});
             ~ReverbDialog() override;
@@ -37,7 +37,6 @@ namespace jucyaudio
              * @param onSettingsChanged Callback when settings change
              */
             static void showReverbDialog(juce::Component *centreAroundComponent,
-                database::ITrackDatabase *trackDb,
                 std::function<void(const audio::model::ReverbSettings &)> onSettingsChanged,
                 const audio::model::ReverbSettings &initialSettings = {});
 

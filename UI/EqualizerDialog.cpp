@@ -1,12 +1,13 @@
 #include "EqualizerDialog.h"
 #include <Database/Sqlite/SqliteTrackDatabase.h>
 #include <spdlog/spdlog.h>
+#include <Database/TrackLibrary.h>
 
 namespace jucyaudio
 {
     namespace ui
     {
-        EqualizerDialog::EqualizerDialog(database::ITrackDatabase *trackDb,
+        EqualizerDialog::EqualizerDialog(
             std::function<void(const audio::model::EQSettings &)> onSettingsChanged,
             const audio::model::EQSettings &initialSettings)
             : SingletonDialog{"Equalizer",
@@ -18,7 +19,7 @@ namespace jucyaudio
             m_equalizerComponent = std::make_unique<EqualizerComponent>();
 
             // Load presets from database
-            if (auto *sqliteDb = dynamic_cast<database::SqliteTrackDatabase *>(trackDb))
+            if (auto *sqliteDb = dynamic_cast<database::SqliteTrackDatabase*>(&database::theTrackLibrary.getTrackDatabase()))
             {
                 auto presets = sqliteDb->getEQPresetManager().getAllPresets();
                 m_equalizerComponent->loadPresets(presets);
@@ -114,11 +115,10 @@ namespace jucyaudio
         }
 
         void EqualizerDialog::showEqualizerDialog(juce::Component *centreAroundComponent,
-            database::ITrackDatabase *trackDb,
             std::function<void(const audio::model::EQSettings &)> onSettingsChanged,
             const audio::model::EQSettings &initialSettings)
         {
-            showSingletonDialog(centreAroundComponent, trackDb, onSettingsChanged, initialSettings);
+            showSingletonDialog(centreAroundComponent, onSettingsChanged, initialSettings);
         }
     } // namespace ui
 } // namespace jucyaudio

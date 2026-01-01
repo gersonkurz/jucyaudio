@@ -20,7 +20,7 @@ namespace jucyaudio
 
         std::filesystem::path TrackInfo::reconstructFullPath() const
         {
-            return theTrackLibrary.getTrackDatabase()->reconstructFullPath(*this);
+            return theTrackLibrary.getTrackDatabase().reconstructFullPath(*this);
         }
 
         TrackLibrary::TrackLibrary()
@@ -47,26 +47,22 @@ namespace jucyaudio
             spdlog::info("Initialising TrackLibrary with database: {}",
                          databaseFilePath.string());
 
-            m_database = new SqliteTrackDatabase{};
-
-            DbResult connectResult = m_database->connect(databaseFilePath);
+            DbResult connectResult = m_builtinDatabase.connect(databaseFilePath);
             if (!connectResult.isOk())
             {
                 spdlog::error(
                     "TrackLibrary initialisation failed - DB connect: {}",
                     connectResult.errorMessage);
-                delete m_database;
-                m_database = nullptr;
                 return false;
             }
-            m_scanner = new TrackScanner{*m_database}; // Scanner needs the DB
+            m_scanner = new TrackScanner{m_builtinDatabase}; // Scanner needs the DB
 
             // First, initialize the folder database cache
-            auto& folderDb = m_database->getFolderDatabase();
+            auto& folderDb = m_builtinDatabase.getFolderDatabase();
             dynamic_cast<SqliteFolderDatabase&>(folderDb).initialize();
             
             // Then refresh root statuses
-            auto& rootManager = m_database->getLibraryRootManager();
+            auto& rootManager = m_builtinDatabase.getLibraryRootManager();
             rootManager.refreshRootStatuses();
             
             // Finally, build the offline folders table
@@ -89,12 +85,7 @@ namespace jucyaudio
                 delete m_scanner;
                 m_scanner = nullptr;
             }
-            if (m_database)
-            {
-                m_database->close();
-                delete m_database;
-                m_database = nullptr;
-            }
+            m_builtinDatabase.close();
             m_isInitialised = false;
             spdlog::info("TrackLibrary shut down.");
         }
@@ -118,27 +109,27 @@ namespace jucyaudio
 
         DbResult TrackLibrary::saveWaveform(TrackId trackId, const std::vector<unsigned char>& blob)
         {
-            if (!m_isInitialised || !m_database)
+            if (!m_isInitialised)
             {
                 setLastError("TrackLibrary not initialised.");
                 return DbResult::failure(DbResultStatus::ErrorConnection, "Database not initialised.");
             }
-            return m_database->saveWaveform(trackId, blob);
+            return m_builtinDatabase.saveWaveform(trackId, blob);
         }
 
         DbResult TrackLibrary::loadWaveform(TrackId trackId, std::vector<unsigned char>& blob)
         {
-            if (!m_isInitialised || !m_database)
+            if (!m_isInitialised)
             {
                 setLastError("TrackLibrary not initialised.");
                 return DbResult::failure(DbResultStatus::ErrorConnection, "Database not initialised.");
             }
-            return m_database->loadWaveform(trackId, blob);
+            return m_builtinDatabase.loadWaveform(trackId, blob);
         }
 
         bool TrackLibrary::isTrackOnline(TrackId trackId) const
         {
-            if (!m_isInitialised || !m_database)
+            if (!m_isInitialised)
             {
                 setLastError("TrackLibrary not initialised.");
                 return false;
@@ -157,7 +148,7 @@ namespace jucyaudio
 
             // Not in cache, need to determine the track's root
             // Get track info to get its folder
-            auto trackInfo = m_database->getTrackById(trackId);
+            auto trackInfo = m_builtinDatabase.getTrackById(trackId);
             if (!trackInfo.has_value())
             {
                 // Track doesn't exist
@@ -167,7 +158,7 @@ namespace jucyaudio
             }
 
             // Get the folder's full path
-            auto &folderDb = m_database->getFolderDatabase();
+            auto &folderDb = m_builtinDatabase.getFolderDatabase();
             auto folderInfo = folderDb.getFolderById(trackInfo->folderId);
             if (!folderInfo.has_value())
             {
@@ -182,7 +173,7 @@ namespace jucyaudio
             spdlog::info("  Track folder: '{}'", folderPath);
 
             // Check which library root this folder belongs to
-            auto &rootManager = m_database->getLibraryRootManager();
+            auto &rootManager = m_builtinDatabase.getLibraryRootManager();
             const auto roots = rootManager.getAllRoots();
             
             spdlog::info("  Checking against {} roots", roots.size());
@@ -231,9 +222,9 @@ namespace jucyaudio
             m_currentSearchTerms = searchTerms;
             m_visibleFolderIds.clear();
 
-            if (!searchTerms.empty() && m_database)
+            if (!searchTerms.empty())
             {
-                m_visibleFolderIds = m_database->getFoldersContainingMatchingTracks(searchTerms);
+                m_visibleFolderIds = m_builtinDatabase.getFoldersContainingMatchingTracks(searchTerms);
                 spdlog::info("TrackLibrary: Folder filter set, {} visible folders", m_visibleFolderIds.size());
             }
             else

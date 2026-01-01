@@ -1734,7 +1734,7 @@ namespace jucyaudio
                     TrackQueryArgs tqa{};
                     tqa.workingSetId = m_workingSetId;
                     tqa.usePaging = false;
-                    const auto allTracks{theTrackLibrary.getTrackDatabase()->getTracks(tqa)};
+                    const auto allTracks{theTrackLibrary.getTrackDatabase().getTracks(tqa)};
                     spdlog::info("Found a total of {} tracks in working set {}", allTracks.size(), m_workingSetId);
 
                     std::vector<TrackId> trackIdsToRemove;
@@ -1936,7 +1936,7 @@ namespace jucyaudio
                     // Update track status to bad_format if it wasn't already marked
                     if (track.status != database::TrackStatus::BadFormat)
                     {
-                        theTrackLibrary.getTrackDatabase()->updateTrackStatus(track.trackId, database::TrackStatus::BadFormat);
+                        theTrackLibrary.getTrackDatabase().updateTrackStatus(track.trackId, database::TrackStatus::BadFormat);
                     }
                 }
                 else
@@ -1944,7 +1944,7 @@ namespace jucyaudio
                     // Update track status to ok if it wasn't already marked
                     if (track.status != database::TrackStatus::Ok)
                     {
-                        theTrackLibrary.getTrackDatabase()->updateTrackStatus(track.trackId, database::TrackStatus::Ok);
+                        theTrackLibrary.getTrackDatabase().updateTrackStatus(track.trackId, database::TrackStatus::Ok);
                     }
 
                     // Load waveform when playback starts successfully
@@ -3802,15 +3802,12 @@ namespace jucyaudio
 
         void MainComponent::showEqualizerWindow()
         {
-            auto *trackDb = theTrackLibrary.getTrackDatabase();
-
             // Get current settings from playback controller
             auto currentSettings = m_playbackController.getCurrentEQSettings();
 
             EqualizerDialog::showEqualizerDialog(
                 this,
-                trackDb,
-                [this](const audio::model::EQSettings &settings)
+               [this](const audio::model::EQSettings &settings)
                 {
                     // Update the playback controller when settings change
                     m_playbackController.updateMasterEQ(settings);
@@ -3847,14 +3844,11 @@ namespace jucyaudio
 
         void MainComponent::showReverbWindow()
         {
-            auto *trackDb = theTrackLibrary.getTrackDatabase();
-
             // Get current settings from playback controller
             auto currentSettings = m_playbackController.getCurrentReverbSettings();
 
             ReverbDialog::showReverbDialog(
                 this,
-                trackDb,
                 [this](const audio::model::ReverbSettings &settings)
                 {
                     // Update the playback controller when settings change

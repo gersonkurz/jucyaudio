@@ -138,7 +138,7 @@ namespace jucyaudio
                                     if (!audioFile.existsAsFile())
                                     {
                                         spdlog::debug("File does not exist: {}", trackPath.string());
-                                        theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
+                                        theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
                                         {
                                             std::lock_guard<std::mutex> lock(badFilesMutex);
                                             badFiles.push_back(*trackInfo);
@@ -156,7 +156,7 @@ namespace jucyaudio
                                         if (!mp3Info.has_value())
                                         {
                                             // File should be skipped (VBR, low bitrate, or too large)
-                                            theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
+                                            theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
                                             {
                                                 std::lock_guard<std::mutex> lock(badFilesMutex);
                                                 badFiles.push_back(*trackInfo);
@@ -188,7 +188,7 @@ namespace jucyaudio
                                     if (!reader)
                                     {
                                         spdlog::debug("Cannot create reader for: {}", trackPath.string());
-                                        theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
+                                        theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
                                         {
                                             std::lock_guard<std::mutex> lock(badFilesMutex);
                                             badFiles.push_back(*trackInfo);
@@ -241,7 +241,7 @@ namespace jucyaudio
                                 catch (const std::exception &e)
                                 {
                                     spdlog::debug("Exception reading track {}: {}", trackInfo->trackId, e.what());
-                                    theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
+                                    theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
                                     {
                                         std::lock_guard<std::mutex> lock(badFilesMutex);
                                         badFiles.push_back(*trackInfo);
@@ -251,7 +251,7 @@ namespace jucyaudio
                                 catch (...)
                                 {
                                     spdlog::debug("Unknown exception reading track {}", trackInfo->trackId);
-                                    theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
+                                    theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
                                     {
                                         std::lock_guard<std::mutex> lock(badFilesMutex);
                                         badFiles.push_back(*trackInfo);
@@ -317,7 +317,7 @@ namespace jucyaudio
 
                     if (shouldCommit && !resultsBatch.empty())
                     {
-                        theTrackLibrary.getTrackDatabase()->updateTrackBpm(resultsBatch);
+                        theTrackLibrary.getTrackDatabase().updateTrackBpm(resultsBatch);
                         tracksWritten += resultsBatch.size();
                         resultsBatch.clear();
                         lastCommitTime = now;
@@ -373,7 +373,7 @@ namespace jucyaudio
                 if (!resultsBatch.empty() && !shouldCancel)
                 {
                     spdlog::debug("Committing final {} results", resultsBatch.size());
-                    theTrackLibrary.getTrackDatabase()->updateTrackBpm(resultsBatch);
+                    theTrackLibrary.getTrackDatabase().updateTrackBpm(resultsBatch);
                     tracksWritten += resultsBatch.size();
                 }
 

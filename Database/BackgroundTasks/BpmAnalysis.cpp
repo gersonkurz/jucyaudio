@@ -24,7 +24,7 @@ namespace jucyaudio
                 }
 
                 // --- 1. Get a track to process ---
-                std::optional<TrackInfo> trackOpt = theTrackLibrary.getTrackDatabase()->getNextTrackForBpmAnalysis();
+                std::optional<TrackInfo> trackOpt = theTrackLibrary.getTrackDatabase().getNextTrackForBpmAnalysis();
                 if (!trackOpt)
                 {
                     spdlog::info("BPM Analysis Task: No tracks available for analysis.");
@@ -45,7 +45,7 @@ namespace jucyaudio
                     spdlog::error("Failed to analyze '{}' - marking as bad format", trackPath.filename().string());
 
                     // Mark the track as bad format so it won't be retried
-                    theTrackLibrary.getTrackDatabase()->updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
+                    theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
                 }
                 else
                 {
@@ -56,7 +56,7 @@ namespace jucyaudio
                         am.hasIntro,
                         am.hasOutro);
 
-                    theTrackLibrary.getTrackDatabase()->updateTrackBpm(trackInfo.trackId, am);
+                    theTrackLibrary.getTrackDatabase().updateTrackBpm(trackInfo.trackId, am);
                 }
             }
         } // namespace background_tasks

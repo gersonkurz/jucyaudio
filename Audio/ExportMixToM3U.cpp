@@ -31,13 +31,14 @@ namespace jucyaudio
                 return false;
             }
 
-            // Get track database for track info lookup
-            const auto *trackDb{theTrackLibrary.getTrackDatabase()};
-            if (!trackDb)
+            if(!theTrackLibrary.isInitialised())
             {
-                spdlog::error("ExportMixToM3U: Track database not available");
+                spdlog::error("ExportMixToM3U: TrackLibrary is not initialised");
                 return false;
             }
+
+            // Get track database for track info lookup
+            const auto& trackDb{ theTrackLibrary.getTrackDatabase() };
 
             // Open output file
             std::ofstream outFile{targetFilepath, std::ios::out | std::ios::binary};
@@ -85,7 +86,7 @@ namespace jucyaudio
                 }
 
                 // Get track info
-                const auto trackInfo{trackDb->getTrackById(mixTrack.trackId)};
+                const auto trackInfo{ trackDb.getTrackById(mixTrack.trackId) };
                 if (!trackInfo.has_value())
                 {
                     spdlog::warn("ExportMixToM3U: Track ID {} not found, skipping", mixTrack.trackId);

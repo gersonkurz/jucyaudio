@@ -214,11 +214,8 @@ namespace jucyaudio
                 // Now that the mix is successfully created, increment the mix counter
                 if (m_source_ws_id > 0)
                 {
-                    auto* trackDb = database::theTrackLibrary.getTrackDatabase();
-                    if (trackDb)
-                    {
-                        trackDb->getWorkingSetManager().incrementMixNumber(m_source_ws_id);
-                    }
+                    auto& trackDb = database::theTrackLibrary.getTrackDatabase();
+                    trackDb.getWorkingSetManager().incrementMixNumber(m_source_ws_id);
                 }
 
                 if (m_onOkCallback)
@@ -408,12 +405,9 @@ namespace jucyaudio
             int mixNumber = 0;
             if (m_source_ws_id > 0)
             {
-                auto* trackDb = database::theTrackLibrary.getTrackDatabase();
-                if (trackDb)
-                {
-                    auto& wsManager = trackDb->getWorkingSetManager();
-                    mixNumber = wsManager.getNextMixNumber(m_source_ws_id);
-                }
+                auto& trackDb = database::theTrackLibrary.getTrackDatabase();
+                auto& wsManager = trackDb.getWorkingSetManager();
+                mixNumber = wsManager.getNextMixNumber(m_source_ws_id);
             }
 
             auto now = std::time(nullptr);

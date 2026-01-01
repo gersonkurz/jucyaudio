@@ -129,6 +129,10 @@ namespace jucyaudio
 
             // Get all folders (including ancestors) that contain tracks matching the search terms
             std::unordered_set<FolderId> getFoldersContainingMatchingTracks(const std::vector<std::string> &searchTerms) const override;
+            
+            // Waveform Cache
+            DbResult saveWaveform(TrackId trackId, const std::vector<unsigned char>& blob) override;
+            DbResult loadWaveform(TrackId trackId, std::vector<unsigned char>& blob) override;
 
         private:
             template <typename T>
@@ -161,9 +165,6 @@ namespace jucyaudio
             int getDBSchemaVersion() const;
             DbResult setDBSchemaVersion(int version);
 
-        // Waveform Cache
-        DbResult saveWaveform(TrackId trackId, const std::vector<unsigned char>& blob) override;
-        DbResult loadWaveform(TrackId trackId, std::vector<unsigned char>& blob) override;
             DbResult runMigrations(); // Calls specific migration steps
         };
 

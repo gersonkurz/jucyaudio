@@ -63,102 +63,98 @@ namespace jucyaudio
                 return m_lastErrorMessage;
             }
 
-            ITrackDatabase *getTrackDatabase() const
+            ITrackDatabase& getTrackDatabase() const
             {
-                if (!m_isInitialised || !m_database)
-                {
-                    setLastError("TrackLibrary not initialised.");
-                    return nullptr;
-                }
-                return m_database;
+                assert(m_isInitialised);
+                return m_builtinDatabase;
             }
 
             ITagManager *getTagManager()
             {
-                if (!m_isInitialised || !m_database)
+                if (!m_isInitialised)
                 {
                     setLastError("TrackLibrary not initialised.");
                     return nullptr;
                 }
-                return &m_database->getTagManager();
+                return &m_builtinDatabase.getTagManager();
             }
 
             const IMixManager &getMixManager() const
             {
-                return m_database->getMixManager();
+                return m_builtinDatabase.getMixManager();
             }
 
             IFolderDatabase &getFolderDatabase() const
             {
                 // why not check for database? Because if you ever get here, whole application state is broken anyway
                 // and references are preferable to avoid repeating null checks.
-                return m_database->getFolderDatabase();
+                return m_builtinDatabase.getFolderDatabase();
             }
 
             IWorkingSetManager &getWorkingSetManager() const
             {
-                return m_database->getWorkingSetManager();
+                return m_builtinDatabase.getWorkingSetManager();
             }
             
             IMarkerManager &getMarkerManager() const
             {
-                return m_database->getMarkerManager();
+                return m_builtinDatabase.getMarkerManager();
             }
 
             IAlbumManager &getAlbumManager() const
             {
-                return m_database->getAlbumManager();
+                return m_builtinDatabase.getAlbumManager();
             }
 
             ILibraryRootManager& getLibraryRootManager()
             {
-                return m_database->getLibraryRootManager();
+                return m_builtinDatabase.getLibraryRootManager();
             }
 
             const ILibraryRootManager &getLibraryRootManager() const
             {
-                return m_database->getLibraryRootManager();
+                return m_builtinDatabase.getLibraryRootManager();
             }
 
             
             int getTotalTrackCount(const TrackQueryArgs &baseFilters = TrackQueryArgs{}) const
             {
-                if (!m_isInitialised || !m_database)
+                if (!m_isInitialised)
                 {
                     setLastError("TrackLibrary not initialised.");
                     return 0;
                 }
-                return m_database->getTotalTrackCount(baseFilters);
+                return m_builtinDatabase.getTotalTrackCount(baseFilters);
             }
 
             bool runMaintenanceTasks(std::atomic<bool> &shouldCancel)
             {
-                if (!m_isInitialised || !m_database)
+                if (!m_isInitialised)
                 {
                     setLastError("TrackLibrary not initialised.");
                     return false;
                 }
-                return m_database->runMaintenanceTasks(shouldCancel);
+                return m_builtinDatabase.runMaintenanceTasks(shouldCancel);
             }
             
             bool runMaintenanceTasks(std::atomic<bool> &shouldCancel, ITrackDatabase::MaintenanceProgressCallback progressCb)
             {
-                if (!m_isInitialised || !m_database)
+                if (!m_isInitialised)
                 {
                     setLastError("TrackLibrary not initialised.");
                     return false;
                 }
-                return m_database->runMaintenanceTasks(shouldCancel, progressCb);
+                return m_builtinDatabase.runMaintenanceTasks(shouldCancel, progressCb);
             }
 
             std::optional<TrackInfo> getTrackById(TrackId trackId) const
             {
-                if (!m_isInitialised || !m_database)
+                if (!m_isInitialised)
                 {
                     setLastError("TrackLibrary not initialised.");
                     return std::nullopt;
                 }
-                return m_database->getTrackById(trackId);
+                return m_builtinDatabase.getTrackById(trackId);
             }
 
             // Waveform Cache
@@ -167,12 +163,12 @@ namespace jucyaudio
 
             std::vector<TrackInfo> getTracks(const TrackQueryArgs &args) const
             {
-                if (!m_isInitialised || !m_database)
+                if (!m_isInitialised)
                 {
                     setLastError("TrackLibrary not initialised.");
                     return std::vector<TrackInfo>{};
                 }
-                return m_database->getTracks(args);
+                return m_builtinDatabase.getTracks(args);
             }
 
             /**
@@ -203,7 +199,6 @@ namespace jucyaudio
             }
 
         private:
-            ITrackDatabase *m_database{nullptr};
             TrackScanner *m_scanner{nullptr};
             bool m_isInitialised{false};
             mutable std::string m_lastErrorMessage; // For getLastError()
@@ -214,7 +209,9 @@ namespace jucyaudio
             // Shared folder filter state
             mutable std::vector<std::string> m_currentSearchTerms;
             mutable std::unordered_set<FolderId> m_visibleFolderIds;
-            SqliteTrackDatabase m_builtinDatabase;
+
+        protected:
+            mutable SqliteTrackDatabase m_builtinDatabase;
         };
 
         extern TrackLibrary theTrackLibrary;

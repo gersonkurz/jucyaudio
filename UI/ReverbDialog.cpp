@@ -1,12 +1,13 @@
 #include "ReverbDialog.h"
 #include <Database/Sqlite/SqliteTrackDatabase.h>
 #include <spdlog/spdlog.h>
+#include <Database/TrackLibrary.h>
 
 namespace jucyaudio
 {
     namespace ui
     {
-        ReverbDialog::ReverbDialog(database::ITrackDatabase *trackDb,
+        ReverbDialog::ReverbDialog(
             std::function<void(const audio::model::ReverbSettings &)> onSettingsChanged,
             const audio::model::ReverbSettings &initialSettings)
             : SingletonDialog{"Reverb",
@@ -18,7 +19,7 @@ namespace jucyaudio
             m_reverbComponent = std::make_unique<ReverbComponent>();
 
             // Load presets from database
-            if (auto *sqliteDb = dynamic_cast<database::SqliteTrackDatabase *>(trackDb))
+            if (auto *sqliteDb = dynamic_cast<database::SqliteTrackDatabase *>(&database::theTrackLibrary.getTrackDatabase()))
             {
                 auto presets = sqliteDb->getReverbPresetManager().getAllPresets();
                 m_reverbComponent->loadPresets(presets);
@@ -114,11 +115,10 @@ namespace jucyaudio
         }
 
         void ReverbDialog::showReverbDialog(juce::Component *centreAroundComponent,
-            database::ITrackDatabase *trackDb,
             std::function<void(const audio::model::ReverbSettings &)> onSettingsChanged,
             const audio::model::ReverbSettings &initialSettings)
         {
-            showSingletonDialog(centreAroundComponent, trackDb, onSettingsChanged, initialSettings);
+            showSingletonDialog(centreAroundComponent, onSettingsChanged, initialSettings);
         }
     } // namespace ui
 } // namespace jucyaudio

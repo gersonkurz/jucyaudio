@@ -157,7 +157,7 @@ namespace jucyaudio
                     Duration_t totalDuration{0};
                     for (const auto trackId : trackIds)
                     {
-                        if (const auto trackInfo = trackLibrary.getTrackDatabase()->getTrackById(trackId))
+                        if (const auto trackInfo = trackLibrary.getTrackDatabase().getTrackById(trackId))
                         {
                             totalDuration += trackInfo->duration;
                         }

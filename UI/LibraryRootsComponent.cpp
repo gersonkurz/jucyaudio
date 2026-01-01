@@ -52,7 +52,7 @@ namespace jucyaudio
                     theTrackLibrary.scanLibrary(m_idsToScan, m_bForceRescan, m_bRemoveMissingFiles, progressCb, completionCb, &shouldCancel);
                     
                     // After scan completes, invalidate folder cache to recalculate track counts
-                    auto &db = *theTrackLibrary.getTrackDatabase();
+                    auto &db = theTrackLibrary.getTrackDatabase();
                     auto &rootManager = db.getLibraryRootManager();
                     auto &folderDb = db.getFolderDatabase();
                     //auto &albumManager = db.getAlbumManager();
@@ -102,7 +102,7 @@ namespace jucyaudio
         };
 
         LibraryRootsComponent::LibraryRootsComponent()
-            : m_db{*theTrackLibrary.getTrackDatabase()},
+            : m_db{theTrackLibrary.getTrackDatabase()},
               m_rootManager{m_db.getLibraryRootManager()},
               m_rootFoldersTable{"rootFoldersTable", this},
               m_titleLabel{"titleLabel", "Library Roots"}
@@ -228,7 +228,7 @@ namespace jucyaudio
                 m_rootManager.refreshRootStatuses();
                 
                 // Rebuild the offline folders table
-                auto& folderDb = theTrackLibrary.getTrackDatabase()->getFolderDatabase();
+                auto& folderDb = theTrackLibrary.getTrackDatabase().getFolderDatabase();
                 dynamic_cast<database::SqliteFolderDatabase&>(folderDb).rebuildOfflineFoldersTable(m_rootManager);
                 
                 loadRoots();  // Reload the display to show updated status
