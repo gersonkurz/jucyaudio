@@ -1232,7 +1232,7 @@ namespace jucyaudio
                     {
                         sampleIds.push_back(item.first);
                     }
-                    std::mt19937 rng{0xC0D3u}; // stable seed for reproducible samples
+                    std::mt19937 rng{0xC0D3u}; // stable seed for reproducible samples //-V1057
                     std::shuffle(sampleIds.begin(), sampleIds.end(), rng);
                     const size_t sampleCount = std::min<size_t>(10, sampleIds.size());
                     for (size_t i = 0; i < sampleCount; ++i)

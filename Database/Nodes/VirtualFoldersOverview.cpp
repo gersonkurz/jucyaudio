@@ -97,7 +97,7 @@ namespace jucyaudio
 
             loadRootFolders();
 
-            if (rowIndex < 0 || rowIndex >= static_cast<RowIndex_t>(m_rootFolders.size()))
+            if (rowIndex >= static_cast<RowIndex_t>(m_rootFolders.size()))
                 return info;
 
             const auto &folder = m_rootFolders[rowIndex];
@@ -141,7 +141,7 @@ namespace jucyaudio
 
             loadRootFolders();
 
-            if (rowIndex >= 0 && rowIndex < static_cast<RowIndex_t>(m_rootFolders.size()))
+            if (rowIndex < static_cast<RowIndex_t>(m_rootFolders.size()))
             {
                 const auto &folder = m_rootFolders[rowIndex];
                 result.type = RowActivationResultType::NavigateToNode;

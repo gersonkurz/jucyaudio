@@ -142,11 +142,11 @@ namespace jucyaudio
             case DataAction::EditWorkingSetMetadata:
                 return loadSvg(BinaryData::edit_workingset_metadata_svg, BinaryData::edit_workingset_metadata_svgSize); // Placeholder
             case DataAction::EditMixMetadata:
-                return loadSvg(BinaryData::edit_mix_metadata_svg, BinaryData::edit_mix_metadata_svgSize); // Placeholder
+                return loadSvg(BinaryData::edit_mix_metadata_svg, BinaryData::edit_mix_metadata_svgSize); // Placeholder //-V1037
             case DataAction::RemoveTracks:
                 return loadSvg(BinaryData::remove_tracks_svg, BinaryData::remove_tracks_svgSize); // Placeholder
             case DataAction::Delete:
-                return loadSvg(BinaryData::delete_svg, BinaryData::delete_svgSize); // Placeholder
+                return loadSvg(BinaryData::delete_svg, BinaryData::delete_svgSize); // Placeholder //-V1037
             case DataAction::ExportMix:
                 return loadSvg(BinaryData::export_mix_svg, BinaryData::export_mix_svgSize); // Placeholder
             case DataAction::RunBpmAnalysis:

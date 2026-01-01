@@ -58,7 +58,7 @@ namespace jucyaudio
 
             const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const
             {
-                if (rowIndex < 0 || rowIndex >= static_cast<RowIndex_t>(m_mixTracks.size()))
+                if (rowIndex >= static_cast<RowIndex_t>(m_mixTracks.size()))
                 {
                     return nullptr; // Out of bounds
                 }

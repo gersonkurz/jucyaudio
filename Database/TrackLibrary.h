@@ -10,6 +10,7 @@
 #include <Database/Includes/TrackInfo.h>
 #include <Database/Includes/TrackQueryArgs.h>
 #include <Database/TrackScanner.h>
+#include <Database/Sqlite/SqliteTrackDatabase.h>
 #include <filesystem> // For std::filesystem::path
 #include <memory>     // For std::unique_ptr
 #include <spdlog/spdlog.h>
@@ -213,6 +214,7 @@ namespace jucyaudio
             // Shared folder filter state
             mutable std::vector<std::string> m_currentSearchTerms;
             mutable std::unordered_set<FolderId> m_visibleFolderIds;
+            SqliteTrackDatabase m_builtinDatabase;
         };
 
         extern TrackLibrary theTrackLibrary;

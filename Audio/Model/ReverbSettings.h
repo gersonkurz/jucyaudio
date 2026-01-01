@@ -95,11 +95,19 @@ namespace jucyaudio
                     return settings;
                 }
 
-                // Equality comparison
+                // Equality comparison with epsilon tolerance for floating-point values
                 bool operator==(const ReverbSettings &other) const
                 {
-                    return roomSize == other.roomSize && damping == other.damping && wetLevel == other.wetLevel && dryLevel == other.dryLevel &&
-                           width == other.width && freezeMode == other.freezeMode && isActive == other.isActive;
+                    constexpr float epsilon = 1e-6f;
+                    auto floatEqual = [epsilon](float a, float b) { return std::abs(a - b) < epsilon; };
+                    
+                    return floatEqual(roomSize, other.roomSize) && 
+                           floatEqual(damping, other.damping) && 
+                           floatEqual(wetLevel, other.wetLevel) && 
+                           floatEqual(dryLevel, other.dryLevel) &&
+                           floatEqual(width, other.width) && 
+                           floatEqual(freezeMode, other.freezeMode) && 
+                           isActive == other.isActive;
                 }
 
                 bool operator!=(const ReverbSettings &other) const

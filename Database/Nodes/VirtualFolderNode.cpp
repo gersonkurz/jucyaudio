@@ -457,7 +457,7 @@ namespace jucyaudio
                         // Build query to get all tracks from these folders
                         TrackQueryArgs args;
                         args.folderIds = std::vector<FolderId>{allChildFolders.begin(), allChildFolders.end()};
-                        args.recursive = false; // We already have all child folders
+                        assert(args.recursive == false); // We already have all child folders
                         args.usePaging = false;
                         
                         // Get all tracks from these folders

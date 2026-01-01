@@ -235,7 +235,7 @@ namespace jucyaudio
                 const_cast<AlbumsNode *>(this)->prepareToShowData();
             }
 
-            if (rowIndex < 0 || rowIndex >= static_cast<RowIndex_t>(m_albums.size()))
+            if (rowIndex >= static_cast<RowIndex_t>(m_albums.size()))
             {
                 return "";
             }
@@ -302,7 +302,7 @@ namespace jucyaudio
                 const_cast<AlbumsNode *>(this)->prepareToShowData();
             }
 
-            if (rowIndex < 0 || rowIndex >= static_cast<RowIndex_t>(m_albums.size()))
+            if (rowIndex >= static_cast<RowIndex_t>(m_albums.size()))
             {
                 return nullptr;
             }
@@ -401,7 +401,7 @@ namespace jucyaudio
         RowActivationResult AlbumsNode::onRowActivated(RowIndex_t rowIndex)
         {
             // Check if we have a valid album at this row
-            if (rowIndex >= 0 && rowIndex < static_cast<RowIndex_t>(m_albums.size()))
+            if (rowIndex < static_cast<RowIndex_t>(m_albums.size()))
             {
                 const auto& album = m_albums[rowIndex];
                 
