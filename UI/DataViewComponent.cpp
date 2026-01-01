@@ -503,7 +503,7 @@ namespace jucyaudio
                 const auto &columnToSortBy = m_currentDataColumns[dataColumnIndex];
                 std::vector<SortOrderInfo> sortOrders;
                 // isForwards=true means ascending, descending=false
-                sortOrders.push_back({columnToSortBy.column->sqlId, !isForwards});
+                sortOrders.emplace_back(SortOrderInfo{columnToSortBy.column->sqlId, !isForwards});
 
                 if (m_currentNode->setSortOrder(sortOrders))
                 {

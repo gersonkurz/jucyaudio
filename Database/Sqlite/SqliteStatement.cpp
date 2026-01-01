@@ -148,7 +148,7 @@ namespace jucyaudio
         bool SqliteStatement::addParam(std::string_view text)
         {
             //spdlog::debug("addParam text \"{}\" at {}", text, m_param_index);
-            m_copy_of_string_args.push_back(std::string{text});
+            m_copy_of_string_args.emplace_back(std::string{text});
             const auto &item{m_copy_of_string_args.back()};
 
             const int rc = sqlite3_bind_text(m_statement, m_param_index++, item.c_str(), (int)item.length(), nullptr);

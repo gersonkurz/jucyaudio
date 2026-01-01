@@ -220,7 +220,7 @@ namespace jucyaudio
                         const std::string filename = entry.path().filename().string();
                         if (std::regex_match(filename, backupRegex))
                         {
-                            backups.push_back({entry.path(), filename});
+                            backups.emplace_back(BackupEntry{entry.path(), filename});
                         }
                     }
                 }

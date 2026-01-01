@@ -1543,7 +1543,7 @@ namespace jucyaudio
                     bool needsLoading = !database::theTrackLibrary.loadWaveform(trackInfo->trackId, cachedData).isOk() 
                                      || cachedData.empty();
                     
-                    requests.push_back({static_cast<int>(trackInfo->trackId), needsLoading});
+                    requests.emplace_back(std::make_pair(static_cast<int>(trackInfo->trackId), needsLoading));
                 }
             }
             

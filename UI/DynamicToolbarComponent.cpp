@@ -69,7 +69,7 @@ namespace jucyaudio
                     };
                     
                     addAndMakeVisible(button.get());
-                    m_allActionButtons.push_back({action, std::move(button)});
+                    m_allActionButtons.emplace_back(ActionButtonInfo{action, std::move(button)});
                 }
             }
             
@@ -95,7 +95,7 @@ namespace jucyaudio
                     };
                     
                     addAndMakeVisible(button.get());
-                    m_alwaysVisibleButtons.push_back({action, std::move(button)});
+                    m_alwaysVisibleButtons.emplace_back(ActionButtonInfo{action, std::move(button)});
                 }
             }
 

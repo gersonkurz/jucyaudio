@@ -138,7 +138,7 @@ namespace jucyaudio
             { // true means SQLITE_ROW
                 TagId id = stmt.getInt64(0);
                 std::string name = stmt.getText(1); // Assuming name is not null due to schema. Add isNull check if paranoid.
-                tags.push_back({id, name});
+                tags.emplace_back(TagInfo{id, name});
             }
 
             // After loop, check if getNextResult() returned false due to an error or SQLITE_DONE.
