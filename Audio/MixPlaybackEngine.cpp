@@ -411,6 +411,10 @@ namespace jucyaudio
                     {
                         source->readerSource->setNextReadPosition(positionInSourceSamples);
                     }
+                    // Note: ResamplingAudioSource's internal buffer is not reset here.
+                    // prepareToPlay() would reset it but is not RT-safe (allocates).
+                    // This may cause brief interpolation artifacts (~one block) on seek.
+                    // If testers flag this, consider moving seek handling to UI thread.
                 }
                 else
                 {
