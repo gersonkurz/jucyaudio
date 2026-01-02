@@ -263,11 +263,10 @@ namespace jucyaudio
                 // Get volume from envelope interpolation
                 float envelopeGain = interpolateVolumeFromEnvelope(mixTrackDef.envelopePoints, timeInTrack);
 
-                // Apply per-track gain adjustment
+                // Apply per-track gain adjustment.
+                // Note: No clamping here - intentional design choice to match real-time playback.
+                // Gains > 1.0 are allowed; clipping prevention is the user's responsibility.
                 envelopeGain *= mixTrackDef.gainAdjustment;
-
-                // Clamp gain to reasonable bounds
-                envelopeGain = juce::jlimit(0.0f, 1.0f, envelopeGain); // Clamp after applying gainAdjustment
 
                 // Add to master output block
                 const juce::int64 targetSampleInMasterBlock = currentSampleInOutputTimeline - context.currentBlockStartTimeSamples;
