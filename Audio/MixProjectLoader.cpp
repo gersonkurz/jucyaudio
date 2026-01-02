@@ -153,17 +153,19 @@ namespace jucyaudio
                 const auto &trackInfo = *it->second;
                 Duration_t trackStart{0};
 
+                const Duration_t effectiveDuration = track.getEffectiveDuration(trackInfo.duration);
+
                 if (i == 0)
                 {
                     trackStart = Duration_t{0};
-                    spdlog::info("  Track {} starts at 0, ends at {}", i, durationToString(trackInfo.duration));
+                    spdlog::info("  Track {} starts at 0, ends at {}", i, durationToString(effectiveDuration));
                 }
                 else
                 {
                     const auto &prevTrack = m_mixTracks[i - 1];
                     // ATTACH formula: Next track start = Previous track start + Previous track's attachTo - Current track's attachFrom
                     trackStart = previousTrackStart + prevTrack.attachTo - track.attachFrom;
-                    Duration_t trackEnd = trackStart + trackInfo.duration;
+                    Duration_t trackEnd = trackStart + effectiveDuration;
                     spdlog::info("  Track {} starts at {} (={}+{}-{}), ends at {}",
                         i,
                         durationToString(trackStart),
@@ -173,7 +175,7 @@ namespace jucyaudio
                         durationToString(trackEnd));
                 }
 
-                Duration_t trackEnd = trackStart + trackInfo.duration;
+                Duration_t trackEnd = trackStart + effectiveDuration;
                 if (trackEnd > mixEndPosition)
                 {
                     mixEndPosition = trackEnd;
