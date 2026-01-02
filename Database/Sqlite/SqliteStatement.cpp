@@ -137,7 +137,7 @@ namespace jucyaudio
                 }
                 return true;
             }
-            const int rc = sqlite3_bind_blob(m_statement, m_param_index++, blob.data(), (int)blob.size(), SQLITE_STATIC);
+            const int rc = sqlite3_bind_blob(m_statement, m_param_index++, blob.data(), (int)blob.size(), SQLITE_TRANSIENT);
             if (rc)
             {
                 return m_db.raiseError(__LINE__, rc, "sqlite3_bind_blob() failed");
