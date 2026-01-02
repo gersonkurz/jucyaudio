@@ -11,37 +11,37 @@
 
 ### Critical / High Priority
 
-1) **Buffer Overflow Risk in Audio Engine**
+1) DONE: **Buffer Overflow Risk in Audio Engine** 
    - **Description:** `MixPlaybackEngine::mixActiveTracksForBlock` uses `m_scratchBuffer`, which is pre-allocated to `samplesPerBlockExpected` in `prepareToPlay`. If the host requests more samples than this (possible in some hosts/standards), `m_scratchBuffer` will overflow.
    - **Location:** `Audio/MixPlaybackEngine.cpp`
    - **Fix:** Add safety check in `getNextAudioBlock` to cap samples or handle reallocation.
 
-2) **Double-Buffer Use-After-Free**
+2) DONE: **Double-Buffer Use-After-Free**
    - **Description:** Rapid calls to `loadMix()` can cause a use-after-free. `retireState` deletes `m_previousState` (the state from 2 swaps ago). If the audio thread is still processing a block using that old state when a new `loadMix` happens quickly, it might access deleted memory.
    - **Location:** `Audio/MixPlaybackEngine.cpp:159`, `Audio/MixPlaybackEngine.cpp:296`
    - **Fix:** Use a safer reclamation strategy (e.g., `std::shared_ptr` or a garbage collector queue for old states) instead of simple double-buffering.
 
-3) **Dangling Pointer in SQLite Binding**
+3) DONE: **Dangling Pointer in SQLite Binding**
    - **Description:** `SqliteStatement::bindColumnFrom` calls `getBlob()`, which returns a temporary `std::vector`. It then passes this to `addParam` which uses `SQLITE_STATIC`, binding the statement to the data of the temporary vector that is immediately destroyed.
    - **Location:** `Database/Sqlite/SqliteStatement.cpp:28`
    - **Fix:** Change `addParam` for BLOBs to use `SQLITE_TRANSIENT` or ensure the vector persists.
 
 ### Medium Priority
 
-4) **Resampling Synchronization Drift**
+4) DONE: **Resampling Synchronization Drift**
    - **Description:** When seeking, `MixPlaybackEngine` calculates the position for `readerSource` (source rate). However, `ResamplingAudioSource` maintains its own internal state. Setting `readerSource` directly can cause artifacts or desynchronization unless the resampler state is reset.
    - **Location:** `Audio/MixPlaybackEngine.cpp:436`
    - **Fix:** `ResamplingAudioSource` generally requires `prepareToPlay` to be called again or careful state management when its source is seeked.
 
-5) **Negative `cueStart` Handling**
+5) DONE: **Negative `cueStart` Handling**
    - **Description:** `cueStart` can be negative (pre-silence), but read offsets are clamped to `>= 0`. This effectively ignores the pre-silence intent.
    - **Location:** `Audio/ExportMixImplementation.cpp:411`, `Audio/MixPlaybackEngine.cpp:429`
 
-6) **Mix Duration Calculation Mismatch**
+6) DONE: **Mix Duration Calculation Mismatch**
    - **Description:** `MixProjectLoader::calculateMixDuration` uses `trackInfo.duration` (full file length) instead of `MixTrack::getEffectiveDuration` (which accounts for cues). This causes discrepancies between the displayed timeline and actual playback/export duration.
    - **Location:** `Audio/MixProjectLoader.cpp`
 
-7) **Envelope Gain Clamping Inconsistency**
+7) DONE: **Envelope Gain Clamping Inconsistency**
    - **Description:** Export logic clamps total gain (envelope * track gain) to [0, 1]. Real-time playback does not. This leads to "what you hear is NOT what you get" if gains are boosted.
    - **Location:** `Audio/ExportMixImplementation.cpp:269` vs `Audio/MixPlaybackEngine.cpp`
 
