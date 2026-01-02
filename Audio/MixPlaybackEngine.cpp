@@ -676,23 +676,47 @@ namespace jucyaudio
 
                 int outputOffset = static_cast<int>(std::max(trackStartSamples - startSample, juce::int64(0)));
 
+                // Handle pre-silence region (negative cueStart)
+                // cueStartSamples is in source rate; convert to target rate for comparison
+                juce::int64 preSilenceSamplesAtTargetRate = 0;
+                if (source->cueStartSamples < 0 && source->reader)
+                {
+                    preSilenceSamplesAtTargetRate = static_cast<juce::int64>(
+                        (-source->cueStartSamples) * m_sampleRate / source->reader->sampleRate);
+                }
+
+                // Calculate how much of this block is pre-silence vs actual audio
+                int silenceSamples = 0;
+                int audioSamples = samplesToRead;
+                if (preSilenceSamplesAtTargetRate > 0 && trackReadStart < preSilenceSamplesAtTargetRate)
+                {
+                    juce::int64 silenceEnd = std::min(preSilenceSamplesAtTargetRate, trackReadStart + samplesToRead);
+                    silenceSamples = static_cast<int>(silenceEnd - trackReadStart);
+                    audioSamples = samplesToRead - silenceSamples;
+                }
+
                 // Use pre-allocated scratch buffer - just clear the portion we need (no resize)
                 const int sourceChannels = source->reader ? source->reader->numChannels : numChannels;
                 m_scratchBuffer.clear(0, samplesToRead);
 
-                juce::AudioSourceChannelInfo trackInfo(&m_scratchBuffer, 0, samplesToRead);
-
-                if (auto *audioSource = source->getAudioSource())
+                // Only read audio if we have non-silence samples
+                if (audioSamples > 0)
                 {
-                    audioSource->getNextAudioBlock(trackInfo);
-                    
-                    // Handle mono-to-stereo conversion if needed
-                    if (sourceChannels == 1 && numChannels == 2) {
-                        // Source is mono but output is stereo - duplicate mono channel to right channel
-                        const float* monoIn = m_scratchBuffer.getReadPointer(0);
-                        float* rightOut = m_scratchBuffer.getWritePointer(1);
-                        for (int sample = 0; sample < samplesToRead; ++sample) {
-                            rightOut[sample] = monoIn[sample];
+                    // Read into scratch buffer starting after the silence portion
+                    juce::AudioSourceChannelInfo trackInfo(&m_scratchBuffer, silenceSamples, audioSamples);
+
+                    if (auto *audioSource = source->getAudioSource())
+                    {
+                        audioSource->getNextAudioBlock(trackInfo);
+
+                        // Handle mono-to-stereo conversion if needed
+                        if (sourceChannels == 1 && numChannels == 2) {
+                            // Source is mono but output is stereo - duplicate mono channel to right channel
+                            const float* monoIn = m_scratchBuffer.getReadPointer(0) + silenceSamples;
+                            float* rightOut = m_scratchBuffer.getWritePointer(1) + silenceSamples;
+                            for (int sample = 0; sample < audioSamples; ++sample) {
+                                rightOut[sample] = monoIn[sample];
+                            }
                         }
                     }
                 }
