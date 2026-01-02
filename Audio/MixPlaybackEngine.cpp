@@ -47,18 +47,16 @@ namespace jucyaudio
             }
         }
 
-        PlaybackState* MixPlaybackEngine::buildPlaybackState(MixProjectLoader* mixLoader)
+        std::shared_ptr<PlaybackState> MixPlaybackEngine::buildPlaybackState(MixProjectLoader* mixLoader)
         {
-            spdlog::info("[PlaybackEngine] buildPlaybackState -> Entry (NEW REFCOUNTING CODE)");
-
             if (!mixLoader)
             {
                 spdlog::error("[PlaybackEngine] buildPlaybackState -> mixLoader is null");
                 return nullptr;
             }
 
-            // Create new refcounted PlaybackState (refcount=1)
-            auto* state = new PlaybackState();
+            // Create new PlaybackState wrapped in shared_ptr
+            auto state = std::make_shared<PlaybackState>();
             spdlog::info("[PlaybackEngine] buildPlaybackState -> Created new PlaybackState");
 
             // Copy TrackInfo data from MixProjectLoader
@@ -156,20 +154,23 @@ namespace jucyaudio
             return state;
         }
 
-        void MixPlaybackEngine::retireState(PlaybackState* oldState)
+        void MixPlaybackEngine::collectGarbage()
         {
-            // Double-buffer pattern: delete the state from 2 swaps ago,
-            // then keep the just-retired state alive until next swap.
-            // This guarantees audio thread has finished with oldState.
-
-            if (m_previousState)
+            // Scan garbage list and remove any states that are no longer referenced by the audio thread.
+            // If use_count() == 1, it means m_garbage is the only holder, so audio thread is done.
+            auto it = m_garbage.begin();
+            while (it != m_garbage.end())
             {
-                spdlog::debug("[PlaybackEngine] retireState -> Deleting previous state");
-                m_previousState->release(REFCOUNT_DEBUG_ARGS);
+                if (it->use_count() == 1)
+                {
+                    // Safe to delete - destructor runs here on main thread
+                    it = m_garbage.erase(it);
+                }
+                else
+                {
+                    ++it;
+                }
             }
-
-            m_previousState = oldState;
-            spdlog::debug("[PlaybackEngine] retireState -> Retired state kept alive until next swap");
         }
 
         PlaybackTrackSource::PlaybackTrackSource(TrackId id, size_t index, const TrackInfo *ti, const MixTrack& mt)
@@ -261,18 +262,11 @@ namespace jucyaudio
         MixPlaybackEngine::~MixPlaybackEngine()
         {
             unloadMix();
-
-            // Clean up any remaining previous state from double-buffer
-            if (m_previousState)
-            {
-                m_previousState->release(REFCOUNT_DEBUG_ARGS);
-                m_previousState = nullptr;
-            }
+            // m_garbage is cleared automatically by vector destructor, destroying any remaining states
         }
 
         bool MixPlaybackEngine::loadMix(MixProjectLoader *mixLoader)
         {
-            spdlog::warn("=== GAIN CHANGE === [PlaybackEngine] loadMix -> Entry (NEW REFCOUNTING CODE)");
             if (!mixLoader)
             {
                 spdlog::error("[PlaybackEngine] loadMix -> mixLoader is null");
@@ -281,45 +275,25 @@ namespace jucyaudio
 
             m_mixLoader = mixLoader;
 
-            // Log all track gains in the mix loader
-            const auto& mixTracks = mixLoader->getMixTracks();
-            spdlog::warn("=== GAIN CHANGE === MixLoader has {} tracks:", mixTracks.size());
-            for (const auto& track : mixTracks)
-            {
-                spdlog::warn("=== GAIN CHANGE ===   Track {} (order {}): gainAdjustment = {}",
-                           track.trackId, track.orderInMix, track.gainAdjustment);
-            }
-
-            spdlog::info("[PlaybackEngine] loadMix -> Building PlaybackState, isPrepared={}", m_isPrepared.load());
-
-            // Build new PlaybackState (refcount=1)
-            auto* newState = buildPlaybackState(mixLoader);
+            // Build new PlaybackState (shared_ptr)
+            auto newState = buildPlaybackState(mixLoader);
             if (!newState)
             {
                 spdlog::error("[PlaybackEngine] loadMix -> Failed to build PlaybackState");
                 return false;
             }
 
-            spdlog::info("[PlaybackEngine] loadMix -> PlaybackState built with {} track sources", newState->trackSources.size());
-
-            // Log gains in the new PlaybackState
-            spdlog::warn("=== GAIN CHANGE === New PlaybackState track gains:");
-            for (const auto& source : newState->trackSources)
-            {
-                spdlog::warn("=== GAIN CHANGE ===   Track {} (order {}): gainAdjustment = {}",
-                           source->trackId, source->mixTrack.orderInMix, source->mixTrack.gainAdjustment);
-            }
-
             // Atomic swap - replace current state with new state
-            auto* oldState = m_currentPlaybackState.exchange(newState);
+            auto oldState = m_currentPlaybackState.exchange(newState);
 
-            spdlog::warn("=== GAIN CHANGE === [PlaybackEngine] Atomic swap complete, oldState={}", oldState ? "exists" : "null");
-
-            // Double-buffer: retire old state (keeps it alive until next swap)
+            // Add old state to garbage for deferred deletion
             if (oldState)
             {
-                retireState(oldState);
+                m_garbage.push_back(oldState);
             }
+
+            // Attempt to collect garbage (free states that audio thread is done with)
+            collectGarbage();
 
             spdlog::info("[PlaybackEngine] loadMix -> Exit (success)");
             return true;
@@ -336,12 +310,15 @@ namespace jucyaudio
             spdlog::debug("[PlaybackEngine] unloadMixInternal -> Entry");
             m_isPaused = true;
 
-            // Atomic swap to null - old state retired via double-buffer
-            auto* oldState = m_currentPlaybackState.exchange(nullptr);
+            // Atomic swap to null
+            auto oldState = m_currentPlaybackState.exchange(nullptr);
             if (oldState)
             {
-                retireState(oldState);
+                m_garbage.push_back(oldState);
             }
+
+            // Collect garbage
+            collectGarbage();
 
             m_mixLoader = nullptr;
             m_currentPositionSamples = 0;
@@ -391,8 +368,7 @@ namespace jucyaudio
                 return;
             }
 
-            // Get current PlaybackState (NEW REFCOUNTING CODE)
-            auto* state = m_currentPlaybackState.load();
+            auto state = m_currentPlaybackState.load();
             if (!state)
             {
                 return;
@@ -522,8 +498,9 @@ namespace jucyaudio
                 return;
             }
 
-            // Check if we have a valid PlaybackState (NEW REFCOUNTING CODE)
-            auto* state = m_currentPlaybackState.load();
+            // Atomic load gets a shared_ptr, incrementing refcount.
+            // This prevents deletion even if main thread swaps it out.
+            auto state = m_currentPlaybackState.load();
             if (!state)
             {
                 bufferToFill.clearActiveBufferRegion();
@@ -550,12 +527,17 @@ namespace jucyaudio
             {
                 const int chunkSize = std::min(samplesRemaining, m_blockSize);
 
-                // Create a sub-buffer view for this chunk
-                juce::AudioBuffer<float> chunkBuffer(*bufferToFill.buffer,
-                                                      bufferToFill.startSample + outputOffset,
-                                                      chunkSize);
+                // Create a sub-buffer view for this chunk using raw pointers
+                // Cap to stereo - this engine only supports up to 2 channels
+                const int numChannels = std::min(bufferToFill.buffer->getNumChannels(), 2);
+                float* channelPtrs[2];
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    channelPtrs[ch] = bufferToFill.buffer->getWritePointer(ch) + bufferToFill.startSample + outputOffset;
+                }
+                juce::AudioBuffer<float> chunkBuffer(channelPtrs, numChannels, chunkSize);
 
-                mixActiveTracksForBlock(chunkBuffer, startSample, chunkSize);
+                mixActiveTracksForBlock(state, chunkBuffer, startSample, chunkSize);
 
                 startSample += chunkSize;
                 outputOffset += chunkSize;
@@ -645,12 +627,11 @@ namespace jucyaudio
             return !m_trackSources.empty();
         }
 
-        void MixPlaybackEngine::mixActiveTracksForBlock(juce::AudioBuffer<float> &buffer, juce::int64 startSample, int numSamples)
+        void MixPlaybackEngine::mixActiveTracksForBlock(const std::shared_ptr<PlaybackState>& state, juce::AudioBuffer<float> &buffer, juce::int64 startSample, int numSamples)
         {
             // CRITICAL: Audio callback - NO LOCKS, NO ALLOCATION, NO LOGGING
-            // Just atomic pointer read for lock-free access
+            // State is passed from caller to avoid redundant atomic load and ensure consistency
 
-            auto* state = m_currentPlaybackState.load();
             if (!state)
             {
                 return;  // No mix loaded
@@ -658,7 +639,7 @@ namespace jucyaudio
 
             const int numChannels = buffer.getNumChannels();
 
-            // Use state->trackSources (safe: double-buffer pattern guarantees state survives until next loadMix())
+            // Use state->trackSources (safe: shared_ptr keeps state alive for the duration of this callback)
             for (size_t i = 0; i < state->trackSources.size(); ++i)
             {
                 auto &source = state->trackSources[i];

@@ -4,7 +4,6 @@
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
 #include <Database/Includes/Constants.h>
-#include <Database/Includes/IRefCounted.h>
 #include <atomic>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -26,21 +25,18 @@ namespace jucyaudio
          * @brief Refcounted container holding all data needed for mix playback.
          *
          * This struct owns copies of TrackInfo data and the PlaybackTrackSource objects.
-         * The audio thread holds a reference to PlaybackState (via atomic pointer), making
-         * it safe for PlaybackTrackSource to hold pointers into trackInfos.
          *
-         * Thread-safety: The atomic pointer in MixPlaybackEngine ensures only one thread
-         * can modify the pointer at a time. The audio thread only reads.
+         * Thread-safety: Managed via std::shared_ptr and std::atomic.
          *
-         * Ownership model (Double-Buffer Pattern):
-         * - PlaybackState is refcounted (starts with refcount=1)
-         * - m_currentPlaybackState atomic pointer holds the active state
-         * - m_previousState holds the prior state (from previous swap)
-         * - On swap: old m_previousState is deleted, current becomes previous
-         * - This guarantees audio thread finishes with old state before deletion
-         * - Audio thread reads atomically - no retain/release needed in callback
+         * Ownership model (Garbage Collection Pattern):
+         * - m_currentPlaybackState is a std::atomic<std::shared_ptr<PlaybackState>>.
+         * - Audio thread loads a local shared_ptr, ensuring the state stays alive during the callback.
+         * - Main thread swaps m_currentPlaybackState with a new state.
+         * - The old state is moved to m_garbage list.
+         * - Main thread periodically scans m_garbage. If use_count() == 1 (only held by garbage),
+         *   it is safe to delete (destructor runs on main thread).
          */
-        struct PlaybackState : public database::RefCountImpl
+        struct PlaybackState
         {
             std::vector<database::TrackInfo> trackInfos;  // Owned copies from MixProjectLoader
             std::vector<std::unique_ptr<PlaybackTrackSource>> trackSources;
@@ -116,7 +112,7 @@ namespace jucyaudio
             // Get total mix duration (in milliseconds)
             Duration_t getTotalDuration() const
             {
-                auto* state = m_currentPlaybackState.load();
+                auto state = m_currentPlaybackState.load();
                 return state ? state->totalDuration : Duration_t{0};
             }
 
@@ -165,12 +161,18 @@ namespace jucyaudio
             // Mix data
             MixProjectLoader *m_mixLoader{nullptr};
 
-            // Refcounted playback state (atomic swap for lock-free audio thread)
-            std::atomic<PlaybackState*> m_currentPlaybackState{nullptr};
+            // Thread-safe state management.
+            // Note: std::atomic<std::shared_ptr<T>> is not lock-free on MSVC/x64 (uses spinlock).
+            // This means the audio thread may briefly contend with loadMix(). Acceptable tradeoff
+            // since loadMix() is infrequent. If glitches occur, consider SeqLock or intrusive refcount.
+            std::atomic<std::shared_ptr<PlaybackState>> m_currentPlaybackState{nullptr};
 
-            // Double-buffer pattern: keep previous state alive until next swap
-            // This ensures audio thread always has a valid state during transitions
-            PlaybackState* m_previousState{nullptr};
+            // Garbage collection for old states.
+            // Old states are held here until the audio thread is definitely done with them
+            // (checked via use_count() == 1). This ensures destructors run on the main thread.
+            // Threading: loadMix()/unloadMix() are expected to run on the UI thread only; if
+            // that changes, access to m_garbage must be synchronized.
+            std::vector<std::shared_ptr<PlaybackState>> m_garbage;
 
             // DEPRECATED: Old members kept temporarily for compatibility with non-audio methods
             // TODO: Remove these after updating all non-audio-callback methods to use PlaybackState
@@ -202,9 +204,9 @@ namespace jucyaudio
             mutable juce::CriticalSection m_critSec;
 
             // Helper methods
-            PlaybackState* buildPlaybackState(MixProjectLoader* mixLoader);  // Build new PlaybackState from MixProjectLoader
-            void retireState(PlaybackState* oldState);  // Double-buffer: retire old state, delete previous
-            void mixActiveTracksForBlock(juce::AudioBuffer<float> &buffer, juce::int64 startSample, int numSamples);
+            std::shared_ptr<PlaybackState> buildPlaybackState(MixProjectLoader* mixLoader);
+            void collectGarbage(); // Sweep m_garbage and delete unused states
+            void mixActiveTracksForBlock(const std::shared_ptr<PlaybackState>& state, juce::AudioBuffer<float> &buffer, juce::int64 startSample, int numSamples);
             float getEnvelopeGainForTrack(const MixTrack &mixTrack, Duration_t timeInTrack);
             void unloadMixInternal(); // Internal version that doesn't lock
 
