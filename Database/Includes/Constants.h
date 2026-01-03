@@ -97,16 +97,6 @@ namespace jucyaudio
      * @note Mixes represent ordered sequences of tracks with crossfade information
      */
     typedef ObjectId MixId;
-    
-     /**
-     * @brief Track identifier type for database namespace
-     */
-    typedef ObjectId TrackId;
-
-    /**
-     * @brief Tag identifier type for database namespace
-     */
-    typedef ObjectId TagId;
 
     /**
      * @brief Unique identifier for folder structures in the database
