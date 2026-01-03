@@ -23,6 +23,7 @@ namespace jucyaudio
         private:
             SqliteStatement &m_stmt;
             int m_paramIndex; // Renamed for clarity from m_searchTermIndex
+            std::vector<std::string> m_filterParams; // Stores filter values for parameterized binding
 
             void addWhereClause(StringWriter &writer, const TrackQueryArgs &trackQueryArgs);
             void addOrderByClause(StringWriter &writer, const TrackQueryArgs &trackQueryArgs);

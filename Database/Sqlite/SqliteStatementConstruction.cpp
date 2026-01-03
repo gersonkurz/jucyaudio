@@ -160,38 +160,25 @@ namespace jucyaudio
                     continue;
                 }
 
-                const bool isNumeric = utils::isNumericField(criterion.fieldName);
-
-                // Build the SQL condition
+                // Build the SQL condition using parameterized placeholders
                 writer.append(" AND ");
 
                 if (criterion.op == "..")
                 {
-                    // Range: field BETWEEN value1 AND value2
+                    // Range: field BETWEEN ?N AND ?N+1
+                    const int firstParam = m_paramIndex++;
+                    const int secondParam = m_paramIndex++;
                     writer.append(columnName);
-                    writer.append(" BETWEEN ");
-                    if (isNumeric)
-                    {
-                        writer.append(criterion.value);
-                        writer.append(" AND ");
-                        writer.append(criterion.value2);
-                    }
-                    else
-                    {
-                        writer.append("'");
-                        writer.append(criterion.value);
-                        writer.append("' AND '");
-                        writer.append(criterion.value2);
-                        writer.append("'");
-                    }
+                    writer.appendFormatted(" BETWEEN ?{} AND ?{}", firstParam, secondParam);
+                    m_filterParams.push_back(criterion.value);
+                    m_filterParams.push_back(criterion.value2);
                 }
-                else if (criterion.op == "=" && !isNumeric)
+                else if (criterion.op == "=" && !utils::isNumericField(criterion.fieldName))
                 {
                     // String exact match with LIKE for case-insensitive
                     writer.append(columnName);
-                    writer.append(" LIKE '");
-                    writer.append(criterion.value);
-                    writer.append("'");
+                    writer.appendFormatted(" LIKE ?{}", m_paramIndex++);
+                    m_filterParams.push_back(criterion.value);
                 }
                 else
                 {
@@ -199,20 +186,11 @@ namespace jucyaudio
                     writer.append(columnName);
                     writer.append(" ");
                     writer.append(criterion.op);
-                    writer.append(" ");
-                    if (isNumeric)
-                    {
-                        writer.append(criterion.value);
-                    }
-                    else
-                    {
-                        writer.append("'");
-                        writer.append(criterion.value);
-                        writer.append("'");
-                    }
+                    writer.appendFormatted(" ?{}", m_paramIndex++);
+                    m_filterParams.push_back(criterion.value);
                 }
 
-                spdlog::debug("Added filter SQL: {} {} {}", columnName, criterion.op, criterion.value);
+                spdlog::debug("Added filter SQL: {} {} {} (parameterized)", columnName, criterion.op, criterion.value);
             }
         }
 
@@ -251,12 +229,20 @@ namespace jucyaudio
                 m_stmt.addParam(args.mixId);
             }
             // Folder IDs are now handled via temp table, no need to bind them as parameters
+
+            // Bind filter criteria parameters (added via addFilterCriteria)
+            for (const auto& filterValue : m_filterParams)
+            {
+                m_stmt.addParam(filterValue);
+            }
+
             return true;
         }
 
         bool SqliteStatementConstruction::createSelectStatement(const TrackQueryArgs &args)
         {
             m_paramIndex = 1;
+            m_filterParams.clear();
             StringWriter writer;
             
             // If we have search terms, use FTS5 for searching
@@ -357,6 +343,7 @@ namespace jucyaudio
         bool SqliteStatementConstruction::createCountStatement(const TrackQueryArgs &args)
         {
             m_paramIndex = 1;
+            m_filterParams.clear();
             StringWriter writer;
             
             // If we have search terms, use FTS5 for searching
@@ -417,6 +404,7 @@ namespace jucyaudio
         bool SqliteStatementConstruction::createAggregateStatement(const TrackQueryArgs &args)
         {
             m_paramIndex = 1;
+            m_filterParams.clear();
             StringWriter writer;
 
             // If we have search terms, use FTS5 for searching
@@ -477,6 +465,7 @@ namespace jucyaudio
         bool SqliteStatementConstruction::createInsertIntoSelectTrackIdsStatement(const TrackQueryArgs &args, WorkingSetId wsId)
         {
             m_paramIndex = 1;
+            m_filterParams.clear();
             StringWriter writer;
             
             // If we have search terms, use FTS5 for searching
