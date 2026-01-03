@@ -16,6 +16,7 @@
 
 #include <filesystem>
 #include <lame.h>
+#include <vector>
 #include <spdlog/fmt/chrono.h>
 #include <spdlog/spdlog.h>
 
@@ -40,8 +41,7 @@ namespace jucyaudio
             // LAME-specific members
             lame_global_flags *m_lameFlags = nullptr;
             std::unique_ptr<juce::FileOutputStream> m_outputStream;
-            unsigned char *m_mp3Buffer = nullptr;
-            int m_mp3BufferSize = 0;
+            std::vector<unsigned char> m_mp3Buffer;
         };
     } // namespace audio
 } // namespace jucyaudio

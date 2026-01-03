@@ -25,9 +25,7 @@ namespace jucyaudio
                 lame_close(m_lameFlags);
                 m_lameFlags = nullptr;
             }
-            delete[] m_mp3Buffer;
-            m_mp3Buffer = nullptr;
-            // m_outputStream automatically cleaned up by unique_ptr
+            // m_mp3Buffer and m_outputStream automatically cleaned up
         }
 
         bool ExportMp3MixImplementation::onSetupAudioFormatManagerAndWriter()
@@ -89,14 +87,10 @@ namespace jucyaudio
                           (int)lame_get_mode(m_lameFlags));
             // Allocate MP3 buffer
             const int processingBlockSize = 4096;
-            m_mp3BufferSize = static_cast<int>(1.25 * processingBlockSize) + 7200;
-            m_mp3Buffer = new unsigned char[m_mp3BufferSize];
-            //if (!m_mp3Buffer)
-            //{
-                //return fail("MTE: Failed to allocate MP3 buffer");
-            //}
+            const auto mp3BufferSize = static_cast<size_t>(1.25 * processingBlockSize) + 7200;
+            m_mp3Buffer.resize(mp3BufferSize);
 
-            spdlog::info("MTE: LAME encoder initialized for MP3 output. Buffer size: {}", m_mp3BufferSize);
+            spdlog::info("MTE: LAME encoder initialized for MP3 output. Buffer size: {}", m_mp3Buffer.size());
             return true;
         }
 
@@ -153,7 +147,7 @@ namespace jucyaudio
                 }
 
                 // --- MP3 Encoding with LAME (NOT using m_writer) ---
-                if (!m_lameFlags || !m_mp3Buffer || !m_outputStream)
+                if (!m_lameFlags || m_mp3Buffer.empty() || !m_outputStream)
                 {
                     return fail("MTE: LAME encoder not properly initialized for MP3 export");
                 }
@@ -181,7 +175,7 @@ namespace jucyaudio
                 int bytes_encoded = lame_encode_buffer_interleaved_ieee_float(m_lameFlags,
                                                                               interleaved.data(),
                                                                               n,
-                                                                              m_mp3Buffer, m_mp3BufferSize);
+                                                                              m_mp3Buffer.data(), static_cast<int>(m_mp3Buffer.size()));
                 if (bytes_encoded < 0)
                 {
                     return fail(std::format("MTE: lame_encode_buffer_float() failed with error: {}", bytes_encoded));
@@ -193,7 +187,7 @@ namespace jucyaudio
                                   m_mp3Buffer[0], bytes_encoded > 1 ? m_mp3Buffer[1] : 0, bytes_encoded > 2 ? m_mp3Buffer[2] : 0,
                                   bytes_encoded > 3 ? m_mp3Buffer[3] : 0);
 
-                    if (!m_outputStream->write(m_mp3Buffer, static_cast<size_t>(bytes_encoded)))
+                    if (!m_outputStream->write(m_mp3Buffer.data(), static_cast<size_t>(bytes_encoded)))
                     {
                         return fail("MTE: Failed to write encoded MP3 data to output stream");
                     }
@@ -212,7 +206,7 @@ namespace jucyaudio
             }
 
             // Flush remaining MP3 data
-            int flush_bytes = lame_encode_flush(m_lameFlags, m_mp3Buffer, m_mp3BufferSize);
+            int flush_bytes = lame_encode_flush(m_lameFlags, m_mp3Buffer.data(), static_cast<int>(m_mp3Buffer.size()));
             if (flush_bytes < 0)
             {
                 return fail(std::format("MTE: lame_encode_flush() failed with error: {}", flush_bytes));
@@ -220,7 +214,7 @@ namespace jucyaudio
 
             if (flush_bytes > 0)
             {
-                if (!m_outputStream->write(m_mp3Buffer, static_cast<size_t>(flush_bytes)))
+                if (!m_outputStream->write(m_mp3Buffer.data(), static_cast<size_t>(flush_bytes)))
                 {
                     return fail("MTE: Failed to write flushed MP3 data to output stream");
                 }

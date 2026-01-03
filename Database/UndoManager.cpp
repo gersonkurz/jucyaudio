@@ -52,7 +52,7 @@ namespace jucyaudio
             auto it = mixState.undoOperations.end();
             --it; // now at the current state
             --it; // now at the previous state
-            const auto* previousState = it->get();
+            auto* previousState = it->get();
             if (previousState == nullptr)
             {
                 spdlog::warn("UndoManager: No previous state to revert to for mix ID {}", mixId);
@@ -138,7 +138,7 @@ namespace jucyaudio
             }
 
             // Get the state to restore from redo stack
-            const auto* redoState = mixState.redoOperations.back().get();
+            auto* redoState = mixState.redoOperations.back().get();
             if (redoState == nullptr)
             {
                 spdlog::warn("UndoManager: Redo state is null for mix ID {}", mixId);
