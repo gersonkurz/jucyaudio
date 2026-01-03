@@ -9,6 +9,7 @@
 */
 
 #include <Audio/ExportMixImplementation.h>
+#include <Audio/AudioUtils.h>
 #include <Utils/AssortedUtils.h>
 #include <Database/Includes/Constants.h>
 
@@ -147,52 +148,6 @@ namespace jucyaudio
                     durationToString(pos.startTime), 
                     durationToString(pos.endTime));
             }
-        }
-        
-        float interpolateVolumeFromEnvelope(const std::vector<EnvelopePoint> &envelopePoints, Duration_t timeInTrack)
-        {
-            if (envelopePoints.empty())
-            {
-                return 1.0f; // Default to full volume if no envelope points
-            }
-
-            // If before first point, use first point's volume
-            if (timeInTrack <= envelopePoints.front().time)
-            {
-                return envelopePoints.front().volume / (float)VOLUME_NORMALIZATION;
-            }
-
-            // If after last point, use last point's volume
-            if (timeInTrack >= envelopePoints.back().time)
-            {
-                return envelopePoints.back().volume / (float)VOLUME_NORMALIZATION;
-            }
-
-            // Find the two points to interpolate between
-            for (size_t i = 0; i < envelopePoints.size() - 1; ++i)
-            {
-                const auto &pointA = envelopePoints[i];
-                const auto &pointB = envelopePoints[i + 1];
-
-                if (timeInTrack >= pointA.time && timeInTrack <= pointB.time)
-                {
-                    // Linear interpolation between the two points
-                    float progress = 0.0f;
-                    auto timeDiff = pointB.time - pointA.time;
-                    if (timeDiff.count() > 0)
-                    {
-                        progress = (float)(timeInTrack - pointA.time).count() / (float)timeDiff.count();
-                    }
-
-                    float volumeA = pointA.volume / (float)VOLUME_NORMALIZATION;
-                    float volumeB = pointB.volume / (float)VOLUME_NORMALIZATION;
-
-                    return volumeA + progress * (volumeB - volumeA);
-                }
-            }
-
-            // Fallback (shouldn't reach here)
-            return 1.0f;
         }
 
         bool ExportMixImplementation::calculateMixDuration()

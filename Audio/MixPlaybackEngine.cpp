@@ -1,4 +1,5 @@
 #include <Audio/MixPlaybackEngine.h>
+#include <Audio/AudioUtils.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
 #include <Database/Includes/Constants.h>
@@ -9,8 +10,6 @@ namespace jucyaudio
 {
     namespace audio
     {
-        extern float interpolateVolumeFromEnvelope(const std::vector<EnvelopePoint> &envelopePoints, Duration_t timeInTrack);
-
         void MixPlaybackEngine::calculateTrackStartTimes()
         {
             spdlog::info("[PlaybackEngine] calculateTrackStartTimes called");
