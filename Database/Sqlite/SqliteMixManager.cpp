@@ -1,4 +1,5 @@
 #include <Database/Includes/Constants.h>
+#include <Database/Includes/MixTrackUtils.h>
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteMixManager.h>
 #include <Database/Sqlite/SqliteStatement.h>
@@ -732,82 +733,47 @@ WHERE m.export_folder IS NULL
             mixInfo.numberOfTracks = static_cast<int64_t>(trackInfos.size());
             mixInfo.source_ws_id = source_ws_id;
 
-            const auto minimumExpectedSongLength = 2 * defaultCrossfadeDuration; // Minimum length for a track to be suitable for mixing
-            spdlog::info("Creating ATTACH-based automix with {} tracks, crossfade duration: {}", 
+            spdlog::info("Creating ATTACH-based automix with {} tracks, crossfade duration: {}",
                         trackInfos.size(), durationToString(defaultCrossfadeDuration));
 
             int orderInMix = 0;
             for (const auto &trackInfo : trackInfos)
             {
                 assert(trackInfo.trackId != 0 && "Track ID should not be zero when creating a new mix");
-                const auto trackPath{trackInfo.reconstructFullPath()};
 
                 MixTrack mixTrack{};
                 mixTrack.mixId = mixInfo.mixId;
                 mixTrack.trackId = trackInfo.trackId;
                 mixTrack.orderInMix = orderInMix++;
 
-                // For the new model:
                 // CUE points - use full track (default behavior)
                 mixTrack.cueStart = Duration_t{0};
                 mixTrack.cueEnd = Duration_t{0}; // 0 means use full track duration
-                
-                // ATTACH points - define where overlaps happen
-                // For short tracks (< 2 * crossfade duration), reduce or eliminate crossfade
-                Duration_t effectiveCrossfade = defaultCrossfadeDuration;
-                
-                if (trackInfo.duration < minimumExpectedSongLength)
+
+                // Calculate crossfade settings using shared helper
+                const auto crossfade = calculateCrossfadeForTrack(trackInfo.duration, defaultCrossfadeDuration);
+
+                // Log crossfade adjustments for short tracks
+                if (crossfade.adjustment == CrossfadeAdjustment::Eliminated)
                 {
-                    // For very short tracks (like intros), eliminate crossfade entirely
-                    // This ensures the track plays in full
-                    effectiveCrossfade = Duration_t{0};
                     spdlog::info("Track {} ({}) is only {} long: using no crossfade",
                         trackInfo.trackId,
-                        pathToString(trackPath),
+                        pathToString(trackInfo.reconstructFullPath()),
                         durationToString(trackInfo.duration));
                 }
-                else if (trackInfo.duration < minimumExpectedSongLength * 2)
+                else if (crossfade.adjustment == CrossfadeAdjustment::Reduced)
                 {
-                    // For medium-short tracks, use a reduced crossfade (10% of track duration)
-                    effectiveCrossfade = trackInfo.duration / 10;
                     spdlog::info("Track {} ({}) is {} long: reducing crossfade to {}",
                         trackInfo.trackId,
-                        pathToString(trackPath),
+                        pathToString(trackInfo.reconstructFullPath()),
                         durationToString(trackInfo.duration),
-                        durationToString(effectiveCrossfade));
+                        durationToString(crossfade.effectiveCrossfade));
                 }
-                
-                // Set attach points based on effective crossfade
-                mixTrack.attachFrom = effectiveCrossfade;  // Start overlapping after this duration into the track
-                mixTrack.attachTo = trackInfo.duration - effectiveCrossfade; // Next track starts this duration before end
-                
-                // Create envelope points for crossfade
-                // These are relative to the track's cue start (which is 0 in this case)
-                // Adapt the envelope based on the effective crossfade duration
-                
-                if (effectiveCrossfade == Duration_t{0})
-                {
-                    // No crossfade - track plays at full volume throughout
-                    mixTrack.envelopePoints = {
-                        {Duration_t{0}, VOLUME_NORMALIZATION},           // Start at 100%
-                        {trackInfo.duration, VOLUME_NORMALIZATION}       // End at 100%
-                    };
-                }
-                else
-                {
-                    // Calculate midpoints based on effective crossfade
-                    const auto fadeInMidpoint = std::min(Duration_t{2000}, effectiveCrossfade / 2);
-                    const auto fadeOutMidpoint = trackInfo.duration - std::min(Duration_t{2000}, effectiveCrossfade / 2);
-                    
-                    mixTrack.envelopePoints = {
-                        {Duration_t{0}, Volume_t{200}},                                        // Start at 20%
-                        {fadeInMidpoint, Volume_t{700}},                                       // midpoint: 70%
-                        {effectiveCrossfade, VOLUME_NORMALIZATION},                            // crossfade end: 100%
-                        {trackInfo.duration - effectiveCrossfade, VOLUME_NORMALIZATION},       // before fade out: 100%
-                        {fadeOutMidpoint, Volume_t{700}},                                      // midpoint: 70%
-                        {trackInfo.duration, Volume_t{200}}                                    // End at 20%
-                    };
-                }
+
+                // Set attach points and envelope from calculated settings
+                mixTrack.attachFrom = crossfade.attachFrom;
+                mixTrack.attachTo = crossfade.attachTo;
+                mixTrack.envelopePoints = crossfade.envelopePoints;
 
                 resultingTracks.emplace_back(mixTrack);
             }
