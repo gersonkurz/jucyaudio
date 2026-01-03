@@ -11,6 +11,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace jucyaudio
 {
@@ -54,7 +55,7 @@ namespace jucyaudio
             ExportMixImplementation(MixId mixId, const ActiveExportSettings &settings,
                                     MixExporterProgressCallback progressCallback);
             virtual ~ExportMixImplementation() = default;
-            bool run();
+            ExportResult run();
 
         protected:
             // @brief Calculate timeline positions for all tracks using ATTACH model
@@ -117,6 +118,9 @@ namespace jucyaudio
             // Reusable buffers to avoid per-block heap allocation in contributeFromActiveSource
             mutable juce::AudioBuffer<float> m_tempReadBuffer;
             mutable juce::AudioBuffer<float> m_sourceTrackBlock;
+
+            // Warning tracking for structured export result - tracks unique failed track IDs
+            std::unordered_set<TrackId> m_failedTracks;
 
             // TBD: Determine Output Format Properties (Sample Rate, Channels)
             //    - Iterate through tracks, find the highest sample rate, max channels, or enforce a standard.

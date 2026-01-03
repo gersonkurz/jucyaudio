@@ -31,7 +31,7 @@ namespace jucyaudio
     {
         using namespace jucyaudio::database;
 
-        bool MixExporter::exportMixToFile(MixId mixId, const audio::ActiveExportSettings &settings, MixExporterProgressCallback progressCallback) const
+        ExportResult MixExporter::exportMixToFile(MixId mixId, const audio::ActiveExportSettings &settings, MixExporterProgressCallback progressCallback) const
         {
             const auto targetExtension{getLowercaseExtension(settings.outputPath)};
 
@@ -39,47 +39,48 @@ namespace jucyaudio
             if (targetExtension == ".m3u")
             {
                 ExportMixToM3U m3uExporter{};
-                return m3uExporter.exportMix(mixId, settings.outputPath, progressCallback);
+                bool success = m3uExporter.exportMix(mixId, settings.outputPath, progressCallback);
+                return success ? ExportResult::Success() : ExportResult::Failure("M3U export failed");
             }
 
             // Handle audio format exports
             spdlog::info("MTE: Initializing export for mix {} -> {}", mixId, pathToString(settings.outputPath));
 
-            bool success{false};
+            ExportResult result;
             if (targetExtension == ".mp3")
             {
                 ExportMp3MixImplementation implementation{mixId, settings, progressCallback};
-                success = implementation.run();
+                result = implementation.run();
             }
             else if (targetExtension == ".wav")
             {
                 ExportWavMixImplementation implementation{mixId, settings, progressCallback};
-                success = implementation.run();
+                result = implementation.run();
             }
             else
             {
                 spdlog::error("MTE: Unsupported output file extension: {}", targetExtension);
                 if (progressCallback)
                     progressCallback(1.0f, "Error: Unsupported output format.");
-                return false;
+                return ExportResult::Failure("Unsupported output format: " + targetExtension);
             }
-            
+
             // Mark the mix as exported if successful
-            if (success && !settings.exportFolder.empty())
+            if (result.success && !settings.exportFolder.empty())
             {
                 const auto& mixManager = database::theTrackLibrary.getMixManager();
                 mixManager.setMixExported(mixId, settings.exportFolder);
                 spdlog::info("Marked mix {} as Exported to folder '{}'", mixId, settings.exportFolder);
             }
-            else if (success)
+            else if (result.success)
             {
                 // Legacy: If no folder specified, just mark as exported
                 const auto& mixManager = database::theTrackLibrary.getMixManager();
                 mixManager.setMixStatus(mixId, "Exported");
                 spdlog::info("Marked mix {} as Exported (no folder)", mixId);
             }
-            
-            return success;
+
+            return result;
         }
     } // namespace audio
 } // namespace jucyaudio

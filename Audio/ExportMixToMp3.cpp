@@ -127,8 +127,8 @@ namespace jucyaudio
                 return totalTracks;
             };
             
-            // Track I/O errors during export
-            int readFailures = 0;
+            // Track unique failed tracks using base class member for structured result
+            m_failedTracks.clear();
 
             // Pre-allocate interleaved buffer outside the loop to avoid per-block heap allocation
             std::vector<float> interleaved(static_cast<size_t>(processingBlockSize * 2));
@@ -148,7 +148,7 @@ namespace jucyaudio
                 {
                     if (!contributeFromActiveSource(i, context, masterOutputBlock))
                     {
-                        ++readFailures;
+                        m_failedTracks.insert(m_activeSources[i].trackId);
                     }
                 }
 
@@ -236,9 +236,9 @@ namespace jucyaudio
             size_t id3v1bytes = lame_get_id3v1_tag(m_lameFlags, id3v1, sizeof id3v1);
             m_outputStream->write(id3v1, id3v1bytes);
 
-            if (readFailures > 0)
+            if (!m_failedTracks.empty())
             {
-                spdlog::warn("MP3 export completed with {} read failures for mix ID: {} - some audio may be missing", readFailures, m_mixId);
+                spdlog::warn("MP3 export completed with {} failed track(s) for mix ID: {} - some audio may be missing", m_failedTracks.size(), m_mixId);
             }
             else
             {
@@ -246,7 +246,7 @@ namespace jucyaudio
             }
 
             if (m_progressCallback)
-                m_progressCallback(1.0f, readFailures > 0 ? "MP3 export complete (with warnings)" : "MP3 export complete!");
+                m_progressCallback(1.0f, !m_failedTracks.empty() ? "MP3 export complete (with warnings)" : "MP3 export complete!");
 
             return true;
         }

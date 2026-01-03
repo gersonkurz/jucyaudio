@@ -2467,21 +2467,15 @@ namespace jucyaudio
                     completionCb(false, "Cancelled before export.");
                     return;
                 }
-                /*
-                auto activeTracks = theTrackLibrary.getMixManager().getMixTracks(m_mixInfo.mixId);
-                if (activeTracks.empty())
-                {
-                    completionCb(false, "No active tracks in the mix to export.");
-                    return;
-                }
-                */
-                if (m_exporter.exportMixToFile(m_mixInfo.mixId,
+                const auto exportResult = m_exporter.exportMixToFile(m_mixInfo.mixId,
                         m_settings,
                         [&](float progress, const std::string &message)
                         {
                             progressCb(static_cast<int>(progress * 100.0f), message);
                             return !shouldCancel.load();
-                        }))
+                        });
+
+                if (exportResult.success)
                 {
                     // Step 3: Post-export cleanup if configured
                     if (config::theSettings.mixEditingSettings.clearWorkingSetAfterExport.get())
@@ -2518,12 +2512,27 @@ namespace jucyaudio
                     }
 
                     const auto filename = pathToString(m_settings.outputPath.filename());
-                    const auto successMsg = std::format("Mix '{}' successfully exported to:\n{}", m_mixInfo.name, filename);
+
+                    // Build completion message with warning info if applicable
+                    std::string successMsg;
+                    if (exportResult.warningCount > 0)
+                    {
+                        successMsg = std::format("Mix '{}' exported to:\n{}\n\nWarning: {} track(s) had read errors during export. Some audio may be missing or silent. Check the log for details.",
+                            m_mixInfo.name, filename, exportResult.warningCount);
+                    }
+                    else
+                    {
+                        successMsg = std::format("Mix '{}' successfully exported to:\n{}", m_mixInfo.name, filename);
+                    }
                     completionCb(true, successMsg);
                 }
                 else
                 {
-                    completionCb(false, "Unable to export mix to file: " + pathToString(m_settings.outputPath));
+                    // Use detailed failure message if available, otherwise generic message
+                    std::string failureMsg = exportResult.message.empty()
+                        ? "Unable to export mix to file: " + pathToString(m_settings.outputPath)
+                        : "Export failed: " + exportResult.message;
+                    completionCb(false, failureMsg);
                 }
             }
 

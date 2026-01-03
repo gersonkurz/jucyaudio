@@ -18,7 +18,7 @@ namespace jucyaudio
         public:
             virtual ~MixExporter() = default;
 
-            bool exportMixToFile(
+            ExportResult exportMixToFile(
                 MixId mixId, const audio::ActiveExportSettings &settings, MixExporterProgressCallback progressCallback = nullptr) const override;
         };
 

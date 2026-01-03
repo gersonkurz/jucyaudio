@@ -17,12 +17,33 @@ namespace jucyaudio
     {
         using MixExporterProgressCallback = std::function<void(float /*progress 0.0-1.0*/, const std::string & /*statusMsg*/)>;
 
+        // Structured result from export operations, allowing callers to see warnings
+        struct ExportResult
+        {
+            bool success{false};
+            int warningCount{0};
+            std::string message;
+
+            // Convenience constructors
+            static ExportResult Success(int warnings = 0)
+            {
+                return {true, warnings, ""};
+            }
+
+            static ExportResult Failure(const std::string &msg)
+            {
+                return {false, 0, msg};
+            }
+
+            explicit operator bool() const { return success; }
+        };
+
         class IMixExporter
         {
         public:
             virtual ~IMixExporter() = default;
 
-            virtual bool exportMixToFile(MixId mixId, const ActiveExportSettings &settings, MixExporterProgressCallback progressCallback = nullptr) const = 0;
+            virtual ExportResult exportMixToFile(MixId mixId, const ActiveExportSettings &settings, MixExporterProgressCallback progressCallback = nullptr) const = 0;
         };
 
     } // namespace audio

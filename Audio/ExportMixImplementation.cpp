@@ -61,7 +61,7 @@ namespace jucyaudio
             loadMix(mixId);
         }
 
-        bool ExportMixImplementation::run()
+        ExportResult ExportMixImplementation::run()
         {
             using OperationStep = bool (ExportMixImplementation::*)();
 
@@ -89,16 +89,18 @@ namespace jucyaudio
                 const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
                 if (!success)
                 {
+                    auto errorMsg = std::format("Operation '{}' failed after {} ms ({}).", opdef.name, duration, durationToString((Duration_t)duration));
                     if (m_progressCallback)
-                        m_progressCallback(1.0f, std::format("Error: {}", opdef.name));
-                    return fail(std::format("Operation '{}' failed after {} ms ({}).", opdef.name, duration, durationToString((Duration_t)duration)));
+                        m_progressCallback(1.0f, "Error: " + errorMsg);
+                    fail(errorMsg);
+                    return ExportResult::Failure(errorMsg);
                 }
                 else
                 {
                     spdlog::info("MTE: Operation '{}' completed successfully in {} ms ({}).", opdef.name, duration, durationToString((Duration_t)duration));
                 }
             }
-            return true;
+            return ExportResult::Success(static_cast<int>(m_failedTracks.size()));
         }
         void ExportMixImplementation::calculateTrackPositions()
         {

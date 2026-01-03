@@ -81,8 +81,8 @@ namespace jucyaudio
             };
 
             //const auto overallStart = clock::now();
-            // Track I/O errors during export
-            int readFailures = 0;
+            // Track unique failed tracks using base class member for structured result
+            m_failedTracks.clear();
 
             // Iterate through the output mix timeline, block by block
             while (context.samplesWrittenTotal < m_totalOutputSamples)
@@ -99,7 +99,7 @@ namespace jucyaudio
                 {
                     if (!contributeFromActiveSource(i, context, masterOutputBlock))
                     {
-                        ++readFailures;
+                        m_failedTracks.insert(m_activeSources[i].trackId);
                     }
                 }
 
@@ -120,9 +120,9 @@ namespace jucyaudio
             m_writer->flush();
             // Writer (and its owned stream) and readers are cleaned up by unique_ptr.
 
-            if (readFailures > 0)
+            if (!m_failedTracks.empty())
             {
-                spdlog::warn("WAV export completed with {} read failures for mix ID: {} - some audio may be missing", readFailures, m_mixId);
+                spdlog::warn("WAV export completed with {} failed track(s) for mix ID: {} - some audio may be missing", m_failedTracks.size(), m_mixId);
             }
             else
             {
@@ -130,7 +130,7 @@ namespace jucyaudio
             }
 
             if (m_progressCallback)
-                m_progressCallback(1.0f, readFailures > 0 ? "WAV export complete (with warnings)" : "WAV export complete!");
+                m_progressCallback(1.0f, !m_failedTracks.empty() ? "WAV export complete (with warnings)" : "WAV export complete!");
             return true;
         }
     } // namespace audio
