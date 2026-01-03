@@ -253,7 +253,7 @@ namespace jucyaudio
                                 }
                                 catch (...)
                                 {
-                                    spdlog::debug("Unknown exception reading track {}", trackInfo->trackId);
+                                    spdlog::error("Unknown non-std::exception reading track {}", trackInfo->trackId);
                                     theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
                                     {
                                         std::lock_guard<std::mutex> lock(badFilesMutex);
