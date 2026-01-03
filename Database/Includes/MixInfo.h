@@ -297,8 +297,12 @@ namespace nlohmann
 
         static void from_json(const json &j, jucyaudio::database::EnvelopePoint &p)
         {
-            p.time = jucyaudio::Duration_t(j.at("time").get<int64_t>());
-            p.volume = j.at("volume").get<jucyaudio::Volume_t>();
+            if (!j.contains("time") || !j.contains("volume"))
+            {
+                spdlog::warn("EnvelopePoint JSON missing required fields, using defaults");
+            }
+            p.time = jucyaudio::Duration_t(j.value("time", int64_t{0}));
+            p.volume = j.value("volume", jucyaudio::Volume_t{1000});
         }
     };
 
@@ -315,19 +319,39 @@ namespace nlohmann
 
         static void from_json(const json &j, jucyaudio::database::MixTrack &mt)
         {
-            auto cue = j.at("cue");
-            mt.cueStart = jucyaudio::Duration_t(cue.at("start").get<int64_t>());
-            mt.cueEnd = jucyaudio::Duration_t(cue.at("end").get<int64_t>());
-
-            auto attach = j.at("attach");
-            mt.attachFrom = jucyaudio::Duration_t(attach.at("from").get<int64_t>());
-            mt.attachTo = jucyaudio::Duration_t(attach.at("to").get<int64_t>());
-
-            mt.envelopePoints = j.at("envelope").get<std::vector<jucyaudio::database::EnvelopePoint>>();
-            // Check if "gainAdjustment" exists before trying to get it, for backward compatibility
-            if (j.contains("gainAdjustment")) {
-                mt.gainAdjustment = j.at("gainAdjustment").get<float>();
+            // Use safe accessors with defaults for robustness against corrupted/incomplete JSON
+            if (j.contains("cue") && j["cue"].is_object())
+            {
+                const auto& cue = j["cue"];
+                mt.cueStart = jucyaudio::Duration_t(cue.value("start", int64_t{0}));
+                mt.cueEnd = jucyaudio::Duration_t(cue.value("end", int64_t{0}));
             }
+            else
+            {
+                spdlog::warn("MixTrack JSON missing 'cue' section, using defaults");
+            }
+
+            if (j.contains("attach") && j["attach"].is_object())
+            {
+                const auto& attach = j["attach"];
+                mt.attachFrom = jucyaudio::Duration_t(attach.value("from", int64_t{0}));
+                mt.attachTo = jucyaudio::Duration_t(attach.value("to", int64_t{0}));
+            }
+            else
+            {
+                spdlog::warn("MixTrack JSON missing 'attach' section, using defaults");
+            }
+
+            if (j.contains("envelope") && j["envelope"].is_array())
+            {
+                mt.envelopePoints = j["envelope"].get<std::vector<jucyaudio::database::EnvelopePoint>>();
+            }
+            else
+            {
+                spdlog::warn("MixTrack JSON missing 'envelope' section, using empty envelope");
+            }
+
+            mt.gainAdjustment = j.value("gainAdjustment", 0.0f);
         }
     };
 } // namespace nlohmann
