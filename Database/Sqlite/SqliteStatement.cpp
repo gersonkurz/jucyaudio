@@ -196,7 +196,7 @@ namespace jucyaudio
             const int rc = sqlite3_bind_double(m_statement, m_param_index++, value);
             if (rc)
             {
-                return m_db.formatError(__LINE__, rc, "sqlite3_bind_int({}) failed", value);
+                return m_db.formatError(__LINE__, rc, "sqlite3_bind_double({}) failed", value);
             }
             return true;
         }
