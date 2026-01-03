@@ -9,7 +9,6 @@ namespace jucyaudio
         {
             // Initialize with flat response
             currentSettings.resetToFlat();
-            pendingSettings = currentSettings;
         }
 
         void Equalizer::prepare(const juce::dsp::ProcessSpec &spec)
@@ -32,9 +31,12 @@ namespace jucyaudio
             // Check if parameters need updating (on audio thread)
             if (parametersChanged.exchange(false, std::memory_order_acq_rel))
             {
-                juce::SpinLock::ScopedLockType lock(settingsLock);
-                currentSettings = pendingSettings;
-                updateFilterCoefficients();
+                // Lock-free read via atomic shared_ptr
+                if (auto settings = pendingSettings.load(std::memory_order_acquire))
+                {
+                    currentSettings = *settings;
+                    updateFilterCoefficients();
+                }
             }
 
             // Process the audio through the chain
@@ -44,16 +46,11 @@ namespace jucyaudio
 
         void Equalizer::updateParameters(const model::EQSettings &settings)
         {
-            // Called from UI thread - update pending settings
-            {
-                juce::SpinLock::ScopedTryLockType lock{settingsLock};
-                if (lock.isLocked())
-                {
-                    pendingSettings = settings;
-                    bypassFlag.store(!settings.isActive, std::memory_order_release);
-                    parametersChanged.store(true, std::memory_order_release);
-                }
-            }
+            // Called from UI thread - lock-free via atomic shared_ptr.
+            // Allocation is fine at UI-rate; both threads are wait-free.
+            pendingSettings.store(std::make_shared<const model::EQSettings>(settings), std::memory_order_release);
+            bypassFlag.store(!settings.isActive, std::memory_order_release);
+            parametersChanged.store(true, std::memory_order_release);
         }
 
         void Equalizer::reset()

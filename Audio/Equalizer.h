@@ -55,9 +55,8 @@ namespace jucyaudio
             std::atomic<bool> parametersChanged{false};
             std::atomic<bool> bypassFlag{false};
 
-            // Pending settings (updated from UI thread)
-            model::EQSettings pendingSettings;
-            juce::SpinLock settingsLock;
+            // Pending settings (updated from UI thread) - lock-free via atomic shared_ptr
+            std::atomic<std::shared_ptr<const model::EQSettings>> pendingSettings{nullptr};
 
             // Sample rate for coefficient calculation
             double sampleRate{44100.0};
