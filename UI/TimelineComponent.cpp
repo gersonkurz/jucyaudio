@@ -847,40 +847,29 @@ namespace jucyaudio
                 g.setColour(juce::Colours::black.withAlpha(0.2f));
                 g.fillRect(originalBounds);
 
-                // 2. Draw drop indicator line (shows where track will snap to)
+                // 2. Draw drop indicator - highlight target track and show insertion line
                 if (m_dropTargetOrderInMix >= 0)
                 {
-                    const int rulerHeight = 30;
-                    const int trackHeight = MixTrackComponent::TOTAL_COMPONENT_HEIGHT;
-                    const int yGap = 5;
-
-                    // Calculate number of lanes
-                    const int availableHeightForLanes = getHeight() - rulerHeight;
-                    int numLanes = std::max(1, availableHeightForLanes / (trackHeight + yGap));
-
-                    // Find which lane the target track is in using the zigzag pattern
-                    int currentLane = 0;
-                    int laneDirection = +1;
-                    int orderInMix = 0;
-
-                    for (orderInMix = 0; orderInMix <= m_dropTargetOrderInMix && orderInMix < static_cast<int>(m_trackViews.size()); ++orderInMix)
+                    // Find and highlight the target track
+                    for (const auto &view : m_trackViews)
                     {
-                        if (orderInMix == m_dropTargetOrderInMix)
+                        if (view.mixTrackData->orderInMix == m_dropTargetOrderInMix)
                         {
-                            // Draw horizontal line at the top of this track
-                            const int yPos = rulerHeight + (currentLane * (trackHeight + yGap));
+                            auto targetBounds = view.component->getBounds();
+
+                            // Draw semi-transparent highlight over target track
+                            g.setColour(juce::Colours::cyan.withAlpha(0.3f));
+                            g.fillRect(targetBounds);
+
+                            // Draw border around target track
+                            g.setColour(juce::Colours::cyan.withAlpha(0.8f));
+                            g.drawRect(targetBounds, 2);
+
+                            // Draw horizontal insertion line at top of target track
                             g.setColour(juce::Colours::orange.withAlpha(0.9f));
-                            g.fillRect(0, yPos - 2, getWidth(), 4); // 4px thick line
+                            g.fillRect(0, targetBounds.getY() - 2, getWidth(), 4);
                             break;
                         }
-
-                        // Move to next lane using zigzag pattern
-                        if ((currentLane + laneDirection) >= numLanes || (currentLane + laneDirection) < 0)
-                            laneDirection *= -1;
-
-                        currentLane += laneDirection;
-                        if (numLanes == 1)
-                            currentLane = 0;
                     }
                 }
             }
@@ -1145,14 +1134,36 @@ namespace jucyaudio
                 // Update current drag position for floating rectangle
                 m_currentDragPosition = event.position.toInt();
 
-                // Calculate the target drop position based on mouse Y coordinate
-                const int targetOrder = pointToOrderInMix(event.position.toInt());
+                // Find which track is under the current mouse position (full X,Y bounds check).
+                // This prevents accidental reorders from a click/jitter — you must actually drag
+                // onto a different track's visual area to arm the reorder. (Forward-ported from the
+                // 1.x fix; 2.0's pointToOrderInMix had an x-closest fallback that always returned a
+                // track, which reintroduced the accidental-reorder bug.)
+                auto* targetTrack = getTrackAtPosition(event.position.toInt());
 
-                if (targetOrder != m_dropTargetOrderInMix && targetOrder >= 0)
+                if (targetTrack && targetTrack != m_draggedTrackForReorder)
                 {
-                    m_dropTargetOrderInMix = targetOrder;
-                    spdlog::info("[Timeline] Drag target updated to orderInMix: {}", targetOrder);
+                    // Mouse is over a different track - find its orderInMix
+                    for (const auto& view : m_trackViews)
+                    {
+                        if (view.component.get() == targetTrack)
+                        {
+                            if (view.mixTrackData->orderInMix != m_dropTargetOrderInMix)
+                            {
+                                m_dropTargetOrderInMix = view.mixTrackData->orderInMix;
+                                spdlog::info("[Timeline] Drag target updated to orderInMix: {}", m_dropTargetOrderInMix);
+                            }
+                            break;
+                        }
+                    }
                 }
+                else if (!targetTrack)
+                {
+                    // Mouse is not over any track - clear the drop target
+                    m_dropTargetOrderInMix = -1;
+                }
+                // If targetTrack == m_draggedTrackForReorder, don't change m_dropTargetOrderInMix
+                // (keep previous target if we had one, or -1 if we didn't)
 
                 repaint(); // Repaint to update both floating rectangle and drop indicator
             }
