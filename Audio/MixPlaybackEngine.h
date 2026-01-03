@@ -174,12 +174,6 @@ namespace jucyaudio
             // that changes, access to m_garbage must be synchronized.
             std::vector<std::shared_ptr<PlaybackState>> m_garbage;
 
-            // DEPRECATED: Old members kept temporarily for compatibility with non-audio methods
-            // TODO: Remove these after updating all non-audio-callback methods to use PlaybackState
-            std::vector<std::unique_ptr<PlaybackTrackSource>> m_trackSources;
-            std::vector<Duration_t> m_trackStartTimes;
-            Duration_t m_totalDurationMs{0};
-
             // Playback state
             std::atomic<juce::int64> m_currentPositionSamples{0};
             std::atomic<bool> m_isPrepared{false};
@@ -210,10 +204,6 @@ namespace jucyaudio
             float getEnvelopeGainForTrack(const MixTrack &mixTrack, Duration_t timeInTrack);
             void unloadMixInternal(); // Internal version that doesn't lock
 
-            // DEPRECATED: Old methods kept temporarily for compatibility
-            // TODO: Remove these after updating all calling code
-            void calculateTrackStartTimes(); // Calculate track positions using Mix Flow algorithm (DEPRECATED - moved to PlaybackState)
-            bool prepareTrackSources(); // DEPRECATED - logic moved to buildPlaybackState
             void setPositionInternal(Duration_t positionMs); // Internal version that assumes mutex is already locked
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixPlaybackEngine)

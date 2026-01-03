@@ -10,42 +10,6 @@ namespace jucyaudio
 {
     namespace audio
     {
-        void MixPlaybackEngine::calculateTrackStartTimes()
-        {
-            spdlog::info("[PlaybackEngine] calculateTrackStartTimes called");
-
-            const auto &mixTracks = m_mixLoader->getMixTracks();
-            m_trackStartTimes.clear();
-            m_trackStartTimes.reserve(mixTracks.size());
-
-            if (mixTracks.empty())
-            {
-                spdlog::warn("[PlaybackEngine] No tracks to calculate start times for");
-                return;
-            }
-
-            Duration_t previousAudioStartTime{0};
-
-            for (size_t i = 0; i < mixTracks.size(); ++i)
-            {
-                const auto& mixTrack = mixTracks[i];
-                Duration_t audioStartTime;
-
-                if (i == 0)
-                {
-                    audioStartTime = Duration_t{0};
-                }
-                else
-                {
-                    const auto& prevTrack = mixTracks[i - 1];
-                    audioStartTime = previousAudioStartTime + prevTrack.attachTo - mixTrack.attachFrom;
-                }
-
-                m_trackStartTimes.push_back(audioStartTime);
-                previousAudioStartTime = audioStartTime;
-            }
-        }
-
         std::shared_ptr<PlaybackState> MixPlaybackEngine::buildPlaybackState(MixProjectLoader* mixLoader)
         {
             if (!mixLoader)
@@ -322,10 +286,6 @@ namespace jucyaudio
             m_mixLoader = nullptr;
             m_currentPositionSamples = 0;
 
-            // Clear deprecated member variables (will be removed later)
-            m_trackSources.clear();
-            m_trackStartTimes.clear();
-
             spdlog::debug("[PlaybackEngine] unloadMixInternal -> Exit");
         }
         
@@ -335,28 +295,23 @@ namespace jucyaudio
             {
                 return;
             }
-            
+
             const juce::ScopedLock lock(m_critSec);
-            
+
             const auto currentPos = getPosition();
-            
-            calculateTrackStartTimes();
-            
-            const auto &mixTracks = m_mixLoader->getMixTracks();
-            Duration_t maxEndTime{0};
-            for (size_t i = 0; i < mixTracks.size(); ++i)
+
+            // Rebuild PlaybackState with updated track positions
+            auto newState = buildPlaybackState(m_mixLoader);
+            if (newState)
             {
-                const auto &mixTrack = mixTracks[i];
-                if (const auto *trackInfo = m_mixLoader->getTrackInfoForId(mixTrack.trackId))
+                auto oldState = m_currentPlaybackState.exchange(newState);
+                if (oldState)
                 {
-                    Duration_t trackStartTime = m_trackStartTimes[i];
-                    Duration_t trackEndTime = trackStartTime + trackInfo->duration;
-                    maxEndTime = std::max(maxEndTime, trackEndTime);
+                    m_garbage.push_back(oldState);
                 }
+                collectGarbage();
             }
-            
-            m_totalDurationMs = maxEndTime;
-            
+
             setPositionInternal(currentPos);
         }
 
@@ -452,7 +407,7 @@ namespace jucyaudio
             const juce::ScopedLock lock(m_critSec);
 
             auto currentPos = m_currentPositionSamples.load();
-            
+
             m_sampleRate = sampleRate;
             m_blockSize = samplesPerBlockExpected;
             m_isPrepared = true;
@@ -464,13 +419,18 @@ namespace jucyaudio
 
             if (m_mixLoader)
             {
-                if (m_trackStartTimes.empty())
+                // Rebuild PlaybackState now that we're prepared (creates track sources)
+                auto newState = buildPlaybackState(m_mixLoader);
+                if (newState)
                 {
-                    calculateTrackStartTimes();
+                    auto oldState = m_currentPlaybackState.exchange(newState);
+                    if (oldState)
+                    {
+                        m_garbage.push_back(oldState);
+                    }
+                    collectGarbage();
                 }
-                
-                prepareTrackSources();
-                
+
                 if (currentPos > 0)
                 {
                     m_currentPositionSamples = currentPos;
@@ -482,11 +442,15 @@ namespace jucyaudio
         {
             const juce::ScopedLock lock(m_critSec);
 
-            for (auto &source : m_trackSources)
+            auto state = m_currentPlaybackState.load();
+            if (state)
             {
-                if (source->getAudioSource())
+                for (auto &source : state->trackSources)
                 {
-                    source->getAudioSource()->releaseResources();
+                    if (source && source->getAudioSource())
+                    {
+                        source->getAudioSource()->releaseResources();
+                    }
                 }
             }
 
@@ -565,69 +529,6 @@ namespace jucyaudio
                 setPositionInternal(targetPos);
                 m_pendingSeek = false;
             }
-        }
-
-        bool MixPlaybackEngine::prepareTrackSources()
-        {
-            m_trackSources.clear();
-
-            const auto &mixTracks = m_mixLoader->getMixTracks();
-
-            for (size_t i = 0; i < mixTracks.size(); ++i)
-            {
-                const auto &mixTrack = mixTracks[i];
-                const auto *trackInfo = m_mixLoader->getTrackInfoForId(mixTrack.trackId);
-                if (!trackInfo)
-                {
-                    continue;
-                }
-                const auto trackPath{trackInfo->reconstructFullPath()};
-
-                auto source = std::make_unique<PlaybackTrackSource>(mixTrack.trackId, i, trackInfo, mixTrack);
-
-                Duration_t trackStartTime = (i < m_trackStartTimes.size()) ? m_trackStartTimes[i] : Duration_t{0};
-                if (source->prepare(m_formatManager, m_sampleRate, m_blockSize, trackStartTime))
-                {
-                    m_trackSources.push_back(std::move(source));
-                }
-            }
-
-            // Set initial read positions for all tracks, accounting for cueStart
-            for (size_t i = 0; i < m_trackSources.size(); ++i)
-            {
-                auto &source = m_trackSources[i];
-
-                if (source->mixTrackIndex >= m_trackStartTimes.size())
-                {
-                    continue;
-                }
-
-                Duration_t trackStartMs = m_trackStartTimes[source->mixTrackIndex];
-                juce::int64 trackStartSamples = static_cast<juce::int64>((trackStartMs.count() / 1000.0) * m_sampleRate);
-
-                juce::int64 positionInSourceSamples = 0;
-                if (m_currentPositionSamples >= trackStartSamples)
-                {
-                    juce::int64 positionInTrack = m_currentPositionSamples - trackStartSamples;
-
-                    if (source->reader)
-                    {
-                        positionInSourceSamples = static_cast<juce::int64>(positionInTrack * source->reader->sampleRate / m_sampleRate);
-                    }
-                }
-
-                // Account for cueStart offset
-                positionInSourceSamples = std::max(juce::int64(0), positionInSourceSamples + source->cueStartSamples);
-
-                source->currentPositionInSourceSamples = positionInSourceSamples;
-
-                if (source->readerSource)
-                {
-                    source->readerSource->setNextReadPosition(positionInSourceSamples);
-                }
-            }
-            
-            return !m_trackSources.empty();
         }
 
         void MixPlaybackEngine::mixActiveTracksForBlock(const std::shared_ptr<PlaybackState>& state, juce::AudioBuffer<float> &buffer, juce::int64 startSample, int numSamples)
