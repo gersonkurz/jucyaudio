@@ -215,6 +215,12 @@ namespace jucyaudio
         
         std::string SqliteStatement::getText(int index) const
         {
+            if (index < 0 || index >= static_cast<int>(getNumberOfColumns()))
+            {
+                spdlog::error("SqliteStatement::getText: column index {} out of bounds (columns: {})",
+                    index, getNumberOfColumns());
+                return {};
+            }
             auto p = reinterpret_cast<const char *>(sqlite3_column_text(m_statement, index));
             if (p)
                 return std::string{p};
@@ -224,6 +230,12 @@ namespace jucyaudio
 
         std::vector<unsigned char> SqliteStatement::getBlob(int index) const
         {
+            if (index < 0 || index >= static_cast<int>(getNumberOfColumns()))
+            {
+                spdlog::error("SqliteStatement::getBlob: column index {} out of bounds (columns: {})",
+                    index, getNumberOfColumns());
+                return {};
+            }
             const auto p = reinterpret_cast<const unsigned char *>(sqlite3_column_blob(m_statement, index));
             int size = sqlite3_column_bytes(m_statement, index);
 
