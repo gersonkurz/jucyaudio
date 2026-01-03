@@ -95,3 +95,10 @@ We leverage `FetchContent` for a hermetic build.
 - The FIFO size (2048 samples) may underflow if the render thread stalls; consider a larger buffer and drop strategy.
 - projectM expects a sample rate; document how to pass the actual host rate (or resample) so visuals stay stable at 44.1k vs 48k.
 - Add an explicit fallback/log when asset paths are missing to avoid silent black frames.
+
+# Claude Comments
+- The SPSC FIFO design is sound, but consider using `juce::AbstractFifo` with a power-of-2 buffer size (2048 is good) for optimal performance. The mono downmix (L+R)/2 is appropriate for visualization.
+- For OpenGL context management: JUCE's `OpenGLContext::setOpenGLVersionRequired()` should request GL 3.3 Core Profile explicitly. ProjectM v4 uses modern GL and will fail silently on legacy contexts.
+- Thread priority: The render thread should not compete with audio. Consider setting `setContinuousRepainting(false)` and using a 30fps Timer rather than VBlank sync to reduce CPU load when visuals aren't the focus.
+- Memory consideration: ProjectM presets can allocate significant GPU memory. Implement a "low memory" mode that disables the visualizer when system resources are constrained.
+- The asset copy strategy should use CMake's `install(DIRECTORY...)` rather than post-build commands for better cross-platform compatibility and incremental builds.

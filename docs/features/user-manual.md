@@ -93,3 +93,11 @@ MkDocs allows us to treat documentation like code. It's low-friction and high-qu
 # Codex Comments
 - The mkdocs palette sets dark mode by default; consider auto/light to match the app and avoid printing issues in the PDF.
 - Document where offline HTML/PDF assets land in the app bundle and how they are opened (path + platform specifics).
+
+# Claude Comments
+- **Screenshot automation**: Consider using a headless screenshot tool (e.g., `puppeteer` or JUCE's own `Component::createComponentSnapshot()`) to generate consistent UI screenshots at fixed dimensions. This makes doc updates less painful when UI changes.
+- **Versioned docs with `mike`**: This is good foresight, but delay implementing until v2.0 - for v1.x, a single "latest" branch is simpler.
+- **In-app help integration**: Rather than opening an external browser/PDF, consider embedding a `juce::WebBrowserComponent` that loads the local HTML. This keeps users in the app and allows context-sensitive help (e.g., "Help on this panel").
+- **Content priority**: The "Mix Editor" chapter will be the most complex. Consider starting with it to shake out the documentation workflow before tackling simpler chapters.
+- **Localization future-proofing**: MkDocs supports i18n via `mkdocs-static-i18n`. Even if not implementing now, structure content to avoid hardcoded strings in screenshots (use numbered callouts instead).
+- **PDF generation**: `mkdocs-with-pdf` uses WeasyPrint which can struggle with complex layouts. Keep page layouts simple and test PDF output early.

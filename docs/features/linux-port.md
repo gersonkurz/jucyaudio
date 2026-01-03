@@ -96,3 +96,12 @@ Porting is straightforward mostly due to JUCE. The main effort is replacing Wind
 - Consider adopting XDG base directories for config/data paths to align with Linux conventions.
 - For Flatpak, confirm which filesystem permissions are needed for music libraries outside `xdg-music`.
 - The Unicode normalization solution should be shared with other platforms to keep cache behavior consistent.
+
+# Claude Comments
+- **ICU vs GLib**: Prefer ICU (`libicu-dev`) over GLib for Unicode normalization. ICU is more comprehensive and already a transitive dependency of many Linux systems. The API is `unorm2_normalize()` with `UNORM2_NFC`.
+- **XDG paths implementation**: Use `$XDG_CONFIG_HOME/jucyaudio` (default `~/.config/jucyaudio`) for settings and `$XDG_DATA_HOME/jucyaudio` (default `~/.local/share/jucyaudio`) for the database. JUCE's `File::getSpecialLocation()` doesn't handle XDG; implement a custom `LinuxPaths` helper.
+- **Path separator handling**: The codebase should already use `std::filesystem::path` which handles separators automatically. Audit for any raw string concatenation with `\\` and replace with `path /= component` or `path.append()`.
+- **PipeWire priority**: PipeWire is now the default on Fedora, Ubuntu 22.10+, and most modern distros. JUCE's ALSA backend works through PipeWire's ALSA emulation, but test latency explicitly. Consider adding JACK support for pro-audio users.
+- **Flatpak filesystem access**: `--filesystem=xdg-music` only covers `~/Music`. Many users store music elsewhere. Add `--filesystem=host:ro` for read access to all files, or provide a portal-based folder picker for explicit user consent.
+- **AppImage alternative**: Consider AppImage as a secondary distribution format - it's simpler than Flatpak (no sandbox) and works on older distros. Use `linuxdeployqt` equivalent for JUCE apps.
+- **CI/CD**: Add a GitHub Actions workflow that builds on Ubuntu LTS and runs basic smoke tests. This catches Linux regressions early.

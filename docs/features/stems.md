@@ -70,3 +70,12 @@ This brings "Serato Stems" capability to JucyAudio using purely open-source, GPL
 - Demucs models are CC-BY-NC; note the non-commercial constraint and how it affects distribution.
 - Define a cleanup/management story for stem files (storage location, deletion, and re-generation).
 - Consider a per-track cache key (model version + params) to avoid recomputing stems.
+
+# Claude Comments
+- **CC-BY-NC licensing concern**: The non-commercial clause on MusDB-trained models is a real issue if JucyAudio is ever commercialized. Consider also supporting Open-Unmix (UMX) models which are MIT-licensed, though slightly lower quality. Let users choose.
+- **ONNX model conversion**: Pre-converted ONNX models for htdemucs are not officially provided by Facebook. You'll need to convert them yourself using `torch.onnx.export()` and host them. Document this process and version the models.
+- **Chunked processing**: The 10-second chunk recommendation is conservative. htdemucs works well with 30-second chunks with 5-second overlap, reducing boundary artifacts. Use overlap-add with a Hann window for smooth transitions.
+- **Stem file management**: Store stems in `{DatabaseFolder}/Stems/{TrackId}/` rather than by artist name - this avoids filesystem issues with special characters and makes cleanup trivial (delete folder when track is removed).
+- **Database schema**: Add `stem_generation_status` enum (none/pending/complete/failed) and `stem_model_version` to Tracks table. The "child track" approach adds complexity; consider a separate `Stems` table with foreign key to parent track.
+- **Memory management**: Demucs needs ~4GB RAM for a 3-minute track. Check available memory before starting and queue stems for processing when resources are available. Show estimated wait time in UI.
+- **GPU acceleration**: DirectML (Windows) and CoreML (macOS) providers in ONNX Runtime can provide 5-10x speedup. Make this the default with CPU fallback.

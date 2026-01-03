@@ -88,3 +88,11 @@ This is the hardest part.
 - Consider isolating plugin scanning in a helper process to avoid app crashes during scan (JUCE supports this pattern).
 - Call out where plugin state blobs are stored and how they are versioned/migrated in project files.
 - PDC needs a clear policy for max latency and what happens if plugins report extreme values.
+
+# Claude Comments
+- **Critical**: The current `MixPlaybackEngine` uses `std::atomic<std::shared_ptr<PlaybackState>>` for thread-safe state swaps. VST processing must happen within the same atomic boundary - adding plugins to `PlaybackTrackSource` means they become part of `PlaybackState` and get swapped atomically with track sources.
+- **PDC Implementation**: Rather than per-track delay lines, consider a simpler initial approach: calculate max latency at mix load time and add a single delay to the master output. Per-track PDC is complex and can be Phase 2.
+- **Plugin State Storage**: Store plugin state as base64-encoded blobs in the SQLite database (MixTracks table or new PluginInstances table). Include plugin UID + version to detect missing/upgraded plugins on load.
+- **Real-time safety**: `AudioPluginInstance::processBlock()` should be RT-safe for well-behaved plugins, but allocating/deallocating plugins must happen on the UI thread. Use the garbage collection pattern already in `MixPlaybackEngine`.
+- **Blocklist persistence**: Store crashed plugins in a separate `BlockedPlugins` table with crash timestamp and count, allowing users to retry after updates.
+- **Maximum latency policy**: Cap at 8192 samples (~185ms at 44.1kHz). Plugins reporting higher should be rejected with a warning.

@@ -92,3 +92,12 @@ This feature pairs perfectly with the AI Enrichment tool.
 - For cross-volume moves, a rename is not atomic; specify how rollback works if copy succeeds but DB update fails.
 - Hard links only work on the same filesystem; the UI should surface this constraint clearly.
 - Add a conflict policy (skip/overwrite/rename) for destination collisions in the preview step.
+
+# Claude Comments
+- **Transaction safety**: The move operation should be: 1) Copy to temp name at destination, 2) Update DB in transaction, 3) Rename temp to final name, 4) Delete source. If step 2 fails, delete the temp file. This ensures no partial states.
+- **Database path updates**: The current schema stores `folder_id` + `filename` separately. Moving a file requires: updating `folder_id` to the new folder (creating it if needed), potentially updating `filename`. Ensure the folder cache (`FolderDatabase`) is updated atomically.
+- **Pattern sanitization**: Beyond illegal characters, handle: leading/trailing spaces, reserved names (CON, PRN on Windows), maximum path length (260 chars on Windows without long path support), and consecutive separators.
+- **Dry-run implementation**: Generate the full list of operations as a `std::vector<MoveOperation>` struct, display in UI, then execute the same vector. This ensures preview matches execution exactly.
+- **Progress and cancellation**: File operations can be slow. Implement cancellation that stops after the current file (not mid-copy) and leaves the system in a consistent state.
+- **Integration with Undo**: Consider logging all move operations to an `OrganizationHistory` table, allowing users to "undo" an organization session by reversing the moves.
+- **Empty folder cleanup**: After moving files, optionally delete empty source folders. But be careful not to delete folders that contain non-music files (images, playlists, etc.).

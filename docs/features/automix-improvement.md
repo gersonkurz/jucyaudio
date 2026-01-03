@@ -72,3 +72,11 @@ This is a feasible, high-value upgrade. We have the core tech (SoundTouch) and j
 - Verify BTrack and libKeyFinder licenses are compatible with the project and distribution goals.
 - Storing beat grids as a BLOB can grow quickly; consider delta encoding or a normalized table for large libraries.
 - Real-time time-stretching needs a clear policy for CPU fallback (e.g., skip sync vs pre-render transition).
+
+# Claude Comments
+- **BTrack license**: BTrack is GPL-3.0, which is compatible. libKeyFinder is also GPL-3.0. Both are safe for this project.
+- **Beat grid storage**: Store as a compressed BLOB (zlib) containing: `{firstBeatMs: int64, intervalMs: float32, beats: uint16[]}` where beats array stores deviations from the grid in samples. This is more compact than absolute timestamps and handles tempo drift.
+- **SoundTouch integration point**: The current `PlaybackTrackSource` uses `juce::ResamplingAudioSource`. SoundTouch should replace this for tracks needing tempo adjustment, not be added in series. Create a `TempoAdjustedAudioSource` that wraps either resampler or SoundTouch based on sync mode.
+- **Phase alignment algorithm**: For downbeat alignment, compute the phase offset as `(positionInMix % beatsPerBar) - targetPhase` and adjust the incoming track's start position by this offset. This is simpler than real-time beat matching.
+- **CPU fallback strategy**: If CPU exceeds 80% during playback, disable time-stretching for the next track and log a warning. Pre-rendering transitions is complex and better suited for Phase 2.
+- **Half-time/double-time detection**: BTrack can report half or double the actual BPM. Cross-reference with the existing `BpmAnalysisTask` results and prefer values in the 60-180 BPM range, doubling/halving outliers.

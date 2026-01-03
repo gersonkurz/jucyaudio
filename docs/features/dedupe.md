@@ -180,3 +180,11 @@ string createFuzzyKey(const TrackInfo& track, const Settings& settings) {
 - The tolerance bullets show odd characters (e.g., "ņ2"); should be "+/- 2" and "+/- 1" to avoid encoding issues.
 - Hash matching needs a clear strategy for when hashes are computed (scan/import vs on demand) to avoid re-hashing large files.
 - Quality score depends on fields like format/bitDepth; document fallbacks when metadata is missing.
+
+# Claude Comments
+- **Hash computation timing**: Compute SHA-256 during initial import (already reading the file anyway). For existing libraries, add a background task similar to `BpmAnalysisTask` that hashes un-hashed files incrementally. Store partial hashes (first 64KB) for quick pre-filtering before full hash comparison.
+- **Chromaprint integration**: The `fpcalc` CLI tool is the standard way to generate fingerprints. Consider shelling out to it rather than linking libchromaprint directly - simpler build, and fingerprinting is an offline batch operation anyway.
+- **Mix Upgrade feature risk**: Swapping track IDs in mixes is dangerous. The constraint "duration identical or differences are silence" is hard to verify programmatically. Consider requiring explicit user confirmation per-swap with a visual diff of the waveforms.
+- **Quality score edge cases**: When `bitrate` is 0 (WAV files don't have bitrate), the scoring breaks. Use `sampleRate * bitDepth * channels` as a proxy for uncompressed formats.
+- **Database migration**: The schema additions (`file_hash`, `audio_fingerprint`) should be added via proper migration scripts, not `ALTER TABLE` in code, to handle existing databases gracefully.
+- **Undo for library marking**: Consider storing the original `is_duplicate` state before batch operations to allow "undo marking" without a full rescan.

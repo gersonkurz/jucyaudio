@@ -911,3 +911,12 @@ def test_enrich_album_end_to_end():
 - There are several non-ASCII control characters in this doc (e.g., "", "ž"); consider cleaning to avoid rendering issues.
 - The DB safety section should mention explicit WAL or exclusive locking strategy and wrap writes in transactions for crash safety.
 - Model identifiers should be validated/centralized (e.g., "claude-sonnet-4-20250514") to avoid drift between docs and code.
+
+# Claude Comments
+- **Database locking strategy**: Use `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=5000` in the Python script. This allows the C++ app to read while Python writes, though the C++ app should still be closed for safety during large batch operations.
+- **Batch API efficiency**: Claude's API supports batching multiple prompts in a single request via the Messages API. Group 5-10 albums per request with a structured prompt to reduce API overhead and cost.
+- **Ollama model recommendation**: For local inference, `mistral:7b-instruct` is better than `llama3` for structured JSON output. It follows formatting instructions more reliably.
+- **Checkpoint/resume**: The `checkpoint.py` utility is essential. Store progress in a `enrichment_state.json` file with: last processed album_id, total cost so far, timestamp. This allows resuming after crashes or budget limits.
+- **Confidence calibration**: LLMs tend to be overconfident. Consider calibrating confidence scores based on a test set of manually-verified albums. A model reporting 0.92 confidence might actually be 0.75 accurate.
+- **WAV path parsing edge cases**: German umlauts, Japanese characters, and parentheses in paths are common. Ensure the prompt explicitly handles these. Include 2-3 diverse examples in the prompt for few-shot learning.
+- **Cost tracking granularity**: Track costs per-folder or per-session, not just globally. This helps users understand which parts of their library are expensive to enrich (e.g., obscure labels vs. well-known artists).
