@@ -103,6 +103,44 @@ namespace jucyaudio
             return token;
         }
 
+        // Helper: Validate that a string is a valid numeric value (digits, optional decimal point, optional leading minus)
+        static bool isValidNumericValue(const std::string& value)
+        {
+            if (value.empty())
+            {
+                return false;
+            }
+
+            size_t start = 0;
+            if (value[0] == '-')
+            {
+                start = 1;
+                if (value.length() == 1)
+                {
+                    return false;  // Just a minus sign
+                }
+            }
+
+            bool hasDecimal = false;
+            for (size_t i = start; i < value.length(); ++i)
+            {
+                if (value[i] == '.')
+                {
+                    if (hasDecimal)
+                    {
+                        return false;  // Multiple decimal points
+                    }
+                    hasDecimal = true;
+                }
+                else if (!std::isdigit(static_cast<unsigned char>(value[i])))
+                {
+                    return false;  // Non-digit, non-decimal character
+                }
+            }
+
+            return true;
+        }
+
         // Helper: Try to parse a filter criterion from a token
         static bool tryParseFilter(const std::string& token, FilterCriterion& criterion)
         {
@@ -136,6 +174,12 @@ namespace jucyaudio
                 criterion.op = "..";
                 criterion.value = valueStr.substr(0, rangePos);
                 criterion.value2 = valueStr.substr(rangePos + 2);
+
+                // Validate numeric values for range queries (ranges only make sense for numeric fields)
+                if (!isValidNumericValue(criterion.value) || !isValidNumericValue(criterion.value2))
+                {
+                    return false;  // Invalid numeric values in range
+                }
                 return true;
             }
 
@@ -152,7 +196,8 @@ namespace jucyaudio
                     criterion.op = ">";
                     criterion.value = valueStr.substr(1);
                 }
-                return !criterion.value.empty();
+                // Comparison operators require valid numeric values
+                return !criterion.value.empty() && isValidNumericValue(criterion.value);
             }
             else if (valueStr[0] == '<')
             {
@@ -166,12 +211,20 @@ namespace jucyaudio
                     criterion.op = "<";
                     criterion.value = valueStr.substr(1);
                 }
-                return !criterion.value.empty();
+                // Comparison operators require valid numeric values
+                return !criterion.value.empty() && isValidNumericValue(criterion.value);
             }
 
             // Default to exact match
             criterion.op = "=";
             criterion.value = valueStr;
+
+            // For numeric fields, validate the value is actually numeric
+            if (isNumericField(fieldName) && !isValidNumericValue(criterion.value))
+            {
+                return false;  // Non-numeric value for a numeric field
+            }
+
             return true;
         }
 
