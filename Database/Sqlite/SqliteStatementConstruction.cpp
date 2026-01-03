@@ -506,7 +506,10 @@ namespace jucyaudio
 
                     writer.append(" AND folder_id IN (SELECT folder_id FROM temp.QueryScopeFolders)");
                 }
-                // No need for closing parenthesis in FTS5 case
+
+                // Add filter criteria (was previously missing - caused filters to be ignored for FTS queries)
+                addFilterCriteria(writer, args);
+
                 const auto sqlStatement = writer.asString();
                 if (!m_stmt.bindStatement(sqlStatement))
                 {
@@ -524,7 +527,11 @@ namespace jucyaudio
                 {
                     m_stmt.addParam(args.mixId);
                 }
-                // Folder IDs are now in temp table, not bound as parameters
+                // Bind filter criteria parameters
+                for (const auto& filterValue : m_filterParams)
+                {
+                    m_stmt.addParam(filterValue);
+                }
                 return true;
             }
             else
