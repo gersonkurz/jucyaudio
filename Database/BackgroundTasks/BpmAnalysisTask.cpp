@@ -28,7 +28,10 @@ namespace jucyaudio
 
             void BpmAnalysisTask::run(ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel)
             {
-                theBackgroundTaskService.pause();
+                if (!theBackgroundTaskService.pause())
+                {
+                    spdlog::warn("BpmAnalysisTask: Background service did not pause in time, proceeding anyway");
+                }
                 try
                 {
                     runInternal(progressCb, completionCb, shouldCancel);

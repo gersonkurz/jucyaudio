@@ -45,7 +45,10 @@ namespace jucyaudio
 
             void run(ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel) override
             {
-                theBackgroundTaskService.pause();
+                if (!theBackgroundTaskService.pause())
+                {
+                    spdlog::warn("LibraryScanTask: Background service did not pause in time, proceeding anyway");
+                }
                 try
                 {
                     // FIXED: This call now matches the expected signature

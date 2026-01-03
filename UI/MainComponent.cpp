@@ -3386,7 +3386,10 @@ namespace jucyaudio
 
                     void run(ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel) override
                     {
-                        theBackgroundTaskService.pause();
+                        if (!theBackgroundTaskService.pause())
+                        {
+                            spdlog::warn("DatabaseMaintenanceTask: Background service did not pause in time, proceeding anyway");
+                        }
 
                         // Step 1: Backup if requested
                         if (m_doBackup)
@@ -3468,7 +3471,12 @@ namespace jucyaudio
 
                 void run(ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool>& /*shouldCancel*/) override
                 {
-                    theBackgroundTaskService.pause();
+                    if (!theBackgroundTaskService.pause())
+                    {
+                        spdlog::error("RestoreDatabaseTask: Background service did not pause in time, aborting restore");
+                        completionCb(false, "Could not pause background tasks. Please try again.");
+                        return;
+                    }
 
                     progressCb(10, "Closing database...");
                     spdlog::info("Restoring database from backup: {}", m_backupPath.string());

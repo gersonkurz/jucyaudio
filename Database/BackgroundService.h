@@ -2,6 +2,7 @@
 
 #include <Database/Includes/IBackgroundTask.h>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -31,7 +32,8 @@ namespace jucyaudio
             void notify();
 
             // Pauses execution AFTER the current task is finished.
-            void pause();
+            // Returns true if processing stopped, false on timeout.
+            bool pause(std::chrono::milliseconds timeout = std::chrono::seconds{5});
             // Resumes execution.
             void resume();
 
@@ -48,6 +50,10 @@ namespace jucyaudio
             std::condition_variable m_condition; // Replaces juce::WaitableEvent
             std::atomic<bool> m_isPaused{false};
             std::atomic<bool> m_isProcessing{false};
+
+            // For pause() to wait until processing completes
+            std::mutex m_pauseMutex;
+            std::condition_variable m_pauseCondition;
         };
 
         extern BackgroundTaskService theBackgroundTaskService;

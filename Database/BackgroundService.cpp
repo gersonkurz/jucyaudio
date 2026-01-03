@@ -58,13 +58,15 @@ namespace jucyaudio
             m_condition.notify_one();
         }
 
-        void BackgroundTaskService::pause()
+        bool BackgroundTaskService::pause(std::chrono::milliseconds timeout)
         {
             m_isPaused = true;
-            for (int i = 0; i < 10 && m_isProcessing; ++i)
-            {
-                std::this_thread::sleep_for(std::chrono::milliseconds{100}); // Wait for current task to finish
-            }
+            // Wait until any in-progress work completes (or timeout/exit)
+            std::unique_lock<std::mutex> lock{m_pauseMutex};
+            const bool completed = m_pauseCondition.wait_for(lock, timeout, [this] {
+                return !m_isProcessing.load() || m_shouldExit.load();
+            });
+            return completed && !m_isProcessing.load();
         }
 
         void BackgroundTaskService::resume()
@@ -120,6 +122,11 @@ namespace jucyaudio
                     }
                 }
                 m_isProcessing = false;
+                // Signal pause() that processing is done
+                {
+                    std::lock_guard<std::mutex> lock{m_pauseMutex};
+                }
+                m_pauseCondition.notify_all();
             }
         }
     } // namespace database
