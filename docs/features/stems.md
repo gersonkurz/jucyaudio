@@ -65,3 +65,8 @@ This is an **Offline Process** (not real-time). Real-time separation is too CPU 
 
 ## 6. Conclusion
 This brings "Serato Stems" capability to JucyAudio using purely open-source, GPL-compatible tech.
+
+# Codex Comments
+- Demucs models are CC-BY-NC; note the non-commercial constraint and how it affects distribution.
+- Define a cleanup/management story for stem files (storage location, deletion, and re-generation).
+- Consider a per-track cache key (model version + params) to avoid recomputing stems.

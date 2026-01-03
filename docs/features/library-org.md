@@ -87,3 +87,8 @@ This feature pairs perfectly with the AI Enrichment tool.
 ## 7. Future Enhancements
 *   **Auto-Import**: Watch a "Drop Folder", auto-tag, auto-move.
 *   **Deduping**: Integrate with `dedupe.md` logic during organization.
+
+# Codex Comments
+- For cross-volume moves, a rename is not atomic; specify how rollback works if copy succeeds but DB update fails.
+- Hard links only work on the same filesystem; the UI should surface this constraint clearly.
+- Add a conflict policy (skip/overwrite/rename) for destination collisions in the preview step.

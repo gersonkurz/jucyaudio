@@ -67,3 +67,8 @@ We need to enhance `MixPlaybackEngine` to perform **Time Stretching** on the fly
 
 ## 6. Conclusion
 This is a feasible, high-value upgrade. We have the core tech (SoundTouch) and just need the glue logic and better analysis (BTrack).
+
+# Codex Comments
+- Verify BTrack and libKeyFinder licenses are compatible with the project and distribution goals.
+- Storing beat grids as a BLOB can grow quickly; consider delta encoding or a normalized table for large libraries.
+- Real-time time-stretching needs a clear policy for CPU fallback (e.g., skip sync vs pre-render transition).

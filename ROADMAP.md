@@ -42,3 +42,7 @@
 9.  **Linux Port** (`docs/linux-port.md`)
     *   **Why**: Open-source ethos, but lower immediate ROI than features.
     *   **Tech**: Flatpak, ALSA/PipeWire.
+
+# Codex Comments
+- Roadmap links point to `projectm-integration.md` and `docs/vst-integration.md`, but the actual docs are under `docs/features/`; consider updating paths.
+- Consider adding per-item status/owner to track progress and dependencies.

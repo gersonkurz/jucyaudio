@@ -84,3 +84,7 @@ This is the hardest part.
 *   **State Compatibility**: If a user uninstalls a plugin, the project won't load correctly.
     *   *Mitigation*: Implement a "Missing Plugins" warning dialog instead of crashing.
 
+# Codex Comments
+- Consider isolating plugin scanning in a helper process to avoid app crashes during scan (JUCE supports this pattern).
+- Call out where plugin state blobs are stored and how they are versioned/migrated in project files.
+- PDC needs a clear policy for max latency and what happens if plugins report extreme values.

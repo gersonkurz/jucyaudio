@@ -89,3 +89,7 @@ plugins:
 
 ## 7. Conclusion
 MkDocs allows us to treat documentation like code. It's low-friction and high-quality.
+
+# Codex Comments
+- The mkdocs palette sets dark mode by default; consider auto/light to match the app and avoid printing issues in the PDF.
+- Document where offline HTML/PDF assets land in the app bundle and how they are opened (path + platform specifics).

@@ -90,3 +90,8 @@ We leverage `FetchContent` for a hermetic build.
 *   **OpenGL Version**: ProjectM v4 requires modern GL (3.3+). We must ensure `juce::OpenGLContext` requests a compatible version (`setOpenGLVersionRequired`).
 *   **Context Loss**: If the window moves between monitors or minimizes, context might be lost. `newOpenGLContextCreated` handles recreation, but we must ensure projectM is fully re-initialized.
 *   **Asset Paths**: Mac bundles place assets in `Resources`, Windows next to `.exe`. Use a unified `AssetLocator` helper.
+
+# Codex Comments
+- The FIFO size (2048 samples) may underflow if the render thread stalls; consider a larger buffer and drop strategy.
+- projectM expects a sample rate; document how to pass the actual host rate (or resample) so visuals stay stable at 44.1k vs 48k.
+- Add an explicit fallback/log when asset paths are missing to avoid silent black frames.

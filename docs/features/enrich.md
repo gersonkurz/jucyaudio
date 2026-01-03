@@ -11,6 +11,10 @@ This document describes the AI-powered metadata enrichment system for JucyAudio.
 
 **Key Principle**: The enrichment tool is completely separate from the C++ application. It operates on the database directly, allowing users to run enrichment on-demand with full cost control. The C++ app provides manual tagging via the Virtual Tag System (see `vtags.md`), while this AI tool provides automated enrichment.
 
+**Database Safety Constraint**: The Python script must **never** write to the SQLite database while the C++ application is running, to avoid database locking or corruption.
+*   **Mode A (Safe)**: The C++ app must be closed before running the script.
+*   **Mode B (Integrated)**: If we integrate this into the GUI, the C++ app must close its database connection (or use WAL mode effectively) while the script runs, then reload metadata upon completion.
+
 ---
 
 ## Motivation
@@ -56,7 +60,7 @@ Keeping AI enrichment as a separate Python script (not integrated into the C++ a
 
 **AI Enrichment** (Python Script - this document):
 - Batch processing of albums and tracks
-- Genre/mood/tag suggestions using Claude API
+- Genre/mood/tag suggestions using Claude API or Local LLM
 - WAV path intelligence for metadata extraction
 - Cost-controlled, on-demand execution
 - Writes to database, never modifies files
@@ -67,6 +71,40 @@ Keeping AI enrichment as a separate Python script (not integrated into the C++ a
 3. User runs AI enrichment script → Python tool processes remaining albums
 4. User reviews AI suggestions → C++ app (future: approval UI)
 5. Approved suggestions become Virtual Tags → Database updated
+
+---
+
+## AI Provider Options
+
+### 1. Cloud API (Anthropic Claude)
+- **Pros**: Highest quality music knowledge, fastest processing, no local hardware requirements.
+- **Cons**: Costs money (approx $3 for 50k tracks), requires API key.
+- **Best for**: Users with large libraries who want the best results and don't mind a small cost.
+
+### 2. Local LLM (Ollama)
+- **Pros**: Free (running locally), complete privacy (no data sent to cloud).
+- **Cons**: Slower processing, requires decent hardware (RAM/GPU), knowledge base might be smaller than Claude 3.5.
+- **Implementation**: The script will support an OpenAI-compatible endpoint (which Ollama provides).
+- **Recommended Model**: Llama 3 8B or Mistral 7B (good balance of speed/knowledge).
+
+---
+
+## GUI Integration (Future Phase)
+
+While currently a CLI tool, we plan to make this accessible to non-technical users via the JucyAudio GUI.
+
+**Mechanism**:
+1.  **"AI Enrichment" Tab** in `DatabaseMaintenanceDialog`.
+2.  **Settings**: Users choose "Cloud (Claude)" or "Local (Ollama)" and set budget limits.
+3.  **Execution**:
+    *   User clicks "Start Enrichment".
+    *   JucyAudio spawns the Python script as a background process (`QProcess` / `juce::ChildProcess`).
+    *   **Crucial**: JucyAudio releases its SQLite lock (or ensures WAL mode allows concurrent access).
+    *   Script outputs progress to stdout (JSON format).
+    *   JucyAudio parses stdout and updates a progress bar in the UI.
+4.  **Completion**:
+    *   Script finishes.
+    *   JucyAudio triggers a `reloadFromDatabase()` to refresh the view with new tags.
 
 ---
 
@@ -259,6 +297,7 @@ dependencies = [
     "typer[all]>=0.12.0",        # CLI framework
     "loguru>=0.7.0",              # Logging
     "anthropic>=0.34.0",          # Claude API client
+    "openai>=1.0.0",              # OpenAI/Ollama client
     "pydantic>=2.9.0",            # Data validation
     "python-dotenv>=1.0.0",       # Environment variables
 ]
@@ -289,17 +328,18 @@ def enrich_albums(
     dry_run: bool = typer.Option(False, help="Preview without writing"),
     folder: Optional[str] = typer.Option(None, help="Limit to specific folder path"),
     budget_limit: float = typer.Option(10.0, help="Max cost in USD"),
+    provider: str = typer.Option("claude", help="AI Provider: 'claude' or 'ollama'"),
 ):
     """
     Enrich album metadata using AI.
 
     Example:
-        uv run enrich-albums --db-path ~/Music/jucyaudio.sqlite --limit 100
+        uv run enrich-albums --db-path ~/Music/jucyaudio.sqlite --limit 100 --provider ollama
     """
     from .processing.albums import process_albums
 
-    typer.echo(f"Processing up to {limit} albums...")
-    stats = process_albums(db_path, limit, dry_run, folder, budget_limit)
+    typer.echo(f"Processing up to {limit} albums using {provider}...")
+    stats = process_albums(db_path, limit, dry_run, folder, budget_limit, provider)
 
     typer.echo(f"✓ Enriched {stats.processed} albums")
     typer.echo(f"✓ Cost: ${stats.cost:.4f}")
@@ -464,6 +504,7 @@ class DatabaseManager:
 
 ```python
 import anthropic
+import openai
 from typing import List, Tuple, Optional
 from pydantic import BaseModel
 from .prompts import ALBUM_ENRICHMENT_PROMPT, WAV_PATH_PARSING_PROMPT
@@ -477,11 +518,19 @@ class AlbumEnrichmentResult(BaseModel):
     confidence: float
 
 class EnrichmentService:
-    """Handles all Claude API interactions."""
+    """Handles AI API interactions (Claude or Ollama/OpenAI)."""
 
-    def __init__(self, api_key: str, model: str = "claude-sonnet-4-20250514"):
-        self.client = anthropic.Anthropic(api_key=api_key)
-        self.model = model
+    def __init__(self, api_key: str, provider: str = "claude", model: str = None):
+        self.provider = provider
+        if provider == "claude":
+            self.client = anthropic.Anthropic(api_key=api_key)
+            self.model = model or "claude-sonnet-4-20250514"
+        elif provider == "ollama":
+            self.client = openai.OpenAI(
+                base_url="http://localhost:11434/v1",
+                api_key="ollama" # Not used but required
+            )
+            self.model = model or "llama3"
 
     def enrich_album(
         self,
@@ -490,7 +539,7 @@ class EnrichmentService:
         year: Optional[int] = None
     ) -> Tuple[AlbumEnrichmentResult, int]:
         """
-        Enrich album metadata using Claude API.
+        Enrich album metadata.
 
         Returns:
             (enrichment result, token count)
@@ -500,21 +549,13 @@ class EnrichmentService:
             title=title,
             year=year or "Unknown"
         )
-
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        
+        # Call appropriate client...
+        # ... logic to handle provider differences ...
 
         # Parse structured response
-        result = AlbumEnrichmentResult.model_validate_json(
-            response.content[0].text
-        )
-
-        # Calculate token usage
-        tokens = response.usage.input_tokens + response.usage.output_tokens
-
+        # ...
+        
         return result, tokens
 
     def parse_wav_path(
@@ -533,11 +574,8 @@ class EnrichmentService:
             duration=duration
         )
 
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        # Call appropriate client...
+        # ... logic to handle provider differences ...
 
         # Parse and return
         # Implementation details...
@@ -868,3 +906,8 @@ def test_enrich_album_end_to_end():
 
 - **2025-10-27**: Complete rewrite focusing on AI enrichment, removed outdated album implementation details
 - **2025-08-13**: Original document created for album-centric model
+
+# Codex Comments
+- There are several non-ASCII control characters in this doc (e.g., "", "ž"); consider cleaning to avoid rendering issues.
+- The DB safety section should mention explicit WAL or exclusive locking strategy and wrap writes in transactions for crash safety.
+- Model identifiers should be validated/centralized (e.g., "claude-sonnet-4-20250514") to avoid drift between docs and code.

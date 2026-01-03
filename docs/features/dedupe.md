@@ -9,9 +9,10 @@ The duplicate detection system provides automated, configuration-based duplicate
 ### Duplicate Detection Tab
 
 **Detection Method:**
-- **Exact Match**: Artist + Album + Title + Duration (default)
+- **Hash Match**: SHA-256 file hash (Fastest, 100% safe for exact files)
+- **Exact Metadata Match**: Artist + Album + Title + Duration
+- **Audio Fingerprint**: Chromaprint/fpcalc (Detects same audio regardless of tags/format) - *High Priority*
 - **Fuzzy Match**: Allows minor variations in metadata
-- **Audio Fingerprint**: (Future) Detects same audio regardless of tags
 
 **Match Tolerances** (for Fuzzy Match):
 - Duration difference: ±2 seconds (configurable)
@@ -42,8 +43,12 @@ The duplicate detection system provides automated, configuration-based duplicate
 
 ### 2. Mix Duplicates (Medium Risk)
 
-**Operation:** Removes duplicate tracks from mix timeline
+**Operation:** Removes duplicate tracks from mix timeline OR Upgrades them
 - No dialog if "Require confirmation for Mixes" is unchecked
+- **Feature: Replace with Best (Upgrade)**
+    - If a higher quality version of a track in the mix exists in the library, offer to swap it.
+    - *Constraint*: Only possible if duration is identical or differences are silence.
+    - *Preservation*: Must migrate Cue Points and Volume Envelopes to the new track ID.
 - Preserves first occurrence, removes subsequent ones
 - Optional: Auto-adjust remaining track positions to close gaps
 - Shows status: "Removed X duplicate tracks from mix"
@@ -98,9 +103,12 @@ ALTER TABLE Tracks ADD COLUMN is_duplicate BOOLEAN DEFAULT 0;
 ALTER TABLE Tracks ADD COLUMN duplicate_of_track_id INTEGER;
 ALTER TABLE Tracks ADD COLUMN quality_score INTEGER;
 ALTER TABLE Tracks ADD COLUMN metadata_completeness FLOAT; -- 0.0 to 1.0
+ALTER TABLE Tracks ADD COLUMN file_hash TEXT; -- SHA-256
+ALTER TABLE Tracks ADD COLUMN audio_fingerprint TEXT; -- Chromaprint
 
 -- Index for efficient duplicate queries
 CREATE INDEX idx_tracks_duplicate ON Tracks(is_duplicate, duplicate_of_track_id);
+CREATE INDEX idx_tracks_hash ON Tracks(file_hash);
 ```
 
 ## Duplicate Detection Key Generation
@@ -158,14 +166,17 @@ string createFuzzyKey(const TrackInfo& track, const Settings& settings) {
 - **Import-Time Detection:** Warn when importing duplicates
 - **Smart Grouping:** Recognize versions (Radio Edit, Club Mix, etc.)
 - **Archive Mode:** Move duplicates to archive folder vs deletion
-- **Audio Fingerprinting:** Chromaprint or similar for audio-based matching
 - **Batch Operations:** Process multiple working sets/mixes at once
 - **Duplicate Prevention:** Option to reject duplicate imports entirely
 
 ## Implementation Priority
 
-1. **Phase 1:** Settings UI + Exact match for working sets
+1. **Phase 1:** Settings UI + Hash/Exact match for working sets
 2. **Phase 2:** Library duplicate review dialog + marking system
-3. **Phase 3:** Fuzzy matching algorithm
-4. **Phase 4:** Mix duplicate removal
-5. **Phase 5:** Audio fingerprinting (if needed)
+3. **Phase 3:** Audio fingerprinting (Chromaprint integration)
+4. **Phase 4:** Fuzzy matching algorithm & Mix "Upgrade" feature
+
+# Codex Comments
+- The tolerance bullets show odd characters (e.g., "ņ2"); should be "+/- 2" and "+/- 1" to avoid encoding issues.
+- Hash matching needs a clear strategy for when hashes are computed (scan/import vs on demand) to avoid re-hashing large files.
+- Quality score depends on fields like format/bitDepth; document fallbacks when metadata is missing.
