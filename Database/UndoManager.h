@@ -2,8 +2,9 @@
 
 #include <Database/Includes/Constants.h>
 #include <Database/Includes/MixInfo.h>
-#include <stack>
+#include <atomic>
 #include <list>
+#include <memory>
 
 namespace jucyaudio
 {
@@ -11,10 +12,10 @@ namespace jucyaudio
     {        
         struct MixState
         {
-            std::list<ExtendedMixInfo *> undoOperations;
+            std::list<std::unique_ptr<ExtendedMixInfo>> undoOperations;
 
             // cleared after each new action
-            std::list<ExtendedMixInfo *> redoOperations;
+            std::list<std::unique_ptr<ExtendedMixInfo>> redoOperations;
         };
 
         class UndoManager final
@@ -46,7 +47,7 @@ namespace jucyaudio
             }
 
         private:
-            bool m_undoOperationInProgress{false};
+            std::atomic<bool> m_undoOperationInProgress{false};
 
             std::unordered_map<MixId, MixState> m_perMixStates; // Current known states of mixes
         };
