@@ -313,7 +313,7 @@ namespace jucyaudio
 
         void CreateMixDialogComponent::closeThisDialog(bool success)
         {
-            if (!success & (m_onOkCallback != nullptr))
+            if (!success && (m_onOkCallback != nullptr))
             {
                 database::MixInfo invalidMixInfo;
                 m_onOkCallback(false, invalidMixInfo); // success=false, invalid mixId, empty path
