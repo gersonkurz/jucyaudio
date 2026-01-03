@@ -91,6 +91,7 @@ namespace jucyaudio
             // no longer const to support renaming
             std::string m_name;
             mutable std::atomic<int32_t> m_refCount;
+            ObjectId m_uniqueId;  // Generated from static atomic counter
 
          protected:
             friend class RootNode; // Allow RootNode to access m_children

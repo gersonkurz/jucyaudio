@@ -7,6 +7,9 @@ namespace jucyaudio
 {
     namespace database
     {
+        // Static counter for generating unique node IDs (portable alternative to pointer cast)
+        static std::atomic<ObjectId> s_nextUniqueId{1};
+
         const DataActions NoActionsPossible;
         const std::vector<DataColumn> NoColumnsPossible = {};
 
@@ -50,7 +53,8 @@ namespace jucyaudio
             : INavigationNode{typeNameForSingleObject, typeNameForMultipleObjects},
               m_parent{parent},
               m_name{name},
-              m_refCount{1} // Start with refcount 1
+              m_refCount{1}, // Start with refcount 1
+              m_uniqueId{s_nextUniqueId.fetch_add(1, std::memory_order_relaxed)}
         {
 #ifdef USE_REFCOUNT_DEBUGGING
             insert_safely(this);
@@ -141,7 +145,7 @@ namespace jucyaudio
 
         ObjectId BaseNode::getUniqueId() const
         {
-            return reinterpret_cast<ObjectId>(this); // Use pointer address as unique ID
+            return m_uniqueId;
         }
 
         void BaseNode::refreshChildren()
