@@ -43,6 +43,15 @@ cpu_count := if os == "windows" {
 default:
     @just --list
 
+# Configure using CMake presets (useful for IDE integration)
+[windows]
+configure preset="x64-release":
+    cmake --preset {{preset}}
+
+[unix]
+configure:
+    cmake -B build -DCMAKE_BUILD_TYPE=Release
+
 # Build with specified configuration
 build config=default_build_type:
     @just _build-{{os}} {{config}} {{arch}}
@@ -54,6 +63,11 @@ debug:
 # Build release configuration
 release:
     @just build Release
+
+# Clean and rebuild
+rebuild config=default_build_type:
+    @just clean
+    @just build {{config}}
 
 # Clean build directories
 [windows]

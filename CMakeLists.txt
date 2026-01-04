@@ -4,6 +4,9 @@ project(jucyaudio VERSION 2.0.0)
 # Enable export of compile commands for IDEs
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Add custom CMake modules (for custom Find*.cmake files)
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 # ============================================================================
 # Build Configuration
 # ============================================================================
@@ -141,6 +144,31 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
+# Add GLEW for OpenGL extension loading (required by projectM on Windows)
+if(WIN32)
+    FetchContent_Declare(
+        glew
+        GIT_REPOSITORY https://github.com/Perlmint/glew-cmake.git
+        GIT_TAG glew-cmake-2.2.0
+        GIT_SHALLOW TRUE
+    )
+endif()
+
+# Add projectM for music visualization
+FetchContent_Declare(
+    projectm
+    GIT_REPOSITORY https://github.com/projectM-visualizer/projectm.git
+    GIT_TAG v4.1.1
+    GIT_SHALLOW TRUE
+)
+
+# Add projectM curated presets (Cream of the Crop - best of the best)
+FetchContent_Declare(
+    projectm_presets
+    GIT_REPOSITORY https://github.com/projectM-visualizer/presets-cream-of-the-crop.git
+    GIT_TAG master
+    GIT_SHALLOW TRUE
+)
 
 # Allow SoundTouch's older CMake version requirement
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
@@ -156,7 +184,20 @@ set(TAGLIB_BUILD_BINDINGS OFF CACHE BOOL "" FORCE)
 set(SOUNDTOUCH_DLL OFF CACHE BOOL "" FORCE)
 set(SOUNDSTRETCH OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog tomlplusplus taglib soundtouch lame)
+# Configure GLEW options (Windows only - required by projectM)
+if(WIN32)
+    set(glew-cmake_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+    set(glew-cmake_BUILD_STATIC ON CACHE BOOL "" FORCE)
+    set(ONLY_LIBS ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(glew)
+    # Custom cmake/FindGLEW.cmake will handle target aliasing for projectM
+endif()
+
+# Configure projectM options - static build, no SDL UI, no tests
+set(ENABLE_SDL_UI OFF CACHE BOOL "" FORCE)
+set(ENABLE_PLAYLIST ON CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog tomlplusplus taglib soundtouch lame projectm projectm_presets)
 
 # Get SoundTouch source directory for include paths
 FetchContent_GetProperties(soundtouch)
@@ -186,6 +227,18 @@ if(taglib_POPULATED)
         ${taglib_SOURCE_DIR}/taglib/mpeg/id3v2
         ${taglib_BINARY_DIR}
     )
+endif()
+
+# Get projectM source directory for library paths
+FetchContent_GetProperties(projectm)
+if(projectm_POPULATED)
+    set(PROJECTM_SOURCE_DIR ${projectm_SOURCE_DIR})
+endif()
+
+# Get projectM community presets source directory
+FetchContent_GetProperties(projectm_presets)
+if(projectm_presets_POPULATED)
+    set(PROJECTM_PRESETS_SOURCE_DIR ${projectm_presets_SOURCE_DIR})
 endif()
 
 # Global compile definitions
@@ -558,13 +611,14 @@ if(WIN32)
         juce::juce_graphics
         juce::juce_gui_basics
         juce::juce_gui_extra
-        
+        juce::juce_opengl
+
         # Binary resources
         jucyaudio_assets
 
         # nlohmann/json
         nlohmann_json::nlohmann_json
-        
+
         # tabulate
         tabulate::tabulate
 
@@ -576,6 +630,7 @@ if(WIN32)
         spdlog::spdlog
         tag
         mp3lame-static
+        libprojectM::projectM
     )
 else()
     target_link_libraries(jucyaudio PRIVATE
@@ -592,13 +647,14 @@ else()
         juce::juce_graphics
         juce::juce_gui_basics
         juce::juce_gui_extra
-        
+        juce::juce_opengl
+
         # Binary resources
         jucyaudio_assets
 
         # nlohmann/json
         nlohmann_json::nlohmann_json
-        
+
         # tabulate
         tabulate::tabulate
 
@@ -610,6 +666,7 @@ else()
         spdlog::spdlog_header_only
         tag
         mp3lame-static
+        libprojectM::projectM
 
         z  # zlib
 
@@ -734,6 +791,26 @@ add_custom_command(
     COMMENT "Copying themes to application bundle..."
 )
 
+# --- Post-Build Step: Copy projectM community presets ---
+if(projectm_presets_POPULATED)
+    if(APPLE)
+        set(PROJECTM_PRESETS_DEST_DIR "$<TARGET_FILE_DIR:jucyaudio>/../Resources/presets")
+    elseif(WIN32)
+        set(PROJECTM_PRESETS_DEST_DIR "$<TARGET_FILE_DIR:jucyaudio>/presets")
+    else()
+        set(PROJECTM_PRESETS_DEST_DIR "$<TARGET_FILE_DIR:jucyaudio>/presets")
+    endif()
+
+    add_custom_command(
+        TARGET jucyaudio POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${PROJECTM_PRESETS_DEST_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${PROJECTM_PRESETS_SOURCE_DIR}"
+                "${PROJECTM_PRESETS_DEST_DIR}"
+        COMMENT "Copying projectM community presets to application bundle..."
+    )
+endif()
+
 # ============================================================================
 # macOS Bundle Dependencies - Bundle all dylibs into the .app
 # ============================================================================
@@ -775,6 +852,12 @@ if(APPLE)
     # Install themes to the bundle
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes"
             DESTINATION "JucyAudio.app/Contents/Resources")
+
+    # Install projectM community presets to the bundle
+    if(projectm_presets_POPULATED)
+        install(DIRECTORY "${PROJECTM_PRESETS_SOURCE_DIR}/"
+                DESTINATION "JucyAudio.app/Contents/Resources/presets")
+    endif()
 
     # Install license notices to the bundle
     install(FILES
@@ -828,6 +911,9 @@ if(APPLE)
 elseif(WIN32)
     install(TARGETS jucyaudio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes" DESTINATION ${CMAKE_INSTALL_BINDIR})
+    if(projectm_presets_POPULATED)
+        install(DIRECTORY "${PROJECTM_PRESETS_SOURCE_DIR}/" DESTINATION ${CMAKE_INSTALL_BINDIR}/presets)
+    endif()
     install(FILES
             "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
             "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.txt"
@@ -837,6 +923,9 @@ elseif(WIN32)
 else()
     install(TARGETS jucyaudio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes" DESTINATION ${CMAKE_INSTALL_BINDIR})
+    if(projectm_presets_POPULATED)
+        install(DIRECTORY "${PROJECTM_PRESETS_SOURCE_DIR}/" DESTINATION ${CMAKE_INSTALL_BINDIR}/presets)
+    endif()
     install(FILES
             "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
             "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.txt"
