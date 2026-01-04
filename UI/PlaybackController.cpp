@@ -586,12 +586,21 @@ namespace jucyaudio
         {
             m_currentReverbSettings = settings;
             m_masterReverb.updateParameters(settings);
-            
+
             // If we're in mix mode, also update the mix project loader
             if (m_currentMixLoader)
             {
                 // TODO: Add setMasterReverbSettings to MixProjectLoader when ready
                 // m_currentMixLoader->setMasterReverbSettings(settings);
+            }
+        }
+
+        void PlaybackController::setVisualizerFIFO(audio::AudioVisualizerFIFO* fifo)
+        {
+            if (m_mixPlaybackEngine)
+            {
+                m_mixPlaybackEngine->setVisualizerFIFO(fifo);
+                spdlog::info("[PlaybackController] Visualizer FIFO connected");
             }
         }
 

@@ -258,6 +258,9 @@ namespace jucyaudio
             // PlaybackController::syncUIToPlaybackControllerState handle this
             // via toolbar reference.
 
+            // Connect visualizer FIFO to playback controller
+            m_playbackController.setVisualizerFIFO(m_statusPanel.getVisualizerFIFO());
+
             // Enable keyboard focus for media keys
             setWantsKeyboardFocus(true);
 
@@ -462,6 +465,21 @@ namespace jucyaudio
                             onShowConfigureColumnsDialog();
                         }),
                     makeActionItem("Show Details", "Show detailed information", DataAction::ShowDetails, 'i', juce::ModifierKeys::commandModifier),
+                    {"-"},
+                    MenuItem{
+                        "Toggle Visualizer",
+                        "Show/hide music visualizer",
+                        [this]()
+                        {
+                            m_statusPanel.toggleVisualizer();
+                        },
+                        MenuItem::KeyPress{'v', juce::ModifierKeys::commandModifier},
+                        false, // not radio button
+                        [this]()
+                        {
+                            return m_statusPanel.isVisualizerVisible();
+                        }
+                    },
                     {"-"},
                     makeStaticItem(
                         "Refresh",
@@ -1133,9 +1151,7 @@ namespace jucyaudio
             if (toolbarHeight == 0 && m_dynamicToolbar.isVisible())
                 toolbarHeight = 40; // Default if not yet sized
 
-            int bottomPanelHeight = m_statusPanel.isVisible() ? m_statusPanel.getHeight() : 0;
-            if (bottomPanelHeight == 0 && m_statusPanel.isVisible())
-                bottomPanelHeight = 120; // Increased for enhanced player
+            int bottomPanelHeight = m_statusPanel.isVisible() ? m_statusPanel.getPreferredHeight() : 0;
 
             m_dynamicToolbar.setBounds(bounds.removeFromTop(toolbarHeight));
             m_statusPanel.setBounds(bounds.removeFromBottom(bottomPanelHeight));

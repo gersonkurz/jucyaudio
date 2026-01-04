@@ -514,6 +514,11 @@ namespace jucyaudio
             // Feed audio to visualizer FIFO if attached (lock-free write)
             if (m_visualizerFIFO != nullptr)
             {
+                static int writeLogCount = 0;
+                if (writeLogCount++ < 5)
+                {
+                    spdlog::info("[MixPlaybackEngine] Writing {} samples to visualizer FIFO", bufferToFill.numSamples);
+                }
                 m_visualizerFIFO->writeFromBuffer(*bufferToFill.buffer,
                                                    bufferToFill.startSample,
                                                    bufferToFill.numSamples);

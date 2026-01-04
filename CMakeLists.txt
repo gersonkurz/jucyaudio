@@ -185,19 +185,24 @@ set(SOUNDTOUCH_DLL OFF CACHE BOOL "" FORCE)
 set(SOUNDSTRETCH OFF CACHE BOOL "" FORCE)
 
 # Configure GLEW options (Windows only - required by projectM)
+# IMPORTANT: Build as shared library so both our app and projectM DLL use the same GLEW
 if(WIN32)
-    set(glew-cmake_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-    set(glew-cmake_BUILD_STATIC ON CACHE BOOL "" FORCE)
+    set(glew-cmake_BUILD_SHARED ON CACHE BOOL "" FORCE)
+    set(glew-cmake_BUILD_STATIC OFF CACHE BOOL "" FORCE)
     set(ONLY_LIBS ON CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(glew)
-    # Custom cmake/FindGLEW.cmake will handle target aliasing for projectM
 endif()
 
-# Configure projectM options - static build, no SDL UI, no tests
+# Fetch most dependencies with static linking
+FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog tomlplusplus taglib soundtouch lame projectm_presets)
+
+# Configure projectM options - shared library for LGPL compliance
 set(ENABLE_SDL_UI OFF CACHE BOOL "" FORCE)
 set(ENABLE_PLAYLIST ON CACHE BOOL "" FORCE)
-
-FetchContent_MakeAvailable(JUCE nlohmann_json tabulate spdlog tomlplusplus taglib soundtouch lame projectm projectm_presets)
+set(BUILD_SHARED_LIBS_SAVED2 ${BUILD_SHARED_LIBS})
+set(BUILD_SHARED_LIBS ON)
+FetchContent_MakeAvailable(projectm)
+set(BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS_SAVED2})
 
 # Get SoundTouch source directory for include paths
 FetchContent_GetProperties(soundtouch)
@@ -556,6 +561,10 @@ target_sources(jucyaudio PRIVATE
     UI/VUMeterComponent.cpp
     UI/StatusBarComponent.h
     UI/StatusBarComponent.cpp
+    UI/Visualizer/ProjectMComponent.h
+    UI/Visualizer/ProjectMComponent.cpp
+    UI/Visualizer/GlewInitializer.h
+    UI/Visualizer/GlewInitializer.cpp
     Audio/Includes/ActiveExportSettings.h)
 
 # Add Windows-specific manifest
@@ -633,6 +642,7 @@ if(WIN32)
         tag
         mp3lame-static
         libprojectM::projectM
+        libglew_shared
     )
 else()
     target_link_libraries(jucyaudio PRIVATE
@@ -810,6 +820,28 @@ if(projectm_presets_POPULATED)
                 "${PROJECTM_PRESETS_SOURCE_DIR}"
                 "${PROJECTM_PRESETS_DEST_DIR}"
         COMMENT "Copying projectM community presets to application bundle..."
+    )
+endif()
+
+# --- Post-Build Step: Copy projectM DLL (Windows only) ---
+if(WIN32 AND TARGET projectM)
+    add_custom_command(
+        TARGET jucyaudio POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:projectM>"
+                "$<TARGET_FILE_DIR:jucyaudio>"
+        COMMENT "Copying projectM DLL to application directory..."
+    )
+endif()
+
+# --- Post-Build Step: Copy GLEW DLL (Windows only) ---
+if(WIN32 AND TARGET libglew_shared)
+    add_custom_command(
+        TARGET jucyaudio POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:libglew_shared>"
+                "$<TARGET_FILE_DIR:jucyaudio>"
+        COMMENT "Copying GLEW DLL to application directory..."
     )
 endif()
 

@@ -7,7 +7,8 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <Audio/Equalizer.h>
 #include <Audio/Reverb.h>
-#include <spdlog/spdlog.h> // For logging within the controller
+#include <Audio/AudioVisualizerFIFO.h>
+#include <spdlog/spdlog.h>
 #include <memory>
 
 namespace jucyaudio
@@ -104,6 +105,9 @@ namespace jucyaudio
             // Master Reverb Control
             void updateMasterReverb(const audio::model::ReverbSettings& settings);
             audio::model::ReverbSettings getCurrentReverbSettings() const { return m_currentReverbSettings; }
+
+            // Visualizer FIFO - connects audio to visualizer
+            void setVisualizerFIFO(audio::AudioVisualizerFIFO* fifo);
 
         private:
             void changeState(PlayerState newState);
