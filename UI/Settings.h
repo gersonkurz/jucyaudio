@@ -188,6 +188,7 @@ namespace jucyaudio
 
                 TypedValue<bool> equalizerBypassed{this, "EqualizerBypassed", true};  // Default to bypassed (disabled)
                 TypedValue<bool> reverbBypassed{this, "ReverbBypassed", true};        // Default to bypassed (disabled)
+                TypedValue<int> visualizerBufferSize{this, "VisualizerBufferSize", 2048};  // FIFO size for visualizer (samples)
 
             } audioSettings{this};
             

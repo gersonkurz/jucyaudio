@@ -318,6 +318,8 @@ target_sources(jucyaudio PRIVATE
     Audio/MixProjectLoader.h
     Audio/MixPlaybackEngine.cpp
     Audio/MixPlaybackEngine.h
+    Audio/AudioVisualizerFIFO.cpp
+    Audio/AudioVisualizerFIFO.h
     Audio/Equalizer.cpp
     Audio/Equalizer.h
     Audio/Reverb.cpp

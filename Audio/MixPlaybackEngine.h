@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Audio/MixProjectLoader.h>
+#include <Audio/AudioVisualizerFIFO.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
 #include <Database/Includes/Constants.h>
@@ -128,6 +129,10 @@ namespace jucyaudio
             // Volume control
             void setGain(float gain) { m_masterGain = gain; }
             float getGain() const { return m_masterGain; }
+
+            // Visualizer FIFO - set this to enable audio tap for visualization
+            void setVisualizerFIFO(AudioVisualizerFIFO* fifo) { m_visualizerFIFO = fifo; }
+            AudioVisualizerFIFO* getVisualizerFIFO() const { return m_visualizerFIFO; }
             
             // Get the current mix loader
             MixProjectLoader* getMixLoader() const
@@ -193,6 +198,9 @@ namespace jucyaudio
 
             // Pre-allocated scratch buffer for audio callback (avoids allocation in real-time thread)
             juce::AudioBuffer<float> m_scratchBuffer;
+
+            // Visualizer audio tap (optional, non-owning pointer)
+            AudioVisualizerFIFO* m_visualizerFIFO{nullptr};
 
             // Thread safety
             mutable juce::CriticalSection m_critSec;

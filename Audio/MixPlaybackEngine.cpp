@@ -511,6 +511,14 @@ namespace jucyaudio
                 samplesRemaining -= chunkSize;
             }
 
+            // Feed audio to visualizer FIFO if attached (lock-free write)
+            if (m_visualizerFIFO != nullptr)
+            {
+                m_visualizerFIFO->writeFromBuffer(*bufferToFill.buffer,
+                                                   bufferToFill.startSample,
+                                                   bufferToFill.numSamples);
+            }
+
             // Update position using the already-incremented startSample (cleaner than re-loading atomic)
             m_currentPositionSamples = startSample;
 
