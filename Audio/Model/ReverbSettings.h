@@ -99,7 +99,7 @@ namespace jucyaudio
                 bool operator==(const ReverbSettings &other) const
                 {
                     constexpr float epsilon = 1e-6f;
-                    auto floatEqual = [epsilon](float a, float b) { return std::abs(a - b) < epsilon; };
+                    auto floatEqual = [](float a, float b) { return std::abs(a - b) < epsilon; };
                     
                     return floatEqual(roomSize, other.roomSize) && 
                            floatEqual(damping, other.damping) && 

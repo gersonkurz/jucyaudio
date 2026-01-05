@@ -819,6 +819,8 @@ if(projectm_presets_POPULATED)
         COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${PROJECTM_PRESETS_SOURCE_DIR}"
                 "${PROJECTM_PRESETS_DEST_DIR}"
+        # Remove .git directory from copied presets (not needed, causes permission issues)
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${PROJECTM_PRESETS_DEST_DIR}/.git"
         COMMENT "Copying projectM community presets to application bundle..."
     )
 endif()
@@ -865,6 +867,9 @@ if(APPLE)
                 -x "$<TARGET_BUNDLE_DIR:jucyaudio>/Contents/MacOS/jucyaudio"
                 -d "$<TARGET_BUNDLE_DIR:jucyaudio>/Contents/libs/"
                 -p "@executable_path/../libs/"
+                -s "${CMAKE_BINARY_DIR}"
+                -s "${CMAKE_BINARY_DIR}/$<CONFIG>"
+                -s "${CMAKE_BINARY_DIR}/arm64-$<CONFIG>"
             COMMENT "Bundling dependencies into .app..."
             VERBATIM
         )
@@ -890,7 +895,8 @@ if(APPLE)
     # Install projectM community presets to the bundle
     if(projectm_presets_POPULATED)
         install(DIRECTORY "${PROJECTM_PRESETS_SOURCE_DIR}/"
-                DESTINATION "JucyAudio.app/Contents/Resources/presets")
+                DESTINATION "JucyAudio.app/Contents/Resources/presets"
+                PATTERN ".git" EXCLUDE)
     endif()
 
     # Install license notices to the bundle
@@ -946,7 +952,8 @@ elseif(WIN32)
     install(TARGETS jucyaudio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes" DESTINATION ${CMAKE_INSTALL_BINDIR})
     if(projectm_presets_POPULATED)
-        install(DIRECTORY "${PROJECTM_PRESETS_SOURCE_DIR}/" DESTINATION ${CMAKE_INSTALL_BINDIR}/presets)
+        install(DIRECTORY "${PROJECTM_PRESETS_SOURCE_DIR}/" DESTINATION ${CMAKE_INSTALL_BINDIR}/presets
+                PATTERN ".git" EXCLUDE)
     endif()
     install(FILES
             "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
@@ -958,7 +965,8 @@ else()
     install(TARGETS jucyaudio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes" DESTINATION ${CMAKE_INSTALL_BINDIR})
     if(projectm_presets_POPULATED)
-        install(DIRECTORY "${PROJECTM_PRESETS_SOURCE_DIR}/" DESTINATION ${CMAKE_INSTALL_BINDIR}/presets)
+        install(DIRECTORY "${PROJECTM_PRESETS_SOURCE_DIR}/" DESTINATION ${CMAKE_INSTALL_BINDIR}/presets
+                PATTERN ".git" EXCLUDE)
     endif()
     install(FILES
             "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"

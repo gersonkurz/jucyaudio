@@ -247,7 +247,7 @@ namespace jucyaudio
             }
 
             // Atomic swap - replace current state with new state
-            auto oldState = m_currentPlaybackState.exchange(newState);
+            auto oldState = std::atomic_exchange(&m_currentPlaybackState, newState);
 
             // Add old state to garbage for deferred deletion
             if (oldState)
@@ -274,7 +274,7 @@ namespace jucyaudio
             m_isPaused = true;
 
             // Atomic swap to null
-            auto oldState = m_currentPlaybackState.exchange(nullptr);
+            auto oldState = std::atomic_exchange(&m_currentPlaybackState, std::shared_ptr<PlaybackState>(nullptr));
             if (oldState)
             {
                 m_garbage.push_back(oldState);
@@ -304,7 +304,7 @@ namespace jucyaudio
             auto newState = buildPlaybackState(m_mixLoader);
             if (newState)
             {
-                auto oldState = m_currentPlaybackState.exchange(newState);
+                auto oldState = std::atomic_exchange(&m_currentPlaybackState, newState);
                 if (oldState)
                 {
                     m_garbage.push_back(oldState);
@@ -322,7 +322,7 @@ namespace jucyaudio
                 return;
             }
 
-            auto state = m_currentPlaybackState.load();
+            auto state = std::atomic_load(&m_currentPlaybackState);
             if (!state)
             {
                 return;
@@ -423,7 +423,7 @@ namespace jucyaudio
                 auto newState = buildPlaybackState(m_mixLoader);
                 if (newState)
                 {
-                    auto oldState = m_currentPlaybackState.exchange(newState);
+                    auto oldState = std::atomic_exchange(&m_currentPlaybackState, newState);
                     if (oldState)
                     {
                         m_garbage.push_back(oldState);
@@ -442,7 +442,7 @@ namespace jucyaudio
         {
             const juce::ScopedLock lock(m_critSec);
 
-            auto state = m_currentPlaybackState.load();
+            auto state = std::atomic_load(&m_currentPlaybackState);
             if (state)
             {
                 for (auto &source : state->trackSources)
@@ -467,7 +467,7 @@ namespace jucyaudio
 
             // Atomic load gets a shared_ptr, incrementing refcount.
             // This prevents deletion even if main thread swaps it out.
-            auto state = m_currentPlaybackState.load();
+            auto state = std::atomic_load(&m_currentPlaybackState);
             if (!state)
             {
                 bufferToFill.clearActiveBufferRegion();
@@ -511,18 +511,8 @@ namespace jucyaudio
                 samplesRemaining -= chunkSize;
             }
 
-            // Feed audio to visualizer FIFO if attached (lock-free write)
-            if (m_visualizerFIFO != nullptr)
-            {
-                static int writeLogCount = 0;
-                if (writeLogCount++ < 5)
-                {
-                    spdlog::info("[MixPlaybackEngine] Writing {} samples to visualizer FIFO", bufferToFill.numSamples);
-                }
-                m_visualizerFIFO->writeFromBuffer(*bufferToFill.buffer,
-                                                   bufferToFill.startSample,
-                                                   bufferToFill.numSamples);
-            }
+            // Note: Visualizer FIFO is now fed by PlaybackController after EQ/Reverb
+            // (unified tap point for both single-track and mix playback)
 
             // Update position using the already-incremented startSample (cleaner than re-loading atomic)
             m_currentPositionSamples = startSample;

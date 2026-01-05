@@ -152,6 +152,9 @@ namespace jucyaudio
             // Playback modes
             bool m_repeatMode{false};
             bool m_shuffleMode{false};
+
+            // Visualizer FIFO (non-owning pointer, fed after EQ/Reverb)
+            audio::AudioVisualizerFIFO* m_visualizerFIFO{nullptr};
         };
     } // namespace ui
 } // namespace jucyaudio

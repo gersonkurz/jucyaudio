@@ -56,7 +56,9 @@ namespace jucyaudio
             std::atomic<bool> bypassFlag{false};
 
             // Pending settings (updated from UI thread) - lock-free via atomic shared_ptr
-            std::atomic<std::shared_ptr<const model::EQSettings>> pendingSettings{nullptr};
+            // Note: Using C++11 atomic free functions (std::atomic_load/store) since
+            // std::atomic<std::shared_ptr<T>> (C++20) is not supported on Apple's libc++
+            std::shared_ptr<const model::EQSettings> pendingSettings{nullptr};
 
             // Sample rate for coefficient calculation
             double sampleRate{44100.0};

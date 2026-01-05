@@ -5,6 +5,9 @@
 
 #ifdef _WIN32
 #include <GL/glew.h>
+#elif defined(__APPLE__)
+#define GL_SILENCE_DEPRECATION
+#include <OpenGL/gl3.h>
 #endif
 
 #include "GlewInitializer.h"

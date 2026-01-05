@@ -134,16 +134,19 @@ namespace jucyaudio
         MainComponent::MainComponent(juce::ApplicationCommandManager &commandManager)
             : MenuPresenter{commandManager},
               m_commandManager{commandManager},
+              m_currentMainView{MainViewType::DataView},
+              m_currentMainViewComponent{nullptr},  // Set after m_dataViewComponent is constructed
               m_dataViewComponent{*this},
               m_navigationPanel{*this},
               m_navigationTree{m_navigationPanel, m_dataViewComponent},
-              m_currentMainView{MainViewType::DataView},
-              m_currentMainViewComponent{&m_dataViewComponent},
               m_verticalDivider{*this, true},
               m_playbackController{},
               m_enhancedPlayer{m_playbackController, m_audioFormatManager, m_audioThumbnailCache},
               m_statusPanel{*this}
         {
+            // Initialize m_currentMainViewComponent now that m_dataViewComponent is constructed
+            m_currentMainViewComponent = &m_dataViewComponent;
+
             // Load audio bypass states from config (inverted: bypassed = !enabled)
             m_equalizerEnabled = !config::theSettings.audioSettings.equalizerBypassed;
             m_reverbEnabled = !config::theSettings.audioSettings.reverbBypassed;

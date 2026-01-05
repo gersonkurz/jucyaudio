@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Audio/MixProjectLoader.h>
-#include <Audio/AudioVisualizerFIFO.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
 #include <Database/Includes/Constants.h>
@@ -113,7 +112,7 @@ namespace jucyaudio
             // Get total mix duration (in milliseconds)
             Duration_t getTotalDuration() const
             {
-                auto state = m_currentPlaybackState.load();
+                auto state = std::atomic_load(&m_currentPlaybackState);
                 return state ? state->totalDuration : Duration_t{0};
             }
 
@@ -130,10 +129,6 @@ namespace jucyaudio
             void setGain(float gain) { m_masterGain = gain; }
             float getGain() const { return m_masterGain; }
 
-            // Visualizer FIFO - set this to enable audio tap for visualization
-            void setVisualizerFIFO(AudioVisualizerFIFO* fifo) { m_visualizerFIFO = fifo; }
-            AudioVisualizerFIFO* getVisualizerFIFO() const { return m_visualizerFIFO; }
-            
             // Get the current mix loader
             MixProjectLoader* getMixLoader() const
             {
@@ -166,11 +161,12 @@ namespace jucyaudio
             // Mix data
             MixProjectLoader *m_mixLoader{nullptr};
 
-            // Thread-safe state management.
-            // Note: std::atomic<std::shared_ptr<T>> is not lock-free on MSVC/x64 (uses spinlock).
+            // Thread-safe state management using C++11 atomic free functions.
+            // Note: std::atomic<std::shared_ptr<T>> (C++20) is not supported on Apple's libc++.
+            // We use std::atomic_load/store/exchange instead, which work with plain shared_ptr.
             // This means the audio thread may briefly contend with loadMix(). Acceptable tradeoff
             // since loadMix() is infrequent. If glitches occur, consider SeqLock or intrusive refcount.
-            std::atomic<std::shared_ptr<PlaybackState>> m_currentPlaybackState{nullptr};
+            std::shared_ptr<PlaybackState> m_currentPlaybackState{nullptr};
 
             // Garbage collection for old states.
             // Old states are held here until the audio thread is definitely done with them
@@ -198,9 +194,6 @@ namespace jucyaudio
 
             // Pre-allocated scratch buffer for audio callback (avoids allocation in real-time thread)
             juce::AudioBuffer<float> m_scratchBuffer;
-
-            // Visualizer audio tap (optional, non-owning pointer)
-            AudioVisualizerFIFO* m_visualizerFIFO{nullptr};
 
             // Thread safety
             mutable juce::CriticalSection m_critSec;

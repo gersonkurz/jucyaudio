@@ -116,6 +116,14 @@ namespace jucyaudio
                                                   static_cast<size_t>(bufferToFill.numSamples));
                 m_masterEqualizer.process(subBlock);
                 m_masterReverb.process(subBlock);
+
+                // Feed audio to visualizer FIFO after EQ/Reverb (reflects final output)
+                if (m_visualizerFIFO != nullptr)
+                {
+                    m_visualizerFIFO->writeFromBuffer(*bufferToFill.buffer,
+                                                      bufferToFill.startSample,
+                                                      bufferToFill.numSamples);
+                }
             }
         }
 
@@ -597,11 +605,8 @@ namespace jucyaudio
 
         void PlaybackController::setVisualizerFIFO(audio::AudioVisualizerFIFO* fifo)
         {
-            if (m_mixPlaybackEngine)
-            {
-                m_mixPlaybackEngine->setVisualizerFIFO(fifo);
-                spdlog::info("[PlaybackController] Visualizer FIFO connected");
-            }
+            m_visualizerFIFO = fifo;
+            spdlog::info("[PlaybackController] Visualizer FIFO connected (unified tap point)");
         }
 
     } // namespace ui
