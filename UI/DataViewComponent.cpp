@@ -402,10 +402,29 @@ namespace jucyaudio
             juce::Graphics &g, int rowNumber, [[maybe_unused]] int width, [[maybe_unused]] int height, bool rowIsSelected)
         {
             auto &lf = getLookAndFeel();
+
+            // Check if this row is the currently playing track
+            bool isPlayingTrack = false;
+            if (m_playingTrackId >= 0 && m_currentNode != nullptr)
+            {
+                // Use the public API to check if this row matches the playing track
+                const auto trackResult = m_currentNode->getTrackInfosForOperation({static_cast<RowIndex_t>(rowNumber)});
+                if (!trackResult.trackInfos.empty())
+                {
+                    isPlayingTrack = (trackResult.trackInfos[0].trackId == m_playingTrackId);
+                }
+            }
+
             if (rowIsSelected)
             {
                 // TableListBox DOES have selectedItemBackgroundColourId
                 g.fillAll(lf.findColour(juce::PopupMenu::highlightedBackgroundColourId));
+            }
+            else if (isPlayingTrack)
+            {
+                // Highlight the currently playing track with a subtle accent color
+                juce::Colour playingColour = juce::Colour(0x30, 0x80, 0x30).withAlpha(0.3f);  // Subtle green tint
+                g.fillAll(playingColour);
             }
             else
             {
@@ -424,6 +443,13 @@ namespace jucyaudio
                     // For even rows (or if not doing alternating), use the standard background.
                     g.fillAll(lf.findColour(juce::ListBox::backgroundColourId));
                 }
+            }
+
+            // Draw a small "now playing" indicator on the left edge if this is the playing track
+            if (isPlayingTrack)
+            {
+                g.setColour(juce::Colour(0x40, 0xC0, 0x40));  // Brighter green for the indicator
+                g.fillRect(0, 0, 3, height);  // 3-pixel wide bar on the left
             }
         }
 
@@ -684,6 +710,24 @@ namespace jucyaudio
             else
             {
                 spdlog::error("Current node is not a MixNode");
+            }
+        }
+
+        void DataViewComponent::setPlayingTrackId(TrackId trackId)
+        {
+            if (m_playingTrackId != trackId)
+            {
+                m_playingTrackId = trackId;
+                m_tableListBox.repaint();  // Repaint to show/update the highlight
+            }
+        }
+
+        void DataViewComponent::clearPlayingTrack()
+        {
+            if (m_playingTrackId >= 0)
+            {
+                m_playingTrackId = -1;
+                m_tableListBox.repaint();
             }
         }
 

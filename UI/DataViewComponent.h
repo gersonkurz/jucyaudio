@@ -136,6 +136,11 @@ namespace jucyaudio
                 m_tableListBox.selectRow(rowIndex);
             }
 
+            // Now playing highlight
+            void setPlayingTrackId(TrackId trackId);
+            void clearPlayingTrack();
+            TrackId getPlayingTrackId() const { return m_playingTrackId; }
+
         private:
             // --- juce::Timer overrides ---
             void timerCallback() override;
@@ -169,6 +174,9 @@ namespace jucyaudio
             static constexpr float MAX_FONT_SCALE = 2.0f;
             static constexpr float FONT_SCALE_STEP = 0.1f;
             void updateFontSize();
+
+            // Now playing track (for highlight)
+            TrackId m_playingTrackId{-1};
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DataViewComponent)
         };

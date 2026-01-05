@@ -238,6 +238,12 @@ namespace jucyaudio
                 playPreviousTrack();
             };
 
+            // Track change callback for playlist mode - update DataView highlight
+            m_playbackController.onCurrentTrackChanged = [this](TrackId trackId, [[maybe_unused]] size_t index)
+            {
+                m_dataViewComponent.setPlayingTrackId(trackId);
+            };
+
             if (!m_navigationTree.initialize())
             {
                 // TODO: have a way to crash here?
@@ -803,6 +809,13 @@ namespace jucyaudio
 
         void MainComponent::playNextTrack()
         {
+            // If PlaybackController has a playlist, delegate to it
+            if (m_playbackController.hasPlaylist())
+            {
+                m_playbackController.nextTrack();
+                return;
+            }
+
             if (m_currentMainView == MainViewType::DataView)
             {
                 // In DataView mode - play next track in the current view (respects filters, sort order, etc.)
@@ -931,6 +944,13 @@ namespace jucyaudio
 
         void MainComponent::playPreviousTrack()
         {
+            // If PlaybackController has a playlist, delegate to it
+            if (m_playbackController.hasPlaylist())
+            {
+                m_playbackController.previousTrack();
+                return;
+            }
+
             if (m_currentMainView == MainViewType::DataView)
             {
                 // In DataView mode - play previous track in the current view (respects filters, sort order, etc.)
@@ -1972,6 +1992,9 @@ namespace jucyaudio
                     // Load markers for this track
                     const auto markers = theTrackLibrary.getMarkerManager().getMarkersForTrack(track.trackId);
                     m_enhancedPlayer.setMarkers(markers);
+
+                    // Update DataView to highlight the now-playing track
+                    m_dataViewComponent.setPlayingTrackId(track.trackId);
                 }
             }
             else
