@@ -72,7 +72,7 @@ namespace jucyaudio
             // Let the label inherit its text color from the theme
 
             // Initialize button states from PlaybackController
-            m_isRepeatOn = m_playbackController.getRepeatMode();
+            m_isRepeatOn = m_playbackController.isRepeatEnabled();
             m_isShuffleOn = m_playbackController.getShuffleMode();
             updateToggleButtons();
         }
@@ -350,7 +350,8 @@ namespace jucyaudio
         void EnhancedPlayerComponent::repeatButtonClicked()
         {
             m_isRepeatOn = !m_isRepeatOn;
-            m_playbackController.setRepeatMode(m_isRepeatOn);
+            // Toggle between None and All for now (UI doesn't support One yet)
+            m_playbackController.setRepeatMode(m_isRepeatOn ? RepeatMode::All : RepeatMode::None);
             updateToggleButtons();
             spdlog::info("Repeat mode {}", m_isRepeatOn ? "enabled" : "disabled");
         }

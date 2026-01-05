@@ -8,19 +8,80 @@
 #include <Audio/Equalizer.h>
 #include <Audio/Reverb.h>
 #include <Audio/AudioVisualizerFIFO.h>
+#include <Database/Includes/TrackInfo.h>
 #include <spdlog/spdlog.h>
 #include <memory>
+#include <optional>
+#include <random>
 
 namespace jucyaudio
 {
-    namespace audio 
+    namespace audio
     {
         class MixPlaybackEngine;
         class MixProjectLoader;
     }
-    
+
     namespace ui
     {
+        /**
+         * @brief Repeat mode for playlist playback
+         */
+        enum class RepeatMode
+        {
+            None,   // Stop after last track
+            One,    // Repeat current track
+            All     // Repeat entire playlist
+        };
+
+        /**
+         * @brief Source of the current playlist (for UI context)
+         */
+        enum class PlaylistSource
+        {
+            None,         // No playlist active
+            Folder,       // Tracks from a folder
+            Selection,    // User-selected tracks
+            SearchResult  // Tracks from a search
+        };
+
+        /**
+         * @brief Queue of tracks for playlist playback
+         */
+        struct PlaylistQueue
+        {
+            std::vector<database::TrackInfo> tracks;
+            size_t currentIndex = 0;
+
+            RepeatMode repeatMode = RepeatMode::None;
+            bool shuffleEnabled = false;
+            std::vector<size_t> shuffleOrder;  // Indices into tracks when shuffle is on
+
+            PlaylistSource source = PlaylistSource::None;
+            std::string sourcePath;  // e.g., folder path for context
+
+            bool isEmpty() const { return tracks.empty(); }
+            size_t size() const { return tracks.size(); }
+
+            const database::TrackInfo* getCurrentTrack() const
+            {
+                if (tracks.empty()) return nullptr;
+                size_t idx = shuffleEnabled && !shuffleOrder.empty()
+                    ? shuffleOrder[currentIndex]
+                    : currentIndex;
+                return (idx < tracks.size()) ? &tracks[idx] : nullptr;
+            }
+
+            void clear()
+            {
+                tracks.clear();
+                shuffleOrder.clear();
+                currentIndex = 0;
+                source = PlaylistSource::None;
+                sourcePath.clear();
+            }
+        };
+
         class PlaybackController final : public juce::ChangeBroadcaster
         {
         public:
@@ -64,11 +125,31 @@ namespace jucyaudio
             void seek(double positionSeconds);  // Seek within current track/mix
             void setGain(float newGain);
             
-            // Playback modes
-            void setRepeatMode(bool enabled);
-            bool getRepeatMode() const { return m_repeatMode; }
+            // --- Playlist Management ---
+            // Set a playlist and optionally start playing from a specific index
+            void setPlaylist(const std::vector<database::TrackInfo>& tracks,
+                           size_t startIndex = 0,
+                           PlaylistSource source = PlaylistSource::Folder,
+                           const std::string& sourcePath = "");
+            void clearPlaylist();
+            const PlaylistQueue& getPlaylistQueue() const { return m_playlist; }
+            bool hasPlaylist() const { return !m_playlist.isEmpty(); }
+
+            // Track navigation
+            bool nextTrack();      // Returns false if at end and no repeat
+            bool previousTrack();  // Returns false if at beginning
+            void handleTrackEnded();  // Called when transport reaches end of track
+
+            // Get current track info (works for both single track and playlist)
+            const database::TrackInfo* getCurrentTrackInfo() const;
+            TrackId getCurrentTrackId() const;
+
+            // Playback modes (now uses RepeatMode enum)
+            void setRepeatMode(RepeatMode mode);
+            RepeatMode getRepeatMode() const { return m_playlist.repeatMode; }
+            bool isRepeatEnabled() const { return m_playlist.repeatMode != RepeatMode::None; }
             void setShuffleMode(bool enabled);
-            bool getShuffleMode() const { return m_shuffleMode; }
+            bool getShuffleMode() const { return m_playlist.shuffleEnabled; }
 
             // --- State Query Methods ---
             bool isPlaying() const;
@@ -85,6 +166,10 @@ namespace jucyaudio
             
             // Callback for state changes
             std::function<void(PlayerState)> onStateChanged;
+
+            // Callback when current track changes (for UI to update highlight, etc.)
+            // Parameters: trackId of new track, index in playlist (or 0 if single track)
+            std::function<void(TrackId, size_t)> onCurrentTrackChanged;
 
             // --- Access to TransportSource for MainComponent to be a ChangeListener ---
             // This allows MainComponent to listen for when the transport source itself stops (e.g., end of file)
@@ -148,13 +233,27 @@ namespace jucyaudio
 
             // To prevent re-entrancy or rapid state changes from UI/callbacks
             std::atomic<bool> m_isCurrentlyChangingState{false};
-            
-            // Playback modes
-            bool m_repeatMode{false};
-            bool m_shuffleMode{false};
+
+            // Playlist queue (unified playlist management)
+            PlaylistQueue m_playlist;
+
+            // Single track info (when playing without playlist)
+            std::optional<database::TrackInfo> m_singleTrackInfo;
 
             // Visualizer FIFO (non-owning pointer, fed after EQ/Reverb)
             audio::AudioVisualizerFIFO* m_visualizerFIFO{nullptr};
+
+            // Random engine for shuffle
+            std::mt19937 m_randomEngine{std::random_device{}()};
+
+            // Helper to generate shuffle order
+            void generateShuffleOrder();
+
+            // Helper to play track at current playlist index
+            bool playCurrentPlaylistTrack();
+
+            // Notify UI of track change
+            void notifyTrackChanged();
         };
     } // namespace ui
 } // namespace jucyaudio

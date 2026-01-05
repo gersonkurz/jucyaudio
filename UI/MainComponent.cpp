@@ -832,7 +832,7 @@ namespace jucyaudio
                         // Check if we're at the end of the playlist
                         if (nextRow >= totalRows)
                         {
-                            if (m_playbackController.getRepeatMode())
+                            if (m_playbackController.isRepeatEnabled())
                             {
                                 // Repeat mode - wrap around to beginning
                                 nextRow = 0;
@@ -959,7 +959,7 @@ namespace jucyaudio
                         {
                             prevRow = currentRow - 1;
                         }
-                        else if (m_playbackController.getRepeatMode())
+                        else if (m_playbackController.isRepeatEnabled())
                         {
                             // At beginning with repeat mode - wrap to end
                             prevRow = totalRows - 1;

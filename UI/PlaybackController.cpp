@@ -451,18 +451,27 @@ namespace jucyaudio
             }
         }
         
-        void PlaybackController::setRepeatMode(bool enabled)
+        void PlaybackController::setRepeatMode(RepeatMode mode)
         {
-            m_repeatMode = enabled;
-            spdlog::info("PlaybackController: Repeat mode {}", enabled ? "enabled" : "disabled");
-            // Repeat mode will be used by MainComponent for playlist/folder repeat
+            m_playlist.repeatMode = mode;
+            const char* modeStr = (mode == RepeatMode::None) ? "None"
+                                : (mode == RepeatMode::One) ? "One"
+                                : "All";
+            spdlog::info("[PlaybackController] Repeat mode set to: {}", modeStr);
         }
-        
+
         void PlaybackController::setShuffleMode(bool enabled)
         {
-            m_shuffleMode = enabled;
-            spdlog::info("PlaybackController: Shuffle mode {}", enabled ? "enabled" : "disabled");
-            // Shuffle mode will be used when selecting the next track
+            if (m_playlist.shuffleEnabled == enabled)
+                return;
+
+            m_playlist.shuffleEnabled = enabled;
+            spdlog::info("[PlaybackController] Shuffle mode {}", enabled ? "enabled" : "disabled");
+
+            if (enabled && !m_playlist.isEmpty())
+            {
+                generateShuffleOrder();
+            }
         }
 
         bool PlaybackController::isPlaying() const
@@ -607,6 +616,269 @@ namespace jucyaudio
         {
             m_visualizerFIFO = fifo;
             spdlog::info("[PlaybackController] Visualizer FIFO connected (unified tap point)");
+        }
+
+        // --- Playlist Management Implementation ---
+
+        void PlaybackController::setPlaylist(const std::vector<database::TrackInfo>& tracks,
+                                             size_t startIndex,
+                                             PlaylistSource source,
+                                             const std::string& sourcePath)
+        {
+            if (tracks.empty())
+            {
+                spdlog::warn("[PlaybackController] setPlaylist called with empty track list");
+                return;
+            }
+
+            // Stop any mix playback
+            if (isMixMode())
+            {
+                unloadMix();
+            }
+
+            // Set up the playlist
+            m_playlist.tracks = tracks;
+            m_playlist.currentIndex = std::min(startIndex, tracks.size() - 1);
+            m_playlist.source = source;
+            m_playlist.sourcePath = sourcePath;
+
+            // Generate shuffle order if shuffle is enabled
+            if (m_playlist.shuffleEnabled)
+            {
+                generateShuffleOrder();
+            }
+
+            spdlog::info("[PlaybackController] Playlist set with {} tracks, starting at index {}",
+                        tracks.size(), m_playlist.currentIndex);
+
+            // Clear single track info since we're now in playlist mode
+            m_singleTrackInfo.reset();
+
+            // Start playing the first track
+            playCurrentPlaylistTrack();
+        }
+
+        void PlaybackController::clearPlaylist()
+        {
+            m_playlist.clear();
+            m_singleTrackInfo.reset();
+            spdlog::info("[PlaybackController] Playlist cleared");
+        }
+
+        bool PlaybackController::nextTrack()
+        {
+            // In mix mode, nextTrack seeks to next track boundary
+            if (isMixMode())
+            {
+                // TODO: Implement mix track navigation
+                spdlog::info("[PlaybackController] nextTrack in mix mode - not yet implemented");
+                return false;
+            }
+
+            // If no playlist, nothing to do
+            if (m_playlist.isEmpty())
+            {
+                spdlog::debug("[PlaybackController] nextTrack called but no playlist");
+                return false;
+            }
+
+            // Handle repeat-one: restart current track
+            if (m_playlist.repeatMode == RepeatMode::One)
+            {
+                seek(0.0);
+                if (m_currentState == PlayerState::TrackPaused || m_currentState == PlayerState::SilenceTrackLoaded)
+                {
+                    play();
+                }
+                return true;
+            }
+
+            // Calculate next index
+            size_t nextIndex = m_playlist.currentIndex + 1;
+
+            // Check if we've reached the end
+            if (nextIndex >= m_playlist.size())
+            {
+                if (m_playlist.repeatMode == RepeatMode::All)
+                {
+                    // Wrap to beginning
+                    nextIndex = 0;
+                    if (m_playlist.shuffleEnabled)
+                    {
+                        // Reshuffle for next iteration
+                        generateShuffleOrder();
+                    }
+                }
+                else
+                {
+                    // No repeat - stop at end
+                    spdlog::info("[PlaybackController] Reached end of playlist");
+                    stop();
+                    return false;
+                }
+            }
+
+            m_playlist.currentIndex = nextIndex;
+            return playCurrentPlaylistTrack();
+        }
+
+        bool PlaybackController::previousTrack()
+        {
+            // In mix mode, previousTrack seeks to previous track boundary
+            if (isMixMode())
+            {
+                // TODO: Implement mix track navigation
+                spdlog::info("[PlaybackController] previousTrack in mix mode - not yet implemented");
+                return false;
+            }
+
+            // If no playlist, nothing to do
+            if (m_playlist.isEmpty())
+            {
+                spdlog::debug("[PlaybackController] previousTrack called but no playlist");
+                return false;
+            }
+
+            // Standard behavior: if >3 seconds into track, restart; otherwise go to previous
+            const double currentPos = getCurrentPositionSeconds();
+            if (currentPos > 3.0)
+            {
+                seek(0.0);
+                return true;
+            }
+
+            // Go to previous track
+            if (m_playlist.currentIndex > 0)
+            {
+                m_playlist.currentIndex--;
+                return playCurrentPlaylistTrack();
+            }
+            else if (m_playlist.repeatMode == RepeatMode::All)
+            {
+                // Wrap to end
+                m_playlist.currentIndex = m_playlist.size() - 1;
+                return playCurrentPlaylistTrack();
+            }
+            else
+            {
+                // At beginning, just restart current track
+                seek(0.0);
+                return true;
+            }
+        }
+
+        void PlaybackController::handleTrackEnded()
+        {
+            spdlog::debug("[PlaybackController] handleTrackEnded called");
+
+            // If we have a playlist, auto-advance
+            if (!m_playlist.isEmpty())
+            {
+                nextTrack();
+            }
+            else if (m_singleTrackInfo.has_value())
+            {
+                // Single track mode - just stop (or handle repeat-one if needed)
+                changeState(PlayerState::SilenceTrackLoaded);
+            }
+        }
+
+        const database::TrackInfo* PlaybackController::getCurrentTrackInfo() const
+        {
+            // First check playlist
+            if (!m_playlist.isEmpty())
+            {
+                return m_playlist.getCurrentTrack();
+            }
+
+            // Then check single track
+            if (m_singleTrackInfo.has_value())
+            {
+                return &m_singleTrackInfo.value();
+            }
+
+            return nullptr;
+        }
+
+        TrackId PlaybackController::getCurrentTrackId() const
+        {
+            const auto* trackInfo = getCurrentTrackInfo();
+            return trackInfo ? trackInfo->trackId : -1;
+        }
+
+        void PlaybackController::generateShuffleOrder()
+        {
+            const size_t count = m_playlist.size();
+            m_playlist.shuffleOrder.resize(count);
+
+            // Fill with sequential indices
+            for (size_t i = 0; i < count; ++i)
+            {
+                m_playlist.shuffleOrder[i] = i;
+            }
+
+            // Shuffle using Fisher-Yates
+            for (size_t i = count - 1; i > 0; --i)
+            {
+                std::uniform_int_distribution<size_t> dist(0, i);
+                size_t j = dist(m_randomEngine);
+                std::swap(m_playlist.shuffleOrder[i], m_playlist.shuffleOrder[j]);
+            }
+
+            // Move current track to front if we're mid-playlist
+            if (m_playlist.currentIndex > 0 && m_playlist.currentIndex < count)
+            {
+                // Find where current track ended up in shuffle and swap to front
+                for (size_t i = 0; i < count; ++i)
+                {
+                    if (m_playlist.shuffleOrder[i] == m_playlist.currentIndex)
+                    {
+                        std::swap(m_playlist.shuffleOrder[0], m_playlist.shuffleOrder[i]);
+                        break;
+                    }
+                }
+                m_playlist.currentIndex = 0;
+            }
+
+            spdlog::debug("[PlaybackController] Generated shuffle order for {} tracks", count);
+        }
+
+        bool PlaybackController::playCurrentPlaylistTrack()
+        {
+            const auto* trackInfo = m_playlist.getCurrentTrack();
+            if (!trackInfo)
+            {
+                spdlog::error("[PlaybackController] No current track in playlist");
+                return false;
+            }
+
+            // Reconstruct the file path and load
+            const auto filePath = trackInfo->reconstructFullPath();
+            juce::File audioFile(juce::String(filePath.string()));
+
+            spdlog::info("[PlaybackController] Playing playlist track {}/{}: {}",
+                        m_playlist.currentIndex + 1, m_playlist.size(),
+                        trackInfo->filename);
+
+            const bool success = loadAndPlayFile(audioFile);
+
+            if (success)
+            {
+                notifyTrackChanged();
+            }
+
+            return success;
+        }
+
+        void PlaybackController::notifyTrackChanged()
+        {
+            if (onCurrentTrackChanged)
+            {
+                const auto trackId = getCurrentTrackId();
+                const size_t index = m_playlist.isEmpty() ? 0 : m_playlist.currentIndex;
+                onCurrentTrackChanged(trackId, index);
+            }
         }
 
     } // namespace ui
