@@ -74,6 +74,8 @@ namespace jucyaudio
             // Initialize button states from PlaybackController
             m_isRepeatOn = m_playbackController.isRepeatEnabled();
             m_isShuffleOn = m_playbackController.getShuffleMode();
+            spdlog::info("[EnhancedPlayerComponent] Initialized toggle buttons: shuffle={}, repeat={}",
+                        m_isShuffleOn, m_isRepeatOn);
             updateToggleButtons();
         }
 
@@ -100,6 +102,10 @@ namespace jucyaudio
             // Reload icons with new accent color when theme changes
             loadButtonIcons();
             loadVolumeIcons();
+
+            // Re-sync toggle button states from PlaybackController
+            m_isRepeatOn = m_playbackController.isRepeatEnabled();
+            m_isShuffleOn = m_playbackController.getShuffleMode();
             updateToggleButtons(); // Refresh toggle button states
             repaint();
         }

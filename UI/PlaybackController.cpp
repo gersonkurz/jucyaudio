@@ -2,12 +2,14 @@
 #include <Audio/MixPlaybackEngine.h>
 #include <Audio/MixProjectLoader.h>
 #include <UI/Settings.h>
+#include <Config/toml_backend.h>
 #include <spdlog/spdlog.h>
 
 namespace jucyaudio
 {
     namespace ui
     {
+        extern std::string g_strConfigFilename;
         using namespace audio;
 
         PlaybackController::PlaybackController()
@@ -18,6 +20,9 @@ namespace jucyaudio
             m_mixPlaybackEngine = std::make_unique<MixPlaybackEngine>();
 
             // Load playback settings from config
+            spdlog::info("[PlaybackController] Reading config: shuffleMode={}, repeatMode={}",
+                        config::theSettings.audioSettings.shuffleMode.get(),
+                        config::theSettings.audioSettings.repeatMode.get());
             m_playlist.shuffleEnabled = config::theSettings.audioSettings.shuffleMode;
             const int repeatModeInt = config::theSettings.audioSettings.repeatMode;
             m_playlist.repeatMode = static_cast<RepeatMode>(repeatModeInt);
@@ -468,6 +473,8 @@ namespace jucyaudio
 
             // Save to config
             config::theSettings.audioSettings.repeatMode.set(static_cast<int>(mode));
+            config::TomlBackend backend{g_strConfigFilename};
+            config::theSettings.save(backend);
         }
 
         void PlaybackController::setShuffleMode(bool enabled)
@@ -480,6 +487,8 @@ namespace jucyaudio
 
             // Save to config
             config::theSettings.audioSettings.shuffleMode.set(enabled);
+            config::TomlBackend backend{g_strConfigFilename};
+            config::theSettings.save(backend);
 
             if (enabled && !m_playlist.isEmpty())
             {
