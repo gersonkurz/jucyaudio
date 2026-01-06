@@ -3,8 +3,6 @@
 #include <UI/EnhancedPlayerComponent.h>
 #include <UI/StatusBarComponent.h>
 #include <UI/VUMeterComponent.h>
-#include <UI/Visualizer/ProjectMComponent.h>
-#include <Audio/AudioVisualizerFIFO.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_graphics/juce_graphics.h>
 
@@ -45,14 +43,8 @@ namespace jucyaudio
             VUMeterComponent& getVUMeterLeft() { return m_vuMeterLeft; }
             VUMeterComponent& getVUMeterRight() { return m_vuMeterRight; }
 
-            // Visualizer control
-            void toggleVisualizer();
-            bool isVisualizerVisible() const { return m_visualizerVisible; }
-            audio::AudioVisualizerFIFO* getVisualizerFIFO() { return &m_visualizerFIFO; }
-            ProjectMComponent& getVisualizer() { return m_visualizer; }
-
-            // Get preferred height based on visualizer state
-            int getPreferredHeight() const;
+            // Get fixed height
+            int getPreferredHeight() const { return kBaseHeight; }
 
         private:
             MainComponent &m_ownerMainComponent;
@@ -62,13 +54,7 @@ namespace jucyaudio
             VUMeterComponent m_vuMeterLeft;
             VUMeterComponent m_vuMeterRight;
 
-            // Visualizer components
-            audio::AudioVisualizerFIFO m_visualizerFIFO;
-            ProjectMComponent m_visualizer;
-            bool m_visualizerVisible{false};
-
             static constexpr int kBaseHeight = 120;
-            static constexpr int kVisualizerHeight = 200;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainPlaybackAndStatusComponent)
         };

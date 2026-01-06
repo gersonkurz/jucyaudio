@@ -142,7 +142,8 @@ namespace jucyaudio
               m_verticalDivider{*this, true},
               m_playbackController{},
               m_enhancedPlayer{m_playbackController, m_audioFormatManager, m_audioThumbnailCache},
-              m_statusPanel{*this}
+              m_statusPanel{*this},
+              m_visualizerFIFO{config::theSettings.audioSettings.visualizerBufferSize}
         {
             // Initialize m_currentMainViewComponent now that m_dataViewComponent is constructed
             m_currentMainViewComponent = &m_dataViewComponent;
@@ -150,6 +151,15 @@ namespace jucyaudio
             // Load audio bypass states from config (inverted: bypassed = !enabled)
             m_equalizerEnabled = !config::theSettings.audioSettings.equalizerBypassed;
             m_reverbEnabled = !config::theSettings.audioSettings.reverbBypassed;
+
+            // Load visualizer placement from config
+            const int placementInt = config::theSettings.uiSettings.visualizerPlacement;
+            m_visualizerPlacement = static_cast<config::VisualizerPlacement>(placementInt);
+
+            // Set up visualizer
+            m_visualizer.setVisualizerFIFO(&m_visualizerFIFO);
+            m_visualizer.setPresetPath(ProjectMComponent::getDefaultPresetsDirectory());
+            addChildComponent(m_visualizer);  // Not visible initially
 
             // Apply initial bypass states to the playback controller
             audio::model::EQSettings eqSettings;
@@ -245,7 +255,7 @@ namespace jucyaudio
                 m_dataViewComponent.setPlayingTrackId(trackId);
 
                 // Notify visualizer of track change (for preset switching)
-                m_statusPanel.getVisualizer().onTrackChanged();
+                m_visualizer.onTrackChanged();
 
                 // Update waveform and track info in EnhancedPlayer
                 if (const auto* trackInfo = m_playbackController.getCurrentTrackInfo())
@@ -292,7 +302,7 @@ namespace jucyaudio
             // via toolbar reference.
 
             // Connect visualizer FIFO to playback controller
-            m_playbackController.setVisualizerFIFO(m_statusPanel.getVisualizerFIFO());
+            m_playbackController.setVisualizerFIFO(&m_visualizerFIFO);
 
             // Enable keyboard focus for media keys
             setWantsKeyboardFocus(true);
@@ -504,14 +514,38 @@ namespace jucyaudio
                         "Show/hide music visualizer",
                         [this]()
                         {
-                            m_statusPanel.toggleVisualizer();
+                            toggleVisualizer();
                         },
                         MenuItem::KeyPress{'v', juce::ModifierKeys::commandModifier},
                         false, // not radio button
                         [this]()
                         {
-                            return m_statusPanel.isVisualizerVisible();
+                            return isVisualizerVisible();
                         }
+                    },
+                    MenuItem{
+                        "Visualizer: Bottom",
+                        "Place visualizer at bottom (full width)",
+                        [this]() { setVisualizerPlacement(config::VisualizerPlacement::Bottom); },
+                        std::nullopt,
+                        true, // radio button
+                        [this]() { return m_visualizerPlacement == config::VisualizerPlacement::Bottom; }
+                    },
+                    MenuItem{
+                        "Visualizer: Left",
+                        "Place visualizer on left side (full height)",
+                        [this]() { setVisualizerPlacement(config::VisualizerPlacement::Left); },
+                        std::nullopt,
+                        true, // radio button
+                        [this]() { return m_visualizerPlacement == config::VisualizerPlacement::Left; }
+                    },
+                    MenuItem{
+                        "Visualizer: Right",
+                        "Place visualizer on right side (full height)",
+                        [this]() { setVisualizerPlacement(config::VisualizerPlacement::Right); },
+                        std::nullopt,
+                        true, // radio button
+                        [this]() { return m_visualizerPlacement == config::VisualizerPlacement::Right; }
                     },
                     {"-"},
                     makeStaticItem(
@@ -631,9 +665,12 @@ namespace jucyaudio
 
         MainComponent::~MainComponent()
         {
+            // Stop and clean up visualizer
+            m_visualizer.stop();
+
             // Remove device change listener before shutting down
             deviceManager.removeChangeListener(this);
-            
+
             shutdownAudio();
             
             theBackgroundTaskService.stop();
@@ -1203,7 +1240,39 @@ namespace jucyaudio
             m_dynamicToolbar.setBounds(bounds.removeFromTop(toolbarHeight));
             m_statusPanel.setBounds(bounds.removeFromBottom(bottomPanelHeight));
 
-            auto centralArea = bounds; // This is now the area for nav, divider, data
+            // Handle visualizer placement if visible
+            constexpr int visualizerHeight = 300; // Height for bottom placement
+            constexpr int visualizerWidth = 400;  // Width for left/right placement
+
+            if (m_visualizerVisible)
+            {
+                if (m_visualizerPlacement == config::VisualizerPlacement::Bottom)
+                {
+                    // Bottom: full width, fixed height, above status panel
+                    auto visualizerArea = bounds.removeFromBottom(visualizerHeight);
+                    m_visualizer.setBounds(visualizerArea);
+                }
+                // Left and Right are handled below in the central area layout
+            }
+
+            auto centralArea = bounds; // This is now the area for nav, divider, data (and possibly visualizer)
+
+            // Handle Left and Right visualizer placements
+            if (m_visualizerVisible)
+            {
+                if (m_visualizerPlacement == config::VisualizerPlacement::Left)
+                {
+                    // Left: visualizer on the left side, full height
+                    auto visualizerArea = centralArea.removeFromLeft(visualizerWidth);
+                    m_visualizer.setBounds(visualizerArea);
+                }
+                else if (m_visualizerPlacement == config::VisualizerPlacement::Right)
+                {
+                    // Right: visualizer on the right side, full height
+                    auto visualizerArea = centralArea.removeFromRight(visualizerWidth);
+                    m_visualizer.setBounds(visualizerArea);
+                }
+            }
 
             // Constraints are now mostly handled in
             // updateNavPanelWidthFromDrag, but resized() should still respect
@@ -4013,6 +4082,46 @@ namespace jucyaudio
 
             // Update status bar
             m_statusPanel.getStatusBar().setInfoMessage(m_reverbEnabled ? "Reverb enabled" : "Reverb bypassed");
+        }
+
+        void MainComponent::toggleVisualizer()
+        {
+            m_visualizerVisible = !m_visualizerVisible;
+            spdlog::info("toggleVisualizer: setting visible to {}", m_visualizerVisible);
+
+            m_visualizer.setVisible(m_visualizerVisible);
+
+            if (m_visualizerVisible)
+            {
+                spdlog::info("toggleVisualizer: starting visualizer");
+                m_visualizer.start();
+            }
+            else
+            {
+                spdlog::info("toggleVisualizer: stopping visualizer");
+                m_visualizer.stop();
+            }
+
+            // Trigger relayout
+            resized();
+        }
+
+        void MainComponent::setVisualizerPlacement(config::VisualizerPlacement placement)
+        {
+            if (m_visualizerPlacement != placement)
+            {
+                m_visualizerPlacement = placement;
+
+                // Save to config
+                config::theSettings.uiSettings.visualizerPlacement.set(static_cast<int>(placement));
+                config::TomlBackend backend{g_strConfigFilename};
+                config::theSettings.save(backend);
+
+                spdlog::info("Visualizer placement changed to {}", static_cast<int>(placement));
+
+                // Trigger relayout
+                resized();
+            }
         }
 
     } // namespace ui

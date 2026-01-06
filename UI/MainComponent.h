@@ -22,6 +22,8 @@
 #include <UI/ThemeManager.h>
 #include <UI/TimerMultiplexer.h>
 #include <UI/JucyLookAndFeel.h>
+#include <UI/Visualizer/ProjectMComponent.h>
+#include <Audio/AudioVisualizerFIFO.h>
 #include <Utils/UiUtils.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_graphics/juce_graphics.h>
@@ -161,6 +163,11 @@ namespace jucyaudio
             void toggleReverbWindow();
             void toggleReverbEnabled();
 
+            // Visualizer management
+            void toggleVisualizer();
+            void setVisualizerPlacement(config::VisualizerPlacement placement);
+            bool isVisualizerVisible() const { return m_visualizerVisible; }
+
             audio::AudioLibrary m_audioLibrary;
             juce::ApplicationCommandManager &m_commandManager;
 
@@ -184,6 +191,12 @@ namespace jucyaudio
             EnhancedPlayerComponent m_enhancedPlayer; // Direct member object
             MainPlaybackAndStatusComponent m_statusPanel;
             JucyLookAndFeel m_lookAndFeel;
+
+            // Visualizer components
+            audio::AudioVisualizerFIFO m_visualizerFIFO;
+            ProjectMComponent m_visualizer;
+            bool m_visualizerVisible{false};
+            config::VisualizerPlacement m_visualizerPlacement{config::VisualizerPlacement::Bottom};
 
             // Unified timer system
             TimerMultiplexer m_timerMultiplexer;
@@ -212,6 +225,10 @@ namespace jucyaudio
                 cmd_Exit,
                 cmd_ShowEqualizer,
                 cmd_ToggleEqualizerEnabled,
+                cmd_ToggleVisualizer,
+                cmd_VisualizerPlacementBottom,
+                cmd_VisualizerPlacementLeft,
+                cmd_VisualizerPlacementRight,
             };
 
             void onDataActionDelete(INavigationNode *selectedNode);

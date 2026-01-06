@@ -51,6 +51,41 @@ namespace jucyaudio
             return true;
         }
 
+        enum class VisualizerPlacement
+        {
+            Bottom = 0,
+            Left = 1,
+            Right = 2
+        };
+
+        inline std::string enumAsString(VisualizerPlacement placement)
+        {
+            switch (placement)
+            {
+            case VisualizerPlacement::Bottom:
+                return "Bottom";
+            case VisualizerPlacement::Left:
+                return "Left";
+            case VisualizerPlacement::Right:
+                return "Right";
+            default:
+                return "Bottom";
+            }
+        }
+
+        inline bool enumFromString(std::string_view str, VisualizerPlacement &value)
+        {
+            if (str == "Bottom")
+                value = VisualizerPlacement::Bottom;
+            else if (str == "Left")
+                value = VisualizerPlacement::Left;
+            else if (str == "Right")
+                value = VisualizerPlacement::Right;
+            else
+                return false;
+            return true;
+        }
+
         template <typename T> struct EnumConfigValue : public IEnumConfigValue
         {
             T value;
@@ -116,6 +151,7 @@ namespace jucyaudio
                 }
                 TypedValue<std::string> theme{this, "Theme", "gruvbox-dark"};
                 TypedValue<bool> showOfflineTracks{this, "ShowOfflineTracks", false};  // Default to hiding offline tracks
+                TypedValue<int> visualizerPlacement{this, "VisualizerPlacement", 0};  // 0=Bottom, 1=Left, 2=Right
                 TypedValueVector<DataViewColumnSection> libraryViewColumns{this, "LibraryViewColumns"};
                 TypedValueVector<DataViewColumnSection> workingSetsViewColumns{this, "WorkingSetsViewColumns"};
                 TypedValueVector<DataViewColumnSection> mixesViewColumns{this, "MixesViewColumns"};
