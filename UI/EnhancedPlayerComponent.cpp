@@ -74,8 +74,6 @@ namespace jucyaudio
             // Initialize button states from PlaybackController
             m_isRepeatOn = m_playbackController.isRepeatEnabled();
             m_isShuffleOn = m_playbackController.getShuffleMode();
-            spdlog::info("[EnhancedPlayerComponent] Initialized toggle buttons: shuffle={}, repeat={}",
-                        m_isShuffleOn, m_isRepeatOn);
             updateToggleButtons();
         }
 

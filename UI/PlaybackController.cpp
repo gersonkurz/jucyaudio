@@ -20,15 +20,9 @@ namespace jucyaudio
             m_mixPlaybackEngine = std::make_unique<MixPlaybackEngine>();
 
             // Load playback settings from config
-            spdlog::info("[PlaybackController] Reading config: shuffleMode={}, repeatMode={}",
-                        config::theSettings.audioSettings.shuffleMode.get(),
-                        config::theSettings.audioSettings.repeatMode.get());
             m_playlist.shuffleEnabled = config::theSettings.audioSettings.shuffleMode;
             const int repeatModeInt = config::theSettings.audioSettings.repeatMode;
             m_playlist.repeatMode = static_cast<RepeatMode>(repeatModeInt);
-
-            spdlog::info("[PlaybackController] Initialized in Silence state (shuffle={}, repeat={})",
-                        m_playlist.shuffleEnabled, static_cast<int>(m_playlist.repeatMode));
         }
 
         PlaybackController::~PlaybackController()
