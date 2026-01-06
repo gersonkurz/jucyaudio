@@ -244,6 +244,9 @@ namespace jucyaudio
                 // Update track highlight in DataView
                 m_dataViewComponent.setPlayingTrackId(trackId);
 
+                // Notify visualizer of track change (for preset switching)
+                m_statusPanel.getVisualizer().onTrackChanged();
+
                 // Update waveform and track info in EnhancedPlayer
                 if (const auto* trackInfo = m_playbackController.getCurrentTrackInfo())
                 {

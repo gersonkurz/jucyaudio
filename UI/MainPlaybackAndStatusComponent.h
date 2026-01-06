@@ -49,6 +49,7 @@ namespace jucyaudio
             void toggleVisualizer();
             bool isVisualizerVisible() const { return m_visualizerVisible; }
             audio::AudioVisualizerFIFO* getVisualizerFIFO() { return &m_visualizerFIFO; }
+            ProjectMComponent& getVisualizer() { return m_visualizer; }
 
             // Get preferred height based on visualizer state
             int getPreferredHeight() const;

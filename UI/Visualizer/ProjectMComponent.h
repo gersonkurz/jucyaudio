@@ -60,6 +60,9 @@ namespace jucyaudio
             void setTargetFrameRate(int fps);
             int getTargetFrameRate() const { return m_targetFps; }
 
+            // Track change notification (triggers preset switch if enabled)
+            void onTrackChanged();
+
             // Component overrides
             void paint(juce::Graphics& g) override;
             void resized() override;
@@ -104,6 +107,12 @@ namespace jucyaudio
             std::atomic<bool> m_isRunning{false};
             std::atomic<bool> m_contextReady{false};
             int m_targetFps{30};
+
+            // Auto-switch timer state
+            int m_autoSwitchIntervalSeconds{5};  // Loaded from config
+            bool m_switchOnTrackChange{true};    // Loaded from config
+            int m_framesSinceLastSwitch{0};      // Counter for auto-switch timing
+            int m_framesPerAutoSwitch{150};      // Calculated as fps * seconds
 
             // Pending actions (set from UI thread, processed in GL thread)
             std::atomic<bool> m_pendingNextPreset{false};

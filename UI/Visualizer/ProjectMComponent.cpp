@@ -1,5 +1,6 @@
 #include "ProjectMComponent.h"
 #include "GlewInitializer.h"
+#include <UI/Settings.h>
 #include <spdlog/spdlog.h>
 
 namespace jucyaudio
@@ -19,7 +20,13 @@ namespace jucyaudio
             // Enable keyboard focus for preset controls
             setWantsKeyboardFocus(true);
 
-            spdlog::info("ProjectMComponent created");
+            // Load auto-switch settings from config
+            m_autoSwitchIntervalSeconds = config::theSettings.audioSettings.visualizerPresetAutoSwitchSeconds;
+            m_switchOnTrackChange = config::theSettings.audioSettings.visualizerSwitchPresetOnTrackChange;
+            m_framesPerAutoSwitch = m_targetFps * m_autoSwitchIntervalSeconds;
+
+            spdlog::info("ProjectMComponent created (auto-switch: {}s, switch on track change: {})",
+                        m_autoSwitchIntervalSeconds, m_switchOnTrackChange);
         }
 
         ProjectMComponent::~ProjectMComponent()
@@ -107,10 +114,21 @@ namespace jucyaudio
         void ProjectMComponent::setTargetFrameRate(int fps)
         {
             m_targetFps = juce::jlimit(1, 120, fps);
+            m_framesPerAutoSwitch = m_targetFps * m_autoSwitchIntervalSeconds;
             if (m_isRunning)
             {
                 stopTimer();
                 startTimer(1000 / m_targetFps);
+            }
+        }
+
+        void ProjectMComponent::onTrackChanged()
+        {
+            if (m_switchOnTrackChange && !m_presetLocked)
+            {
+                spdlog::info("Track changed - switching to random preset");
+                randomPreset();
+                m_framesSinceLastSwitch = 0; // Reset auto-switch counter
             }
         }
 
@@ -225,6 +243,7 @@ namespace jucyaudio
             }
 
             // Handle pending preset changes
+            bool presetChanged = false;
             if (m_pendingNextPreset.exchange(false))
             {
                 if (!m_presetFiles.isEmpty())
@@ -232,6 +251,7 @@ namespace jucyaudio
                     m_currentPresetIndex = (m_currentPresetIndex + 1) % m_presetFiles.size();
                     const auto presetPath = m_presetFiles[m_currentPresetIndex].toStdString();
                     projectm_load_preset_file(m_projectM, presetPath.c_str(), true);
+                    presetChanged = true;
                 }
             }
             if (m_pendingPrevPreset.exchange(false))
@@ -241,6 +261,7 @@ namespace jucyaudio
                     m_currentPresetIndex = (m_currentPresetIndex - 1 + m_presetFiles.size()) % m_presetFiles.size();
                     const auto presetPath = m_presetFiles[m_currentPresetIndex].toStdString();
                     projectm_load_preset_file(m_projectM, presetPath.c_str(), true);
+                    presetChanged = true;
                 }
             }
             if (m_pendingRandomPreset.exchange(false))
@@ -251,6 +272,28 @@ namespace jucyaudio
                     m_currentPresetIndex = random.nextInt(m_presetFiles.size());
                     const auto presetPath = m_presetFiles[m_currentPresetIndex].toStdString();
                     projectm_load_preset_file(m_projectM, presetPath.c_str(), true);
+                    presetChanged = true;
+                }
+            }
+
+            // Reset auto-switch counter if preset was manually changed
+            if (presetChanged)
+            {
+                m_framesSinceLastSwitch = 0;
+            }
+
+            // Auto-switch logic: switch to random preset after configured interval
+            if (m_autoSwitchIntervalSeconds > 0 && !m_presetLocked && !m_presetFiles.isEmpty())
+            {
+                m_framesSinceLastSwitch++;
+                if (m_framesSinceLastSwitch >= m_framesPerAutoSwitch)
+                {
+                    juce::Random random;
+                    m_currentPresetIndex = random.nextInt(m_presetFiles.size());
+                    const auto presetPath = m_presetFiles[m_currentPresetIndex].toStdString();
+                    projectm_load_preset_file(m_projectM, presetPath.c_str(), true);
+                    m_framesSinceLastSwitch = 0;
+                    spdlog::info("Auto-switched to random preset: {}", presetPath);
                 }
             }
 
