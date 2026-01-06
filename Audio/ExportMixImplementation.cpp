@@ -52,9 +52,9 @@ namespace jucyaudio
                                                          MixExporterProgressCallback progressCallback)
             : MixProjectLoader{},
               m_progressCallback{progressCallback},
-              m_totalOutputSamples{0},
               m_settings{settings},
-              m_totalMixDurationMs{Duration_t::zero()}
+              m_totalMixDurationMs{Duration_t::zero()},
+              m_totalOutputSamples{0}
         {
             if (m_progressCallback)
                 m_progressCallback(0.0f, "Starting export...");

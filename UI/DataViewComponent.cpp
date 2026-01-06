@@ -589,8 +589,8 @@ namespace jucyaudio
                     break;
                     
                 case RowActivationResultType::PlayTrack:
-                    // Just play the row using the existing method
-                    m_mainComponent.playDataRow(static_cast<RowIndex_t>(rowNumber));
+                    // Always create a playlist from current view, starting at this track
+                    m_mainComponent.playAllFromRow(static_cast<RowIndex_t>(rowNumber));
                     break;
                     
                 case RowActivationResultType::NoAction:
@@ -719,6 +719,23 @@ namespace jucyaudio
             {
                 m_playingTrackId = trackId;
                 m_tableListBox.repaint();  // Repaint to show/update the highlight
+
+                // Scroll to make the playing track visible
+                if (trackId >= 0 && m_currentNode != nullptr)
+                {
+                    // Find the row number for this track ID
+                    const int numRows = m_tableListBox.getNumRows();
+                    for (int row = 0; row < numRows; ++row)
+                    {
+                        const auto trackResult = m_currentNode->getTrackInfosForOperation({static_cast<RowIndex_t>(row)});
+                        if (!trackResult.trackInfos.empty() && trackResult.trackInfos[0].trackId == trackId)
+                        {
+                            // Found the row - scroll to it
+                            m_tableListBox.scrollToEnsureRowIsOnscreen(row);
+                            break;
+                        }
+                    }
+                }
             }
         }
 

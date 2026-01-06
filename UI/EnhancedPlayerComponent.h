@@ -110,7 +110,7 @@ namespace jucyaudio
             // Bottom row components
             juce::DrawableButton m_volumeButton{"Volume", juce::DrawableButton::ImageFitted};
             juce::Slider m_volumeSlider;
-            juce::Label m_trackInfoLabel;
+            juce::Label m_trackInfoLabel;  // Shows track info and playlist index (e.g., "Artist / Album / Title / Track 3 of 12")
             juce::Label m_currentTimeLabel;
             juce::Label m_totalTimeLabel;
             juce::DrawableButton m_repeatButton{"Repeat", juce::DrawableButton::ImageFitted};
@@ -147,6 +147,7 @@ namespace jucyaudio
             void repeatButtonClicked();
             void shuffleButtonClicked();
             void setTrackInfo(const juce::String &info);
+            void updatePlaylistIndex();
 
             // Button callbacks
             void playPauseButtonClicked();

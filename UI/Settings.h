@@ -189,6 +189,8 @@ namespace jucyaudio
                 TypedValue<bool> equalizerBypassed{this, "EqualizerBypassed", true};  // Default to bypassed (disabled)
                 TypedValue<bool> reverbBypassed{this, "ReverbBypassed", true};        // Default to bypassed (disabled)
                 TypedValue<int> visualizerBufferSize{this, "VisualizerBufferSize", 2048};  // FIFO size for visualizer (samples)
+                TypedValue<bool> shuffleMode{this, "ShuffleModeEnabled", false};      // Shuffle mode for playlist playback
+                TypedValue<int> repeatMode{this, "RepeatMode", 0};                    // Repeat mode: 0=None, 1=One, 2=All
 
             } audioSettings{this};
             

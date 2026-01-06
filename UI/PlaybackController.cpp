@@ -1,6 +1,7 @@
 #include <UI/PlaybackController.h>
 #include <Audio/MixPlaybackEngine.h>
 #include <Audio/MixProjectLoader.h>
+#include <UI/Settings.h>
 #include <spdlog/spdlog.h>
 
 namespace jucyaudio
@@ -12,11 +13,17 @@ namespace jucyaudio
         PlaybackController::PlaybackController()
         {
             m_audioFormatManager.registerBasicFormats();
-            
+
             // Initialize mix playback engine
             m_mixPlaybackEngine = std::make_unique<MixPlaybackEngine>();
-            
-            spdlog::info("[PlaybackController] Initialized in Silence state");
+
+            // Load playback settings from config
+            m_playlist.shuffleEnabled = config::theSettings.audioSettings.shuffleMode;
+            const int repeatModeInt = config::theSettings.audioSettings.repeatMode;
+            m_playlist.repeatMode = static_cast<RepeatMode>(repeatModeInt);
+
+            spdlog::info("[PlaybackController] Initialized in Silence state (shuffle={}, repeat={})",
+                        m_playlist.shuffleEnabled, static_cast<int>(m_playlist.repeatMode));
         }
 
         PlaybackController::~PlaybackController()
@@ -458,6 +465,9 @@ namespace jucyaudio
                                 : (mode == RepeatMode::One) ? "One"
                                 : "All";
             spdlog::info("[PlaybackController] Repeat mode set to: {}", modeStr);
+
+            // Save to config
+            config::theSettings.audioSettings.repeatMode.set(static_cast<int>(mode));
         }
 
         void PlaybackController::setShuffleMode(bool enabled)
@@ -467,6 +477,9 @@ namespace jucyaudio
 
             m_playlist.shuffleEnabled = enabled;
             spdlog::info("[PlaybackController] Shuffle mode {}", enabled ? "enabled" : "disabled");
+
+            // Save to config
+            config::theSettings.audioSettings.shuffleMode.set(enabled);
 
             if (enabled && !m_playlist.isEmpty())
             {

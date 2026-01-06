@@ -153,9 +153,9 @@ namespace jucyaudio
             m_volumeButton.setEdgeIndent(itemHeight / 5);
             bottomArea.removeFromLeft(buttonPadding);
             m_volumeSlider.setBounds(bottomArea.removeFromLeft(sliderWidth));
-
-            // 3. The new label takes all remaining space.
             bottomArea.removeFromLeft(buttonPadding * 2);
+
+            // 3. Track info label takes all remaining space.
             bottomArea.removeFromRight(buttonPadding * 2);
             m_trackInfoLabel.setBounds(bottomArea);
         }
@@ -164,6 +164,7 @@ namespace jucyaudio
         {
             updateTransportButtons();
             updateTimeDisplays();
+            updatePlaylistIndex();
 
             // Update waveform playback position
             const auto length = m_playbackController.getLengthInSeconds();
@@ -502,7 +503,18 @@ namespace jucyaudio
         {
             if (info.isNotEmpty())
             {
-                m_trackInfoLabel.setText(info, juce::dontSendNotification);
+                juce::String displayText = info;
+
+                // Append playlist index if we're playing from a playlist
+                const auto& playlist = m_playbackController.getPlaylistQueue();
+                if (!playlist.isEmpty())
+                {
+                    const auto currentIndex = playlist.currentIndex + 1;  // 1-based for display
+                    const auto totalTracks = playlist.size();
+                    displayText += " / Track " + juce::String(currentIndex) + " of " + juce::String(totalTracks);
+                }
+
+                m_trackInfoLabel.setText(displayText, juce::dontSendNotification);
             }
             else
             {
@@ -522,6 +534,13 @@ namespace jucyaudio
         void EnhancedPlayerComponent::setVolumeSliderValue(float value)
         {
             m_volumeSlider.setValue(value, juce::sendNotification);
+        }
+
+        void EnhancedPlayerComponent::updatePlaylistIndex()
+        {
+            // Playlist index is now shown as part of the track info label
+            // This method is called from timerCallback() but the actual work
+            // is done in setTrackInfo() when the track changes
         }
 
         // WaveformDisplay implementation
