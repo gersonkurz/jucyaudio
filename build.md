@@ -49,6 +49,9 @@ just debug
 # Build release version (optimized, no debug symbols)
 just release
 
+# Build in offline mode (airplane-safe - requires prior online build)
+just build-offline
+
 # Build and run
 just run
 
@@ -58,6 +61,28 @@ just clean
 # Show build information
 just info
 ```
+
+### Offline Build Mode (Airplane-Safe)
+
+JucyAudio supports offline building for situations where you don't have internet access (e.g., airplane mode):
+
+```bash
+# First-time setup (requires internet):
+just build
+
+# Subsequent offline builds (no internet required):
+just build-offline
+```
+
+**How it works:**
+- The first `just build` downloads all dependencies via CMake's FetchContent and caches them in `build-{arch}/_deps/`
+- Subsequent `just build-offline` commands use the cached dependencies without attempting network updates
+- The offline build passes `-DJUCYAUDIO_OFFLINE_BUILD=ON` to CMake, which sets `FETCHCONTENT_FULLY_DISCONNECTED=ON`
+
+**Limitations:**
+- You must run a successful online build at least once before using offline mode
+- If you clean the build directory (`just clean`), you'll need to rebuild online first
+- Switching between architectures requires an initial online build for each architecture
 
 ### Building with CMake Directly
 
@@ -71,6 +96,10 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
 cmake --build build -j8
 
 # The .app bundle will be in: build/arm64-Release/JucyAudio.app
+
+# For offline builds (after initial online build):
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DJUCYAUDIO_OFFLINE_BUILD=ON
+cmake --build build -j8
 ```
 
 ### Creating a Distribution DMG
@@ -143,4 +172,33 @@ All dependencies are automatically downloaded via CMake's FetchContent - no manu
 3. Select the Visual Studio kit when prompted
 4. Run "CMake: Build" from the command palette (`Ctrl+Shift+P`)
 5. Run "CMake: Run" to launch
+
+### Building with just (Command Line)
+
+```powershell
+# Build with default configuration
+just build
+
+# Build in offline mode (airplane-safe - requires prior online build)
+just build-offline
+
+# Build specific architectures
+just build-x64
+just build-x86
+just build-arm64
+```
+
+### Offline Build Mode (Windows)
+
+Similar to macOS, Windows supports offline builds:
+
+```powershell
+# First-time setup (requires internet):
+just build
+
+# Subsequent offline builds (no internet required):
+just build-offline
+```
+
+The offline build works the same way as on macOS - dependencies are cached in `build-{arch}/_deps/` after the first online build.
 

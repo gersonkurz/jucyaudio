@@ -64,6 +64,10 @@ debug:
 release:
     @just build Release
 
+# Build in offline mode (airplane-safe - requires prior online build)
+build-offline config=default_build_type:
+    @just _build-offline-{{os}} {{config}} {{arch}}
+
 # Clean and rebuild
 rebuild config=default_build_type:
     @just clean
@@ -91,6 +95,12 @@ _build-windows config arch_target:
     cmake -B build-{{arch_target}} -A {{ if arch_target == "x64" { "x64" } else if arch_target == "x86" { "Win32" } else { "ARM64" } }} -DCMAKE_BUILD_TYPE={{config}}
     cmake --build build-{{arch_target}} --config {{config}} --parallel {{cpu_count}}
     Write-Host "Build complete: build-{{arch_target}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe"
+
+[windows]
+_build-offline-windows config arch_target:
+    cmake -B build-{{arch_target}} -A {{ if arch_target == "x64" { "x64" } else if arch_target == "x86" { "Win32" } else { "ARM64" } }} -DCMAKE_BUILD_TYPE={{config}} -DJUCYAUDIO_OFFLINE_BUILD=ON
+    cmake --build build-{{arch_target}} --config {{config}} --parallel {{cpu_count}}
+    Write-Host "Offline build complete: build-{{arch_target}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe"
 
 [windows]
 build-x64 config=default_build_type:
@@ -127,6 +137,12 @@ _build-macos config arch_target:
     cmake -B build-{{arch_target}} -DCMAKE_BUILD_TYPE={{config}} -DCMAKE_OSX_ARCHITECTURES={{arch_target}}
     cmake --build build-{{arch_target}} -j{{cpu_count}}
     @echo "Build complete: build-{{arch_target}}/{{arch_target}}-{{config}}/"
+
+[macos]
+_build-offline-macos config arch_target:
+    cmake -B build-{{arch_target}} -DCMAKE_BUILD_TYPE={{config}} -DCMAKE_OSX_ARCHITECTURES={{arch_target}} -DJUCYAUDIO_OFFLINE_BUILD=ON
+    cmake --build build-{{arch_target}} -j{{cpu_count}}
+    @echo "Offline build complete: build-{{arch_target}}/{{arch_target}}-{{config}}/"
 
 [macos]
 build-arm64 config=default_build_type:

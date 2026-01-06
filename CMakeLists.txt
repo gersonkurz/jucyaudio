@@ -71,6 +71,16 @@ endif()
 # Find or fetch JUCE
 include(FetchContent)
 
+# Offline build support: Set FETCHCONTENT_UPDATES_DISCONNECTED to prevent git fetch attempts
+# This allows builds to work in airplane mode if dependencies were previously downloaded
+# Set via: cmake -DFETCHCONTENT_UPDATES_DISCONNECTED=ON ...
+# Or: export FETCHCONTENT_UPDATES_DISCONNECTED=ON before running cmake
+if(DEFINED ENV{JUCYAUDIO_OFFLINE_BUILD} OR JUCYAUDIO_OFFLINE_BUILD)
+    message(STATUS "Offline build mode enabled - FetchContent will not attempt updates")
+    set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
+    set(FETCHCONTENT_FULLY_DISCONNECTED ON)
+endif()
+
 FetchContent_Declare(
     JUCE
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
