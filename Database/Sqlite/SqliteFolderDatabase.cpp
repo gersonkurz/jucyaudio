@@ -430,7 +430,23 @@ namespace jucyaudio
         {
             buildCacheIfNeeded();
             std::lock_guard lock{m_cacheMutex};
-            return m_childrenFromParents.find(parentId) != m_childrenFromParents.end();
+
+            // Check if parent has any children in the map
+            auto it = m_childrenFromParents.find(parentId);
+            if (it == m_childrenFromParents.end())
+                return false;
+
+            // Check if any of the children have valid (non-empty) names
+            for (const auto childId : it->second)
+            {
+                auto folderIt = m_folderInfoFromId.find(childId);
+                if (folderIt != m_folderInfoFromId.end() && !folderIt->second.name.empty())
+                {
+                    return true;  // Found at least one valid child
+                }
+            }
+
+            return false;  // No valid children found
         }
 
 
@@ -471,7 +487,15 @@ namespace jucyaudio
                     auto folderIt = m_folderInfoFromId.find(childId);
                     if (folderIt != m_folderInfoFromId.end())
                     {
-                        children.push_back(folderIt->second);
+                        // Skip folders with empty names (data corruption or scanning issue)
+                        if (!folderIt->second.name.empty())
+                        {
+                            children.push_back(folderIt->second);
+                        }
+                        else
+                        {
+                            spdlog::warn("Skipping folder ID {} with empty name (parent ID: {})", childId, parentId);
+                        }
                     }
                 }
             }

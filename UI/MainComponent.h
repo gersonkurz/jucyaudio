@@ -87,6 +87,7 @@ namespace jucyaudio
                 handleNodeSelection(node, false, true);
             }
             void playDataRow(RowIndex_t rowIndex);
+            void playAllFromRow(RowIndex_t startRow);  // Play all tracks starting from this row (playlist mode)
             bool navigateToFolder(FolderId folderId);
 
             // Update status bar with track count and statistics

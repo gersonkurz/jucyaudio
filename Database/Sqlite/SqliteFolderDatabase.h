@@ -40,7 +40,7 @@ namespace jucyaudio
             FolderId findOrCreateFolderByPath(const std::filesystem::path &path) override;
             std::unordered_set<FolderId> getAllChildFolders(const std::vector<FolderId> &folderIdsToScan) const override;
 
-            void initialize()
+            void initialize() override
             {
                 buildCacheIfNeeded();
             }

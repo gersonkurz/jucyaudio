@@ -158,6 +158,8 @@ namespace jucyaudio
                 auto &folderDb = theTrackLibrary.getFolderDatabase();
                 m_childFolders = folderDb.getChildFolders(m_folderId);
                 m_childFoldersLoaded = true;
+                spdlog::debug("VirtualFolderNode::getChildFolderCount for folder ID {}: {} child folders loaded",
+                             m_folderId, m_childFolders.size());
             }
             return static_cast<int64_t>(m_childFolders.size());
         }
@@ -196,21 +198,22 @@ namespace jucyaudio
             if (m_cachedRowCount == -1)
             {
                 m_cachedRowCount = theTrackLibrary.getTotalTrackCount(m_queryArgs);
-                spdlog::info("VirtualFolderNode::getNumberOfRows - loaded track count for folder ID {}: {}", 
+                spdlog::info("VirtualFolderNode::getNumberOfRows - loaded track count for folder ID {}: {}",
                             m_folderId, m_cachedRowCount);
             }
             int64_t trackCount = m_cachedRowCount;
-            
+
             // Add folder rows
-            int64_t folderRows = getChildFolderCount();
+            int64_t childFolderCount = getChildFolderCount();
+            int64_t folderRows = childFolderCount;
             if (hasParent())
                 folderRows++; // Add 1 for parent ".."
-            
+
             outCount = folderRows + trackCount;
-            
-            //spdlog::debug("VirtualFolderNode::getNumberOfRows for '{}' (ID {}): {} folders + {} tracks = {} total", 
-            //             getName(), m_folderId, folderRows, trackCount, outCount);
-            
+
+            spdlog::info("VirtualFolderNode::getNumberOfRows for '{}' (ID {}): hasParent={}, childFolders={}, tracks={}, total={}",
+                        getName(), m_folderId, hasParent(), childFolderCount, trackCount, outCount);
+
             return true;
         }
 
@@ -244,7 +247,7 @@ namespace jucyaudio
         CellRenderInfo VirtualFolderNode::getCellRenderInfo(RowIndex_t rowIndex, ColumnIndex_t columnIndex) const
         {
             CellRenderInfo info;
-            
+
             // Check column type by index
             // We know the standard track columns from LibraryNode
             // Column 0 = Title, Column 1 = Artist, Column 2 = Album, etc.
@@ -254,6 +257,14 @@ namespace jucyaudio
             else if (columnIndex == 2) columnName = "album_title";
             // For all other columns, we'll return empty text for folder rows
             RowType rowType = getRowType(rowIndex);
+
+            if (columnIndex == 0)  // Only log for title column to reduce noise
+            {
+                const char* rowTypeStr = (rowType == RowType::ParentFolder) ? "ParentFolder" :
+                                         (rowType == RowType::ChildFolder) ? "ChildFolder" : "Track";
+                spdlog::info("VirtualFolderNode::getCellRenderInfo row={}, column={}, rowType={}, hasParent={}, childFolders={}",
+                             rowIndex, columnIndex, rowTypeStr, hasParent(), m_childFolders.size());
+            }
             
             if (rowType == RowType::ParentFolder)
             {
@@ -306,15 +317,52 @@ namespace jucyaudio
             }
             else
             {
-                // Regular track - adjust index and use base implementation
+                // Regular track - adjust index and get track directly from base class
+                // We can't call LibraryNode::getCellRenderInfo because it uses virtual dispatch
+                // on getTrackInfoForRow, which would double-adjust the index
                 int64_t trackOffset = 0;
                 if (hasParent())
                     trackOffset++;
                 trackOffset += getChildFolderCount();
                 int64_t adjustedIndex = rowIndex - trackOffset;
-                //spdlog::debug("VirtualFolderNode::getCellRenderInfo - row {} -> adjusted index {} for column {}", 
-                //             rowIndex, adjustedIndex, columnIndex);
-                return LibraryNode::getCellRenderInfo(adjustedIndex, columnIndex);
+
+                if (columnIndex == 0)
+                {
+                    spdlog::info("VirtualFolderNode::getCellRenderInfo - row {} -> adjustedIndex={}, trackOffset={}",
+                                rowIndex, adjustedIndex, trackOffset);
+                }
+
+                // Call base class getTrackInfoForRow directly (not via virtual dispatch)
+                const auto track = LibraryNode::getTrackInfoForRow(adjustedIndex);
+
+                RenderState state = RenderState::Normal;
+                if (track != nullptr)
+                {
+                    // Check if this is an MP3 track by looking at the filename extension
+                    const auto& filename = track->filename;
+                    const bool isMp3 = (filename.size() >= 4 &&
+                                       (filename.substr(filename.size() - 4) == ".mp3" ||
+                                        filename.substr(filename.size() - 4) == ".MP3"));
+
+                    // MP3 tracks below 320 kbps are shown in subdued (gray) color
+                    if (isMp3 && track->bitrate < 320)
+                    {
+                        state = RenderState::Subdued;
+                    }
+                }
+
+                // Use getCellTextForTrack to avoid virtual dispatch issues
+                CellRenderInfo result = {
+                    .text = LibraryNode::getCellTextForTrack(track, columnIndex),
+                    .state = state
+                };
+
+                if (columnIndex == 0)
+                {
+                    spdlog::info("VirtualFolderNode::getCellRenderInfo - row {} returned text='{}'", rowIndex, result.text);
+                }
+
+                return result;
             }
             
             return info;
@@ -415,14 +463,28 @@ namespace jucyaudio
             }
             else
             {
-                // Regular track - adjust index and use base implementation to play
+                // Regular track - adjust index and get track directly to avoid virtual dispatch issues
                 int64_t trackOffset = 0;
                 if (hasParent())
                     trackOffset++;
                 trackOffset += getChildFolderCount();
-                return BaseNode::onRowActivated(rowIndex - trackOffset);
+                int64_t adjustedIndex = rowIndex - trackOffset;
+
+                spdlog::info("  Track row - rowIndex: {}, adjustedIndex: {}", rowIndex, adjustedIndex);
+
+                // Get track directly from LibraryNode without virtual dispatch
+                const auto* trackInfo = LibraryNode::getTrackInfoForRow(adjustedIndex);
+                if (trackInfo)
+                {
+                    spdlog::info("  Playing track: {} (ID: {})", trackInfo->title, trackInfo->trackId);
+                    return {
+                        .type = RowActivationResultType::PlayTrack
+                    };
+                }
+
+                spdlog::warn("  No track found at adjusted index: {}", adjustedIndex);
             }
-            
+
             return result;
         }
 

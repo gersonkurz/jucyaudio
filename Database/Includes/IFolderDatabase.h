@@ -33,6 +33,8 @@ namespace jucyaudio
 
             virtual bool hasChildren(FolderId parentId) const = 0;
 
+            virtual void initialize() {}
+
             /**
              * @brief Adds a new folder to the database.
              * @param folder A FolderInfo struct to add. The folderId should be -1.

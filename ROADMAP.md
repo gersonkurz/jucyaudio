@@ -97,10 +97,15 @@ When a bug is fixed in 1.x:
 
 ## Phase 4: Platform Expansion
 
-**Goal**: Broaden the user base after the core feature set is mature.
+**Goal**: Give back something to the original GPL crew.
 
 4.1 **Linux Port** (`docs/features/linux-port.md`) — NICE TO HAVE
-    - **Why**: Open-source ethos, but lower immediate ROI than features.
+    - **Why**: Open-source ethos, but I am not using Linux on the Desktop, so why would I care?
     - **Tech**: Flatpak, ALSA/PipeWire.
 
 
+## Unsorted ideas, not planned in at this stage
+
+- Internationalization support: architecture for language translation
+- Evaluate feasability of theme support
+- 

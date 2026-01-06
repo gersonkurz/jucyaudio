@@ -37,6 +37,9 @@ namespace jucyaudio
             std::vector<std::string> getCurrentSearchTerms() const override;
             std::vector<SortOrderInfo> getCurrentSortOrder() const override;
 
+            // Helper method for derived classes to get cell text for a track without virtual dispatch
+            std::string getCellTextForTrack(const TrackInfo* track, ColumnIndex_t index) const;
+
         private:
 
             // INavigationNode interface

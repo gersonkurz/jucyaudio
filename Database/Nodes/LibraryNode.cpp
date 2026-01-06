@@ -291,6 +291,12 @@ namespace jucyaudio
         {
             const auto track = getTrackInfoForRow(rowIndex);
 
+            if (columnIndex == 0)
+            {
+                spdlog::info("LibraryNode::getCellRenderInfo rowIndex={}, track={}, trackId={}",
+                            rowIndex, (void*)track, track ? track->trackId : -1);
+            }
+
             RenderState state = RenderState::Normal;
             if (track != nullptr)
             {
@@ -314,9 +320,8 @@ namespace jucyaudio
             };
         }
 
-        std::string LibraryNode::getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const
+        std::string LibraryNode::getCellTextForTrack(const TrackInfo* track, ColumnIndex_t index) const
         {
-            const auto track{getTrackInfoForRow(rowIndex)};  // Use virtual dispatch
             if (track == nullptr)
             {
                 return {};
@@ -407,6 +412,12 @@ namespace jucyaudio
             }
         }
 
+        std::string LibraryNode::getCellText(RowIndex_t rowIndex, ColumnIndex_t index) const
+        {
+            const auto track{getTrackInfoForRow(rowIndex)};  // Use virtual dispatch
+            return getCellTextForTrack(track, index);
+        }
+
         ObjectId LibraryNode::getObjectIdForRow(RowIndex_t rowIndex) const
         {
             const auto trackInfo{getTrackInfoForRow(rowIndex)};
@@ -429,16 +440,20 @@ namespace jucyaudio
                 // we should maybe switch the limit from a variable to a constant: this is an implementation detail
                 // callers of our library shouldn't need to know about this
                 m_tracks = theTrackLibrary.getTracks(m_queryArgs);
-                spdlog::debug("LibraryNode::getTrackInfoForRow - loaded {} tracks", m_tracks.size());
+                spdlog::info("LibraryNode::getTrackInfoForRow - loaded {} tracks for offset {}", m_tracks.size(), m_queryArgs.offset);
                 m_bCacheInitialized = true;
                 const auto endGetTracks{std::chrono::high_resolution_clock::now()};
                 const auto durationGetTracks{std::chrono::duration_cast<std::chrono::milliseconds>(endGetTracks - startGetTracks)};
                 spdlog::info("LibraryNode::getTrackInfoForRow cache refresh took {} ms", durationGetTracks.count());
             }
             const auto targetIndex = rowIndex - m_queryArgs.offset;
+
+            spdlog::info("LibraryNode::getTrackInfoForRow - rowIndex={}, offset={}, targetIndex={}, cache.size()={}",
+                        rowIndex, m_queryArgs.offset, targetIndex, m_tracks.size());
+
             if (targetIndex >= m_tracks.size())
             {
-                spdlog::warn("Target index {} is out of bounds for the current track cache size {} (rowIndex={}, offset={})", 
+                spdlog::warn("Target index {} is out of bounds for the current track cache size {} (rowIndex={}, offset={})",
                             targetIndex, m_tracks.size(), rowIndex, m_queryArgs.offset);
                 return nullptr;
             }

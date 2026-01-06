@@ -238,10 +238,31 @@ namespace jucyaudio
                 playPreviousTrack();
             };
 
-            // Track change callback for playlist mode - update DataView highlight
+            // Track change callback for playlist mode - update UI when track changes
             m_playbackController.onCurrentTrackChanged = [this](TrackId trackId, [[maybe_unused]] size_t index)
             {
+                // Update track highlight in DataView
                 m_dataViewComponent.setPlayingTrackId(trackId);
+
+                // Update waveform and track info in EnhancedPlayer
+                if (const auto* trackInfo = m_playbackController.getCurrentTrackInfo())
+                {
+                    const auto trackPath = trackInfo->reconstructFullPath();
+                    juce::File audioFile(jucePathFromFs(trackPath));
+
+                    if (audioFile.existsAsFile())
+                    {
+                        m_enhancedPlayer.loadFile(
+                            audioFile,
+                            std::format("{} / {} / {}", trackInfo->artist_name, trackInfo->album_title, trackInfo->title),
+                            trackInfo->trackId
+                        );
+
+                        // Load markers for this track
+                        const auto markers = theTrackLibrary.getMarkerManager().getMarkersForTrack(trackInfo->trackId);
+                        m_enhancedPlayer.setMarkers(markers);
+                    }
+                }
             };
 
             if (!m_navigationTree.initialize())
@@ -2004,6 +2025,54 @@ namespace jucyaudio
                     juce::AlertWindow::WarningIcon, "Playback Error", "Cannot find audio file for: " + std::to_string(track.trackId));
             }
             // UI will update via timer in EnhancedPlayerComponent
+        }
+
+        void MainComponent::playAllFromRow(RowIndex_t startRow)
+        {
+            if (!m_currentNode)
+            {
+                m_statusPanel.getStatusBar().postMessage("No node selected for playlist playback.", true);
+                return;
+            }
+
+            // Get the track at the clicked row (handles folder rows correctly via virtual dispatch)
+            const auto clickedTrackResult = m_currentNode->getTrackInfosForOperation({startRow});
+            if (clickedTrackResult.trackInfos.empty())
+            {
+                m_statusPanel.getStatusBar().postMessage("No track at selected row.", true);
+                return;
+            }
+            const auto& clickedTrack = clickedTrackResult.trackInfos[0];
+
+            // Get all tracks from the current view (this returns only tracks, no folder rows)
+            const auto allTracks = m_currentNode->getAllTrackInfosForOperation();
+            if (allTracks.trackInfos.empty())
+            {
+                m_statusPanel.getStatusBar().postMessage("No tracks available for playlist.", true);
+                return;
+            }
+
+            // Find the index of the clicked track in the track array by matching trackId
+            size_t startIndex = 0;
+            for (size_t i = 0; i < allTracks.trackInfos.size(); ++i)
+            {
+                if (allTracks.trackInfos[i].trackId == clickedTrack.trackId)
+                {
+                    startIndex = i;
+                    break;
+                }
+            }
+
+            // Set up the playlist in PlaybackController
+            m_playbackController.setPlaylist(
+                allTracks.trackInfos,
+                startIndex,
+                PlaylistSource::Folder,
+                m_currentNode->getName()  // Use node name as source context
+            );
+
+            spdlog::info("[MainComponent] Started playlist with {} tracks from row {} (track ID {}, playlist index {})",
+                        allTracks.trackInfos.size(), startRow, clickedTrack.trackId, startIndex);
         }
 
         void MainComponent::onDataActionRemoveNamedObjects()
