@@ -4,17 +4,17 @@
 
 **Version 2.0 requires all MUST HAVE features. NICE TO HAVE features can ship in 2.x minor releases.**
 
-| ID   | Feature              | Priority      | Target |
-|------|----------------------|---------------|--------|
-| 1.1  | ProjectM Integration | MUST HAVE     | 2.0    |
-| 1.2  | VST3 Support         | MUST HAVE     | 2.0    |
-| 2.1  | User Manual          | NICE TO HAVE  | 2.1    |
-| 2.2  | Dedupe System        | NICE TO HAVE  | 2.1    |
-| 2.3  | Smart Automix        | MUST HAVE     | 2.0    |
-| 3.1  | AI Stem Separation   | NICE TO HAVE  | 2.2    |
-| 3.2  | AI Metadata Enrichment | NICE TO HAVE | 2.1   |
-| 3.3  | Library Organizer    | MUST HAVE     | 2.0    |
-| 4.1  | Linux Port           | NICE TO HAVE  | 2.3    |
+| ID   | Feature              | Priority      | Target | Status |
+|------|----------------------|---------------|--------|--------|
+| 1.1  | ProjectM Integration | MUST HAVE     | 2.0    | DONE   |
+| 1.2  | VST3 Support         | MUST HAVE     | 2.0    |        |
+| 2.1  | User Manual          | NICE TO HAVE  | 2.1    |        |
+| 2.2  | Dedupe System        | NICE TO HAVE  | 2.1    |        |
+| 2.3  | Smart Automix        | MUST HAVE     | 2.0    |        |
+| 3.1  | AI Stem Separation   | NICE TO HAVE  | 2.2    |        |
+| 3.2  | AI Metadata Enrichment | NICE TO HAVE | 2.1   |        |
+| 3.3  | Library Organizer    | MUST HAVE     | 2.0    |        |
+| 4.1  | Linux Port           | NICE TO HAVE  | 2.3    |        |
 
 ---
 
@@ -60,9 +60,11 @@ When a bug is fixed in 1.x:
 
 **Goal:** Drastically improve the user experience and creative possibilities with "low hanging fruit" integrations.
 
-1.1. **ProjectM Integration** (`docs/features/projectm-integration.md`) — MUST HAVE
-    - **Why**: Brings professional-grade, hardware-accelerated visuals. High "wow" factor, straightforward integration via CMake.
-    - **Tech**: OpenGL, projectM v4.
+1.1. **ProjectM Integration** — DONE
+    - Hardware-accelerated music visualization using projectM v4
+    - Three layout modes (Bottom/Left/Right), automatic preset switching
+    - Unified playback architecture feeds visualizer from both single-track and mix modes
+    - Ships with ~9,800 curated presets (Cream of the Crop collection)
 1.2. **VST3 Support** (`docs/features/vst-integration.md`) — MUST HAVE
     - **Why**: Unlocks infinite audio processing possibilities (EQ, Compression, creative FX) using the industry standard.
     - **Tech**: JUCE Plugin Hosting, VST3 SDK (MIT).

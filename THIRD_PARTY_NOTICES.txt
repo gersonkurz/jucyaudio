@@ -45,6 +45,30 @@ tomlplusplus
   License file: licenses/mit.txt
   Source: https://github.com/marzer/tomlplusplus
 
+projectM
+  License: LGPL-2.1
+  License file: licenses/projectm.txt
+  Source: https://github.com/projectM-visualizer/projectm
+  Notes: Cross-platform music visualization library. Open-source reimplementation
+         of Milkdrop. Used as a shared library for LGPL compliance.
+
+projectM Presets (Cream of the Crop)
+  License: See notes below
+  Source: https://github.com/projectM-visualizer/presets-cream-of-the-crop
+  Notes: Curated collection of ~9,800 MilkDrop presets by Jason Fletcher (ISOSCELES).
+
+         Per the projectM project's LICENSE.md:
+         "MilkDrop presets were, in almost all cases, not released under any
+         specific license. Theoretically, each preset author holds the full
+         copyright on any released presets. However, since the presets were
+         freely released and have been used in so many packages and applications
+         in the past two decades, it is safe to assume them to be in the
+         public domain."
+
+         Each preset file (.milk) typically includes the author's name in the
+         filename. If you are a preset author and wish to have your work removed
+         from this distribution, please contact us.
+
 Notes
 -----
 - Most dependencies are built from source via CMake FetchContent.
