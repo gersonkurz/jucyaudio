@@ -1,98 +1,228 @@
 # VST3 Integration Plan for JucyAudio
 
+## Status: Ready for Implementation
+**Scope:** Master bus effects only (v1). Per-track effects deferred to v2.
+
 ## Goal
-Enable JucyAudio to host **VST3 audio plugins**, allowing users to apply professional effects (EQ, Compression, Reverb) to individual tracks or the master bus.
+
+Enable JucyAudio to host **VST3 audio plugins** on the master bus, allowing users to apply professional-quality effects (EQ, Compression, Reverb, Limiting) to the final mix output.
+
+**Motivation:** JucyAudio's built-in EQ and Reverb are basic implementations. VST3 support allows users to use professional-grade free plugins (TDR Nova, Dragonfly Reverb, etc.) without requiring us to become DSP experts.
 
 ## 1. Legal & Licensing
-*   **SDK**: Steinberg VST3 SDK (v3.7+).
-*   **License**: MIT License (Compatible with JucyAudio's GPLv3).
-*   **Constraint**: We will support **VST3 only**. VST2 is legally deprecated and not recommended for new open-source projects.
 
-## 2. Architecture Overview
+- **SDK**: Steinberg VST3 SDK (bundled with JUCE)
+- **License**: Dual GPLv3/Proprietary (Compatible with JucyAudio's GPLv3)
+- **Constraint**: **VST3 only**. VST2 is legally deprecated.
 
-The integration requires three new subsystems:
-1.  **Plugin Management**: Scanning, identifying, and cataloging installed plugins.
-2.  **Audio Engine Integration**: Hosting plugin instances and processing audio in the real-time thread.
-3.  **UI Integration**: displaying generic or custom plugin editors.
+## 2. Scope: Master Bus Only (v1)
 
-### 2.1 Plugin Management (The "Scanner")
-Scanning plugins is slow and crash-prone. It must be isolated.
+### What's In Scope
+- VST3 plugin chain on master output (after EQ/Reverb, before visualizer)
+- Plugin scanning (out-of-process for stability) and persistence
+- Plugin UI windows (both generic and custom editors)
+- Plugin state save/load (application settings)
+- **Offline Export Support**: Effects must be applied to exported WAV/MP3 files
 
-*   **Class**: `PluginManagerService`
-*   **Responsibilities**:
-    *   Maintain `juce::KnownPluginList` (persisted to XML/JSON).
-    *   Run `juce::PluginDirectoryScanner` in a background thread.
-    *   Handle "Blocklisting" of crashing plugins.
-*   **Storage**: `Config/plugins.xml` (or similar) to cache scanned plugins so startup remains fast.
+### What's Deferred (v2)
+- Per-track effects
+- Plugin Delay Compensation (PDC) — not needed for master-only
+- Mix project plugin state storage (v1 uses global app settings for master chain)
 
-### 2.2 Audio Engine Extensions (`MixPlaybackEngine`)
+### Why Master Bus Only?
+1. **Simpler implementation** — No PDC complexity
+2. **Immediate value** — Users get better EQ/Reverb/Limiting on final output
+3. **Lower risk** — Easier to test and stabilize
+4. **Extensible** — Architecture supports adding per-track later
 
-We need to inject effects at two points:
-1.  **Per-Track**: Inside `PlaybackTrackSource`.
-2.  **Master Bus**: At the end of `MixPlaybackEngine::getNextAudioBlock`.
+## 3. Recommended Test Plugins (Free VST3)
 
-#### Data Structure Updates
-*   **`PlaybackTrackSource`**: Needs a `std::unique_ptr<PluginChain>` to hold effects for that specific track.
-*   **`MixPlaybackEngine`**: Needs a `std::unique_ptr<PluginChain>` for the master output.
+These plugins are recommended for testing and can be suggested to users:
 
-#### Latency Compensation (PDC)
-This is the hardest part.
-*   Plugins report latency via `getLatencySamples()`.
-*   **Solution**: We must calculate the maximum latency of any path and delay all *other* paths so they align.
-*   **Implementation**: Add a `juce::DelayLine` or simple ring buffer to `PlaybackTrackSource` to offset "fast" tracks to match "slow" (heavy plugin) tracks.
+### Primary Test Set
 
-### 2.3 UI Components
-*   **`PluginScanDialog`**: Shows progress bars while scanning (Files scanned / Found / Failed).
-*   **`PluginSelectorMenu`**: A categorized popup menu (Delay, Reverb, EQ) to add effects.
-*   **`PluginWindow`**: A desktop window (`juce::DocumentWindow`) that wraps the plugin's native editor (`AudioProcessorEditor`).
+| Plugin | Type | License | Download |
+|--------|------|---------|----------|
+| **TDR Nova** | Dynamic EQ | Freeware | https://www.tokyodawn.net/tdr-nova/ |
+| **Dragonfly Reverb** | Reverb (4 types) | GPL-3.0 | https://github.com/michaelwillis/dragonfly-reverb/releases |
+| **Airwindows Consolidated** | ~400 effects | MIT | https://www.airwindows.com/consolidated/ |
 
-## 3. Step-by-Step Implementation Plan
+### Additional Test Plugins
+
+| Plugin | Type | License | Download |
+|--------|------|---------|----------|
+| **Valhalla Supermassive** | Reverb/Delay | Freeware | https://valhalladsp.com/shop/reverb/valhalla-supermassive/ |
+| **Kilohearts Essentials** | 32 effects bundle | Freeware | https://kilohearts.com/products/kilohearts_essentials |
+
+### Test Coverage Matrix
+
+| Scenario | Plugin to Use |
+|----------|---------------|
+| Custom GUI editor | TDR Nova, Dragonfly |
+| Generic/minimal GUI | Airwindows Consolidated |
+| Open source (debuggable) | Dragonfly Reverb |
+| Many plugins in one | Airwindows Consolidated, Kilohearts |
+| Latency-reporting plugin | Most compressors/limiters |
+
+## 4. Architecture
+
+### 4.1 Components
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Audio Signal Flow                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  PlaybackController::getNextAudioBlock()                        │
+│       │                                                          │
+│       ▼                                                          │
+│  ┌─────────────┐                                                │
+│  │ Built-in EQ │  (existing)                                    │
+│  └──────┬──────┘                                                │
+│         ▼                                                        │
+│  ┌──────────────┐                                               │
+│  │ Built-in     │  (existing)                                   │
+│  │ Reverb       │                                               │
+│  └──────┬───────┘                                               │
+│         ▼                                                        │
+│  ┌──────────────────────────────────────┐                       │
+│  │ VST3 Plugin Chain (NEW)              │                       │
+│  │                                      │                       │
+│  │  Plugin 1 → Plugin 2 → ... → Plugin N│                       │
+│  └──────┬───────────────────────────────┘                       │
+│         ▼                                                        │
+│  ┌─────────────────┐                                            │
+│  │ Visualizer FIFO │  (existing)                                │
+│  └──────┬──────────┘                                            │
+│         ▼                                                        │
+│     Audio Output                                                 │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 4.2 New Classes
+
+**`Audio/Plugins/PluginManagerService.h`**
+- Singleton service for plugin management
+- Wraps `juce::AudioPluginFormatManager` and `juce::KnownPluginList`
+- Handles scanning (out-of-process), blocklisting, persistence
+
+**`Audio/Plugins/PluginChain.h`**
+- Ordered list of `juce::AudioPluginInstance` pointers
+- `processBlock(juce::AudioBuffer&)` iterates through plugins
+- **Thread Safety**: Uses lock-free pointer swapping or ReferenceCountedObjects for safe graph updates during playback
+- Bypass support per-plugin and global
+
+**`UI/Plugins/PluginScanDialog.h`**
+- Modal dialog for scanning plugin directories
+- Progress bar, found/failed counts
+- Blocklist management
+
+**`UI/Plugins/PluginChainEditor.h`**
+- UI component showing the master plugin chain
+- Add/remove/reorder plugins
+- Open plugin editor windows
+
+**`UI/Plugins/PluginWindow.h`**
+- Desktop window wrapping plugin's `AudioProcessorEditor`
+- Falls back to generic editor if plugin has no custom UI
+
+### 4.3 Storage
+
+**Plugin List:** `~/.config/jucyaudio/plugins.xml` (or platform equivalent)
+- Uses JUCE's `KnownPluginList::createXml()` format
+- Includes blocklisted plugins with failure count
+
+**Master Chain State:** Stored in **SQLite** (same DB as tracks)
+- **Table:** `ApplicationSettings` or a new `MasterChainPlugins` table
+- **Data:** `juce::MemoryBlock` (plugin state blob) + sort order + enabled state
+- **Rationale:** TOML is unsuitable for large binary blobs; SQLite handles this natively.
+
+**Stable Plugin UID Proposal**
+- **Primary key:** `(format, id)` where:
+  - `format` = `PluginDescription::pluginFormatName` (expect `VST3`)
+  - `id` = `PluginDescription::fileOrIdentifier` (VST3 module + class)
+- **Aux fields (diagnostics/migration hints):** `name`, `manufacturerName`, `version`
+- **Restore matching:** first by `(format, id)`; if missing, optionally try `(name, manufacturerName)` with a warning and mark as unverified.
+
+## 5. Implementation Plan
 
 ### Phase 1: Infrastructure & Scanning
-1.  [ ] **Dependency**: Enable `JUCE_VST3_CAN_REPLACE_VST2=0` and generic VST3 flags in CMake.
-2.  [ ] **Manager**: Implement `PluginManagerService` using `juce::AudioPluginFormatManager`.
-3.  [ ] **Scanner UI**: Create a `DatabaseMaintenanceDialog` tab or separate dialog to trigger scans.
-4.  [ ] **Persistence**: Ensure plugin lists save/load correctly between restarts.
+1. [ ] Enable VST3 hosting in CMake (`JUCE_PLUGINHOST_VST3=1`)
+2. [ ] Implement `PluginManagerService` singleton
+3. [ ] Implement `PluginScanDialog` using **out-of-process scanning** (via `juce::AudioPluginFormatManager::scanPlugins` with `AudioPluginFormatManager::Scanner`) to prevent crashes.
+4. [ ] Persist plugin list between sessions
+5. [ ] Test with TDR Nova, Dragonfly, Airwindows
 
-### Phase 2: The `PluginChain` Wrapper
-1.  [ ] Create `Audio/Plugins/PluginChain.h`.
-    *   Holds `std::vector<std::unique_ptr<juce::AudioPluginInstance>>`.
-    *   Has a `processBlock(juce::AudioBuffer&)` method that iterates through plugins.
-    *   Handles "Bypassing" logic.
-2.  [ ] Create `Audio/Plugins/PluginGraph.h` (Optional, if we want complex routing later).
+### Phase 2: Plugin Chain & Audio Engine
+1. [ ] Implement `PluginChain` wrapper class (thread-safe)
+2. [ ] Add `PluginChain` to `PlaybackController` (master bus)
+3. [ ] Wire into `getNextAudioBlock()` after EQ/Reverb
+4. [ ] **Offline Export:** Integrate `PluginChain` into `MixExporter` / `ExportMixImplementation` to ensure master effects are applied during offline render.
+5. [ ] Test audio processing with multiple plugins
 
-### Phase 3: Engine Integration
-1.  [ ] Modify `PlaybackTrackSource` to own a `PluginChain`.
-2.  [ ] Update `MixPlaybackEngine::mixActiveTracksForBlock`:
-    *   Process the track's audio through its `PluginChain` *before* adding it to the main mix buffer.
-3.  [ ] Add Master Bus processing in `getNextAudioBlock`.
+### Channel Layout Policy (Master Bus)
+- Fix master chain to stereo in v1 (JUCE `AudioChannelSet::stereo()`).
+- Validate each plugin with `isBusesLayoutSupported()` or equivalent; if unsupported, skip/disable and warn the user.
+- Ensure the chain fails safe: no silent output if a plugin rejects the layout.
 
-### Phase 4: Latency Compensation (PDC)
-1.  [ ] Implement `LatencyCalculator` to sum up latencies in a chain.
-2.  [ ] Update `PlaybackTrackSource` to check `MixPlaybackEngine::getMaxLatency()` and delay itself accordingly.
+### Phase 3: UI Integration
+1. [ ] Implement `PluginWindow` for hosting plugin editors
+2. [ ] Implement `PluginChainEditor` component
+3. [ ] Add "Master Effects" button/panel to UI (e.g., near Master Volume or EQ/Reverb controls)
+4. [ ] Handle plugin editor open/close lifecycle
 
-### Phase 5: UI & Editor
-1.  [ ] Implement "Add Effect" button in `MixTrackComponent`.
-2.  [ ] Handle opening the plugin editor window on click.
-3.  [ ] Save/Load plugin state (Project files need to store the plugin's `getStateInformation` binary blob).
+### Phase 4: State Persistence
+1. [ ] Implement SQLite schema for `MasterChainPlugins`
+2. [ ] Save master chain configuration (order + state blobs) to SQLite
+3. [ ] Load and restore plugin states on startup
+4. [ ] Handle missing plugins gracefully (warning, not crash)
+5. [ ] Test save/load cycle with real plugins
 
-## 4. Risks & Mitigations
-*   **Stability**: Bad plugins crash the host.
-    *   *Mitigation*: We are running plugins in-process (standard for hosts). If a plugin crashes, JucyAudio crashes. We can advise users to stick to stable plugins.
-*   **Performance**: VSTs can be CPU heavy.
-    *   *Mitigation*: Add a "CPU Load" meter. Implement "Freeze Track" (render to WAV) in the future.
-*   **State Compatibility**: If a user uninstalls a plugin, the project won't load correctly.
-    *   *Mitigation*: Implement a "Missing Plugins" warning dialog instead of crashing.
+### Phase 5: Polish
+1. [ ] Add plugin bypass toggle (per-plugin and global)
+2. [ ] Add CPU usage indicator
+3. [ ] Settings UI for plugin scan paths
+4. [ ] Documentation for users
 
-# Codex Comments
-- Consider isolating plugin scanning in a helper process to avoid app crashes during scan (JUCE supports this pattern).
-- Call out where plugin state blobs are stored and how they are versioned/migrated in project files.
-- PDC needs a clear policy for max latency and what happens if plugins report extreme values.
+## 6. Risks & Mitigations
 
-# Claude Comments
-- **Critical**: The current `MixPlaybackEngine` uses `std::atomic<std::shared_ptr<PlaybackState>>` for thread-safe state swaps. VST processing must happen within the same atomic boundary - adding plugins to `PlaybackTrackSource` means they become part of `PlaybackState` and get swapped atomically with track sources.
-- **PDC Implementation**: Rather than per-track delay lines, consider a simpler initial approach: calculate max latency at mix load time and add a single delay to the master output. Per-track PDC is complex and can be Phase 2.
-- **Plugin State Storage**: Store plugin state as base64-encoded blobs in the SQLite database (MixTracks table or new PluginInstances table). Include plugin UID + version to detect missing/upgraded plugins on load.
-- **Real-time safety**: `AudioPluginInstance::processBlock()` should be RT-safe for well-behaved plugins, but allocating/deallocating plugins must happen on the UI thread. Use the garbage collection pattern already in `MixPlaybackEngine`.
-- **Blocklist persistence**: Store crashed plugins in a separate `BlockedPlugins` table with crash timestamp and count, allowing users to retry after updates.
-- **Maximum latency policy**: Cap at 8192 samples (~185ms at 44.1kHz). Plugins reporting higher should be rejected with a warning.
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Bad plugin crashes app | High | **Out-of-process scanning**; blocklist after crash; recommend stable plugins |
+| Plugin uses too much CPU | Medium | Add CPU meter; document performance expectations |
+| Plugin not found on reload | Medium | Warning dialog; graceful degradation |
+| Plugin has no UI | Low | JUCE provides generic parameter editor |
+
+## 7. Future Expansion (v2)
+
+When adding per-track effects:
+
+1. **PDC Required**: Per-track plugins introduce latency misalignment
+   - Calculate max latency across all tracks
+   - Add delay lines to "fast" tracks to match "slow" tracks
+   - Cap max latency at 8192 samples (~185ms)
+
+2. **Mix Project Storage**: Plugin states need to be stored per-mix
+   - New `MixPluginInstances` table in SQLite
+   - Store plugin UID + version + state blob
+   - Handle missing plugins on mix load
+
+3. **UI Changes**:
+   - "Add Effect" button per track in Mix Editor
+   - Per-track bypass toggles
+
+---
+
+## Reviewer Comments
+
+### Codex Comments
+- **Scanning:** Out-of-process scanning is critical. Use `juce::KnownPluginList::scanPlugins` with a `FileSearchPath` and `AudioPluginFormatManager`.
+- **Storage:** SQLite is definitely the right choice for state blobs.
+- **PDC:** For v2, PDC needs a clear policy for max latency and what happens if plugins report extreme values.
+
+### Claude Comments
+- **Real-time safety:** `AudioPluginInstance::processBlock()` should be RT-safe for well-behaved plugins, but allocating/deallocating plugins must happen on the UI thread. Use garbage collection pattern (or `juce::ReferenceCountedObject`).
+- **Blocklist persistence:** Store crashed plugins with timestamp and count, allowing users to retry after plugin updates.
+- **Generic editor:** JUCE's `GenericAudioProcessorEditor` works well for Airwindows-style plugins with no custom UI.
+- **Thread safety:** Plugin chain modifications must not happen during `getNextAudioBlock()`. Use atomic pointer swap or message queue pattern.
