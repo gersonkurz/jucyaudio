@@ -879,7 +879,8 @@ if(APPLE)
                 -p "@executable_path/../libs/"
                 -s "${CMAKE_BINARY_DIR}"
                 -s "${CMAKE_BINARY_DIR}/$<CONFIG>"
-                -s "${CMAKE_BINARY_DIR}/arm64-$<CONFIG>"
+                -s "${CMAKE_BINARY_DIR}/${ARCH_DIR}-$<CONFIG>"
+                -s "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
             COMMENT "Bundling dependencies into .app..."
             VERBATIM
         )
