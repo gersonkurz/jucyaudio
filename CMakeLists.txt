@@ -342,6 +342,8 @@ target_sources(jucyaudio PRIVATE
     Audio/Model/EQSettings.cpp
     Audio/Model/EQSettings.h
     Audio/Model/ReverbSettings.h
+    Audio/Plugins/PluginManagerService.cpp
+    Audio/Plugins/PluginManagerService.h
     
     # Utils files
     Utils/AssortedUtils.cpp
@@ -530,6 +532,8 @@ target_sources(jucyaudio PRIVATE
     UI/CheckboxLookAndFeel.cpp
     UI/ThemeManager.cpp
     UI/ThemeManager.h
+    UI/Plugins/PluginScanDialog.cpp
+    UI/Plugins/PluginScanDialog.h
     UI/MenuManager.cpp
     UI/MenuManager.h
     UI/AboutDialog.cpp
@@ -743,6 +747,8 @@ if(WIN32)
         JUCE_MODAL_LOOPS_PERMITTED=1
         JUCE_STRICT_REFCOUNTEDPOINTER=1
         JUCE_USE_MP3AUDIOFORMAT=1
+        JUCE_PLUGINHOST_VST3=1
+        JUCE_PLUGINHOST_VST=0
         PROJECT_NAME="${PROJECT_NAME}"
         PROJECT_VERSION="${PROJECT_VERSION}"
         # Disable JUCE assertions in Debug builds to avoid overly strict thread checking
@@ -762,6 +768,8 @@ else()
         JUCE_MODAL_LOOPS_PERMITTED=1
         JUCE_STRICT_REFCOUNTEDPOINTER=1
         JUCE_USE_MP3AUDIOFORMAT=1
+        JUCE_PLUGINHOST_VST3=1
+        JUCE_PLUGINHOST_VST=0
         PROJECT_NAME="${PROJECT_NAME}"
         PROJECT_VERSION="${PROJECT_VERSION}"
         # Disable JUCE assertions in Debug builds to avoid overly strict thread checking

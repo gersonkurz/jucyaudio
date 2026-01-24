@@ -14,6 +14,7 @@
 install/*
 install-test/*
 install-arm64/*
+install-x64-release/*
 
 # Precompiled Headers
 *.gch
@@ -36,7 +37,7 @@ out/*
 *.lai
 *.la
 *.a
-*.lib
+*.lib1
 
 # Executables
 *.exe

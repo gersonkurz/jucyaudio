@@ -150,7 +150,7 @@ These plugins are recommended for testing and can be suggested to users:
 ### Phase 1: Infrastructure & Scanning
 1. [ ] Enable VST3 hosting in CMake (`JUCE_PLUGINHOST_VST3=1`)
 2. [ ] Implement `PluginManagerService` singleton
-3. [ ] Implement `PluginScanDialog` using **out-of-process scanning** (via `juce::AudioPluginFormatManager::scanPlugins` with `AudioPluginFormatManager::Scanner`) to prevent crashes.
+3. [ ] Implement `PluginScanDialog` using JUCE's in-process `PluginDirectoryScanner` with dead-man's-pedal recovery (true out-of-process scanning deferred).
 4. [ ] Persist plugin list between sessions
 5. [ ] Test with TDR Nova, Dragonfly, Airwindows
 

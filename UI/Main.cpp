@@ -13,6 +13,7 @@
 #include <Utils/AssortedUtils.h>
 #include <UI/SplashScreenComponent.h>
 #include <Database/DatabaseBackupManager.h>
+#include <Audio/Plugins/PluginManagerService.h>
 #include <filesystem>
 #include <fstream>
 #include <tuple>
@@ -188,6 +189,8 @@ namespace jucyaudio
                 // Load settings first to get backup configuration
                 config::TomlBackend backend{g_strConfigFilename};
                 config::theSettings.load(backend);
+
+                audio::thePluginManagerService.initialize(m_configRoot);
 
                 // Determine database path using expandPath for ${VAR} expansion
                 const auto& configuredDbFilename = config::theSettings.database.filename.get();

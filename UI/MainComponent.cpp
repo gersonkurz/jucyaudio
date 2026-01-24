@@ -29,6 +29,7 @@
 #include <UI/LibraryRootsComponent.h>
 #include <UI/MainComponent.h>
 #include <UI/MarkerEditDialog.h>
+#include <UI/Plugins/PluginScanDialog.h>
 #include <UI/ReverbDialog.h>
 #include <UI/Settings.h>
 #include <UI/SettingsDialog.h>
@@ -586,6 +587,16 @@ namespace jucyaudio
                 });
             }
             menuManager.addSubMenu("View", "Theme", themeItems);
+
+            menuManager.registerMenu("Tools",
+                {
+                    {"Scan VST3 Plugins...",
+                        "Scan plugin folders for new or updated VST3 plugins",
+                        [this]()
+                        {
+                            PluginScanDialog::launch(this);
+                        }},
+                });
 
             menuManager.registerMenu("Help",
                 {
