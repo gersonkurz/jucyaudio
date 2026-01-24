@@ -9,6 +9,7 @@
 */
 
 #include <Audio/ExportMixToWav.h>
+#include <Audio/Plugins/PluginChain.h>
 #include <format>
 
 namespace jucyaudio
@@ -85,6 +86,25 @@ namespace jucyaudio
             m_failedTracks.clear();
 
             // Iterate through the output mix timeline, block by block
+            const auto previousPrep = audio::theMasterPluginChain.getPreparationState();
+            audio::theMasterPluginChain.prepareToPlay(outputSampleRate(), processingBlockSize);
+            struct ChainRestoreGuard
+            {
+                audio::PluginChain::PreparationState previous;
+                ~ChainRestoreGuard()
+                {
+                    if (previous.prepared)
+                    {
+                        audio::theMasterPluginChain.prepareToPlay(previous.sampleRate, previous.blockSize);
+                    }
+                    else
+                    {
+                        audio::theMasterPluginChain.releaseResources();
+                    }
+                }
+            };
+            ChainRestoreGuard restoreGuard{previousPrep};
+
             while (context.samplesWrittenTotal < m_totalOutputSamples)
             {
                 masterOutputBlock.clear();
@@ -102,6 +122,13 @@ namespace jucyaudio
                         m_failedTracks.insert(m_activeSources[i].trackId);
                     }
                 }
+
+                juce::AudioBuffer<float> pluginBuffer{
+                    masterOutputBlock.getArrayOfWritePointers(),
+                    masterOutputBlock.getNumChannels(),
+                    0,
+                    static_cast<int>(context.samplesToProcessInThisBlock)};
+                audio::theMasterPluginChain.processBlock(pluginBuffer);
 
                 // Write the processed masterOutputBlock to the file
                 m_writer->writeFromAudioSampleBuffer(masterOutputBlock, 0, (int)context.samplesToProcessInThisBlock);

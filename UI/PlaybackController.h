@@ -8,6 +8,7 @@
 #include <Audio/Equalizer.h>
 #include <Audio/Reverb.h>
 #include <Audio/AudioVisualizerFIFO.h>
+#include <Audio/Plugins/PluginChain.h>
 #include <Database/Includes/TrackInfo.h>
 #include <spdlog/spdlog.h>
 #include <memory>

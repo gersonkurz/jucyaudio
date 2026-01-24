@@ -82,6 +82,7 @@ namespace jucyaudio
             spec.numChannels = 2;
             m_masterEqualizer.prepare(spec);
             m_masterReverb.prepare(spec);
+            audio::theMasterPluginChain.prepareToPlay(sampleRate, samplesPerBlockExpected);
             
             if (m_mixPlaybackEngine)
             {
@@ -114,7 +115,7 @@ namespace jucyaudio
                 bufferToFill.clearActiveBufferRegion();
             }
             
-            // Apply master EQ and reverb to the audio (after getting the source audio)
+            // Apply master EQ, reverb, and VST chain to the audio (after getting the source audio)
             if (m_currentState == PlayerState::TrackPlaying || m_currentState == PlayerState::MixPlaying)
             {
                 juce::dsp::AudioBlock<float> block(*bufferToFill.buffer);
@@ -122,8 +123,14 @@ namespace jucyaudio
                                                   static_cast<size_t>(bufferToFill.numSamples));
                 m_masterEqualizer.process(subBlock);
                 m_masterReverb.process(subBlock);
+                juce::AudioBuffer<float> pluginBuffer{
+                    bufferToFill.buffer->getArrayOfWritePointers(),
+                    bufferToFill.buffer->getNumChannels(),
+                    bufferToFill.startSample,
+                    bufferToFill.numSamples};
+                audio::theMasterPluginChain.processBlock(pluginBuffer);
 
-                // Feed audio to visualizer FIFO after EQ/Reverb (reflects final output)
+                // Feed audio to visualizer FIFO after EQ/Reverb/VST chain (reflects final output)
                 if (m_visualizerFIFO != nullptr)
                 {
                     m_visualizerFIFO->writeFromBuffer(*bufferToFill.buffer,
@@ -138,6 +145,7 @@ namespace jucyaudio
             m_audioTransportSource.releaseResources();
             m_masterEqualizer.reset();
             m_masterReverb.reset();
+            audio::theMasterPluginChain.releaseResources();
             
             if (m_mixPlaybackEngine)
             {

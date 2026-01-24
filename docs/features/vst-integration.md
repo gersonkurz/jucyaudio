@@ -187,7 +187,7 @@ These plugins are recommended for testing and can be suggested to users:
 
 ## 6. Risks & Mitigations
 
-| Risk | Impact | Mitigation |
+| Risk | Impact | Mitigation |w
 |------|--------|------------|
 | Bad plugin crashes app | High | **Out-of-process scanning**; blocklist after crash; recommend stable plugins |
 | Plugin uses too much CPU | Medium | Add CPU meter; document performance expectations |

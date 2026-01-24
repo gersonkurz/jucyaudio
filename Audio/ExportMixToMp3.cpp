@@ -9,6 +9,7 @@
 */
 
 #include <Audio/ExportMixToMp3.h>
+#include <Audio/Plugins/PluginChain.h>
 #include <UI/Settings.h>
 #include <format>
 
@@ -128,6 +129,25 @@ namespace jucyaudio
             std::vector<float> interleaved(static_cast<size_t>(processingBlockSize * 2));
 
             // Iterate through the output mix timeline, block by block
+            const auto previousPrep = audio::theMasterPluginChain.getPreparationState();
+            audio::theMasterPluginChain.prepareToPlay(outputSampleRate(), processingBlockSize);
+            struct ChainRestoreGuard
+            {
+                audio::PluginChain::PreparationState previous;
+                ~ChainRestoreGuard()
+                {
+                    if (previous.prepared)
+                    {
+                        audio::theMasterPluginChain.prepareToPlay(previous.sampleRate, previous.blockSize);
+                    }
+                    else
+                    {
+                        audio::theMasterPluginChain.releaseResources();
+                    }
+                }
+            };
+            ChainRestoreGuard restoreGuard{previousPrep};
+
             while (context.samplesWrittenTotal < m_totalOutputSamples)
             {
                 masterOutputBlock.clear();
@@ -145,6 +165,13 @@ namespace jucyaudio
                         m_failedTracks.insert(m_activeSources[i].trackId);
                     }
                 }
+
+                juce::AudioBuffer<float> pluginBuffer{
+                    masterOutputBlock.getArrayOfWritePointers(),
+                    masterOutputBlock.getNumChannels(),
+                    0,
+                    static_cast<int>(context.samplesToProcessInThisBlock)};
+                audio::theMasterPluginChain.processBlock(pluginBuffer);
 
                 // --- MP3 Encoding with LAME (NOT using m_writer) ---
                 if (!m_lameFlags || m_mp3Buffer.empty() || !m_outputStream)

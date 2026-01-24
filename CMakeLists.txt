@@ -342,6 +342,8 @@ target_sources(jucyaudio PRIVATE
     Audio/Model/EQSettings.cpp
     Audio/Model/EQSettings.h
     Audio/Model/ReverbSettings.h
+    Audio/Plugins/PluginChain.cpp
+    Audio/Plugins/PluginChain.h
     Audio/Plugins/PluginManagerService.cpp
     Audio/Plugins/PluginManagerService.h
     
