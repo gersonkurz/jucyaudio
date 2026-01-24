@@ -212,6 +212,15 @@ _package-macos arch_target config="Release":
     @echo "Package created in releases/"
 
 [macos]
+_package-offline-macos arch_target config="Release":
+    @just _build-offline-macos {{config}} {{arch_target}}
+    @just _bundle-licenses-macos {{arch_target}} {{config}}
+    cd build-{{arch_target}} && cpack -G DragNDrop
+    @mkdir -p releases
+    @mv build-{{arch_target}}/*.dmg releases/ 2>/dev/null || true
+    @echo "Package created in releases/ (offline mode)"
+
+[macos]
 _bundle-licenses-macos arch_target config:
     #!/usr/bin/env bash
     app_path="build-{{arch_target}}/{{arch_target}}-{{config}}/jucyaudio.app/Contents/Resources"
@@ -229,6 +238,14 @@ package-arm64:
 [macos]
 package-x64:
     @just _package-macos x86_64 Release
+
+[macos]
+package-arm64-offline:
+    @just _package-offline-macos arm64 Release
+
+[macos]
+package-x64-offline:
+    @just _package-offline-macos x86_64 Release
 
 # ============================================================================
 # Publish Commands
@@ -268,6 +285,38 @@ publish:
     echo ""
     echo "========================================"
     echo "JucyAudio macOS Release Complete!"
+    echo "========================================"
+
+# Publish all releases for current platform (offline/airplane mode)
+[macos]
+publish-offline:
+    #!/usr/bin/env bash
+    echo "========================================"
+    echo "JucyAudio Release Build - macOS (OFFLINE)"
+    echo "Version: {{version}}"
+    echo "========================================"
+    echo ""
+    rm -rf releases
+    mkdir -p releases
+    echo ""
+    echo "[1/2] Building ARM64 (Apple Silicon)..."
+    just package-arm64-offline
+    echo ""
+    echo "[2/2] Building x64 (Intel)..."
+    just package-x64-offline
+    echo ""
+    echo "========================================"
+    echo "Generating checksums..."
+    cd releases && shasum -a 256 *.dmg > checksums.txt
+    echo ""
+    echo "Release artifacts in releases/:"
+    ls -lh releases/*.dmg
+    echo ""
+    echo "Checksums:"
+    cat releases/checksums.txt
+    echo ""
+    echo "========================================"
+    echo "JucyAudio macOS Release Complete! (offline)"
     echo "========================================"
 
 # ============================================================================
