@@ -4,6 +4,7 @@
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/TrackInfo.h>
 #include <Database/Includes/Constants.h>
+#include <Utils/AtomicSharedPtr.h>
 #include <atomic>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -26,10 +27,10 @@ namespace jucyaudio
          *
          * This struct owns copies of TrackInfo data and the PlaybackTrackSource objects.
          *
-         * Thread-safety: Managed via std::shared_ptr and std::atomic.
+         * Thread-safety: Managed via util::AtomicSharedPtr wrapper.
          *
          * Ownership model (Garbage Collection Pattern):
-         * - m_currentPlaybackState is a std::atomic<std::shared_ptr<PlaybackState>>.
+         * - m_currentPlaybackState is an AtomicSharedPtr<PlaybackState> (thread-safe wrapper).
          * - Audio thread loads a local shared_ptr, ensuring the state stays alive during the callback.
          * - Main thread swaps m_currentPlaybackState with a new state.
          * - The old state is moved to m_garbage list.
@@ -112,7 +113,7 @@ namespace jucyaudio
             // Get total mix duration (in milliseconds)
             Duration_t getTotalDuration() const
             {
-                auto state = std::atomic_load(&m_currentPlaybackState);
+                auto state = m_currentPlaybackState.load();
                 return state ? state->totalDuration : Duration_t{0};
             }
 
@@ -161,12 +162,11 @@ namespace jucyaudio
             // Mix data
             MixProjectLoader *m_mixLoader{nullptr};
 
-            // Thread-safe state management using C++11 atomic free functions.
-            // Note: std::atomic<std::shared_ptr<T>> (C++20) is not supported on Apple's libc++.
-            // We use std::atomic_load/store/exchange instead, which work with plain shared_ptr.
+            // Thread-safe state management via AtomicSharedPtr wrapper.
+            // Uses std::atomic<std::shared_ptr<T>> on MSVC, falls back to C++11 free functions on Mac.
             // This means the audio thread may briefly contend with loadMix(). Acceptable tradeoff
             // since loadMix() is infrequent. If glitches occur, consider SeqLock or intrusive refcount.
-            std::shared_ptr<PlaybackState> m_currentPlaybackState{nullptr};
+            util::AtomicSharedPtr<PlaybackState> m_currentPlaybackState{nullptr};
 
             // Garbage collection for old states.
             // Old states are held here until the audio thread is definitely done with them

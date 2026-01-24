@@ -31,8 +31,8 @@ namespace jucyaudio
             // Check if parameters need updating (on audio thread)
             if (parametersChanged.exchange(false, std::memory_order_acq_rel))
             {
-                // Lock-free read via atomic shared_ptr (C++11 free functions)
-                if (auto settings = std::atomic_load(&pendingSettings))
+                // Lock-free read via AtomicSharedPtr wrapper
+                if (auto settings = pendingSettings.load())
                 {
                     currentSettings = *settings;
                     updateFilterCoefficients();
@@ -46,9 +46,9 @@ namespace jucyaudio
 
         void Equalizer::updateParameters(const model::EQSettings &settings)
         {
-            // Called from UI thread - lock-free via atomic shared_ptr (C++11 free functions).
+            // Called from UI thread - lock-free via AtomicSharedPtr wrapper.
             // Allocation is fine at UI-rate; both threads are wait-free.
-            std::atomic_store(&pendingSettings, std::make_shared<const model::EQSettings>(settings));
+            pendingSettings.store(std::make_shared<const model::EQSettings>(settings));
             bypassFlag.store(!settings.isActive, std::memory_order_release);
             parametersChanged.store(true, std::memory_order_release);
         }

@@ -247,7 +247,7 @@ namespace jucyaudio
             }
 
             // Atomic swap - replace current state with new state
-            auto oldState = std::atomic_exchange(&m_currentPlaybackState, newState);
+            auto oldState = m_currentPlaybackState.exchange(newState);
 
             // Add old state to garbage for deferred deletion
             if (oldState)
@@ -274,7 +274,7 @@ namespace jucyaudio
             m_isPaused = true;
 
             // Atomic swap to null
-            auto oldState = std::atomic_exchange(&m_currentPlaybackState, std::shared_ptr<PlaybackState>(nullptr));
+            auto oldState = m_currentPlaybackState.exchange(std::shared_ptr<PlaybackState>{nullptr});
             if (oldState)
             {
                 m_garbage.push_back(oldState);
@@ -304,7 +304,7 @@ namespace jucyaudio
             auto newState = buildPlaybackState(m_mixLoader);
             if (newState)
             {
-                auto oldState = std::atomic_exchange(&m_currentPlaybackState, newState);
+                auto oldState = m_currentPlaybackState.exchange(newState);
                 if (oldState)
                 {
                     m_garbage.push_back(oldState);
@@ -322,7 +322,7 @@ namespace jucyaudio
                 return;
             }
 
-            auto state = std::atomic_load(&m_currentPlaybackState);
+            auto state = m_currentPlaybackState.load();
             if (!state)
             {
                 return;
@@ -423,7 +423,7 @@ namespace jucyaudio
                 auto newState = buildPlaybackState(m_mixLoader);
                 if (newState)
                 {
-                    auto oldState = std::atomic_exchange(&m_currentPlaybackState, newState);
+                    auto oldState = m_currentPlaybackState.exchange(newState);
                     if (oldState)
                     {
                         m_garbage.push_back(oldState);
@@ -442,7 +442,7 @@ namespace jucyaudio
         {
             const juce::ScopedLock lock(m_critSec);
 
-            auto state = std::atomic_load(&m_currentPlaybackState);
+            auto state = m_currentPlaybackState.load();
             if (state)
             {
                 for (auto &source : state->trackSources)
@@ -467,7 +467,7 @@ namespace jucyaudio
 
             // Atomic load gets a shared_ptr, incrementing refcount.
             // This prevents deletion even if main thread swaps it out.
-            auto state = std::atomic_load(&m_currentPlaybackState);
+            auto state = m_currentPlaybackState.load();
             if (!state)
             {
                 bufferToFill.clearActiveBufferRegion();

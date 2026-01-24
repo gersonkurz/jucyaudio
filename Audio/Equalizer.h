@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Audio/Model/EQSettings.h>
+#include <Utils/AtomicSharedPtr.h>
 #include <array>
 #include <atomic>
 #include <juce_dsp/juce_dsp.h>
@@ -55,10 +56,9 @@ namespace jucyaudio
             std::atomic<bool> parametersChanged{false};
             std::atomic<bool> bypassFlag{false};
 
-            // Pending settings (updated from UI thread) - lock-free via atomic shared_ptr
-            // Note: Using C++11 atomic free functions (std::atomic_load/store) since
-            // std::atomic<std::shared_ptr<T>> (C++20) is not supported on Apple's libc++
-            std::shared_ptr<const model::EQSettings> pendingSettings{nullptr};
+            // Pending settings (updated from UI thread) - lock-free via AtomicSharedPtr wrapper.
+            // Uses std::atomic<std::shared_ptr<T>> on MSVC, falls back to C++11 free functions on Mac.
+            util::AtomicSharedPtr<const model::EQSettings> pendingSettings{nullptr};
 
             // Sample rate for coefficient calculation
             double sampleRate{44100.0};
