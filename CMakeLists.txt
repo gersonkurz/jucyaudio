@@ -577,6 +577,11 @@ target_sources(jucyaudio PRIVATE
     UI/Visualizer/GlewInitializer.cpp
     Audio/Includes/ActiveExportSettings.h)
 
+# Precompiled headers (cross-platform).
+target_precompile_headers(jucyaudio PRIVATE
+    "$<$<COMPILE_LANGUAGE:CXX>:pch.h>"
+)
+
 # Add Windows-specific manifest
 if(WIN32)
     target_sources(jucyaudio PRIVATE app.manifest)
@@ -961,6 +966,12 @@ if(APPLE)
 
 elseif(WIN32)
     install(TARGETS jucyaudio RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    if(TARGET projectM)
+        install(TARGETS projectM RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    endif()
+    if(TARGET libglew_shared)
+        install(TARGETS libglew_shared RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    endif()
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/themes" DESTINATION ${CMAKE_INSTALL_BINDIR})
     if(projectm_presets_POPULATED)
         install(DIRECTORY "${PROJECTM_PRESETS_SOURCE_DIR}/" DESTINATION ${CMAKE_INSTALL_BINDIR}/presets

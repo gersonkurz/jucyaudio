@@ -12,7 +12,7 @@ namespace jucyaudio
 {
     namespace database
     {
-                void DatabaseBackupManager::performBackupCheck(const config::RootSettings& appSettings, const std::filesystem::path& databaseFile, bool dryRunCreation, bool dryRunPruning, bool forceCreation)
+        void DatabaseBackupManager::performBackupCheck(const config::RootSettings& appSettings, const std::filesystem::path& databaseFile, bool dryRunCreation, bool dryRunPruning, bool forceCreation)
         {
             spdlog::info("[Backup Manager] Starting backup check. Creation Dry Run: {}, Pruning Dry Run: {}, Force Creation: {}", dryRunCreation, dryRunPruning, forceCreation);
 
