@@ -13,6 +13,7 @@
 #include <Database/Sqlite/SqliteMixMarkerManager.h>
 #include <Database/Sqlite/SqliteEQPresetManager.h>
 #include <Database/Sqlite/SqliteReverbPresetManager.h>
+#include <Database/Sqlite/SqliteMasterPluginChainManager.h>
 #include <Database/Sqlite/sqlite3.h>
 #include <filesystem>
 #include <optional>
@@ -120,6 +121,9 @@ namespace jucyaudio
             database::SqliteReverbPresetManager& getReverbPresetManager() { return m_reverbPresetManager; }
             const database::SqliteReverbPresetManager& getReverbPresetManager() const { return m_reverbPresetManager; }
 
+            database::SqliteMasterPluginChainManager& getMasterPluginChainManager() { return m_masterPluginChainManager; }
+            const database::SqliteMasterPluginChainManager& getMasterPluginChainManager() const { return m_masterPluginChainManager; }
+
             DbResult updateTrackTags(TrackId trackId, const std::vector<TagId>& tagIds) override;
             std::vector<TagId> getTrackTags(TrackId trackId) const override;
             std::vector<TagId> getAllTags() const override;
@@ -152,6 +156,7 @@ namespace jucyaudio
             mutable SqliteAlbumManager m_albumManager; // Album manager instance
             mutable SqliteEQPresetManager m_eqPresetManager; // EQ preset manager instance
             mutable SqliteReverbPresetManager m_reverbPresetManager; // Reverb preset manager instance
+            mutable SqliteMasterPluginChainManager m_masterPluginChainManager; // Master plugin chain persistence
             std::filesystem::path m_databaseFilePath; // Store the path
             mutable std::string m_lastErrorMessage;   // For getLastError()
 

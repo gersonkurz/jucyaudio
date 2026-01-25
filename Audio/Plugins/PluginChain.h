@@ -31,6 +31,7 @@ namespace jucyaudio
 
             bool isEmpty() const;
             PreparationState getPreparationState() const;
+            std::vector<std::shared_ptr<juce::AudioPluginInstance>> getChainSnapshot() const;
 
         private:
             struct ChainState

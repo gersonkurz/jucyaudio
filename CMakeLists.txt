@@ -344,6 +344,8 @@ target_sources(jucyaudio PRIVATE
     Audio/Model/ReverbSettings.h
     Audio/Plugins/PluginChain.cpp
     Audio/Plugins/PluginChain.h
+    Audio/Plugins/MasterPluginChainPersistence.cpp
+    Audio/Plugins/MasterPluginChainPersistence.h
     Audio/Plugins/PluginManagerService.cpp
     Audio/Plugins/PluginManagerService.h
     
@@ -411,6 +413,7 @@ target_sources(jucyaudio PRIVATE
     Database/Includes/TrackQueryArgs.h
     Database/Includes/EQPreset.h
     Database/Includes/ReverbPreset.h
+    Database/Includes/MasterPluginChainEntry.h
     
     # SQLite files
     Database/Sqlite/sqlite3.c
@@ -448,6 +451,8 @@ target_sources(jucyaudio PRIVATE
     Database/Sqlite/SqliteEQPresetManager.h
     Database/Sqlite/SqliteReverbPresetManager.cpp
     Database/Sqlite/SqliteReverbPresetManager.h
+    Database/Sqlite/SqliteMasterPluginChainManager.cpp
+    Database/Sqlite/SqliteMasterPluginChainManager.h
     
     # Database Nodes
     Database/Nodes/WorkingSetsOverview.cpp

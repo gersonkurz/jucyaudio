@@ -178,6 +178,18 @@ namespace
             waveform_blob BLOB NOT NULL,
             FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
         );)SQL",
+        R"SQL(
+        CREATE TABLE IF NOT EXISTS MasterChainPlugins (
+            order_index INTEGER PRIMARY KEY,
+            plugin_format TEXT NOT NULL,
+            identifier TEXT NOT NULL,
+            name TEXT,
+            manufacturer TEXT,
+            version TEXT,
+            is_enabled INTEGER NOT NULL DEFAULT 1,
+            state_blob BLOB
+        );)SQL",
+        "CREATE INDEX IF NOT EXISTS idx_masterchain_identifier ON MasterChainPlugins(plugin_format, identifier);",
     };
 
     TrackInfo trackInfoFromStatement(const SqliteStatement &stmt)
@@ -347,6 +359,7 @@ namespace jucyaudio
               m_albumManager{m_db},
               m_eqPresetManager{m_db},
               m_reverbPresetManager{m_db},
+              m_masterPluginChainManager{m_db},
               m_databaseFilePath{},
               m_lastErrorMessage{},
               m_cachedTotalTrackCount{0},
@@ -646,7 +659,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 20;
+            const int latestSchemaVersion = 21;
 
             if (currentVersion == 0)
             {
@@ -2122,6 +2135,68 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 20;
+            }
+
+            if (currentVersion < 21)
+            {
+                spdlog::info("Migrating database from version 20 to 21 (Master Plugin Chain)...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    const auto createTableSql = R"SQL(
+                        CREATE TABLE IF NOT EXISTS MasterChainPlugins (
+                            order_index INTEGER PRIMARY KEY,
+                            plugin_format TEXT NOT NULL,
+                            identifier TEXT NOT NULL,
+                            name TEXT,
+                            manufacturer TEXT,
+                            version TEXT,
+                            is_enabled INTEGER NOT NULL DEFAULT 1,
+                            state_blob BLOB
+                        );
+                    )SQL";
+
+                    if (!m_db.execute(createTableSql))
+                    {
+                        transaction.rollback();
+                        spdlog::error("Failed to create MasterChainPlugins table: {}", m_db.getLastError());
+                        return DbResult::failure(
+                            DbResultStatus::ErrorDB,
+                            "Failed to create MasterChainPlugins table: " + m_db.getLastError());
+                    }
+
+                    if (!m_db.execute(
+                            "CREATE INDEX IF NOT EXISTS idx_masterchain_identifier "
+                            "ON MasterChainPlugins(plugin_format, identifier);"))
+                    {
+                        transaction.rollback();
+                        spdlog::error("Failed to create MasterChainPlugins index: {}", m_db.getLastError());
+                        return DbResult::failure(
+                            DbResultStatus::ErrorDB,
+                            "Failed to create MasterChainPlugins index: " + m_db.getLastError());
+                    }
+
+                    if (auto result = setDBSchemaVersion(21); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 21.");
+                    }
+
+                    if (transaction.commit())
+                    {
+                        spdlog::info("Successfully migrated to version 21 (Master Plugin Chain).");
+                    }
+                    else
+                    {
+                        const auto error{m_db.getLastError()};
+                        spdlog::error("Failed to commit migration transaction: {}", error);
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration: " + error);
+                    }
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 21;
             }
 
             return DbResult::success();

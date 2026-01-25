@@ -15,6 +15,7 @@
 #include <Database/DatabaseBackupManager.h>
 #include <Audio/Plugins/PluginManagerService.h>
 #include <Audio/Plugins/PluginChain.h>
+#include <Audio/Plugins/MasterPluginChainPersistence.h>
 #include <UI/Plugins/PluginWindow.h>
 #include <UI/SingletonDialog.h>
 #include <filesystem>
@@ -227,6 +228,7 @@ namespace jucyaudio
                 if (theTrackLibrary.initialise(dbPath))
                 {
                     spdlog::info("TrackLibrary initialised successfully");
+                    audio::MasterPluginChainPersistence::loadFromDatabase();
                 }
                 else
                 {

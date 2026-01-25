@@ -161,6 +161,16 @@ namespace jucyaudio
             return result;
         }
 
+        std::vector<std::shared_ptr<juce::AudioPluginInstance>> PluginChain::getChainSnapshot() const
+        {
+            const auto state = m_state.load();
+            if (!state)
+            {
+                return {};
+            }
+            return state->plugins;
+        }
+
         bool PluginChain::configurePlugin(juce::AudioPluginInstance &plugin, double sampleRate, int blockSize) const
         {
             juce::AudioProcessor::BusesLayout layout;

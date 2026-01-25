@@ -2,6 +2,7 @@
 #include <UI/Plugins/PluginScanDialog.h>
 #include <UI/Plugins/PluginWindow.h>
 #include <UI/CustomColourIds.h>
+#include <Audio/Plugins/MasterPluginChainPersistence.h>
 #include <algorithm>
 #include <format>
 #include <spdlog/spdlog.h>
@@ -40,6 +41,8 @@ namespace jucyaudio
             m_chainList.setRowHeight(24);
 
             refreshAvailablePlugins();
+            m_chain = audio::theMasterPluginChain.getChainSnapshot();
+            m_chainList.updateContent();
             updateButtons();
             setSize(700, 420);
         }
@@ -296,6 +299,7 @@ namespace jucyaudio
         void PluginChainEditor::updateChain()
         {
             audio::theMasterPluginChain.setChain(m_chain);
+            audio::MasterPluginChainPersistence::saveToDatabase(m_chain);
         }
 
         void PluginChainEditor::updateButtons()
