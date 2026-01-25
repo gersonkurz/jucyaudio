@@ -14,6 +14,9 @@
 #include <UI/SplashScreenComponent.h>
 #include <Database/DatabaseBackupManager.h>
 #include <Audio/Plugins/PluginManagerService.h>
+#include <Audio/Plugins/PluginChain.h>
+#include <UI/Plugins/PluginWindow.h>
+#include <UI/SingletonDialog.h>
 #include <filesystem>
 #include <fstream>
 #include <tuple>
@@ -65,6 +68,9 @@ namespace jucyaudio
 
             void shutdown() override
             {
+                SingletonComponentDialog::closeDialog("MasterEffects");
+                PluginWindow::closeAllWindows();
+                audio::theMasterPluginChain.clear();
                 mainWindow = nullptr;
             }
 

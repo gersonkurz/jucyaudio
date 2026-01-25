@@ -163,6 +163,9 @@ namespace jucyaudio
             void toggleReverbWindow();
             void toggleReverbEnabled();
 
+            // Master effects chain management
+            void showMasterEffectsWindow();
+
             // Visualizer management
             void toggleVisualizer();
             void setVisualizerPlacement(config::VisualizerPlacement placement);

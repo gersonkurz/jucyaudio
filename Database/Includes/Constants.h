@@ -223,6 +223,7 @@ namespace jucyaudio
             ScanFolders,            ///< Open folder scanning dialog
             ShowEqualizer,          ///< Show/hide the equalizer window
             ShowReverb,             ///< Show/hide the reverb window
+            ShowMasterEffects,      ///< Show/hide the master effects chain editor
             UnlockMixForEditing,    ///< Unlock an exported/locked mix for editing
         };
 

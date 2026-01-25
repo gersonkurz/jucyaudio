@@ -589,8 +589,8 @@ namespace jucyaudio
                     break;
                     
                 case RowActivationResultType::PlayTrack:
-                    // Always create a playlist from current view, starting at this track
-                    m_mainComponent.playAllFromRow(static_cast<RowIndex_t>(rowNumber));
+                    // Double-click should play the selected track, not the whole view.
+                    m_mainComponent.playDataRow(static_cast<RowIndex_t>(rowNumber));
                     break;
                     
                 case RowActivationResultType::NoAction:

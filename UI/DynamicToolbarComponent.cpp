@@ -45,7 +45,8 @@ namespace jucyaudio
                 DataAction::Settings,
                 DataAction::ScanFolders,
                 DataAction::ShowEqualizer,
-                DataAction::ShowReverb
+                DataAction::ShowReverb,
+                DataAction::ShowMasterEffects
             };
 
             for (const auto action : allActions)

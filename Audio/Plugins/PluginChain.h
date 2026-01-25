@@ -22,7 +22,7 @@ namespace jucyaudio
 
             PluginChain();
 
-            void setChain(std::vector<std::unique_ptr<juce::AudioPluginInstance>> plugins);
+            void setChain(const std::vector<std::shared_ptr<juce::AudioPluginInstance>> &plugins);
             void clear();
 
             void prepareToPlay(double sampleRate, int blockSize);

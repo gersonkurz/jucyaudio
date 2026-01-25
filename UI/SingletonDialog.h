@@ -241,24 +241,24 @@ namespace jucyaudio
                     return;
                 }
 
-                // Configure launch options
-                launchOptions.content.setOwned(component);
-                launchOptions.dialogTitle = title;
-                launchOptions.escapeKeyTriggersCloseButton = true;
-                launchOptions.useNativeTitleBar = true;
-
-                auto *dialogWindow = launchOptions.launchAsync();
-                if (!dialogWindow)
-                {
-                    delete component; // Clean up if launch fails
-                    return;
-                }
-
-                registerDialog(dialogId, dialogWindow);
-                dialogWindow->setAlwaysOnTop(true);
-
                 if (modal)
                 {
+                    // Configure launch options
+                    launchOptions.content.setOwned(component);
+                    launchOptions.dialogTitle = title;
+                    launchOptions.escapeKeyTriggersCloseButton = true;
+                    launchOptions.useNativeTitleBar = true;
+
+                    auto *dialogWindow = launchOptions.launchAsync();
+                    if (!dialogWindow)
+                    {
+                        delete component; // Clean up if launch fails
+                        return;
+                    }
+
+                    registerDialog(dialogId, dialogWindow);
+                    dialogWindow->setAlwaysOnTop(true);
+
                     // For modal dialogs, use enterModalState with a callback for cleanup.
                     // This is the robust JUCE way to handle modality and cleanup.
                     struct DialogCleanupCallback : public juce::ModalComponentManager::Callback
@@ -278,22 +278,47 @@ namespace jucyaudio
                 }
                 else
                 {
-                    // For non-modal dialogs, we still need to know when they close.
-                    // A ComponentListener is appropriate here.
-                    struct DialogCleanupListener : public juce::ComponentListener
+                    // For non-modal dialogs, avoid launchAsync() because it enters modal state.
+                    struct NonModalDialogWindow final : public juce::DialogWindow
                     {
-                        juce::String m_id;
-                        DialogCleanupListener(const juce::String &dialogId)
-                            : m_id{dialogId}
+                        juce::String id;
+                        NonModalDialogWindow(const juce::String &dialogId, const juce::String &dialogTitle, juce::Colour background)
+                            : juce::DialogWindow(dialogTitle, background, true),
+                              id(dialogId)
                         {
                         }
-                        void componentBeingDeleted(juce::Component &) override
+
+                        void closeButtonPressed() override
                         {
-                            SingletonComponentDialog::unregisterDialog(m_id);
-                            delete this; // The listener must delete itself.
+                            SingletonComponentDialog::unregisterDialog(id);
+                            setVisible(false);
+                            delete this;
                         }
                     };
-                    dialogWindow->addComponentListener(new DialogCleanupListener{dialogId});
+
+                    auto background = juce::Colours::darkgrey;
+                    if (launchOptions.componentToCentreAround != nullptr)
+                    {
+                        background = launchOptions.componentToCentreAround->getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId);
+                    }
+
+                    auto *dialogWindow = new NonModalDialogWindow{dialogId, title, background};
+                    dialogWindow->setUsingNativeTitleBar(true);
+                    dialogWindow->setResizable(launchOptions.resizable, launchOptions.resizable);
+                    dialogWindow->setContentOwned(component, true);
+
+                    if (launchOptions.componentToCentreAround != nullptr)
+                    {
+                        dialogWindow->centreAroundComponent(launchOptions.componentToCentreAround, dialogWindow->getWidth(), dialogWindow->getHeight());
+                    }
+                    else
+                    {
+                        dialogWindow->centreWithSize(dialogWindow->getWidth(), dialogWindow->getHeight());
+                    }
+
+                    registerDialog(dialogId, dialogWindow);
+                    dialogWindow->setVisible(true);
+                    dialogWindow->toFront(true);
                 }
             }
 
@@ -309,6 +334,19 @@ namespace jucyaudio
                 juce::DialogWindow::LaunchOptions options;
                 options.componentToCentreAround = centreAroundComponent;
                 showComponent(dialogId, title, component, options, modal);
+            }
+
+            static void closeDialog(const juce::String &dialogId)
+            {
+                auto *window = getValidDialogWindow(dialogId);
+                if (window == nullptr)
+                {
+                    return;
+                }
+
+                unregisterDialog(dialogId);
+                window->setVisible(false);
+                delete window;
             }
 
         private:

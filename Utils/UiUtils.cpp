@@ -59,6 +59,8 @@ namespace jucyaudio
                 return "Equalizer";
             case DataAction::ShowReverb:
                 return "Reverb";
+            case DataAction::ShowMasterEffects:
+                return "Master Effects";
             case DataAction::UnlockMixForEditing:
                 return "Unlock for Editing";
             default:
@@ -169,6 +171,8 @@ namespace jucyaudio
                 return loadSvg(BinaryData::equalizer_svg, BinaryData::equalizer_svgSize);
             case DataAction::ShowReverb:
                 return loadSvg(BinaryData::reverb_svg, BinaryData::reverb_svgSize);
+            case DataAction::ShowMasterEffects:
+                return loadSvg(BinaryData::equalizer_svg, BinaryData::equalizer_svgSize);
             case DataAction::UnlockMixForEditing:
                 return loadSvg(BinaryData::edit_mix_metadata_svg, BinaryData::edit_mix_metadata_svgSize); // Using edit icon as placeholder
             case DataAction::None:

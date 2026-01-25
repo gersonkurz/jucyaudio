@@ -536,6 +536,10 @@ target_sources(jucyaudio PRIVATE
     UI/ThemeManager.h
     UI/Plugins/PluginScanDialog.cpp
     UI/Plugins/PluginScanDialog.h
+    UI/Plugins/PluginChainEditor.cpp
+    UI/Plugins/PluginChainEditor.h
+    UI/Plugins/PluginWindow.cpp
+    UI/Plugins/PluginWindow.h
     UI/MenuManager.cpp
     UI/MenuManager.h
     UI/AboutDialog.cpp

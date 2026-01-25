@@ -12,7 +12,7 @@ namespace jucyaudio
         {
         }
 
-        void PluginChain::setChain(std::vector<std::unique_ptr<juce::AudioPluginInstance>> plugins)
+        void PluginChain::setChain(const std::vector<std::shared_ptr<juce::AudioPluginInstance>> &plugins)
         {
             auto newState = std::make_shared<ChainState>();
             {
@@ -26,7 +26,7 @@ namespace jucyaudio
             }
 
             newState->plugins.reserve(plugins.size());
-            for (auto &plugin : plugins)
+            for (const auto &plugin : plugins)
             {
                 if (!plugin)
                 {
@@ -44,7 +44,7 @@ namespace jucyaudio
                     plugin->prepareToPlay(newState->sampleRate, newState->blockSize);
                 }
 
-                newState->plugins.emplace_back(std::move(plugin));
+                newState->plugins.emplace_back(plugin);
             }
 
             m_state.store(std::move(newState));
@@ -164,8 +164,27 @@ namespace jucyaudio
         bool PluginChain::configurePlugin(juce::AudioPluginInstance &plugin, double sampleRate, int blockSize) const
         {
             juce::AudioProcessor::BusesLayout layout;
-            layout.inputBuses.add(juce::AudioChannelSet::stereo());
-            layout.outputBuses.add(juce::AudioChannelSet::stereo());
+            const auto inputBusCount = plugin.getBusCount(true);
+            const auto outputBusCount = plugin.getBusCount(false);
+            layout.inputBuses.clearQuick();
+            layout.outputBuses.clearQuick();
+            for (int i = 0; i < inputBusCount; ++i)
+            {
+                layout.inputBuses.add(juce::AudioChannelSet::disabled());
+            }
+            for (int i = 0; i < outputBusCount; ++i)
+            {
+                layout.outputBuses.add(juce::AudioChannelSet::disabled());
+            }
+
+            if (inputBusCount > 0)
+            {
+                layout.inputBuses.set(0, juce::AudioChannelSet::stereo());
+            }
+            if (outputBusCount > 0)
+            {
+                layout.outputBuses.set(0, juce::AudioChannelSet::stereo());
+            }
 
             if (!plugin.setBusesLayout(layout))
             {

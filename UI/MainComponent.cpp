@@ -30,6 +30,7 @@
 #include <UI/MainComponent.h>
 #include <UI/MarkerEditDialog.h>
 #include <UI/Plugins/PluginScanDialog.h>
+#include <UI/Plugins/PluginChainEditor.h>
 #include <UI/ReverbDialog.h>
 #include <UI/Settings.h>
 #include <UI/SettingsDialog.h>
@@ -595,6 +596,12 @@ namespace jucyaudio
                         [this]()
                         {
                             PluginScanDialog::launch(this);
+                        }},
+                    {"Master Effects...",
+                        "Open the master effects chain editor",
+                        [this]()
+                        {
+                            showMasterEffectsWindow();
                         }},
                 });
 
@@ -1753,6 +1760,9 @@ namespace jucyaudio
                 break;
             case DataAction::ShowReverb:
                 toggleReverbWindow();
+                break;
+            case DataAction::ShowMasterEffects:
+                showMasterEffectsWindow();
                 break;
             case DataAction::UnlockMixForEditing:
                 onUnlockMixForEditing(node);
@@ -4093,6 +4103,16 @@ namespace jucyaudio
 
             // Update status bar
             m_statusPanel.getStatusBar().setInfoMessage(m_reverbEnabled ? "Reverb enabled" : "Reverb bypassed");
+        }
+
+        void MainComponent::showMasterEffectsWindow()
+        {
+            auto *component = new PluginChainEditor{};
+            SingletonComponentDialog::showComponent("MasterEffects",
+                "Master Effects",
+                component,
+                this,
+                false);
         }
 
         void MainComponent::toggleVisualizer()
