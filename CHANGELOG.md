@@ -8,16 +8,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.0.0] - Unreleased
 
 ### Added
-- *(Planned)* ProjectM Integration - hardware-accelerated music visualization
-- *(Planned)* VST3 Support - professional audio plugin hosting
+
+#### VST3 Plugin Hosting
+- Master bus VST3 plugin chain with real-time audio processing
+- Plugin scanning with dead-man's pedal crash recovery
+- Plugin chain persistence to database (survives restarts)
+- Plugin editor windows (custom UI with generic fallback)
+- Per-plugin and global bypass with state persistence
+- Real-time CPU load monitoring
+- Configurable VST3 scan paths in Settings
+- Full VST processing in WAV and MP3 exports
+
+#### ProjectM Visualizer
+- Hardware-accelerated music visualization using projectM v4
+- Bundled "Cream of the Crop" preset collection (~9,800 presets)
+- Configurable visualizer placement (Bottom, Left, Right panels)
+- Automatic random preset switching on track change
+- Configurable preset rotation interval
+- Audio-to-visualizer bridge via lock-free FIFO
+
+#### Playback Improvements
+- Playlist queue with next/prev track navigation
+- Now-playing track highlight in library view
+- Shuffle and repeat mode persistence
+
+#### Build System
+- Offline build mode for airplane-safe development (`just build-offline`)
+- Consolidated build automation in justfile (removed legacy .cmd scripts)
+
+### Changed
 - *(Planned)* Smart Automix - beat-aware, intelligent mixing
 - *(Planned)* Library Organizer - automated file organization based on metadata
 
-### Changed
-- *TBD*
-
 ### Fixed
-- *TBD*
+- Fix shuffle and repeat mode persistence by saving to TOML backend
+- Fix virtual dispatch bug in VirtualFolderNode causing off-by-one errors
+- Fix visualizer FIFO tap point unification in PlaybackController
 
 ---
 

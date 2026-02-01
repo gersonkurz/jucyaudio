@@ -45,6 +45,32 @@ tomlplusplus
   License file: licenses/mit.txt
   Source: https://github.com/marzer/tomlplusplus
 
+nlohmann/json
+  License: MIT
+  License file: licenses/mit.txt
+  Source: https://github.com/nlohmann/json
+  Notes: JSON for Modern C++. Header-only library for JSON parsing/serialization.
+
+tabulate
+  License: MIT
+  License file: licenses/mit.txt
+  Source: https://github.com/p-ranav/tabulate
+  Notes: Header-only library for formatted table output.
+
+GLEW (Windows only)
+  License: Modified BSD / MIT
+  License file: licenses/glew.txt
+  Source: https://github.com/nigels-com/glew
+  Notes: OpenGL Extension Wrangler Library. Used for OpenGL context on Windows
+         for projectM visualizer. Not used on macOS (native OpenGL).
+
+VST3 SDK
+  License: GPLv3 or Proprietary (Steinberg VST3 License)
+  Source: https://github.com/steinbergmedia/vst3sdk
+  Notes: VST3 plugin hosting via JUCE's plugin host modules. The VST3 SDK is
+         dual-licensed; this project uses it under GPLv3 compatibility.
+         VST is a trademark of Steinberg Media Technologies GmbH.
+
 projectM
   License: LGPL-2.1
   License file: licenses/projectm.txt
