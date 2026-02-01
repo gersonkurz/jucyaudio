@@ -61,6 +61,8 @@ namespace jucyaudio
                 return "Reverb";
             case DataAction::ShowMasterEffects:
                 return "Master Effects";
+            case DataAction::ToggleMasterEffectsBypass:
+                return "Bypass Master FX";
             case DataAction::UnlockMixForEditing:
                 return "Unlock for Editing";
             default:
@@ -172,7 +174,9 @@ namespace jucyaudio
             case DataAction::ShowReverb:
                 return loadSvg(BinaryData::reverb_svg, BinaryData::reverb_svgSize);
             case DataAction::ShowMasterEffects:
-                return loadSvg(BinaryData::equalizer_svg, BinaryData::equalizer_svgSize);
+                return loadSvg(BinaryData::plugins_svg, BinaryData::plugins_svgSize);
+            case DataAction::ToggleMasterEffectsBypass:
+                return loadSvg(BinaryData::bypass_svg, BinaryData::bypass_svgSize);
             case DataAction::UnlockMixForEditing:
                 return loadSvg(BinaryData::edit_mix_metadata_svg, BinaryData::edit_mix_metadata_svgSize); // Using edit icon as placeholder
             case DataAction::None:

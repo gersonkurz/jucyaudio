@@ -15,7 +15,8 @@ namespace jucyaudio
 
         class PluginChainEditor final : public juce::Component,
                                         public juce::Button::Listener,
-                                        public juce::ListBoxModel
+                                        public juce::ListBoxModel,
+                                        private juce::Timer
         {
         public:
             PluginChainEditor();
@@ -31,6 +32,7 @@ namespace jucyaudio
             void buttonClicked(juce::Button *button) override;
 
         private:
+            void timerCallback() override;
             void refreshAvailablePlugins();
             void addSelectedPlugin();
             void removeSelectedPlugin();
@@ -41,6 +43,8 @@ namespace jucyaudio
             void closeEditorsForPlugin(const juce::AudioPluginInstance *plugin);
 
             juce::Label m_titleLabel;
+            juce::Label m_cpuLabel;
+            juce::ToggleButton m_globalBypassButton{"Bypass All"};
             juce::ComboBox m_availablePluginsCombo;
             juce::TextButton m_refreshButton{"Refresh"};
             juce::TextButton m_scanButton{"Scan..."};
@@ -50,6 +54,7 @@ namespace jucyaudio
             juce::TextButton m_removeButton{"Remove"};
             juce::TextButton m_moveUpButton{"Up"};
             juce::TextButton m_moveDownButton{"Down"};
+            juce::ToggleButton m_bypassButton{"Bypass"};
             juce::TextButton m_openEditorButton{"Open UI"};
 
             std::vector<juce::PluginDescription> m_availablePlugins;

@@ -229,6 +229,7 @@ namespace jucyaudio
                 TypedValue<int> repeatMode{this, "RepeatMode", 0};                    // Repeat mode: 0=None, 1=One, 2=All
                 TypedValue<int> visualizerPresetAutoSwitchSeconds{this, "VisualizerPresetAutoSwitchSeconds", 5};  // Auto-switch to random preset every N seconds (0 = disabled)
                 TypedValue<bool> visualizerSwitchPresetOnTrackChange{this, "VisualizerSwitchPresetOnTrackChange", true};  // Switch to random preset on track change
+                TypedValue<std::string> vst3ScanPaths{this, "Vst3ScanPaths", ""};    // Optional override: one path per line
 
             } audioSettings{this};
             

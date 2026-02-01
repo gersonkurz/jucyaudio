@@ -134,8 +134,8 @@ These plugins are recommended for testing and can be suggested to users:
 - Includes blocklisted plugins with failure count
 
 **Master Chain State:** Stored in **SQLite** (same DB as tracks)
-- **Table:** `ApplicationSettings` or a new `MasterChainPlugins` table
-- **Data:** `juce::MemoryBlock` (plugin state blob) + sort order + enabled state
+- **Table:** `MasterChainPlugins`
+- **Data:** plugin identifier + state blob + sort order + enabled state
 - **Rationale:** TOML is unsuitable for large binary blobs; SQLite handles this natively.
 
 **Stable Plugin UID Proposal**
@@ -148,18 +148,20 @@ These plugins are recommended for testing and can be suggested to users:
 ## 5. Implementation Plan
 
 ### Phase 1: Infrastructure & Scanning
-1. [ ] Enable VST3 hosting in CMake (`JUCE_PLUGINHOST_VST3=1`)
-2. [ ] Implement `PluginManagerService` singleton
-3. [ ] Implement `PluginScanDialog` using JUCE's in-process `PluginDirectoryScanner` with dead-man's-pedal recovery (true out-of-process scanning deferred).
-4. [ ] Persist plugin list between sessions
-5. [ ] Test with TDR Nova, Dragonfly, Airwindows
+1. [x] Enable VST3 hosting in CMake (`JUCE_PLUGINHOST_VST3=1`)
+2. [x] Implement `PluginManagerService` singleton
+3. [x] Implement `PluginScanDialog` using JUCE's in-process `PluginDirectoryScanner` with dead-man's-pedal recovery (true out-of-process scanning deferred).
+4. [x] Persist plugin list between sessions
+5. [x] Test with TDR Nova, Dragonfly, Airwindows
+
+Scan paths can be overridden in Settings -> Plugins using one path per line. Leaving it empty uses JUCE defaults.
 
 ### Phase 2: Plugin Chain & Audio Engine
-1. [ ] Implement `PluginChain` wrapper class (thread-safe)
-2. [ ] Add `PluginChain` to `PlaybackController` (master bus)
-3. [ ] Wire into `getNextAudioBlock()` after EQ/Reverb
-4. [ ] **Offline Export:** Integrate `PluginChain` into `MixExporter` / `ExportMixImplementation` to ensure master effects are applied during offline render.
-5. [ ] Test audio processing with multiple plugins
+1. [x] Implement `PluginChain` wrapper class (thread-safe)
+2. [x] Add `PluginChain` to `PlaybackController` (master bus)
+3. [x] Wire into `getNextAudioBlock()` after EQ/Reverb
+4. [x] **Offline Export:** Integrate `PluginChain` into `MixExporter` / `ExportMixImplementation` to ensure master effects are applied during offline render.
+5. [x] Test audio processing with multiple plugins
 
 ### Channel Layout Policy (Master Bus)
 - Fix master chain to stereo in v1 (JUCE `AudioChannelSet::stereo()`).
@@ -167,29 +169,29 @@ These plugins are recommended for testing and can be suggested to users:
 - Ensure the chain fails safe: no silent output if a plugin rejects the layout.
 
 ### Phase 3: UI Integration
-1. [ ] Implement `PluginWindow` for hosting plugin editors
-2. [ ] Implement `PluginChainEditor` component
-3. [ ] Add "Master Effects" button/panel to UI (e.g., near Master Volume or EQ/Reverb controls)
-4. [ ] Handle plugin editor open/close lifecycle
+1. [x] Implement `PluginWindow` for hosting plugin editors
+2. [x] Implement `PluginChainEditor` component
+3. [x] Add "Master Effects" button/panel to UI (e.g., near Master Volume or EQ/Reverb controls)
+4. [x] Handle plugin editor open/close lifecycle
 
 ### Phase 4: State Persistence
-1. [ ] Implement SQLite schema for `MasterChainPlugins`
-2. [ ] Save master chain configuration (order + state blobs) to SQLite
-3. [ ] Load and restore plugin states on startup
-4. [ ] Handle missing plugins gracefully (warning, not crash)
-5. [ ] Test save/load cycle with real plugins
+1. [x] Implement SQLite schema for `MasterChainPlugins`
+2. [x] Save master chain configuration (order + state blobs) to SQLite
+3. [x] Load and restore plugin states on startup
+4. [x] Handle missing plugins gracefully (warning, not crash)
+5. [x] Test save/load cycle with real plugins
 
 ### Phase 5: Polish
-1. [ ] Add plugin bypass toggle (per-plugin and global)
-2. [ ] Add CPU usage indicator
-3. [ ] Settings UI for plugin scan paths
-4. [ ] Documentation for users
+1. [x] Add plugin bypass toggle (per-plugin and global)
+2. [x] Add CPU usage indicator
+3. [x] Settings UI for plugin scan paths
+4. [x] Documentation for users
 
 ## 6. Risks & Mitigations
 
 | Risk | Impact | Mitigation |w
 |------|--------|------------|
-| Bad plugin crashes app | High | **Out-of-process scanning**; blocklist after crash; recommend stable plugins |
+| Bad plugin crashes app | High | In-process scanning with dead-man's-pedal blocklisting; recommend stable plugins |
 | Plugin uses too much CPU | Medium | Add CPU meter; document performance expectations |
 | Plugin not found on reload | Medium | Warning dialog; graceful degradation |
 | Plugin has no UI | Low | JUCE provides generic parameter editor |

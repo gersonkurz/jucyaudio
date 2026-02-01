@@ -17,6 +17,9 @@ namespace jucyaudio
             m_titleLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(22.0f)}.boldened());
             m_titleLabel.setJustificationType(juce::Justification::centredLeft);
             addAndMakeVisible(m_titleLabel);
+            addAndMakeVisible(m_cpuLabel);
+            addAndMakeVisible(m_globalBypassButton);
+            m_cpuLabel.setJustificationType(juce::Justification::centredRight);
 
             m_availablePluginsCombo.setTextWhenNothingSelected("Select a VST3 plugin");
             addAndMakeVisible(m_availablePluginsCombo);
@@ -28,6 +31,7 @@ namespace jucyaudio
             addAndMakeVisible(m_removeButton);
             addAndMakeVisible(m_moveUpButton);
             addAndMakeVisible(m_moveDownButton);
+            addAndMakeVisible(m_bypassButton);
             addAndMakeVisible(m_openEditorButton);
 
             m_refreshButton.addListener(this);
@@ -36,19 +40,24 @@ namespace jucyaudio
             m_removeButton.addListener(this);
             m_moveUpButton.addListener(this);
             m_moveDownButton.addListener(this);
+            m_globalBypassButton.addListener(this);
+            m_bypassButton.addListener(this);
             m_openEditorButton.addListener(this);
 
             m_chainList.setRowHeight(24);
 
             refreshAvailablePlugins();
             m_chain = audio::theMasterPluginChain.getChainSnapshot();
+            m_globalBypassButton.setToggleState(audio::theMasterPluginChain.isGlobalBypassed(), juce::dontSendNotification);
             m_chainList.updateContent();
             updateButtons();
             setSize(700, 420);
+            startTimerHz(4);
         }
 
         PluginChainEditor::~PluginChainEditor()
         {
+            stopTimer();
             m_openEditors.clear();
         }
 
@@ -60,7 +69,10 @@ namespace jucyaudio
         void PluginChainEditor::resized()
         {
             auto bounds = getLocalBounds().reduced(12);
-            m_titleLabel.setBounds(bounds.removeFromTop(28));
+            auto titleRow = bounds.removeFromTop(28);
+            m_globalBypassButton.setBounds(titleRow.removeFromRight(120));
+            m_cpuLabel.setBounds(titleRow.removeFromRight(110));
+            m_titleLabel.setBounds(titleRow);
             bounds.removeFromTop(6);
 
             auto topRow = bounds.removeFromTop(30);
@@ -77,6 +89,7 @@ namespace jucyaudio
             m_removeButton.setBounds(bottomRow.removeFromLeft(90).reduced(4, 0));
             m_moveUpButton.setBounds(bottomRow.removeFromLeft(60).reduced(4, 0));
             m_moveDownButton.setBounds(bottomRow.removeFromLeft(70).reduced(4, 0));
+            m_bypassButton.setBounds(bottomRow.removeFromLeft(80).reduced(4, 0));
             m_openEditorButton.setBounds(bottomRow.removeFromLeft(100).reduced(4, 0));
         }
 
@@ -110,7 +123,12 @@ namespace jucyaudio
 
         void PluginChainEditor::buttonClicked(juce::Button *button)
         {
-            if (button == &m_refreshButton)
+            if (button == &m_globalBypassButton)
+            {
+                audio::theMasterPluginChain.setGlobalBypassed(m_globalBypassButton.getToggleState());
+                updateButtons();
+            }
+            else if (button == &m_refreshButton)
             {
                 refreshAvailablePlugins();
             }
@@ -133,6 +151,25 @@ namespace jucyaudio
             else if (button == &m_moveDownButton)
             {
                 moveSelectedPlugin(1);
+            }
+            else if (button == &m_bypassButton)
+            {
+                const int row = m_chainList.getSelectedRow();
+                if (row < 0 || row >= static_cast<int>(m_chain.size()))
+                {
+                    return;
+                }
+
+                const auto &plugin = m_chain[static_cast<size_t>(row)];
+                if (!plugin)
+                {
+                    return;
+                }
+
+                const bool bypassed = m_bypassButton.getToggleState();
+                plugin->suspendProcessing(bypassed);
+                audio::MasterPluginChainPersistence::saveToDatabase(m_chain);
+                updateButtons();
             }
             else if (button == &m_openEditorButton)
             {
@@ -302,6 +339,13 @@ namespace jucyaudio
             audio::MasterPluginChainPersistence::saveToDatabase(m_chain);
         }
 
+        void PluginChainEditor::timerCallback()
+        {
+            const auto load = audio::theMasterPluginChain.getCpuLoad();
+            const auto percent = juce::jlimit(0.0f, 9.99f, load) * 100.0f;
+            m_cpuLabel.setText("CPU " + juce::String(percent, 1) + "%", juce::dontSendNotification);
+        }
+
         void PluginChainEditor::updateButtons()
         {
             const int row = m_chainList.getSelectedRow();
@@ -310,6 +354,20 @@ namespace jucyaudio
             m_openEditorButton.setEnabled(hasSelection);
             m_moveUpButton.setEnabled(hasSelection && row > 0);
             m_moveDownButton.setEnabled(hasSelection && row + 1 < static_cast<int>(m_chain.size()));
+            m_bypassButton.setEnabled(hasSelection);
+            m_globalBypassButton.setEnabled(true);
+            m_globalBypassButton.setToggleState(audio::theMasterPluginChain.isGlobalBypassed(), juce::dontSendNotification);
+
+            if (hasSelection)
+            {
+                const auto &plugin = m_chain[static_cast<size_t>(row)];
+                const bool bypassed = plugin ? plugin->isSuspended() : false;
+                m_bypassButton.setToggleState(bypassed, juce::dontSendNotification);
+            }
+            else
+            {
+                m_bypassButton.setToggleState(false, juce::dontSendNotification);
+            }
         }
 
         void PluginChainEditor::closeEditorsForPlugin(const juce::AudioPluginInstance *plugin)

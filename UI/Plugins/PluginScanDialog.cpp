@@ -2,6 +2,7 @@
 
 #include <Audio/Plugins/PluginManagerService.h>
 #include <Database/Includes/ILongRunningTask.h>
+#include <UI/Settings.h>
 #include <UI/TaskDialog.h>
 #include <format>
 
@@ -11,6 +12,28 @@ namespace jucyaudio
     {
         namespace
         {
+            juce::FileSearchPath getSearchPathFromSettings()
+            {
+                const auto configuredPaths = juce::String{config::theSettings.audioSettings.vst3ScanPaths};
+                juce::FileSearchPath result;
+                juce::StringArray lines;
+                lines.addLines(configuredPaths);
+                for (const auto &line : lines)
+                {
+                    const auto trimmed = line.trim();
+                    if (trimmed.isNotEmpty())
+                    {
+                        result.add(trimmed);
+                    }
+                }
+
+                if (result.getNumPaths() == 0)
+                {
+                    return audio::thePluginManagerService.getDefaultVst3SearchPath();
+                }
+                return result;
+            }
+
             class PluginScanTask final : public database::ILongRunningTask
             {
             public:
@@ -52,7 +75,7 @@ namespace jucyaudio
 
         void PluginScanDialog::launch(juce::Component *parentToCenterOn)
         {
-            auto searchPath = audio::thePluginManagerService.getDefaultVst3SearchPath();
+            auto searchPath = getSearchPathFromSettings();
             auto *task = new PluginScanTask{std::move(searchPath)};
             TaskDialog::launch("Scan VST3 Plugins", task, TaskDialog::AutoCloseMode::NoAutoClose, 500, parentToCenterOn);
             task->release(REFCOUNT_DEBUG_ARGS);

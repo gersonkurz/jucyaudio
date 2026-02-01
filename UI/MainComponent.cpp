@@ -603,6 +603,13 @@ namespace jucyaudio
                         {
                             showMasterEffectsWindow();
                         }},
+                    makeStaticItem(
+                        "Bypass Master FX",
+                        "Toggle global bypass for the master effects chain",
+                        [this]()
+                        {
+                            toggleMasterEffectsBypass();
+                        }),
                 });
 
             menuManager.registerMenu("Help",
@@ -1763,6 +1770,9 @@ namespace jucyaudio
                 break;
             case DataAction::ShowMasterEffects:
                 showMasterEffectsWindow();
+                break;
+            case DataAction::ToggleMasterEffectsBypass:
+                toggleMasterEffectsBypass();
                 break;
             case DataAction::UnlockMixForEditing:
                 onUnlockMixForEditing(node);
@@ -4113,6 +4123,13 @@ namespace jucyaudio
                 component,
                 this,
                 false);
+        }
+
+        void MainComponent::toggleMasterEffectsBypass()
+        {
+            const auto bypassed = !audio::theMasterPluginChain.isGlobalBypassed();
+            audio::theMasterPluginChain.setGlobalBypassed(bypassed);
+            m_statusPanel.getStatusBar().setInfoMessage(bypassed ? "Master effects bypassed" : "Master effects enabled");
         }
 
         void MainComponent::toggleVisualizer()

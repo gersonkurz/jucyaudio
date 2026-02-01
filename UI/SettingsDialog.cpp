@@ -285,6 +285,61 @@ namespace jucyaudio
         }
 
         // ===========================================================================
+        // PluginSettingsTab Implementation
+        // ===========================================================================
+
+        PluginSettingsTab::PluginSettingsTab()
+        {
+            m_headerLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(24.0f)}.boldened());
+            m_headerLabel.setJustificationType(juce::Justification::centredLeft);
+            addAndMakeVisible(m_headerLabel);
+
+            m_pathsLabel.setJustificationType(juce::Justification::centredLeft);
+            addAndMakeVisible(m_pathsLabel);
+
+            m_pathsEditor.setMultiLine(true);
+            m_pathsEditor.setReturnKeyStartsNewLine(true);
+            m_pathsEditor.setScrollbarsShown(true);
+            m_pathsEditor.setTextToShowWhenEmpty(
+                "Example:\nC:\\Program Files\\Common Files\\VST3",
+                juce::Colours::grey);
+            addAndMakeVisible(m_pathsEditor);
+
+            m_noteLabel.setFont(juce::Font{juce::FontOptions{}.withHeight(11.0f)});
+            m_noteLabel.setColour(juce::Label::textColourId, juce::Colours::grey);
+            m_noteLabel.setJustificationType(juce::Justification::centredLeft);
+            addAndMakeVisible(m_noteLabel);
+
+            loadSettings();
+        }
+
+        void PluginSettingsTab::resized()
+        {
+            auto bounds = getLocalBounds().reduced(20);
+            m_headerLabel.setBounds(bounds.removeFromTop(30));
+            bounds.removeFromTop(10);
+            m_pathsLabel.setBounds(bounds.removeFromTop(24));
+            bounds.removeFromTop(6);
+            m_pathsEditor.setBounds(bounds.removeFromTop(bounds.getHeight() - 24));
+            bounds.removeFromTop(6);
+            m_noteLabel.setBounds(bounds.removeFromTop(18));
+        }
+
+        void PluginSettingsTab::saveSettings()
+        {
+            config::theSettings.audioSettings.vst3ScanPaths.set(m_pathsEditor.getText().toStdString());
+            config::TomlBackend backend{g_strConfigFilename};
+            config::theSettings.save(backend);
+            spdlog::info("Plugin settings saved");
+        }
+
+        void PluginSettingsTab::loadSettings()
+        {
+            m_pathsEditor.setText(juce::String{config::theSettings.audioSettings.vst3ScanPaths}, juce::dontSendNotification);
+            spdlog::info("Plugin settings loaded");
+        }
+
+        // ===========================================================================
         // SettingsComponent Implementation
         // ===========================================================================
 
@@ -293,12 +348,14 @@ namespace jucyaudio
             // Create tabs
             m_generalTab = std::make_unique<GeneralSettingsTab>();
             m_exportTab = std::make_unique<ExportSettingsTab>();
+            m_pluginTab = std::make_unique<PluginSettingsTab>();
 
             // Add tabs to tabbed component
             m_tabbedComponent.addTab("General", juce::Colours::transparentBlack, m_generalTab.get(),
                 false); // Don't delete component
 
             m_tabbedComponent.addTab("Export Settings", juce::Colours::transparentBlack, m_exportTab.get(), false);
+            m_tabbedComponent.addTab("Plugins", juce::Colours::transparentBlack, m_pluginTab.get(), false);
 
             addAndMakeVisible(m_tabbedComponent);
 
@@ -349,6 +406,7 @@ namespace jucyaudio
         {
             m_generalTab->saveSettings();
             m_exportTab->saveSettings();
+            m_pluginTab->saveSettings();
         }
 
         // ===========================================================================

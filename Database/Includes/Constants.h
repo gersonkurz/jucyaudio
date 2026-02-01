@@ -224,6 +224,7 @@ namespace jucyaudio
             ShowEqualizer,          ///< Show/hide the equalizer window
             ShowReverb,             ///< Show/hide the reverb window
             ShowMasterEffects,      ///< Show/hide the master effects chain editor
+            ToggleMasterEffectsBypass, ///< Toggle global bypass for the master effects chain
             UnlockMixForEditing,    ///< Unlock an exported/locked mix for editing
         };
 

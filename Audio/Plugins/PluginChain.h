@@ -2,6 +2,7 @@
 
 #include <Utils/AtomicSharedPtr.h>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -32,6 +33,9 @@ namespace jucyaudio
             bool isEmpty() const;
             PreparationState getPreparationState() const;
             std::vector<std::shared_ptr<juce::AudioPluginInstance>> getChainSnapshot() const;
+            void setGlobalBypassed(bool bypassed) noexcept;
+            bool isGlobalBypassed() const noexcept;
+            float getCpuLoad() const noexcept;
 
         private:
             struct ChainState
@@ -46,6 +50,8 @@ namespace jucyaudio
 
             util::AtomicSharedPtr<ChainState> m_state;
             mutable std::mutex m_stateMutex;
+            std::atomic<bool> m_globalBypassed{false};
+            std::atomic<float> m_cpuLoad{0.0f};
         };
 
         extern PluginChain theMasterPluginChain;

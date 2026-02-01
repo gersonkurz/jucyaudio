@@ -1,6 +1,8 @@
 #include <Audio/Plugins/PluginChain.h>
 #include <spdlog/spdlog.h>
 
+#include <chrono>
+
 namespace jucyaudio
 {
     namespace audio
@@ -14,14 +16,36 @@ namespace jucyaudio
 
         void PluginChain::setChain(const std::vector<std::shared_ptr<juce::AudioPluginInstance>> &plugins)
         {
+            std::shared_ptr<ChainState> current;
+            bool wasPrepared = false;
+            double previousSampleRate = 0.0;
+            int previousBlockSize = 0;
+            {
+                std::lock_guard<std::mutex> lock{m_stateMutex};
+                current = m_state.load();
+                if (current && current->prepared)
+                {
+                    wasPrepared = true;
+                    previousSampleRate = current->sampleRate;
+                    previousBlockSize = current->blockSize;
+                    for (const auto &plugin : current->plugins)
+                    {
+                        if (plugin)
+                        {
+                            plugin->releaseResources();
+                        }
+                    }
+                    current->prepared = false;
+                }
+            }
+
             auto newState = std::make_shared<ChainState>();
             {
-                const auto current = m_state.load();
                 if (current)
                 {
-                    newState->prepared = current->prepared;
-                    newState->sampleRate = current->sampleRate;
-                    newState->blockSize = current->blockSize;
+                    newState->prepared = wasPrepared;
+                    newState->sampleRate = wasPrepared ? previousSampleRate : current->sampleRate;
+                    newState->blockSize = wasPrepared ? previousBlockSize : current->blockSize;
                 }
             }
 
@@ -52,6 +76,23 @@ namespace jucyaudio
 
         void PluginChain::clear()
         {
+            std::shared_ptr<ChainState> current;
+            {
+                std::lock_guard<std::mutex> lock{m_stateMutex};
+                current = m_state.load();
+                if (current && current->prepared)
+                {
+                    for (const auto &plugin : current->plugins)
+                    {
+                        if (plugin)
+                        {
+                            plugin->releaseResources();
+                        }
+                    }
+                    current->prepared = false;
+                }
+            }
+
             auto newState = std::make_shared<ChainState>();
             m_state.store(std::move(newState));
         }
@@ -108,6 +149,11 @@ namespace jucyaudio
 
         void PluginChain::processBlock(juce::AudioBuffer<float> &buffer)
         {
+            if (m_globalBypassed.load(std::memory_order_acquire))
+            {
+                return;
+            }
+
             auto state = m_state.load();
             if (!state || state->plugins.empty())
             {
@@ -119,6 +165,7 @@ namespace jucyaudio
                 return;
             }
 
+            const auto startTime = std::chrono::steady_clock::now();
             juce::MidiBuffer midiBuffer;
             for (const auto &plugin : state->plugins)
             {
@@ -138,6 +185,22 @@ namespace jucyaudio
                         spdlog::error("PluginChain: Plugin '{}' threw unknown exception in processBlock", plugin->getName().toStdString());
                         plugin->suspendProcessing(true);
                     }
+                }
+            }
+
+            const auto endTime = std::chrono::steady_clock::now();
+            const auto sampleRate = state->sampleRate;
+            const auto blockSize = state->blockSize;
+            if (sampleRate > 0.0 && blockSize > 0)
+            {
+                const std::chrono::duration<double> elapsed = endTime - startTime;
+                const auto blockDurationSeconds = static_cast<double>(blockSize) / sampleRate;
+                if (blockDurationSeconds > 0.0)
+                {
+                    const auto load = static_cast<float>(elapsed.count() / blockDurationSeconds);
+                    const auto previous = m_cpuLoad.load(std::memory_order_relaxed);
+                    const auto smoothed = previous * 0.9f + load * 0.1f;
+                    m_cpuLoad.store(smoothed, std::memory_order_relaxed);
                 }
             }
         }
@@ -169,6 +232,21 @@ namespace jucyaudio
                 return {};
             }
             return state->plugins;
+        }
+
+        void PluginChain::setGlobalBypassed(bool bypassed) noexcept
+        {
+            m_globalBypassed.store(bypassed, std::memory_order_release);
+        }
+
+        bool PluginChain::isGlobalBypassed() const noexcept
+        {
+            return m_globalBypassed.load(std::memory_order_acquire);
+        }
+
+        float PluginChain::getCpuLoad() const noexcept
+        {
+            return m_cpuLoad.load(std::memory_order_relaxed);
         }
 
         bool PluginChain::configurePlugin(juce::AudioPluginInstance &plugin, double sampleRate, int blockSize) const

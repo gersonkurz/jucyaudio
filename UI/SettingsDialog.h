@@ -89,6 +89,28 @@ namespace jucyaudio
         };
 
         /**
+         * @brief Tab component for plugin-related settings
+         */
+        class PluginSettingsTab : public juce::Component
+        {
+        public:
+            PluginSettingsTab();
+            ~PluginSettingsTab() override = default;
+
+            void resized() override;
+            void saveSettings();
+            void loadSettings();
+
+        private:
+            juce::Label m_headerLabel{"header", "Plugin Scanning"};
+            juce::Label m_pathsLabel{"pathsLabel", "VST3 scan paths (one per line):"};
+            juce::TextEditor m_pathsEditor;
+            juce::Label m_noteLabel{"noteLabel", "Leave empty to use JUCE defaults."};
+
+            JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginSettingsTab)
+        };
+
+        /**
          * @brief Multi-tab settings dialog for JucyAudio
          */
         class SettingsDialog : public SingletonDialog<SettingsDialog>
@@ -116,6 +138,7 @@ namespace jucyaudio
 
                 std::unique_ptr<GeneralSettingsTab> m_generalTab;
                 std::unique_ptr<ExportSettingsTab> m_exportTab;
+                std::unique_ptr<PluginSettingsTab> m_pluginTab;
 
                 juce::TextButton m_saveButton{"Save"};
                 juce::TextButton m_cancelButton{"Cancel"};

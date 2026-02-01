@@ -165,6 +165,7 @@ namespace jucyaudio
 
             // Master effects chain management
             void showMasterEffectsWindow();
+            void toggleMasterEffectsBypass();
 
             // Visualizer management
             void toggleVisualizer();
