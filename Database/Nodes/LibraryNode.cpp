@@ -387,11 +387,11 @@ namespace jucyaudio
                 }
                 return "-";
             case Column::Rating:
-                return track->rating > 0 ? std::to_string(track->rating) : "";
+                return ""; // Rating feature not implemented (column kept for future use)
             case Column::LikedStatus:
-                return track->liked_status != 0 ? "♥" : "";
+                return ""; // Liked status feature not implemented (column kept for future use)
             case Column::PlayCount:
-                return track->play_count > 0 ? std::to_string(track->play_count) : "";
+                return ""; // Play count feature not implemented (column kept for future use)
             case Column::LastPlayed:
                 return track->last_played.time_since_epoch().count() > 0 ? timestampToString(track->last_played) : "";
             case Column::DateAdded:

@@ -110,8 +110,7 @@ namespace
         "CREATE INDEX IF NOT EXISTS idx_tracks_album ON Tracks (album_title COLLATE NOCASE);",
         "CREATE INDEX IF NOT EXISTS idx_tracks_title ON Tracks (title COLLATE NOCASE);",
         "CREATE INDEX IF NOT EXISTS idx_tracks_bpm ON Tracks (bpm);",
-        "CREATE INDEX IF NOT EXISTS idx_tracks_rating ON Tracks (rating);",
-        "CREATE INDEX IF NOT EXISTS idx_tracks_liked_status ON Tracks (liked_status);",
+        // Note: idx_tracks_rating and idx_tracks_liked_status removed in v22 (unused)
         "CREATE INDEX IF NOT EXISTS idx_tracks_album_id ON Tracks(album_id);",
         R"SQL(CREATE TABLE IF NOT EXISTS Tags (tag_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE);)SQL",
         R"SQL(
@@ -153,15 +152,7 @@ namespace
         );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_mixtracks_mix_order ON MixTracks(mix_id, order_in_mix);",
         "CREATE INDEX IF NOT EXISTS idx_mixtracks_track ON MixTracks(track_id);",
-        R"SQL(
-        CREATE TABLE IF NOT EXISTS MixUndoHistory (
-            undo_id INTEGER PRIMARY KEY, mix_id INTEGER NOT NULL, operation_id INTEGER NOT NULL,
-            operation_type INTEGER NOT NULL, table_name INTEGER NOT NULL, record_id INTEGER,
-            old_state TEXT, new_state TEXT,
-            FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
-        );)SQL",
-        "CREATE INDEX IF NOT EXISTS idx_mixundohistory_mix_id ON MixUndoHistory (mix_id);",
-        "CREATE INDEX IF NOT EXISTS idx_mixundohistory_operation_id ON MixUndoHistory (operation_id);",
+        // Note: MixUndoHistory table removed in v22 (was never used - undo is in-memory)
         R"SQL(
         CREATE TABLE IF NOT EXISTS ExportFolders (
             folder_id INTEGER PRIMARY KEY,
@@ -248,16 +239,14 @@ namespace
         if (!stmt.isNull(col))
             info.beat_locations_json = stmt.getText(col);
         col++;
-        info.rating = stmt.getInt32(col++);
-        info.liked_status = stmt.getInt32(col++);
-        info.play_count = stmt.getInt32(col++);
+        col++; // Skip rating (unused)
+        col++; // Skip liked_status (unused)
+        col++; // Skip play_count (unused)
         info.last_played = timestampFromInt64(stmt.getInt64(col++));
         if (!stmt.isNull(col))
             info.internal_content_hash = stmt.getText(col);
         col++;
-        if (!stmt.isNull(col))
-            info.user_notes = stmt.getText(col);
-        col++;
+        col++; // Skip user_notes (unused)
         info.is_missing = stmt.getInt32(col++) != 0;
 
         // Read status field
@@ -305,12 +294,12 @@ namespace
         ok &= info.outro_start.has_value() ? stmt.addParam(durationToInt64(info.outro_start.value())) : stmt.addNullParam();
         ok &= stmt.addParam(info.key_string);
         ok &= stmt.addParam(info.beat_locations_json);
-        ok &= stmt.addParam(info.rating);
-        ok &= stmt.addParam(info.liked_status);
-        ok &= stmt.addParam(info.play_count);
+        ok &= stmt.addParam(0); // rating (unused, kept in DB for compatibility)
+        ok &= stmt.addParam(0); // liked_status (unused, kept in DB for compatibility)
+        ok &= stmt.addParam(0); // play_count (unused, kept in DB for compatibility)
         ok &= stmt.addParam(timestampToInt64(info.last_played));
         ok &= stmt.addParam(info.internal_content_hash);
-        ok &= stmt.addParam(info.user_notes);
+        ok &= stmt.addParam(std::string{}); // user_notes (unused, kept in DB for compatibility)
         ok &= stmt.addParam(info.is_missing ? 1 : 0);
 
         // Add status field
@@ -2197,6 +2186,43 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 21;
+            }
+
+            // Migration to version 22: Remove unused indexes and abandoned MixUndoHistory table
+            if (currentVersion < 22)
+            {
+                spdlog::info("Migrating database from version 21 to 22 (cleanup unused indexes and tables)...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Drop unused indexes (rating and liked_status columns are never used)
+                    m_db.execute("DROP INDEX IF EXISTS idx_tracks_rating;");
+                    m_db.execute("DROP INDEX IF EXISTS idx_tracks_liked_status;");
+
+                    // Drop abandoned MixUndoHistory table (undo is handled in-memory by UndoManager)
+                    m_db.execute("DROP TABLE IF EXISTS MixUndoHistory;");
+
+                    if (auto result = setDBSchemaVersion(22); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 22.");
+                    }
+
+                    if (transaction.commit())
+                    {
+                        spdlog::info("Successfully migrated to version 22 (removed unused indexes and MixUndoHistory).");
+                    }
+                    else
+                    {
+                        const auto error{m_db.getLastError()};
+                        spdlog::error("Failed to commit migration transaction: {}", error);
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration: " + error);
+                    }
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 22;
             }
 
             return DbResult::success();

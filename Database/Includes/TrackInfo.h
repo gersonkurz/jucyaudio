@@ -102,19 +102,11 @@ namespace jucyaudio
             std::string beat_locations_json;
 
             // User Data
-            /// @brief A user-assigned rating, typically on a scale of 0-5.
-            int rating = 0;
-            /// @brief A user-assigned liked status (e.g., 1 for liked, -1 for disliked, 0 for neutral).
-            int liked_status = 0;
-            /// @brief The number of times the track has been played.
-            int play_count = 0;
             /// @brief The timestamp of the last time the track was played.
             Timestamp_t last_played;
 
             /// @brief An optional hash of the audio content to detect duplicates.
             std::string internal_content_hash;
-            /// @brief Free-form text notes added by the user.
-            std::string user_notes;
             /// @brief A flag indicating if the file was not found on disk during the last library verification scan.
             bool is_missing = false;
 
