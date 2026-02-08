@@ -2435,7 +2435,8 @@ CREATE TABLE MixUndoHistory (
 
             if (SqliteTransaction transaction{m_db})
             {
-                SqliteStatement stmt{m_db, "UPDATE Tracks SET bpm=?, intro_end=?, outro_start=? WHERE track_id = ?;"};
+                // Clear intro_end/outro_start: legacy data from broken analysis should not persist
+                SqliteStatement stmt{m_db, "UPDATE Tracks SET bpm=?, intro_end=NULL, outro_start=NULL WHERE track_id = ?;"};
                 if (!stmt.isValid())
                 {
                     m_lastErrorMessage = "Prepare failed for updateTrackBpm(): " + m_db.getLastError();
@@ -2446,23 +2447,7 @@ CREATE TABLE MixUndoHistory (
                 for (const auto &[trackId, am] : results)
                 {
                     stmt.reset();
-                    stmt.addParam(static_cast<int64_t>(am.bpm * 100)); // Store as integer
-                    if (am.hasIntro)
-                    {
-                        stmt.addParam(static_cast<int64_t>(am.introEnd * 1000));
-                    }
-                    else
-                    {
-                        stmt.addNullParam();
-                    }
-                    if (am.hasOutro)
-                    {
-                        stmt.addParam(static_cast<int64_t>(am.outroStart * 1000));
-                    }
-                    else
-                    {
-                        stmt.addNullParam();
-                    }
+                    stmt.addParam(static_cast<int64_t>(am.bpm * 100)); // Store as integer (centiBPM)
                     stmt.addParam(trackId);
 
                     if (!stmt.execute())
@@ -2485,6 +2470,71 @@ CREATE TABLE MixUndoHistory (
             else
             {
                 m_lastErrorMessage = "Failed to begin transaction for batch BPM update: " + m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+            }
+        }
+
+        DbResult SqliteTrackDatabase::updateTrackEnergyData(TrackId trackId, Duration_t introEnd,
+                                                            Duration_t outroStart, const std::string& json)
+        {
+            std::vector<std::tuple<TrackId, Duration_t, Duration_t, std::string>> results;
+            results.emplace_back(trackId, introEnd, outroStart, json);
+            return updateTrackEnergyData(results);
+        }
+
+        DbResult SqliteTrackDatabase::updateTrackEnergyData(
+            const std::vector<std::tuple<TrackId, Duration_t, Duration_t, std::string>>& results)
+        {
+            if (!isOpen())
+            {
+                return DbResult::failure(DbResultStatus::ErrorConnection, "DB not open for update.");
+            }
+            if (results.empty())
+            {
+                return DbResult::success();
+            }
+            m_lastErrorMessage.clear();
+
+            if (SqliteTransaction transaction{m_db})
+            {
+                SqliteStatement stmt{m_db,
+                    "UPDATE Tracks SET intro_end=?, outro_start=?, beat_locations_json=? WHERE track_id=?;"};
+                if (!stmt.isValid())
+                {
+                    m_lastErrorMessage = "Prepare failed for updateTrackEnergyData(): " + m_db.getLastError();
+                    transaction.rollback();
+                    return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                }
+
+                for (const auto& [trackId, introEnd, outroStart, json] : results)
+                {
+                    stmt.reset();
+                    stmt.addParam(durationToInt64(introEnd));
+                    stmt.addParam(durationToInt64(outroStart));
+                    stmt.addParam(json);
+                    stmt.addParam(trackId);
+
+                    if (!stmt.execute())
+                    {
+                        m_lastErrorMessage = "Execute failed for updateTrackEnergyData() on track " +
+                                             std::to_string(trackId) + ": " + m_db.getLastError();
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                    }
+                }
+
+                if (!transaction.commit())
+                {
+                    m_lastErrorMessage = "Failed to commit transaction for energy data update: " + m_db.getLastError();
+                    return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                }
+
+                spdlog::debug("Updated energy data for {} tracks.", results.size());
+                return DbResult::success();
+            }
+            else
+            {
+                m_lastErrorMessage = "Failed to begin transaction for energy data update: " + m_db.getLastError();
                 return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
         }

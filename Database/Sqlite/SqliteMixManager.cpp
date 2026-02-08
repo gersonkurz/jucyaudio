@@ -4,6 +4,9 @@
 #include <Database/Sqlite/SqliteMixManager.h>
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteTransaction.h>
+#include <Database/BackgroundTasks/EnergyAnalyzer.h>
+#include <Database/BackgroundTasks/TransitionCalculator.h>
+#include <Database/TrackLibrary.h>
 #include <UI/Settings.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/StringWriter.h>
@@ -726,19 +729,91 @@ WHERE m.export_folder IS NULL
             WorkingSetId source_ws_id,
             const Duration_t defaultCrossfadeDuration) const
         {
-            // New ATTACH-based automix implementation
+            using namespace background_tasks;
+
             assert(resultingTracks.empty() && "resultingTracks should be empty before creating a new mix");
             assert(!trackInfos.empty() && "trackInfos should not be empty when creating a new mix");
 
             mixInfo.numberOfTracks = static_cast<int64_t>(trackInfos.size());
             mixInfo.source_ws_id = source_ws_id;
 
-            spdlog::info("Creating ATTACH-based automix with {} tracks, crossfade duration: {}",
+            spdlog::info("Creating smart automix with {} tracks, default crossfade: {}",
                         trackInfos.size(), durationToString(defaultCrossfadeDuration));
 
-            int orderInMix = 0;
-            for (const auto &trackInfo : trackInfos)
+            // --- Phase 1: Retrieve cached energy data for all tracks ---
+            // Energy analysis should have been done by EnergyAnalysisTask before this call.
+            // If any track is missing data, we'll use fallback transitions for that pair.
+            std::vector<EnergyAnalysisResult> energyData;
+            energyData.reserve(trackInfos.size());
+
+            const bool useSmartAutomix = config::theSettings.mixEditingSettings.useSmartAutomix.get();
+            if (!useSmartAutomix)
             {
+                spdlog::info("Smart automix disabled: using fixed crossfade heuristics");
+                energyData.resize(trackInfos.size());
+            }
+            else
+            {
+                int cachedCount = 0;
+                for (const auto& trackInfo : trackInfos)
+                {
+                    auto cached = EnergyAnalyzer::getCachedData(trackInfo);
+                    if (cached && cached->isValid)
+                    {
+                        spdlog::debug("Using cached energy data for track {}", trackInfo.trackId);
+                        energyData.push_back(*cached);
+                        ++cachedCount;
+                    }
+                    else
+                    {
+                        // No cached data - push invalid result, will trigger fallback for transitions involving this track
+                        spdlog::debug("No cached energy data for track {}, will use fallback", trackInfo.trackId);
+                        energyData.push_back(EnergyAnalysisResult{});
+                    }
+                }
+
+                spdlog::info("Energy data: {}/{} tracks have cached analysis", cachedCount, trackInfos.size());
+            }
+
+            // --- Phase 2: Calculate transitions between adjacent track pairs ---
+            // Store calculated transitions: transitions[i] is between track[i] and track[i+1]
+            std::vector<TransitionResult> transitions;
+            transitions.reserve(trackInfos.size() > 0 ? trackInfos.size() - 1 : 0);
+
+            for (size_t i = 0; i + 1 < trackInfos.size(); ++i)
+            {
+                const auto& trackA = trackInfos[i];
+                const auto& trackB = trackInfos[i + 1];
+                const auto& energyA = energyData[i];
+                const auto& energyB = energyData[i + 1];
+
+                TransitionResult transition;
+                if (energyA.isValid && energyB.isValid)
+                {
+                    transition = TransitionCalculator::calculate(
+                        energyA, trackA.duration,
+                        energyB, trackB.duration);
+                    spdlog::info("Smart transition {}->{}: attachTo={}ms, attachFrom={}ms, crossfade={}ms, score={:.2f}",
+                                trackA.trackId, trackB.trackId,
+                                transition.attachToA.count(), transition.attachFromB.count(),
+                                transition.crossfadeDuration.count(), transition.score);
+                }
+                else
+                {
+                    transition = TransitionCalculator::calculateFallback(
+                        trackA.duration, trackB.duration, defaultCrossfadeDuration);
+                    spdlog::info("Fallback transition {}->{}: crossfade={}ms",
+                                trackA.trackId, trackB.trackId, transition.crossfadeDuration.count());
+                }
+
+                transitions.push_back(transition);
+            }
+
+            // --- Phase 3: Build MixTracks with calculated attach points ---
+            int orderInMix = 0;
+            for (size_t i = 0; i < trackInfos.size(); ++i)
+            {
+                const auto& trackInfo = trackInfos[i];
                 assert(trackInfo.trackId != 0 && "Track ID should not be zero when creating a new mix");
 
                 MixTrack mixTrack{};
@@ -746,95 +821,113 @@ WHERE m.export_folder IS NULL
                 mixTrack.trackId = trackInfo.trackId;
                 mixTrack.orderInMix = orderInMix++;
 
-                // CUE points - use full track (default behavior)
+                // CUE points - use full track
                 mixTrack.cueStart = Duration_t{0};
-                mixTrack.cueEnd = Duration_t{0}; // 0 means use full track duration
+                mixTrack.cueEnd = Duration_t{0};
 
-                // Calculate crossfade settings using shared helper
-                const auto crossfade = calculateCrossfadeForTrack(trackInfo.duration, defaultCrossfadeDuration);
+                // Determine attach points from transitions
+                Duration_t attachFrom{0};
+                Duration_t attachTo = trackInfo.duration;
+                Duration_t crossfadeDuration = defaultCrossfadeDuration;
 
-                // Log crossfade adjustments for short tracks
-                if (crossfade.adjustment == CrossfadeAdjustment::Eliminated)
+                // attachFrom comes from the transition with the previous track
+                if (i > 0)
                 {
-                    spdlog::info("Track {} ({}) is only {} long: using no crossfade",
-                        trackInfo.trackId,
-                        pathToString(trackInfo.reconstructFullPath()),
-                        durationToString(trackInfo.duration));
-                }
-                else if (crossfade.adjustment == CrossfadeAdjustment::Reduced)
-                {
-                    spdlog::info("Track {} ({}) is {} long: reducing crossfade to {}",
-                        trackInfo.trackId,
-                        pathToString(trackInfo.reconstructFullPath()),
-                        durationToString(trackInfo.duration),
-                        durationToString(crossfade.effectiveCrossfade));
+                    const auto& prevTransition = transitions[i - 1];
+                    attachFrom = prevTransition.attachFromB;
+                    crossfadeDuration = prevTransition.crossfadeDuration;
                 }
 
-                // Set attach points and envelope from calculated settings
-                mixTrack.attachFrom = crossfade.attachFrom;
-                mixTrack.attachTo = crossfade.attachTo;
-                mixTrack.envelopePoints = crossfade.envelopePoints;
+                // attachTo comes from the transition with the next track
+                if (i + 1 < trackInfos.size())
+                {
+                    const auto& nextTransition = transitions[i];
+                    attachTo = nextTransition.attachToA;
+                    // Use the larger crossfade duration for envelope calculation
+                    if (nextTransition.crossfadeDuration > crossfadeDuration)
+                        crossfadeDuration = nextTransition.crossfadeDuration;
+                }
+
+                // Ensure attach points are valid
+                if (attachFrom < Duration_t{0})
+                    attachFrom = Duration_t{0};
+                if (attachTo > trackInfo.duration)
+                    attachTo = trackInfo.duration;
+                if (attachTo <= attachFrom)
+                    attachTo = trackInfo.duration;
+
+                mixTrack.attachFrom = attachFrom;
+                mixTrack.attachTo = attachTo;
+
+                // Generate envelope points based on crossfade duration
+                const auto effectiveFadeIn = std::min(crossfadeDuration, attachFrom);
+                const auto effectiveFadeOut = std::min(crossfadeDuration, trackInfo.duration - attachTo);
+
+                if (effectiveFadeIn == Duration_t{0} && effectiveFadeOut == Duration_t{0})
+                {
+                    // No crossfade - full volume throughout
+                    mixTrack.envelopePoints = {
+                        {Duration_t{0}, VOLUME_NORMALIZATION},
+                        {trackInfo.duration, VOLUME_NORMALIZATION}
+                    };
+                }
+                else
+                {
+                    // Calculate envelope with smooth fade curves
+                    const auto fadeInMidpoint = std::min(Duration_t{2000}, effectiveFadeIn / 2);
+                    const auto fadeOutStart = attachTo;
+                    const auto fadeOutMidpoint = trackInfo.duration - std::min(Duration_t{2000}, effectiveFadeOut / 2);
+
+                    mixTrack.envelopePoints = {
+                        {Duration_t{0}, Volume_t{200}},                       // Start at 20%
+                        {fadeInMidpoint, Volume_t{700}},                      // Midpoint: 70%
+                        {attachFrom, VOLUME_NORMALIZATION},                   // Full volume at attachFrom
+                        {fadeOutStart, VOLUME_NORMALIZATION},                 // Full volume until attachTo
+                        {fadeOutMidpoint, Volume_t{700}},                     // Midpoint: 70%
+                        {trackInfo.duration, Volume_t{200}}                   // End at 20%
+                    };
+                }
 
                 resultingTracks.emplace_back(mixTrack);
             }
-            
-            // Calculate total duration by walking the chain
-            // This is now computed from the ATTACH points
+
+            // --- Phase 4: Calculate total mix duration ---
             if (!resultingTracks.empty())
             {
                 Duration_t mixEndPosition{0};
                 Duration_t previousTrackStart{0};
-                
+
                 for (size_t i = 0; i < resultingTracks.size(); ++i)
                 {
                     const auto& track = resultingTracks[i];
-                    
-                    // Find the matching trackInfo by track ID
-                    const auto trackInfoIt = std::find_if(trackInfos.begin(), trackInfos.end(),
-                        [&track](const auto& ti) { return ti.trackId == track.trackId; });
-                    
-                    if (trackInfoIt == trackInfos.end())
-                    {
-                        spdlog::error("Could not find track info for track ID {} while calculating duration", track.trackId);
-                        continue;
-                    }
-                    
-                    const auto& trackInfo = *trackInfoIt;
+                    const auto& trackInfo = trackInfos[i]; // Same order guaranteed
+
                     Duration_t trackStart{0};
-                    
                     if (i == 0)
                     {
-                        // First track starts at position 0
                         trackStart = Duration_t{0};
                     }
                     else
                     {
-                        // ATTACH formula: Next track start = Previous track start + Previous track's attachTo - Current track's attachFrom
-                        const auto& prevTrack = resultingTracks[i-1];
+                        const auto& prevTrack = resultingTracks[i - 1];
                         trackStart = previousTrackStart + prevTrack.attachTo - track.attachFrom;
                     }
-                    
-                    // Track end position
+
                     Duration_t trackEnd = trackStart + trackInfo.duration;
-                    
-                    // Update mix end to be the latest track end
                     if (trackEnd > mixEndPosition)
-                    {
                         mixEndPosition = trackEnd;
-                    }
-                    
-                    // Remember this track's start for the next iteration
+
                     previousTrackStart = trackStart;
                 }
-                
+
                 mixInfo.totalDuration = mixEndPosition;
             }
             else
             {
                 mixInfo.totalDuration = Duration_t{0};
             }
-            
-            spdlog::info("Automix created: {} tracks, total duration: {}", 
+
+            spdlog::info("Smart automix created: {} tracks, total duration: {}",
                         resultingTracks.size(), durationToString(mixInfo.totalDuration));
 
             // Store in database

@@ -19,7 +19,7 @@ namespace jucyaudio
 
         // New constructor with AutoCloseMode for clearer API
         TaskDialog::TaskDialog(ILongRunningTask *task,
-                               std::function<void()> onCompletion,
+                               std::function<void(bool success)> onCompletion,
                                AutoCloseMode closeMode,
                                int delayMs)
             : m_task{task}, // Store raw pointer
@@ -87,10 +87,6 @@ namespace jucyaudio
 
         TaskDialog::~TaskDialog()
         {
-            if (m_onCompletion)
-            {
-                m_onCompletion();
-            }
             setLookAndFeel(nullptr);
             spdlog::info("TaskDialog destructor called for task: {}", m_task ? m_task->m_taskName : "UNKNOWN_OR_NULL");
             stopTimer(); // Stop any JUCE timers associated with this component
@@ -337,6 +333,11 @@ namespace jucyaudio
             m_actionButton.setVisible(true);
             m_actionButton.grabKeyboardFocus();
 
+            if (m_onCompletion)
+            {
+                m_onCompletion(success);
+            }
+
             if (success && m_autoCloseOnSuccessDelayMs.has_value())
             {
                 m_waitingForAutoClose = true;
@@ -419,7 +420,7 @@ namespace jucyaudio
                                AutoCloseMode closeMode,
                                int delayMs,
                                juce::Component *parentToCenterOn,
-                               std::function<void()> onCompletion)
+                               std::function<void(bool success)> onCompletion)
         {
             spdlog::info("TaskDialog::launch called with title '{}', taskToRun: {}, closeMode: {}, delayMs: {}, parent: {}",
                 windowTitle.toStdString(),

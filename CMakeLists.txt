@@ -381,6 +381,12 @@ target_sources(jucyaudio PRIVATE
     Database/BackgroundTasks/Mp3QuickCheck.h
     Database/BackgroundTasks/AudioAnalysis.cpp
     Database/BackgroundTasks/AudioAnalysis.h
+    Database/BackgroundTasks/EnergyAnalyzer.cpp
+    Database/BackgroundTasks/EnergyAnalyzer.h
+    Database/BackgroundTasks/EnergyAnalysisTask.cpp
+    Database/BackgroundTasks/EnergyAnalysisTask.h
+    Database/BackgroundTasks/TransitionCalculator.cpp
+    Database/BackgroundTasks/TransitionCalculator.h
     Database/BackgroundTasks/WaveformLoadingTask.cpp
     Database/BackgroundTasks/WaveformLoadingTask.h
     

@@ -50,6 +50,7 @@ namespace jucyaudio
             void closeThisDialog(bool success);
             void handleCreateMix();
             void handleCancel();
+            void finishMixCreation(const std::string& mixName);
             juce::String generateDefaultMixName();
 
             std::vector<database::TrackInfo> m_tracksForMix; // Store as reference

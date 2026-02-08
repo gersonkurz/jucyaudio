@@ -92,6 +92,11 @@ namespace jucyaudio
             DbResult updateTrackBpm(TrackId trackId, const AudioMetadata& am) override;
             DbResult updateTrackBpm(const std::vector<std::pair<TrackId, AudioMetadata>>& results) override;
 
+            DbResult updateTrackEnergyData(TrackId trackId, Duration_t introEnd,
+                                           Duration_t outroStart, const std::string& json) override;
+            DbResult updateTrackEnergyData(
+                const std::vector<std::tuple<TrackId, Duration_t, Duration_t, std::string>>& results) override;
+
             ITagManager &getTagManager() override;
             const ITagManager &getTagManager() const override;
 

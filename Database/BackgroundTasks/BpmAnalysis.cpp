@@ -49,12 +49,10 @@ namespace jucyaudio
                 }
                 else
                 {
-                    spdlog::info("Analyzed '{}' in {} ms. BPM: {:.2f}, Has Intro: {}, Has Outro: {}",
+                    spdlog::info("Analyzed '{}' in {} ms. BPM: {:.2f}",
                         trackPath.filename().string(),
                         duration.count(),
-                        am.bpm,
-                        am.hasIntro,
-                        am.hasOutro);
+                        am.bpm);
 
                     theTrackLibrary.getTrackDatabase().updateTrackBpm(trackInfo.trackId, am);
                 }

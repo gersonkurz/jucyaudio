@@ -1839,7 +1839,7 @@ namespace jucyaudio
             TaskDialog::launch("BPM Analysis",
                 task,
                 TaskDialog::AutoCloseMode::NoAutoClose, 500, this,
-                [this, task]()
+                [this, task](bool /*success*/)
                 {
                     m_dataViewComponent.refreshView();
 
@@ -1932,7 +1932,7 @@ namespace jucyaudio
             TaskDialog::launch("Removing Duplicates",
                 task,
                 TaskDialog::AutoCloseMode::NoAutoClose, 500, this,
-                [this]()
+                [this](bool /*success*/)
                 {
                     m_dataViewComponent.refreshView();
                 });
@@ -1978,7 +1978,7 @@ namespace jucyaudio
                 TaskDialog::AutoCloseMode::WithDelay,
                 500,  // Show success briefly
                 this,
-                [this, task]()
+                [this, task](bool /*success*/)
                 {
                     m_dataViewComponent.refreshView();
 
@@ -2765,7 +2765,7 @@ namespace jucyaudio
 
             auto *task = new FinalizeAndExportTask{mixInfo, m_audioLibrary.getMixExporter(), settings};
             TaskDialog::launch("Finalize & Export", task, TaskDialog::AutoCloseMode::NoAutoClose, 500, this,
-                [this]()
+                [this](bool /*success*/)
                 {
                     // Refresh navigation tree after export completes
                     m_navigationTree.onMixExportStatusChanged();
@@ -3738,8 +3738,10 @@ namespace jucyaudio
             auto* task = new DatabaseRestoreTask{backupPath};
             juce::Component::SafePointer<MainComponent> safeThis = this;
             TaskDialog::launch("Database Restore", task, TaskDialog::AutoCloseMode::NoAutoClose, 400, this,
-                [safeThis]()
+                [safeThis](bool success)
                 {
+                    if (!success)
+                        return;
                     // Schedule UI reinitialization on the message thread
                     // This is called after dialog closes (on success or close button)
                     juce::MessageManager::callAsync([safeThis]()

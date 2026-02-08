@@ -25,7 +25,7 @@ namespace jucyaudio
 
             // New constructor with clearer auto-close semantics
             TaskDialog(database::ILongRunningTask *task,
-                std::function<void()> onCompletion = nullptr,
+                std::function<void(bool success)> onCompletion = nullptr,
                 AutoCloseMode closeMode = AutoCloseMode::NoAutoClose,
                 int delayMs = 500); // Default delay when using WithDelay
 
@@ -44,7 +44,7 @@ namespace jucyaudio
                 AutoCloseMode closeMode = AutoCloseMode::NoAutoClose,
                 int delayMs = 500,
                 juce::Component *parentToCenterOn = nullptr,
-                std::function<void()> onCompletion = nullptr);
+                std::function<void(bool success)> onCompletion = nullptr);
 
         private:
             void startTask();
@@ -53,7 +53,7 @@ namespace jucyaudio
             void closeDialog(int modalReturnValue);
 
             database::ILongRunningTask *m_task; // Retained pointer
-            std::function<void()> m_onCompletion;
+            std::function<void(bool success)> m_onCompletion;
             std::optional<int> m_autoCloseOnSuccessDelayMs;
             bool m_waitingForAutoClose = false;
             juce::LookAndFeel_V4 m_lookAndFeel; // Custom LookAndFeel instance

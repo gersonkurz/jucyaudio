@@ -29,12 +29,6 @@ namespace jucyaudio
         struct AudioMetadata
         {
             float bpm = 0.0f;
-            double introStart = 0.0;
-            double introEnd = 0.0;
-            double outroStart = 0.0;
-            double outroEnd = 0.0;
-            bool hasIntro = false;
-            bool hasOutro = false;
         };
 
         class ITrackDatabase
@@ -111,6 +105,21 @@ namespace jucyaudio
 
             // Performs a batched, transactional update of BPM data for multiple tracks.
             virtual DbResult updateTrackBpm(const std::vector<std::pair<TrackId, AudioMetadata>>& results) = 0;
+
+            /// @brief Update energy analysis data for a single track.
+            /// @param trackId The track to update
+            /// @param introEnd The calculated intro end timestamp
+            /// @param outroStart The calculated outro start timestamp
+            /// @param json The JSON string containing the full energy analysis data
+            /// @return DbResult indicating success or failure
+            virtual DbResult updateTrackEnergyData(TrackId trackId, Duration_t introEnd,
+                                                   Duration_t outroStart, const std::string& json) = 0;
+
+            /// @brief Batch update energy analysis data for multiple tracks.
+            /// @param results Vector of tuples containing (trackId, introEnd, outroStart, json)
+            /// @return DbResult indicating success or failure
+            virtual DbResult updateTrackEnergyData(
+                const std::vector<std::tuple<TrackId, Duration_t, Duration_t, std::string>>& results) = 0;
 
             // Used during rescans to update basic file info before deciding on full re-analysis
             virtual DbResult updateTrackFilesystemInfo(TrackId trackId, Timestamp_t lastModified, std::uintmax_t filesize) = 0;

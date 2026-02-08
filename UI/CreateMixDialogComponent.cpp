@@ -1,6 +1,9 @@
 #include <Database/Includes/ILongRunningTask.h>
 #include <Database/Includes/MixTrackUtils.h>
+#include <Database/BackgroundTasks/EnergyAnalysisTask.h>
+#include <Database/BackgroundTasks/EnergyAnalyzer.h>
 #include <UI/CreateMixDialogComponent.h>
+#include <UI/Settings.h>
 #include <UI/MainComponent.h>
 #include <UI/TaskDialog.h>
 #include <Utils/AssortedUtils.h> // For pathToString, durationToString if needed for logging
@@ -195,39 +198,61 @@ namespace jucyaudio
                 std::string mixNameStd = mixNameJuce.toStdString();
                 spdlog::info("Attempting to create auto-mix with name: '{}' from {} tracks.", mixNameStd, m_tracksForMix.size());
 
-                database::MixInfo newMixInfo{};
-                newMixInfo.name = mixNameStd;
-                std::vector<database::MixTrack> resultingMixTracks;
+                const bool useSmartAutomix = config::theSettings.mixEditingSettings.useSmartAutomix.get();
 
-                bool mixDefined =
-                    ::jucyaudio::database::theTrackLibrary.getMixManager().createAndSaveAutoMix(m_tracksForMix, newMixInfo, resultingMixTracks, m_source_ws_id);
-
-                if (!mixDefined || newMixInfo.mixId == -1)
+                // Check if any tracks need energy analysis
+                bool needsAnalysis = false;
+                if (useSmartAutomix)
                 {
-                    spdlog::error("Failed to define mix '{}' in the database.", mixNameStd);
-                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                        "Mix Creation Failed",
-                        "Could not save the mix definition to the database. Check logs for details.");
-                    closeThisDialog(false);
-                    return;
+                    for (const auto& track : m_tracksForMix)
+                    {
+                        if (!database::background_tasks::EnergyAnalyzer::hasValidCachedData(track))
+                        {
+                            needsAnalysis = true;
+                            break;
+                        }
+                    }
                 }
 
-                // Now that the mix is successfully created, increment the mix counter
-                if (m_source_ws_id > 0)
+                if (needsAnalysis && useSmartAutomix)
                 {
-                    auto& trackDb = database::theTrackLibrary.getTrackDatabase();
-                    trackDb.getWorkingSetManager().incrementMixNumber(m_source_ws_id);
-                }
+                    // Run energy analysis task with progress dialog, then create mix
+                    auto* analysisTask = new database::background_tasks::EnergyAnalysisTask(m_tracksForMix);
 
-                if (m_onOkCallback)
+                    // Retain task so we can check wasSuccessful() in the callback
+                    analysisTask->retain();
+
+                    // Capture what we need for the completion callback
+                    juce::Component::SafePointer<CreateMixDialogComponent> safeThis = this;
+                    std::string capturedMixName = mixNameStd;
+
+                    TaskDialog::launch(
+                        "Analyzing Tracks",
+                        analysisTask,
+                        TaskDialog::AutoCloseMode::Immediate,
+                        0,
+                        this,
+                        [safeThis, capturedMixName, analysisTask](bool success)
+                        {
+                            // This runs on the message thread after analysis completes (or is cancelled)
+                            analysisTask->release(); // Balance the retain above
+
+                            if (safeThis && success)
+                            {
+                                safeThis->finishMixCreation(capturedMixName);
+                            }
+                            else if (safeThis && !success)
+                            {
+                                spdlog::info("Energy analysis cancelled or failed, mix creation aborted");
+                                safeThis->closeThisDialog(false);
+                            }
+                        });
+                }
+                else
                 {
-                    m_onOkCallback(true, newMixInfo);
-                    m_onOkCallback = nullptr; // Clear callback after use
+                    // Smart automix disabled or all tracks already have cached energy data
+                    finishMixCreation(mixNameStd);
                 }
-                spdlog::info(
-                    "Mix '{}' (ID: {}) defined successfully in database with {} tracks.", newMixInfo.name, newMixInfo.mixId, resultingMixTracks.size());
-
-                closeThisDialog(true);
             }
             else if (selectedId > 1)
             {
@@ -403,6 +428,62 @@ namespace jucyaudio
                 oss << "Auto-Mix " << std::put_time(&tm, "%Y-%m-%d %H-%M-%S");
             }
             return juce::String(oss.str());
+        }
+
+        void CreateMixDialogComponent::finishMixCreation(const std::string& mixNameStd)
+        {
+            database::MixInfo newMixInfo{};
+            newMixInfo.name = mixNameStd;
+            std::vector<database::MixTrack> resultingMixTracks;
+
+            // Re-fetch track info from database to get updated energy data
+            // (EnergyAnalysisTask stored intro_end, outro_start, beat_locations_json in DB)
+            std::vector<database::TrackInfo> freshTrackInfos;
+            freshTrackInfos.reserve(m_tracksForMix.size());
+            for (const auto& track : m_tracksForMix)
+            {
+                auto freshInfo = database::theTrackLibrary.getTrackById(track.trackId);
+                if (freshInfo)
+                {
+                    freshTrackInfos.push_back(*freshInfo);
+                }
+                else
+                {
+                    // Fallback to original if re-fetch fails (shouldn't happen)
+                    spdlog::warn("Failed to re-fetch track {}, using original info", track.trackId);
+                    freshTrackInfos.push_back(track);
+                }
+            }
+
+            bool mixDefined =
+                ::jucyaudio::database::theTrackLibrary.getMixManager().createAndSaveAutoMix(freshTrackInfos, newMixInfo, resultingMixTracks, m_source_ws_id);
+
+            if (!mixDefined || newMixInfo.mixId == -1)
+            {
+                spdlog::error("Failed to define mix '{}' in the database.", mixNameStd);
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                    "Mix Creation Failed",
+                    "Could not save the mix definition to the database. Check logs for details.");
+                closeThisDialog(false);
+                return;
+            }
+
+            // Now that the mix is successfully created, increment the mix counter
+            if (m_source_ws_id > 0)
+            {
+                auto& trackDb = database::theTrackLibrary.getTrackDatabase();
+                trackDb.getWorkingSetManager().incrementMixNumber(m_source_ws_id);
+            }
+
+            if (m_onOkCallback)
+            {
+                m_onOkCallback(true, newMixInfo);
+                m_onOkCallback = nullptr; // Clear callback after use
+            }
+            spdlog::info(
+                "Mix '{}' (ID: {}) defined successfully in database with {} tracks.", newMixInfo.name, newMixInfo.mixId, resultingMixTracks.size());
+
+            closeThisDialog(true);
         }
 
     } // namespace ui

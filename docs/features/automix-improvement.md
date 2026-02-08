@@ -191,22 +191,61 @@ This should be fast (<100ms) since analysis is pre-computed.
 
 ### Remove (Cleanup)
 
-From `AudioAnalysis.cpp`:
-- Remove broken `detectIntro()` / `detectOutro()` functions
-- Remove `calculateEnergyFrames()` (will be reimplemented properly)
-- Keep `detectBPM()` unchanged (uses SoundTouch, works fine)
+**From `AudioAnalysis.cpp` (Database/BackgroundTasks/):**
+The `AudioAnalyzer` class contains broken intro/outro detection that only analyzes the middle 60 seconds of tracks. Remove:
+- `detectIntro()` function (lines 165-212)
+- `detectOutro()` function (lines 214-258)
+- `calculateEnergyFrames()` function (lines 38-72)
+- `calculateSpectralCentroid()` function (lines 74-95)
+- `calculateSpectralRolloff()` function (lines 97-123)
+- `EnergyFrame` struct (lines 30-36)
+- Constants: `WINDOW_SIZE`, `HOP_SIZE`, `MIN_INTRO_LENGTH`, `MIN_OUTRO_LENGTH`
+- Keep `detectBPM()` unchanged (uses SoundTouch, works correctly on middle 60 seconds)
+- Simplify `analyze()` to only return BPM
 
-From `AudioMetadata` struct:
-- Remove `hasIntro`, `hasOutro`, `introStart`, `introEnd`, `outroStart`, `outroEnd`
-- BPM fields remain unchanged
+**From `AudioMetadata` struct (Database/Includes/ITrackDatabase.h:29-38):**
+```cpp
+// BEFORE:
+struct AudioMetadata
+{
+    float bpm = 0.0f;
+    double introStart = 0.0;    // REMOVE
+    double introEnd = 0.0;      // REMOVE
+    double outroStart = 0.0;    // REMOVE
+    double outroEnd = 0.0;      // REMOVE
+    bool hasIntro = false;      // REMOVE
+    bool hasOutro = false;      // REMOVE
+};
 
-From `BpmAnalysisTask`:
-- Remove intro/outro detection calls
-- Keep BPM-only analysis (works correctly on middle 60 seconds)
+// AFTER:
+struct AudioMetadata
+{
+    float bpm = 0.0f;
+};
+```
+
+**From `SqliteTrackDatabase.cpp` (Database/Sqlite/):**
+- `updateTrackBpm()` (lines 2436-2489): Change SQL from `UPDATE Tracks SET bpm=?, intro_end=?, outro_start=?` to just `UPDATE Tracks SET bpm=?`
+- Remove all `hasIntro`/`hasOutro` conditional logic
+- Keep database columns unchanged (will be repopulated by EnergyAnalyzer later)
+
+**From `BpmAnalysis.cpp` (Database/BackgroundTasks/):**
+- Line 52-57: Remove logging of `am.hasIntro`, `am.hasOutro`
+
+### Keep Unchanged
+
+**Database columns** — These columns stay in the schema (will be repopulated by new code):
+- `intro_end` — Will store intro zone end (ms) from EnergyAnalyzer
+- `outro_start` — Will store outro zone start (ms) from EnergyAnalyzer
+- `beat_locations_json` — Will store energy contour JSON from EnergyAnalyzer
+
+**UI display** — `LibraryNode.cpp` already handles null values gracefully (displays "-")
+
+**BPM detection** — The middle-60-seconds approach works fine for BPM (SoundTouch doesn't need full track)
 
 ### Add (New Code)
 
-1. **`EnergyAnalyzer` class** — calculates energy contour from audio buffer
+1. **`EnergyAnalyzer` class** — calculates energy contour from audio buffer (reads FULL track)
 2. **`TransitionCalculator` class** — finds optimal transition points
 3. **Integration in mix creation** — lazy analysis + transition calculation
 
@@ -216,10 +255,18 @@ From `BpmAnalysisTask`:
 
 **Goal**: Remove broken code, implement correct energy analysis
 
-- [ ] Remove broken intro/outro detection from `AudioAnalysis.cpp`
-- [ ] Create `EnergyAnalyzer` class (reads full track, computes energy contour)
+**Phase 1a: Cleanup (remove broken code)**
+- [ ] Remove `AudioAnalyzer` class's intro/outro functions from `AudioAnalysis.cpp`
+- [ ] Simplify `AudioMetadata` struct to BPM-only in `ITrackDatabase.h`
+- [ ] Simplify `updateTrackBpm()` in `SqliteTrackDatabase.cpp`
+- [ ] Update `BpmAnalysis.cpp` logging
+- [ ] Verify existing BPM analysis still works
+
+**Phase 1b: New energy analysis**
+- [ ] Create `EnergyAnalyzer` class (reads FULL track, computes energy contour)
 - [ ] Implement phrase boundary detection
-- [ ] Store results in `beat_locations_json` column
+- [ ] Store results in `beat_locations_json` column (JSON format)
+- [ ] Calculate correct `intro_end` and `outro_start` values
 - [ ] Unit tests with known audio files
 
 **Deliverable**: Can analyze a track and store energy data correctly

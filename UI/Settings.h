@@ -189,6 +189,7 @@ namespace jucyaudio
                 TypedValue<bool> preloadWaveformsOnMixOpen{this, "PreloadWaveformsOnMixOpen", true};
                 TypedValue<bool> drawStereoWaveforms{this, "DrawStereoWaveforms", false}; // Default to combined waveform view
                 TypedValue<bool> linkEnvelopePointsToAttachPoints{this, "LinkEnvelopePointsToAttachPoints", true}; // Auto-scale envelope points when attach points move
+                TypedValue<bool> useSmartAutomix{this, "UseSmartAutomix", true}; // Energy-aware transitions vs fixed 5s crossfade
 
             } mixEditingSettings{this};
 

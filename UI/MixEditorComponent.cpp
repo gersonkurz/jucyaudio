@@ -413,7 +413,7 @@ namespace jucyaudio
                         TaskDialog::AutoCloseMode::Immediate,  // Close immediately on success
                         0,  // No delay needed
                         this,
-                        [this, loaderPtr, task]() {
+                        [this, loaderPtr, task](bool /*success*/) {
                             // After loading completes (or user cancels)
                             spdlog::info("[MixEditor] Waveform loading completed. Success: {}, Failed: {}", 
                                        task->getSuccessCount(), task->getFailedTracks().size());
