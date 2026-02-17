@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Consolidated build automation in justfile (removed legacy .cmd scripts)
 
 ### Changed
-- *(Planned)* Smart Automix - beat-aware, intelligent mixing
+- *(Work in progress)* Smart Automix - energy-aware, intelligent transition point discovery
 - *(Planned)* Library Organizer - automated file organization based on metadata
 
 ### Fixed
