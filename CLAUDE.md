@@ -27,7 +27,7 @@
 
 ## For AI Assistants
 
-- **NEVER run or build the application yourself** - it's a GUI app requiring human interaction
-- After code changes, ask the user to build and test
-- The human will test UI features and report back issues
+- Do not attempt to run the full GUI app interactively in automation.
+- Running non-GUI validation (configure/build/tests/lint/static checks) is encouraged when feasible.
+- After code changes, report what was validated automatically and what still needs manual UI testing.
 

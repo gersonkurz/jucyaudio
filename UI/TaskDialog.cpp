@@ -335,7 +335,20 @@ namespace jucyaudio
 
             if (m_onCompletion)
             {
-                m_onCompletion(success);
+                auto onCompletion = std::move(m_onCompletion);
+                m_onCompletion = nullptr;
+                try
+                {
+                    onCompletion(success);
+                }
+                catch (const std::exception& e)
+                {
+                    spdlog::error("TaskDialog: onCompletion threw exception: {}", e.what());
+                }
+                catch (...)
+                {
+                    spdlog::error("TaskDialog: onCompletion threw unknown exception");
+                }
             }
 
             if (success && m_autoCloseOnSuccessDelayMs.has_value())

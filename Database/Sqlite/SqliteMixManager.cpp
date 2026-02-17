@@ -14,6 +14,9 @@
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <algorithm>
+#include <map>
+#include <set>
+#include <unordered_map>
 #include <Database/UndoManager.h>
 
 using json = nlohmann::json;
@@ -95,6 +98,195 @@ namespace
             spdlog::error("Failed to bind one or more parameters for MixInfo: {}, {}", info.mixId, info.trackId);
         }
         return ok;
+    }
+
+    std::vector<MixTrack> loadMixTracksForMix(database::SqliteDatabase &db, MixId mixId)
+    {
+        std::vector<MixTrack> mixTracks;
+        SqliteStatement stmt{db};
+        stmt.query(
+            [&mixTracks, &stmt]() -> bool
+            {
+                mixTracks.emplace_back(mixTrackFromStatement(stmt));
+                return true;
+            },
+            "SELECT * FROM MixTracks WHERE mix_id=? ORDER BY order_in_mix ASC",
+            mixId);
+        return mixTracks;
+    }
+
+    bool recalculateNewAdjacenciesAfterTrackRemoval(database::SqliteDatabase &db, MixId mixId, const std::vector<MixTrack> &oldTracks)
+    {
+        using namespace jucyaudio::database::background_tasks;
+
+        if (!config::theSettings.mixEditingSettings.useSmartAutomix.get())
+        {
+            return true;
+        }
+
+        auto newTracks = loadMixTracksForMix(db, mixId);
+        if (newTracks.size() < 2 || oldTracks.empty())
+        {
+            return true;
+        }
+
+        // Count old adjacency pairs (supports duplicate track IDs in a mix)
+        std::map<std::pair<TrackId, TrackId>, int> oldAdjacencyCounts;
+        for (size_t i = 0; i + 1 < oldTracks.size(); ++i)
+        {
+            ++oldAdjacencyCounts[{oldTracks[i].trackId, oldTracks[i + 1].trackId}];
+        }
+
+        // Identify adjacency boundaries that are new after removal.
+        std::vector<size_t> newBoundaryIndices;
+        for (size_t i = 0; i + 1 < newTracks.size(); ++i)
+        {
+            const auto key = std::pair<TrackId, TrackId>{newTracks[i].trackId, newTracks[i + 1].trackId};
+            const auto it = oldAdjacencyCounts.find(key);
+            if (it != oldAdjacencyCounts.end() && it->second > 0)
+            {
+                --it->second;
+            }
+            else
+            {
+                newBoundaryIndices.push_back(i);
+            }
+        }
+
+        if (newBoundaryIndices.empty())
+        {
+            return true;
+        }
+
+        std::unordered_map<TrackId, TrackInfo> trackInfoCache;
+        auto getTrackInfo = [&trackInfoCache](TrackId trackId) -> std::optional<TrackInfo>
+        {
+            if (const auto it = trackInfoCache.find(trackId); it != trackInfoCache.end())
+            {
+                return it->second;
+            }
+
+            const auto trackOpt = theTrackLibrary.getTrackById(trackId);
+            if (!trackOpt)
+            {
+                return std::nullopt;
+            }
+
+            trackInfoCache.emplace(trackId, *trackOpt);
+            return trackOpt;
+        };
+
+        const bool linkEnvelopePoints = config::theSettings.mixEditingSettings.linkEnvelopePointsToAttachPoints.get();
+        std::set<size_t> changedTrackIndices;
+
+        for (const auto boundaryIndex : newBoundaryIndices)
+        {
+            auto &trackA = newTracks[boundaryIndex];
+            auto &trackB = newTracks[boundaryIndex + 1];
+
+            const auto trackAInfoOpt = getTrackInfo(trackA.trackId);
+            const auto trackBInfoOpt = getTrackInfo(trackB.trackId);
+            if (!trackAInfoOpt || !trackBInfoOpt)
+            {
+                spdlog::warn("Smart recalculation skipped for pair {} -> {}: track info missing",
+                    trackA.trackId, trackB.trackId);
+                continue;
+            }
+
+            const auto energyA = EnergyAnalyzer::getCachedData(*trackAInfoOpt);
+            const auto energyB = EnergyAnalyzer::getCachedData(*trackBInfoOpt);
+            if (!(energyA && energyA->isValid && energyB && energyB->isValid))
+            {
+                // User-requested behavior: no fallback; leave unchanged.
+                spdlog::info("Smart recalculation skipped for pair {} -> {}: cached energy missing/invalid",
+                    trackA.trackId, trackB.trackId);
+                continue;
+            }
+
+            const auto transition = TransitionCalculator::calculate(
+                *energyA, trackAInfoOpt->duration,
+                *energyB, trackBInfoOpt->duration);
+
+            const auto oldAttachToA = trackA.attachTo;
+            const auto oldAttachFromB = trackB.attachFrom;
+
+            auto newAttachToA = transition.attachToA;
+            auto newAttachFromB = transition.attachFromB;
+
+            newAttachToA = std::max(Duration_t{0}, std::min(newAttachToA, trackAInfoOpt->duration));
+            newAttachFromB = std::max(Duration_t{0}, std::min(newAttachFromB, trackBInfoOpt->duration));
+
+            if (newAttachToA <= trackA.attachFrom)
+            {
+                newAttachToA = trackAInfoOpt->duration;
+            }
+            if (newAttachFromB >= trackB.attachTo)
+            {
+                newAttachFromB = Duration_t{0};
+            }
+
+            if (newAttachToA != oldAttachToA)
+            {
+                if (linkEnvelopePoints)
+                {
+                    trackA.scaleEnvelopePointsForAttachChange(
+                        trackA.attachFrom,
+                        trackA.attachFrom,
+                        oldAttachToA,
+                        newAttachToA,
+                        trackAInfoOpt->duration);
+                }
+                trackA.attachTo = newAttachToA;
+                changedTrackIndices.insert(boundaryIndex);
+            }
+
+            if (newAttachFromB != oldAttachFromB)
+            {
+                if (linkEnvelopePoints)
+                {
+                    trackB.scaleEnvelopePointsForAttachChange(
+                        oldAttachFromB,
+                        newAttachFromB,
+                        trackB.attachTo,
+                        trackB.attachTo,
+                        trackBInfoOpt->duration);
+                }
+                trackB.attachFrom = newAttachFromB;
+                changedTrackIndices.insert(boundaryIndex + 1);
+            }
+
+            if (newAttachToA != oldAttachToA || newAttachFromB != oldAttachFromB)
+            {
+                spdlog::info("Smart recalculation {} -> {}: attachTo {}ms -> {}ms, attachFrom {}ms -> {}ms",
+                    trackA.trackId, trackB.trackId,
+                    oldAttachToA.count(), newAttachToA.count(),
+                    oldAttachFromB.count(), newAttachFromB.count());
+            }
+        }
+
+        if (changedTrackIndices.empty())
+        {
+            return true;
+        }
+
+        SqliteStatement updateStmt{db, "UPDATE MixTracks SET mix_data=? WHERE mix_id=? AND order_in_mix=?;"};
+        for (const auto trackIndex : changedTrackIndices)
+        {
+            const auto &track = newTracks[trackIndex];
+            json mixDataJson = track;
+
+            updateStmt.addParam(mixDataJson.dump());
+            updateStmt.addParam(mixId);
+            updateStmt.addParam(track.orderInMix);
+            if (!updateStmt.execute())
+            {
+                spdlog::error("Failed to persist recalculated transition data for mix {}, order {}", mixId, track.orderInMix);
+                return false;
+            }
+            updateStmt.reset();
+        }
+
+        return true;
     }
 } // namespace
 
@@ -277,6 +469,8 @@ WHERE m.export_folder IS NULL
         {
             if (SqliteTransaction transaction{m_db})
             {
+                const auto oldTracks = loadMixTracksForMix(m_db, mixId);
+
                 // First, collect the orderInMix values of tracks being deleted
                 std::vector<int> deletedOrders;
                 for (const auto &trackId : trackIds)
@@ -325,6 +519,12 @@ WHERE m.export_folder IS NULL
                 {
                     spdlog::info("Re-enumerated orderInMix after deleting {} tracks", trackIds.size());
                 }
+
+                if (!recalculateNewAdjacenciesAfterTrackRemoval(m_db, mixId, oldTracks))
+                {
+                    spdlog::error("Failed to recalculate transitions after batch track deletion");
+                    return transaction.rollback();
+                }
                 
                 if (transaction.commit())
                 {
@@ -340,6 +540,8 @@ WHERE m.export_folder IS NULL
         {
             if (SqliteTransaction transaction{m_db})
             {
+                const auto oldTracks = loadMixTracksForMix(m_db, mixId);
+
                 // First, get the orderInMix of the track being deleted
                 SqliteStatement getOrderStmt{m_db, "SELECT order_in_mix FROM MixTracks WHERE mix_id = ? AND track_id = ?"};
                 getOrderStmt.addParam(mixId);
@@ -372,6 +574,12 @@ WHERE m.export_folder IS NULL
                         return transaction.rollback();
                     }
                     spdlog::info("Re-enumerated orderInMix for tracks after position {}", deletedTrackOrder);
+                }
+
+                if (!recalculateNewAdjacenciesAfterTrackRemoval(m_db, mixId, oldTracks))
+                {
+                    spdlog::error("Failed to recalculate transitions after track deletion");
+                    return transaction.rollback();
                 }
                 
                 if (transaction.commit())

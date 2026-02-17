@@ -19,6 +19,7 @@
 #include <Database/BackgroundTasks/EnergyAnalyzer.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
+#include <UI/Settings.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <spdlog/spdlog.h>
@@ -255,8 +256,14 @@ namespace jucyaudio::database::background_tasks
 
         const float threshold = avgEnergy * ENERGY_THRESHOLD;
 
-        // Search in the first 25% of the track for first point where energy exceeds threshold
-        const size_t searchLimit = static_cast<size_t>(energyContour.size() * INTRO_SEARCH_RANGE);
+        // Search in the first 25% of the track, capped by config
+        const int64_t maxSearchMs = static_cast<int64_t>(
+            config::theSettings.mixEditingSettings.smartAutomixMaxSearchSeconds.get()) * 1000;
+        const int64_t percentSearchMs = static_cast<int64_t>(trackDuration.count() * INTRO_SEARCH_RANGE);
+        const int64_t searchRangeMs = std::min(maxSearchMs, percentSearchMs);
+        const size_t searchLimit = std::min(
+            energyContour.size(),
+            static_cast<size_t>(searchRangeMs / windowSizeMs));
 
         for (size_t i = 0; i < searchLimit && i < energyContour.size(); ++i)
         {
@@ -271,8 +278,8 @@ namespace jucyaudio::database::background_tasks
     }
 
     Duration_t EnergyAnalyzer::calculateOutroStart(const std::vector<float>& energyContour,
-                                                   int windowSizeMs,
-                                                   Duration_t trackDuration)
+                                                  int windowSizeMs,
+                                                  Duration_t trackDuration)
     {
         if (energyContour.empty())
             return Duration_t{static_cast<int64_t>(trackDuration.count() * (1.0f - FALLBACK_PERCENTAGE))};
@@ -287,8 +294,17 @@ namespace jucyaudio::database::background_tasks
 
         const float threshold = avgEnergy * ENERGY_THRESHOLD;
 
-        // Search forward from 75% of the track for first point where energy drops below threshold
-        const size_t searchStart = static_cast<size_t>(energyContour.size() * (1.0f - OUTRO_SEARCH_RANGE));
+        // Search forward from the capped start of the last 25% of the track
+        const int64_t maxSearchMs = static_cast<int64_t>(
+            config::theSettings.mixEditingSettings.smartAutomixMaxSearchSeconds.get()) * 1000;
+        const int64_t percentSearchMs = static_cast<int64_t>(trackDuration.count() * OUTRO_SEARCH_RANGE);
+        const int64_t searchRangeMs = std::min(maxSearchMs, percentSearchMs);
+        const size_t searchWindows = std::min(
+            energyContour.size(),
+            static_cast<size_t>(searchRangeMs / windowSizeMs));
+        const size_t searchStart = (energyContour.size() > searchWindows)
+            ? (energyContour.size() - searchWindows)
+            : 0;
 
         for (size_t i = searchStart; i < energyContour.size(); ++i)
         {

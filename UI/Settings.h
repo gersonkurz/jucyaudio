@@ -4,6 +4,7 @@
 #include <Config/typed_value.h>
 #include <Config/typed_vector_value.h>
 #include <Database/Includes/INavigationNode.h>
+#include <ctime>
 
 namespace jucyaudio
 {
@@ -84,6 +85,18 @@ namespace jucyaudio
             else
                 return false;
             return true;
+        }
+
+        inline std::string currentYearString()
+        {
+            const std::time_t now = std::time(nullptr);
+            std::tm localTm{};
+#ifdef _MSC_VER
+            localtime_s(&localTm, &now);
+#else
+            localtime_r(&now, &localTm);
+#endif
+            return std::to_string(1900 + localTm.tm_year);
         }
 
         template <typename T> struct EnumConfigValue : public IEnumConfigValue
@@ -168,7 +181,7 @@ namespace jucyaudio
 
                 TypedValue<std::string> defaultArtist{this, "DefaultArtist", "Unknown Artist"};
                 TypedValue<std::string> defaultAlbum{this, "DefaultAlbum", "Unknown Album"};
-                TypedValue<std::string> defaultYear{this, "DefaultYear", "2025"};
+                TypedValue<std::string> defaultYear{this, "DefaultYear", currentYearString()};
                 TypedValue<std::string> defaultGenre{this, "DefaultGenre", "Electronic"};
                 TypedValue<std::string> defaultComment{this, "DefaultComment", ""};
                 TypedValue<std::string> lastUsedExportFolder{this, "LastUsedExportFolder", ""};
@@ -190,6 +203,7 @@ namespace jucyaudio
                 TypedValue<bool> drawStereoWaveforms{this, "DrawStereoWaveforms", false}; // Default to combined waveform view
                 TypedValue<bool> linkEnvelopePointsToAttachPoints{this, "LinkEnvelopePointsToAttachPoints", true}; // Auto-scale envelope points when attach points move
                 TypedValue<bool> useSmartAutomix{this, "UseSmartAutomix", true}; // Energy-aware transitions vs fixed 5s crossfade
+                TypedValue<int> smartAutomixMaxSearchSeconds{this, "SmartAutomixMaxSearchSeconds", 30}; // Cap intro/outro search window
 
             } mixEditingSettings{this};
 

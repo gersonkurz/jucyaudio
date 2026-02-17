@@ -46,7 +46,7 @@ Download the latest release from the [Releases](https://github.com/gersonkurz/ju
 
 ## Building from Source
 
-See [build.md](build.md) for detailed build instructions for macOS and Windows.
+See [docs/build.md](docs/build.md) for detailed build instructions for macOS and Windows.
 
 ## Who is JucyAudio for?
 

@@ -78,6 +78,8 @@ namespace jucyaudio
             juce::ToggleButton m_clearWsAfterExportToggle;
             juce::ToggleButton m_linkEnvelopePointsToggle;
             juce::ToggleButton m_useSmartAutomixToggle;
+            juce::Label m_smartAutomixMaxSearchLabel;
+            juce::Slider m_smartAutomixMaxSearchSlider;
             juce::Label m_removeTrackOptionLabel;
             juce::ComboBox m_removeTrackOptionCombo;
 

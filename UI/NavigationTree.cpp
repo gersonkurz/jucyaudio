@@ -1,4 +1,4 @@
-// Database/Nodes/MixNode.cpp
+// UI/NavigationTree.cpp
 #include <UI/NavigationTree.h>
 #include <UI/NavigationPanelComponent.h>
 #include <UI/DataViewComponent.h>
@@ -142,5 +142,5 @@ namespace jucyaudio
             }
         }
 
-    } // namespace database
+    } // namespace ui
 } // namespace jucyaudio

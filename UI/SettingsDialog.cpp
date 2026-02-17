@@ -183,6 +183,11 @@ namespace jucyaudio
             addAndMakeVisible(m_linkEnvelopePointsToggle);
             m_useSmartAutomixToggle.setButtonText("Use smart automix transitions (energy analysis)");
             addAndMakeVisible(m_useSmartAutomixToggle);
+            setupLabel(m_smartAutomixMaxSearchLabel, "Smart automix max intro/outro search (seconds):", 15.0f, false);
+            m_smartAutomixMaxSearchSlider.setRange(5, 180, 1);
+            m_smartAutomixMaxSearchSlider.setSliderStyle(juce::Slider::IncDecButtons);
+            m_smartAutomixMaxSearchSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 40, 20);
+            addAndMakeVisible(m_smartAutomixMaxSearchSlider);
             setupLabel(m_removeTrackOptionLabel, "Default action for removing tracks from Mix:", 15.0f, false);
             m_removeTrackOptionCombo.addItem("Remove from Mix and Working Set", (int)config::RemoveTrackOption::RemoveFromBoth + 1);
             m_removeTrackOptionCombo.addItem("Remove from Mix Only", (int)config::RemoveTrackOption::RemoveFromMixOnly + 1);
@@ -224,6 +229,9 @@ namespace jucyaudio
             m_clearWsAfterExportToggle.setBounds(bounds.removeFromTop(rowHeight));
             m_linkEnvelopePointsToggle.setBounds(bounds.removeFromTop(rowHeight));
             m_useSmartAutomixToggle.setBounds(bounds.removeFromTop(rowHeight));
+            auto smartAutomixRow = bounds.removeFromTop(rowHeight);
+            m_smartAutomixMaxSearchLabel.setBounds(smartAutomixRow.removeFromLeft(labelWidth));
+            m_smartAutomixMaxSearchSlider.setBounds(smartAutomixRow);
             auto mixRow = bounds.removeFromTop(rowHeight);
             m_removeTrackOptionLabel.setBounds(mixRow.removeFromLeft(labelWidth));
             m_removeTrackOptionCombo.setBounds(mixRow);
@@ -247,11 +255,12 @@ namespace jucyaudio
             config::theSettings.mixEditingSettings.clearWorkingSetAfterExport.set(m_clearWsAfterExportToggle.getToggleState());
             config::theSettings.mixEditingSettings.linkEnvelopePointsToAttachPoints.set(m_linkEnvelopePointsToggle.getToggleState());
             config::theSettings.mixEditingSettings.useSmartAutomix.set(m_useSmartAutomixToggle.getToggleState());
+            config::theSettings.mixEditingSettings.smartAutomixMaxSearchSeconds.set(
+                static_cast<int>(m_smartAutomixMaxSearchSlider.getValue()));
             auto removeOption = (config::RemoveTrackOption)(m_removeTrackOptionCombo.getSelectedId() - 1);
             config::theSettings.mixEditingSettings.removeTrackOption.set(removeOption);
 
             // Logging
-            config::theSettings.loggingSettings.logLevel.set(m_logLevelCombo.getText().toLowerCase().toStdString());
             const auto logLevelStr = m_logLevelCombo.getText().toLowerCase().toStdString();
             config::theSettings.loggingSettings.logLevel.set(logLevelStr);
             setLogLevelFromString(logLevelStr);
@@ -274,6 +283,8 @@ namespace jucyaudio
             m_clearWsAfterExportToggle.setToggleState(config::theSettings.mixEditingSettings.clearWorkingSetAfterExport, juce::dontSendNotification);
             m_linkEnvelopePointsToggle.setToggleState(config::theSettings.mixEditingSettings.linkEnvelopePointsToAttachPoints, juce::dontSendNotification);
             m_useSmartAutomixToggle.setToggleState(config::theSettings.mixEditingSettings.useSmartAutomix, juce::dontSendNotification);
+            m_smartAutomixMaxSearchSlider.setValue(
+                config::theSettings.mixEditingSettings.smartAutomixMaxSearchSeconds, juce::dontSendNotification);
             m_removeTrackOptionCombo.setSelectedId((int)config::theSettings.mixEditingSettings.removeTrackOption.get().value + 1, juce::dontSendNotification);
 
             // Logging
@@ -287,6 +298,7 @@ namespace jucyaudio
             m_removeFromWsToggle.setLookAndFeel(CheckboxLookAndFeel::getInstance());
             m_askBeforeRemovingToggle.setLookAndFeel(CheckboxLookAndFeel::getInstance());
             m_clearWsAfterExportToggle.setLookAndFeel(CheckboxLookAndFeel::getInstance());
+            m_linkEnvelopePointsToggle.setLookAndFeel(CheckboxLookAndFeel::getInstance());
             m_useSmartAutomixToggle.setLookAndFeel(CheckboxLookAndFeel::getInstance());
         }
 

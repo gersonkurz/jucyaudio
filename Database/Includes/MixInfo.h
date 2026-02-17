@@ -351,7 +351,7 @@ namespace nlohmann
                 spdlog::warn("MixTrack JSON missing 'envelope' section, using empty envelope");
             }
 
-            mt.gainAdjustment = j.value("gainAdjustment", 0.0f);
+            mt.gainAdjustment = j.value("gainAdjustment", 1.0f);
         }
     };
 } // namespace nlohmann

@@ -2,6 +2,7 @@
 #include <Database/Includes/MixTrackUtils.h>
 #include <Database/BackgroundTasks/EnergyAnalysisTask.h>
 #include <Database/BackgroundTasks/EnergyAnalyzer.h>
+#include <Database/BackgroundTasks/TransitionCalculator.h>
 #include <UI/CreateMixDialogComponent.h>
 #include <UI/Settings.h>
 #include <UI/MainComponent.h>
@@ -218,7 +219,6 @@ namespace jucyaudio
                 {
                     // Run energy analysis task with progress dialog, then create mix
                     auto* analysisTask = new database::background_tasks::EnergyAnalysisTask(m_tracksForMix);
-
                     // Retain task so we can check wasSuccessful() in the callback
                     analysisTask->retain();
 
@@ -236,7 +236,6 @@ namespace jucyaudio
                         {
                             // This runs on the message thread after analysis completes (or is cancelled)
                             analysisTask->release(); // Balance the retain above
-
                             if (safeThis && success)
                             {
                                 safeThis->finishMixCreation(capturedMixName);
@@ -270,70 +269,211 @@ namespace jucyaudio
                 database::MixInfo targetMix = m_availableMixes[mixIndex];
                 spdlog::info("Attempting to append {} tracks to existing mix '{}' (ID: {})", m_tracksForMix.size(), targetMix.name, targetMix.mixId);
 
-                // Get existing mix tracks
-                auto existingTracks = theTrackLibrary.getMixManager().getMixTracks(targetMix.mixId);
+                const bool useSmartAutomix = config::theSettings.mixEditingSettings.useSmartAutomix.get();
+                bool needsAnalysis = false;
 
-                // Add new tracks with appropriate crossfade settings
-                const Duration_t defaultCrossfade{5000}; // 5 seconds
-                int nextOrder = static_cast<int>(existingTracks.size());
-
-                for (const auto &trackInfo : m_tracksForMix)
+                if (useSmartAutomix)
                 {
-                    database::MixTrack newMixTrack{};
-                    newMixTrack.trackId = trackInfo.trackId;
-                    newMixTrack.orderInMix = nextOrder++;
-
-                    // CUE points - use full track (default behavior)
-                    newMixTrack.cueStart = Duration_t{0};
-                    newMixTrack.cueEnd = Duration_t{0}; // 0 means use full track duration
-
-                    // Calculate crossfade settings using shared helper
-                    const auto crossfade = database::calculateCrossfadeForTrack(trackInfo.duration, defaultCrossfade);
-
-                    // Log crossfade adjustments for short tracks
-                    if (crossfade.adjustment == database::CrossfadeAdjustment::Eliminated)
+                    auto tracksToCheck = m_tracksForMix;
+                    const auto existingTracks = theTrackLibrary.getMixManager().getMixTracks(targetMix.mixId);
+                    if (!existingTracks.empty())
                     {
-                        spdlog::debug("Append: Track {} is only {} long: using no crossfade",
-                            trackInfo.trackId, durationToString(trackInfo.duration));
-                    }
-                    else if (crossfade.adjustment == database::CrossfadeAdjustment::Reduced)
-                    {
-                        spdlog::debug("Append: Track {} is {} long: reducing crossfade to {}",
-                            trackInfo.trackId, durationToString(trackInfo.duration),
-                            durationToString(crossfade.effectiveCrossfade));
+                        if (const auto lastTrackInfo = database::theTrackLibrary.getTrackById(existingTracks.back().trackId))
+                        {
+                            tracksToCheck.push_back(*lastTrackInfo);
+                        }
                     }
 
-                    // Set up crossfade from previous track (only if there are existing tracks)
+                    for (const auto& track : tracksToCheck)
+                    {
+                        if (!database::background_tasks::EnergyAnalyzer::hasValidCachedData(track))
+                        {
+                            needsAnalysis = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (needsAnalysis && useSmartAutomix)
+                {
+                    auto tracksToAnalyze = m_tracksForMix;
+                    const auto existingTracks = theTrackLibrary.getMixManager().getMixTracks(targetMix.mixId);
+                    if (!existingTracks.empty())
+                    {
+                        if (const auto lastTrackInfo = database::theTrackLibrary.getTrackById(existingTracks.back().trackId))
+                        {
+                            tracksToAnalyze.push_back(*lastTrackInfo);
+                        }
+                    }
+
+                    auto* analysisTask = new database::background_tasks::EnergyAnalysisTask(tracksToAnalyze);
+                    juce::Component::SafePointer<CreateMixDialogComponent> safeThis = this;
+                    database::MixInfo capturedTargetMix = targetMix;
+                    TaskDialog::launch(
+                        "Analyzing Tracks",
+                        analysisTask,
+                        TaskDialog::AutoCloseMode::Immediate,
+                        0,
+                        this,
+                        [safeThis, capturedTargetMix](bool success)
+                        {
+                            if (safeThis && success)
+                            {
+                                safeThis->finishAppendToMix(capturedTargetMix);
+                            }
+                            else if (safeThis && !success)
+                            {
+                                spdlog::info("Energy analysis cancelled or failed, append aborted");
+                                safeThis->closeThisDialog(false);
+                            }
+                        });
+                }
+                else
+                {
+                    finishAppendToMix(targetMix);
+                }
+            }
+        }
+
+        void CreateMixDialogComponent::finishAppendToMix(const database::MixInfo& targetMix)
+        {
+            auto mixToUpdate = targetMix;
+            auto existingTracks = theTrackLibrary.getMixManager().getMixTracks(targetMix.mixId);
+            const Duration_t defaultCrossfade{5000};
+            int nextOrder = static_cast<int>(existingTracks.size());
+            const bool useSmartAutomix = config::theSettings.mixEditingSettings.useSmartAutomix.get();
+            const bool linkEnvelopePoints = config::theSettings.mixEditingSettings.linkEnvelopePointsToAttachPoints.get();
+            using database::background_tasks::EnergyAnalyzer;
+            using database::background_tasks::TransitionCalculator;
+
+            std::optional<database::TrackInfo> prevTrackInfoOpt;
+            std::optional<database::background_tasks::EnergyAnalysisResult> prevEnergyOpt;
+            if (useSmartAutomix && !existingTracks.empty())
+            {
+                prevTrackInfoOpt = database::theTrackLibrary.getTrackById(existingTracks.back().trackId);
+                if (prevTrackInfoOpt)
+                {
+                    prevEnergyOpt = EnergyAnalyzer::getCachedData(*prevTrackInfoOpt);
+                }
+            }
+
+            for (const auto &trackInfo : m_tracksForMix)
+            {
+                database::MixTrack newMixTrack{};
+                newMixTrack.trackId = trackInfo.trackId;
+                newMixTrack.orderInMix = nextOrder++;
+                newMixTrack.cueStart = Duration_t{0};
+                newMixTrack.cueEnd = Duration_t{0};
+
+                const auto crossfade = database::calculateCrossfadeForTrack(trackInfo.duration, defaultCrossfade);
+                Duration_t crossfadeDuration = crossfade.effectiveCrossfade;
+
+                if (useSmartAutomix && !existingTracks.empty() && prevTrackInfoOpt.has_value())
+                {
+                    const auto currentEnergyOpt = EnergyAnalyzer::getCachedData(trackInfo);
+                    if (prevEnergyOpt && prevEnergyOpt->isValid && currentEnergyOpt && currentEnergyOpt->isValid)
+                    {
+                        auto transition = TransitionCalculator::calculate(
+                            *prevEnergyOpt,
+                            prevTrackInfoOpt->duration,
+                            *currentEnergyOpt,
+                            trackInfo.duration);
+
+                        auto &prevMixTrack = existingTracks.back();
+                        const auto oldPrevAttachTo = prevMixTrack.attachTo;
+                        auto newPrevAttachTo = std::max(Duration_t{0}, std::min(transition.attachToA, prevTrackInfoOpt->duration));
+                        if (newPrevAttachTo <= prevMixTrack.attachFrom)
+                        {
+                            newPrevAttachTo = prevTrackInfoOpt->duration;
+                        }
+
+                        if (newPrevAttachTo != oldPrevAttachTo)
+                        {
+                            if (linkEnvelopePoints)
+                            {
+                                prevMixTrack.scaleEnvelopePointsForAttachChange(
+                                    prevMixTrack.attachFrom,
+                                    prevMixTrack.attachFrom,
+                                    oldPrevAttachTo,
+                                    newPrevAttachTo,
+                                    prevTrackInfoOpt->duration);
+                            }
+                            prevMixTrack.attachTo = newPrevAttachTo;
+                        }
+
+                        newMixTrack.attachFrom = std::max(Duration_t{0}, std::min(transition.attachFromB, trackInfo.duration));
+                        newMixTrack.attachTo = trackInfo.duration;
+                        crossfadeDuration = transition.crossfadeDuration;
+                    }
+                    else
+                    {
+                        // Fallback when smart data is unavailable for append boundary
+                        newMixTrack.attachFrom = crossfade.attachFrom;
+                        newMixTrack.attachTo = crossfade.attachTo;
+                        newMixTrack.envelopePoints = crossfade.envelopePoints;
+                    }
+                    prevEnergyOpt = currentEnergyOpt;
+                }
+                else
+                {
                     if (!existingTracks.empty())
                     {
                         newMixTrack.attachFrom = crossfade.attachFrom;
                     }
                     newMixTrack.attachTo = crossfade.attachTo;
                     newMixTrack.envelopePoints = crossfade.envelopePoints;
-
-                    existingTracks.push_back(newMixTrack);
                 }
 
-                // Update the mix with all tracks
-                bool success = theTrackLibrary.getMixManager().createOrUpdateMix(targetMix, existingTracks);
-
-                if (!success)
+                if (newMixTrack.envelopePoints.empty())
                 {
-                    spdlog::error("Failed to append tracks to mix '{}'", targetMix.name);
-                    juce::AlertWindow::showMessageBoxAsync(
-                        juce::MessageBoxIconType::WarningIcon, "Append Failed", "Could not append tracks to the existing mix. Check logs for details.");
-                    closeThisDialog(false);
-                    return;
+                    const auto effectiveFadeIn = std::min(crossfadeDuration, newMixTrack.attachFrom);
+                    const auto effectiveFadeOut = std::min(crossfadeDuration, trackInfo.duration - newMixTrack.attachTo);
+                    if (effectiveFadeIn == Duration_t{0} && effectiveFadeOut == Duration_t{0})
+                    {
+                        newMixTrack.envelopePoints = {
+                            {Duration_t{0}, VOLUME_NORMALIZATION},
+                            {trackInfo.duration, VOLUME_NORMALIZATION}};
+                    }
+                    else
+                    {
+                        const auto fadeInMidpoint = std::min(Duration_t{2000}, effectiveFadeIn / 2);
+                        const auto fadeOutStart = newMixTrack.attachTo;
+                        const auto fadeOutMidpoint = trackInfo.duration - std::min(Duration_t{2000}, effectiveFadeOut / 2);
+                        newMixTrack.envelopePoints = {
+                            {Duration_t{0}, Volume_t{200}},
+                            {fadeInMidpoint, Volume_t{700}},
+                            {newMixTrack.attachFrom, VOLUME_NORMALIZATION},
+                            {fadeOutStart, VOLUME_NORMALIZATION},
+                            {fadeOutMidpoint, Volume_t{700}},
+                            {trackInfo.duration, Volume_t{200}}};
+                    }
                 }
 
-                if (m_onOkCallback)
+                existingTracks.push_back(newMixTrack);
+                prevTrackInfoOpt = trackInfo;
+                if (useSmartAutomix)
                 {
-                    m_onOkCallback(true, targetMix);
-                    m_onOkCallback = nullptr;
+                    prevEnergyOpt = EnergyAnalyzer::getCachedData(trackInfo);
                 }
-                spdlog::info("Successfully appended {} tracks to mix '{}' (ID: {})", m_tracksForMix.size(), targetMix.name, targetMix.mixId);
-                closeThisDialog(true);
             }
+
+            bool success = theTrackLibrary.getMixManager().createOrUpdateMix(mixToUpdate, existingTracks);
+            if (!success)
+            {
+                spdlog::error("Failed to append tracks to mix '{}'", targetMix.name);
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::MessageBoxIconType::WarningIcon, "Append Failed", "Could not append tracks to the existing mix. Check logs for details.");
+                closeThisDialog(false);
+                return;
+            }
+
+            if (m_onOkCallback)
+            {
+                m_onOkCallback(true, mixToUpdate);
+                m_onOkCallback = nullptr;
+            }
+            spdlog::info("Successfully appended {} tracks to mix '{}' (ID: {})", m_tracksForMix.size(), targetMix.name, targetMix.mixId);
+            closeThisDialog(true);
         }
 
         void CreateMixDialogComponent::closeThisDialog(bool success)

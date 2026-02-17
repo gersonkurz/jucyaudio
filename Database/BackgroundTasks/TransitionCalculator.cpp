@@ -183,10 +183,12 @@ namespace jucyaudio::database::background_tasks
         // attachFromB: clamp to [0, introEnd] to stay in intro zone
         const int64_t minAttachToA = energyA.outroStart.count();
         const int64_t maxAttachToA = durationA.count() - 1000;
-        result.attachToA = Duration_t{std::clamp(snappedPointA, minAttachToA, maxAttachToA)};
+        const int64_t safeMaxAttachToA = std::max<int64_t>(minAttachToA, maxAttachToA);
+        result.attachToA = Duration_t{std::clamp(snappedPointA, minAttachToA, safeMaxAttachToA)};
 
         const int64_t maxAttachFromB = energyB.introEnd.count();
-        result.attachFromB = Duration_t{std::clamp(snappedPointB, int64_t{0}, maxAttachFromB)};
+        const int64_t safeMaxAttachFromB = std::max<int64_t>(int64_t{0}, maxAttachFromB);
+        result.attachFromB = Duration_t{std::clamp(snappedPointB, int64_t{0}, safeMaxAttachFromB)};
         result.crossfadeDuration = crossfadeDuration;
         result.score = bestScore;
         result.isValid = true;
