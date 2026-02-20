@@ -33,32 +33,47 @@ namespace jucyaudio::database::background_tasks
                                   database::CompletionCallback completionCb,
                                   std::atomic<bool>& shouldCancel)
     {
-        // First, identify which tracks need analysis
-        std::vector<const database::TrackInfo*> tracksToAnalyze;
+        struct WorkItem
+        {
+            const database::TrackInfo* track{nullptr};
+            bool needsEnergy{false};
+            bool needsWaveform{false};
+        };
+
+        // First, identify which tracks need processing
+        std::vector<WorkItem> tracksToProcess;
+        auto& db = theTrackLibrary;
         for (const auto& track : m_tracks)
         {
-            if (!EnergyAnalyzer::hasValidCachedData(track))
+            const bool needsEnergy = !EnergyAnalyzer::hasValidCachedData(track);
+
+            std::vector<unsigned char> cachedWaveform;
+            const bool hasWaveform = db.loadWaveform(track.trackId, cachedWaveform).isOk() && !cachedWaveform.empty();
+            const bool needsWaveform = !hasWaveform;
+
+            if (needsEnergy || needsWaveform)
             {
-                tracksToAnalyze.push_back(&track);
+                tracksToProcess.push_back(WorkItem{&track, needsEnergy, needsWaveform});
             }
         }
 
-        if (tracksToAnalyze.empty())
+        if (tracksToProcess.empty())
         {
-            spdlog::info("EnergyAnalysisTask: All {} tracks already have cached energy data", m_tracks.size());
-            progressCb(100, "All tracks already analyzed");
+            spdlog::info("EnergyAnalysisTask: All {} tracks already have cached energy + waveform data", m_tracks.size());
+            progressCb(100, "All tracks already processed");
             m_wasSuccessful = true;
             completionCb(true, "Ready to create mix");
             return;
         }
 
-        spdlog::info("EnergyAnalysisTask: Need to analyze {} of {} tracks",
-                     tracksToAnalyze.size(), m_tracks.size());
+        spdlog::info("EnergyAnalysisTask: Need to process {} of {} tracks",
+                     tracksToProcess.size(), m_tracks.size());
 
         m_tracksAnalyzedCount = 0;
-        const int totalToAnalyze = static_cast<int>(tracksToAnalyze.size());
+        int waveformsCachedCount = 0;
+        const int totalToProcess = static_cast<int>(tracksToProcess.size());
 
-        for (size_t i = 0; i < tracksToAnalyze.size(); ++i)
+        for (size_t i = 0; i < tracksToProcess.size(); ++i)
         {
             if (shouldCancel.load())
             {
@@ -68,46 +83,76 @@ namespace jucyaudio::database::background_tasks
                 return;
             }
 
-            const auto& trackInfo = *tracksToAnalyze[i];
-            const int progressPercent = static_cast<int>((i * 100) / totalToAnalyze);
+            const auto& item = tracksToProcess[i];
+            const auto& trackInfo = *item.track;
+            const int progressPercent = static_cast<int>((i * 100) / totalToProcess);
 
-            progressCb(progressPercent, "Analyzing: " + trackInfo.filename);
+            progressCb(progressPercent, "Processing: " + trackInfo.filename);
 
-            // Analyze the track
+            // Decode once, then compute energy + waveform in parallel branches.
             const auto filepath = trackInfo.reconstructFullPath();
-            auto result = EnergyAnalyzer::analyzeFile(filepath);
+            std::vector<unsigned char> waveformBlob;
+            auto result = EnergyAnalyzer::analyzeFile(filepath, item.needsWaveform ? &waveformBlob : nullptr);
 
-            if (result.isValid)
+            if (item.needsEnergy)
             {
-                // Store the analysis results in the database
-                const auto jsonStr = result.toJson().dump();
-                auto dbResult = theTrackLibrary.getTrackDatabase().updateTrackEnergyData(
-                    trackInfo.trackId, result.introEnd, result.outroStart, jsonStr);
-
-                if (dbResult.isOk())
+                if (result.isValid)
                 {
-                    spdlog::debug("EnergyAnalysisTask: Stored energy data for track {} (intro={}ms, outro={}ms)",
-                                  trackInfo.trackId, result.introEnd.count(), result.outroStart.count());
-                    ++m_tracksAnalyzedCount;
+                    // Store the analysis results in the database
+                    const auto jsonStr = result.toJson().dump();
+                    auto dbResult = db.getTrackDatabase().updateTrackEnergyData(
+                        trackInfo.trackId, result.introEnd, result.outroStart, jsonStr);
+
+                    if (dbResult.isOk())
+                    {
+                        spdlog::debug("EnergyAnalysisTask: Stored energy data for track {} (intro={}ms, outro={}ms)",
+                                      trackInfo.trackId, result.introEnd.count(), result.outroStart.count());
+                        ++m_tracksAnalyzedCount;
+                    }
+                    else
+                    {
+                        spdlog::warn("EnergyAnalysisTask: Failed to store energy data for track {}: {}",
+                                     trackInfo.trackId, dbResult.errorMessage);
+                    }
                 }
                 else
                 {
-                    spdlog::warn("EnergyAnalysisTask: Failed to store energy data for track {}: {}",
-                                 trackInfo.trackId, dbResult.errorMessage);
+                    spdlog::warn("EnergyAnalysisTask: Failed to analyze track {} ({})",
+                                 trackInfo.trackId, trackInfo.filename);
+                    // Continue with other tracks - mix creation will use fallback for this one
                 }
             }
-            else
+
+            if (item.needsWaveform)
             {
-                spdlog::warn("EnergyAnalysisTask: Failed to analyze track {} ({})",
-                             trackInfo.trackId, trackInfo.filename);
-                // Continue with other tracks - mix creation will use fallback for this one
+                if (!waveformBlob.empty())
+                {
+                    auto waveformSaveResult = db.saveWaveform(trackInfo.trackId, waveformBlob);
+                    if (waveformSaveResult.isOk())
+                    {
+                        ++waveformsCachedCount;
+                        spdlog::debug("EnergyAnalysisTask: Cached waveform for track {} ({} bytes)",
+                                      trackInfo.trackId, waveformBlob.size());
+                    }
+                    else
+                    {
+                        spdlog::warn("EnergyAnalysisTask: Failed to cache waveform for track {}: {}",
+                                     trackInfo.trackId, waveformSaveResult.errorMessage);
+                    }
+                }
+                else
+                {
+                    spdlog::warn("EnergyAnalysisTask: Waveform blob generation failed for track {} ({})",
+                                 trackInfo.trackId, trackInfo.filename);
+                }
             }
         }
 
-        progressCb(100, "Analysis complete");
+        progressCb(100, "Processing complete");
 
-        const std::string resultMsg = "Analyzed " + std::to_string(m_tracksAnalyzedCount) +
-                                      " of " + std::to_string(totalToAnalyze) + " tracks";
+        const std::string resultMsg =
+            "Analyzed " + std::to_string(m_tracksAnalyzedCount) + " tracks, cached " +
+            std::to_string(waveformsCachedCount) + " waveforms";
         spdlog::info("EnergyAnalysisTask: {}", resultMsg);
         m_wasSuccessful = true;
         completionCb(true, resultMsg);

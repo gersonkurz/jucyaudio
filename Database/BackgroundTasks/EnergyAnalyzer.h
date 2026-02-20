@@ -64,6 +64,8 @@ namespace jucyaudio::database::background_tasks
     {
     public:
         static EnergyAnalysisResult analyzeFile(const std::filesystem::path& filepath);
+        static EnergyAnalysisResult analyzeFile(const std::filesystem::path& filepath,
+                                                std::vector<unsigned char>* waveformBlobOut);
         static EnergyAnalysisResult analyzeBuffer(const juce::AudioBuffer<float>& buffer,
                                                   double sampleRate,
                                                   Duration_t trackDuration);

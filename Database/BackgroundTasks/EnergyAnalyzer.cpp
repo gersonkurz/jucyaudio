@@ -22,15 +22,53 @@
 #include <UI/Settings.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_audio_utils/juce_audio_utils.h>
 #include <spdlog/spdlog.h>
 #include <cmath>
 #include <chrono>
+#include <future>
 #include <limits>
 
 namespace jucyaudio::database::background_tasks
 {
     // Maximum samples per channel we'll load (~45 minutes at 48kHz, ~1GB for stereo)
     constexpr int64_t MAX_SAMPLES_FOR_ANALYSIS = 130'000'000;
+
+    namespace
+    {
+        std::vector<unsigned char> createWaveformBlobFromBuffer(const juce::AudioBuffer<float>& audioBuffer,
+                                                                double sampleRate)
+        {
+            std::vector<unsigned char> blob;
+            if (audioBuffer.getNumChannels() <= 0 || audioBuffer.getNumSamples() <= 0)
+                return blob;
+
+            juce::AudioFormatManager formatManager;
+            formatManager.registerBasicFormats();
+
+            juce::AudioThumbnailCache thumbnailCache{1};
+            juce::AudioThumbnail thumbnail{512, formatManager, thumbnailCache};
+            thumbnail.reset(audioBuffer.getNumChannels(),
+                            sampleRate,
+                            static_cast<juce::int64>(audioBuffer.getNumSamples()));
+
+            constexpr int blockSize = 32768;
+            for (int start = 0; start < audioBuffer.getNumSamples(); start += blockSize)
+            {
+                const int numToAdd = std::min(blockSize, audioBuffer.getNumSamples() - start);
+                thumbnail.addBlock(static_cast<juce::int64>(start), audioBuffer, start, numToAdd);
+            }
+
+            juce::MemoryOutputStream stream;
+            thumbnail.saveTo(stream);
+            if (stream.getDataSize() == 0)
+                return blob;
+
+            const auto* data = static_cast<const unsigned char*>(stream.getData());
+            blob.assign(data, data + stream.getDataSize());
+            return blob;
+        }
+    } // namespace
 
     // --- EnergyAnalysisResult JSON serialization ---
 
@@ -366,6 +404,12 @@ namespace jucyaudio::database::background_tasks
 
     EnergyAnalysisResult EnergyAnalyzer::analyzeFile(const std::filesystem::path& filepath)
     {
+        return analyzeFile(filepath, nullptr);
+    }
+
+    EnergyAnalysisResult EnergyAnalyzer::analyzeFile(const std::filesystem::path& filepath,
+                                                     std::vector<unsigned char>* waveformBlobOut)
+    {
         EnergyAnalysisResult result;
 
         // Initialize JUCE audio format manager
@@ -418,8 +462,26 @@ namespace jucyaudio::database::background_tasks
         juce::AudioBuffer<float> audioBuffer(numChannels, static_cast<int>(numSamples));
         reader->read(&audioBuffer, 0, static_cast<int>(numSamples), 0, true, true);
 
-        // Perform energy analysis
-        result = analyzeBuffer(audioBuffer, sampleRate, trackDuration);
+        if (waveformBlobOut)
+        {
+            auto energyFuture = std::async(std::launch::async, [&audioBuffer, sampleRate, trackDuration]()
+            {
+                return analyzeBuffer(audioBuffer, sampleRate, trackDuration);
+            });
+
+            auto waveformFuture = std::async(std::launch::async, [&audioBuffer, sampleRate]()
+            {
+                return createWaveformBlobFromBuffer(audioBuffer, sampleRate);
+            });
+
+            result = energyFuture.get();
+            *waveformBlobOut = waveformFuture.get();
+        }
+        else
+        {
+            // Perform energy analysis
+            result = analyzeBuffer(audioBuffer, sampleRate, trackDuration);
+        }
 
         return result;
     }

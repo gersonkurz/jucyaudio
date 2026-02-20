@@ -74,16 +74,17 @@ namespace jucyaudio
 
         void UndoManager::recordMixChange(ExtendedMixInfo &&after)
         {
-            spdlog::info("UndoManager: recordMixChange()");
-
-            std::lock_guard<std::mutex> lock{undoMutex};
-
-            // Check inside lock to avoid TOCTOU race with undo/redo
-            if (m_undoOperationInProgress)
+            // Check before locking — undo()/redo() already hold undoMutex when they
+            // call createOrUpdateMix(), which calls back into this function.
+            // std::mutex is not re-entrant, so locking again would deadlock.
+            if (m_undoOperationInProgress.load())
             {
-                spdlog::warn("UndoManager: Ignoring recordMixChange during an undo operation");
+                spdlog::debug("UndoManager: Ignoring recordMixChange during undo/redo operation");
                 return;
             }
+
+            spdlog::info("UndoManager: recordMixChange()");
+            std::lock_guard<std::mutex> lock{undoMutex};
 
             // in the stack, record a new state of the mix after an operation is complete.
             const auto mixId = after.mixInfo.mixId;

@@ -25,17 +25,18 @@
 namespace jucyaudio::database::background_tasks
 {
     /**
-     * @brief Long-running task that analyzes energy data for tracks that don't have it cached.
+     * @brief Long-running task that prepares track analysis caches before mix creation.
      *
-     * This task is run before creating a mix to ensure all tracks have energy analysis data.
+     * This task ensures energy analysis data exists and opportunistically populates
+     * waveform cache data so the mix editor avoids a second decode pass later.
      * It shows progress to the user and can be cancelled.
      */
     class EnergyAnalysisTask final : public database::ILongRunningTask
     {
     public:
         /**
-         * @brief Construct a task to analyze energy for the given tracks.
-         * @param tracks The tracks to potentially analyze (only those missing data will be processed)
+         * @brief Construct a task to prepare caches for the given tracks.
+         * @param tracks The tracks to potentially process (only missing data is processed)
          */
         explicit EnergyAnalysisTask(const std::vector<database::TrackInfo>& tracks);
 
