@@ -1,5 +1,11 @@
 # JucyAudio Development Roadmap
 
+## Current Working Reality (as of 2026-03-07)
+
+- Active development happens on `dev/2.0`.
+- `main` is not receiving ongoing feature work during 2.0 development.
+- 1.x hotfixes are done only if real user-reported issues require them.
+
 ## Release Criteria
 
 **Version 2.0 requires all MUST HAVE features. NICE TO HAVE features can ship in 2.x minor releases.**
@@ -10,7 +16,7 @@
 | 1.2  | VST3 Support           | MUST HAVE     | 2.0    | DONE   |
 | 2.1  | User Manual            | MUST HAVE     | 2.0    |        |
 | 2.2  | Dedupe System          | MUST HAVE     | 2.0    |        |
-| 2.3  | Smart Automix          | MUST HAVE     | 2.0    |        |
+| 2.3  | Smart Automix          | MUST HAVE     | 2.0    | DONE   |
 | 3.1  | AI Stem Separation     | NICE TO HAVE  | 2.2    |        |
 | 3.2  | AI Metadata Enrichment | NICE TO HAVE  | 2.1    |        |
 | 3.3  | Library Organizer      | MUST HAVE     | 2.0    |        |
@@ -20,17 +26,19 @@
 
 ## Migration Strategy (1.x → 2.x)
 
+This section reflects the intended release flow. Current day-to-day work remains on `dev/2.0` until 2.0 is ready to ship.
+
 ### Branch Structure
 
 ```
-main          ← 1.x stable releases (1.0.1, 1.0.2, ...)
+main          ← stable releases only (currently no active 1.x stream)
   │
-  └─ release/1.x  ← maintenance branch for 1.x hotfixes
+  └─ release/1.x  ← optional hotfix branch, created only if needed
 
 dev/2.0       ← 2.0 development (feature work)
 ```
 
-### Forward-Porting Workflow
+### Optional Forward-Porting Workflow (only when 1.x hotfixes exist)
 
 When a bug is fixed in 1.x:
 
@@ -42,7 +50,7 @@ When a bug is fixed in 1.x:
    ```
 3. **Resolve conflicts** if 2.0 code has diverged. Document any adaptations in the commit message.
 
-### Conflict Prevention
+### Conflict Prevention (if forward-porting is active)
 
 - Keep 1.x fixes **minimal and surgical** - avoid refactoring in hotfix commits
 - Tag forward-ported commits with `[forward-port]` prefix in commit message
@@ -52,7 +60,7 @@ When a bug is fixed in 1.x:
 
 1. Merge `dev/2.0` → `main`
 2. Create `release/2.x` branch for future 2.0.x maintenance
-3. Archive `release/1.x` (read-only, security fixes only)
+3. Archive `release/1.x` if it was created
 
 ---
 
@@ -79,7 +87,7 @@ When a bug is fixed in 1.x:
 2.2. **Dedupe System** (`docs/features/dedupe.md`) — MUST HAVE
     - **Why**: Solves a major pain point for users with large libraries.
     - **Tech**: SHA-256, Chromaprint.
-2.3. **Smart Automix** (`docs/features/automix-improvement.md`) — MUST HAVE
+2.3. **Smart Automix** (`docs/features/automix-improvement.md`) — DONE
     - **Why**: Upgrades the "Auto-DJ" from a toy to a useful tool.
     - **Tech**: BTrack (Beat Detection), SoundTouch (Time Stretch).
 

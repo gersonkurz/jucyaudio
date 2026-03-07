@@ -256,17 +256,17 @@ struct AudioMetadata
 **Goal**: Remove broken code, implement correct energy analysis
 
 **Phase 1a: Cleanup (remove broken code)**
-- [ ] Remove `AudioAnalyzer` class's intro/outro functions from `AudioAnalysis.cpp`
-- [ ] Simplify `AudioMetadata` struct to BPM-only in `ITrackDatabase.h`
-- [ ] Simplify `updateTrackBpm()` in `SqliteTrackDatabase.cpp`
-- [ ] Update `BpmAnalysis.cpp` logging
-- [ ] Verify existing BPM analysis still works
+- [x] Remove `AudioAnalyzer` class's intro/outro functions from `AudioAnalysis.cpp`
+- [x] Simplify `AudioMetadata` struct to BPM-only in `ITrackDatabase.h`
+- [x] Simplify `updateTrackBpm()` in `SqliteTrackDatabase.cpp`
+- [x] Update `BpmAnalysis.cpp` logging
+- [x] Verify existing BPM analysis still works
 
 **Phase 1b: New energy analysis**
-- [ ] Create `EnergyAnalyzer` class (reads FULL track, computes energy contour)
-- [ ] Implement phrase boundary detection
-- [ ] Store results in `beat_locations_json` column (JSON format)
-- [ ] Calculate correct `intro_end` and `outro_start` values
+- [x] Create `EnergyAnalyzer` class (reads FULL track, computes energy contour)
+- [x] Implement phrase boundary detection
+- [x] Store results in `beat_locations_json` column (JSON format)
+- [x] Calculate correct `intro_end` and `outro_start` values
 - [ ] Unit tests with known audio files
 
 **Deliverable**: Can analyze a track and store energy data correctly
@@ -275,10 +275,10 @@ struct AudioMetadata
 
 **Goal**: Algorithm to find optimal transition points between two tracks
 
-- [ ] Create `TransitionCalculator` class
-- [ ] Implement energy-matching algorithm
-- [ ] Implement phrase-boundary snapping
-- [ ] Implement dynamic crossfade duration calculation
+- [x] Create `TransitionCalculator` class
+- [x] Implement energy-matching algorithm
+- [x] Implement phrase-boundary snapping
+- [x] Implement dynamic crossfade duration calculation
 - [ ] Unit tests with synthetic energy curves
 
 **Deliverable**: Given two tracks with energy data, returns optimal AttachFrom/AttachTo/CrossfadeDuration
@@ -287,12 +287,12 @@ struct AudioMetadata
 
 **Goal**: Use smart transitions when creating mixes
 
-- [ ] Hook lazy analysis into mix creation flow
-- [ ] Check for existing energy data, analyze if missing
-- [ ] Hook `TransitionCalculator` into mix track sequencing
-- [ ] Replace fixed 5-second crossfade with calculated values
-- [ ] Implement recalculation on track removal
-- [ ] Add user preference: "Use smart transitions" (default on, can disable)
+- [x] Hook lazy analysis into mix creation flow
+- [x] Check for existing energy data, analyze if missing
+- [x] Hook `TransitionCalculator` into mix track sequencing
+- [x] Replace fixed 5-second crossfade with calculated values
+- [x] Implement recalculation on track removal
+- [x] Add user preference: "Use smart transitions" (default on, can disable)
 
 **Deliverable**: Automix creates better-sounding transitions automatically
 

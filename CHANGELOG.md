@@ -36,8 +36,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Offline build mode for airplane-safe development (`just build-offline`)
 - Consolidated build automation in justfile (removed legacy .cmd scripts)
 
+#### Smart Automix
+- Energy-aware, intelligent transition point discovery
+- EnergyAnalyzer: full-track energy contour and phrase boundary detection
+- TransitionCalculator: optimal attach points with energy matching and phrase snapping
+- Lazy analysis at mix creation time with database caching
+- Automatic transition recalculation on track removal
+- Deterministic fallback when analysis data is unavailable
+- User preference toggle for smart transitions
+
 ### Changed
-- *(Work in progress)* Smart Automix - energy-aware, intelligent transition point discovery
 - *(Planned)* Library Organizer - automated file organization based on metadata
 
 ### Fixed

@@ -1,7 +1,11 @@
-# VST3 Integration Plan for JucyAudio
+# VST3 Integration Status for JucyAudio
 
-## Status: Ready for Implementation
-**Scope:** Master bus effects only (v1). Per-track effects deferred to v2.
+## Status: Implemented for 2.0 (master bus scope)
+**Scope:** Master bus effects only (v1). Per-track effects deferred to a later release.
+
+## Note
+
+This document originated as an implementation plan. It is now retained as design and maintenance documentation for the shipped 2.0 implementation.
 
 ## Goal
 
@@ -145,9 +149,9 @@ These plugins are recommended for testing and can be suggested to users:
 - **Aux fields (diagnostics/migration hints):** `name`, `manufacturerName`, `version`
 - **Restore matching:** first by `(format, id)`; if missing, optionally try `(name, manufacturerName)` with a warning and mark as unverified.
 
-## 5. Implementation Plan
+## 5. Implementation Status
 
-### Phase 1: Infrastructure & Scanning
+### Phase 1: Infrastructure & Scanning (done)
 1. [x] Enable VST3 hosting in CMake (`JUCE_PLUGINHOST_VST3=1`)
 2. [x] Implement `PluginManagerService` singleton
 3. [x] Implement `PluginScanDialog` using JUCE's in-process `PluginDirectoryScanner` with dead-man's-pedal recovery (true out-of-process scanning deferred).
@@ -156,7 +160,7 @@ These plugins are recommended for testing and can be suggested to users:
 
 Scan paths can be overridden in Settings -> Plugins using one path per line. Leaving it empty uses JUCE defaults.
 
-### Phase 2: Plugin Chain & Audio Engine
+### Phase 2: Plugin Chain & Audio Engine (done)
 1. [x] Implement `PluginChain` wrapper class (thread-safe)
 2. [x] Add `PluginChain` to `PlaybackController` (master bus)
 3. [x] Wire into `getNextAudioBlock()` after EQ/Reverb
@@ -168,20 +172,20 @@ Scan paths can be overridden in Settings -> Plugins using one path per line. Lea
 - Validate each plugin with `isBusesLayoutSupported()` or equivalent; if unsupported, skip/disable and warn the user.
 - Ensure the chain fails safe: no silent output if a plugin rejects the layout.
 
-### Phase 3: UI Integration
+### Phase 3: UI Integration (done)
 1. [x] Implement `PluginWindow` for hosting plugin editors
 2. [x] Implement `PluginChainEditor` component
 3. [x] Add "Master Effects" button/panel to UI (e.g., near Master Volume or EQ/Reverb controls)
 4. [x] Handle plugin editor open/close lifecycle
 
-### Phase 4: State Persistence
+### Phase 4: State Persistence (done)
 1. [x] Implement SQLite schema for `MasterChainPlugins`
 2. [x] Save master chain configuration (order + state blobs) to SQLite
 3. [x] Load and restore plugin states on startup
 4. [x] Handle missing plugins gracefully (warning, not crash)
 5. [x] Test save/load cycle with real plugins
 
-### Phase 5: Polish
+### Phase 5: Polish (done)
 1. [x] Add plugin bypass toggle (per-plugin and global)
 2. [x] Add CPU usage indicator
 3. [x] Settings UI for plugin scan paths
@@ -196,7 +200,7 @@ Scan paths can be overridden in Settings -> Plugins using one path per line. Lea
 | Plugin not found on reload | Medium | Warning dialog; graceful degradation |
 | Plugin has no UI | Low | JUCE provides generic parameter editor |
 
-## 7. Future Expansion (v2)
+## 7. Future Expansion
 
 When adding per-track effects:
 
