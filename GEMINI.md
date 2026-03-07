@@ -4,16 +4,18 @@ JucyAudio is an open-source audio player, mix editor, and library manager for ma
 
 ## Project Overview
 
-- **Core Technologies:** Modern C++20, JUCE Framework (UI), SQLite (Database), TOML (Configuration).
+- **Core Technologies:** Modern C++20, JUCE Framework (UI), SQLite (Database), TOML (Configuration), VST3 (Plugins), projectM v4 (Visualization, OpenGL).
 - **Architecture:** Decoupled modular design:
   - `jucyaudio::database`: SQLite-backed logic, data models, and background tasks.
-  - `jucyaudio::audio`: Audio processing, real-time playback engine, and exporting.
-  - `jucyaudio::ui`: JUCE-based frontend components and custom LookAndFeel.
-  - `jucyaudio::config`: TOML-backed configuration system.
+  - `jucyaudio::audio`: Audio processing, real-time playback engine, VST3 plugin hosting, and exporting.
+  - `jucyaudio::ui`: JUCE-based frontend components, projectM visualizer, and custom LookAndFeel.
+  - `jucyaudio::config`: TOML-backed configuration system (handles persistence of shuffle/repeat/UI state).
 - **Key Paradigms:**
   - **Pure Cache Model:** Fast library navigation using an in-memory cache and optimized SQLite schema.
   - **Library-First:** Core logic is kept separate from the UI layer.
-  - **Async Tasks:** Heavy operations (BPM analysis, waveform generation) run in background services.
+  - **Async Tasks:** Heavy operations (BPM analysis, waveform generation, VST scanning) run in background services.
+  - **Master Plugin Chain:** Real-time audio processing chain for VST3 plugins with state persistence.
+  - **Hardware-Accelerated Visualization:** projectM integration for high-performance music visuals.
 
 ## Development Infrastructure
 
@@ -22,13 +24,13 @@ The project uses **CMake** and the **just** task runner for automation.
 - **Configure:** `just configure` (or use CMake presets like `x64-release`).
 - **Build:** `just build` (defaults to RelWithDebInfo), `just debug`, or `just release`.
 - **Run:** `just run` (builds and executes the application).
-- **Offline Mode:** `just build-offline` (requires a prior online build to cache dependencies).
+- **Offline Mode:** `just build-offline` (airplane-safe; requires a prior online build to cache dependencies).
 - **Clean:** `just clean`.
-- **Package:** `just publish` (generates DMG on macOS or installer/ZIP on Windows).
+- **Package:** `just publish` (generates DMG on macOS or installer/ZIP on Windows for multiple architectures).
 
 ### Dependencies
 Managed via CMake's `FetchContent`. Major dependencies include:
-- JUCE 8, spdlog (logging), tomlplusplus, taglib (metadata), SoundTouch (BPM), LAME (MP3), projectM (visualizer).
+- JUCE 8, spdlog (logging), tomlplusplus, taglib (metadata), SoundTouch (BPM), LAME (MP3), projectM v4 (visualizer), GLEW (OpenGL).
 
 ## Coding Conventions & Style
 
@@ -37,12 +39,16 @@ Managed via CMake's `FetchContent`. Major dependencies include:
 - **Naming:** Follow existing patterns (e.g., `theTrackLibrary` for singletons, `m_` prefix for members).
 - **Logging:** Use `spdlog` for all logging; avoid `std::cout` or `printf`.
 - **UI:** Inherit from `jucyaudio::ui::JucyLookAndFeel` for custom styling. Use `TimerMultiplexer` for unified UI updates.
+- **Audio Thread Safety:** Use lock-free primitives or atomic shared pointers for parameters accessed by the audio thread.
 
 ## Key Source Map
 
 - `UI/Main.cpp`: Application entry point and initialization logic.
 - `UI/MainComponent.h`: Primary UI container and command routing.
+- `UI/PlaybackController.h`: High-level playback logic, queue management, and audio bridge.
 - `Audio/MixPlaybackEngine.h`: Real-time mixing and playback core.
+- `Audio/Plugins/PluginChain.h`: VST3 hosting and processing logic.
+- `UI/Visualizer/ProjectMComponent.h`: projectM visualizer integration.
 - `Database/TrackLibrary.h`: Central interface for library and database operations.
 - `Config/toml_backend.h`: Configuration loading and management.
 - `Database/Sqlite/`: Implementation of the SQLite data layer.
