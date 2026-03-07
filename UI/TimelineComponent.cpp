@@ -113,10 +113,11 @@ namespace jucyaudio
                 return false;
             }
 
-            // 2. Get the ID of the track to delete
+            // 2. Get identity of the concrete track instance to delete
             const auto trackIdToRemove{m_selectedTrack->getTrackId()};
+            const auto orderInMixToRemove{m_selectedTrack->getOrderInMix()};
             const auto currentMixId{m_mixLoader->getMixId()};
-            spdlog::info("Attempting to delete Track ID: {} from Mix ID: {}", trackIdToRemove, currentMixId);
+            spdlog::info("Attempting to delete Track ID: {} (order {}) from Mix ID: {}", trackIdToRemove, orderInMixToRemove, currentMixId);
 
             // 3. Check if we need to show a confirmation dialog (logic is unchanged)
             bool shouldRemoveFromWorkingSet = false;
@@ -186,10 +187,32 @@ namespace jucyaudio
                 juce::Thread::sleep(50); // Give audio thread a moment to stop
             }
 
-            // 4. Perform the database deletion from the mix
-            if (!theTrackLibrary.getMixManager().removeTrackFromMix(currentMixId, trackIdToRemove))
+            // 4. Remove exactly the selected row from the mix
+            auto mixTracks = m_mixLoader->getMixTracks();
+            const auto beforeCount = mixTracks.size();
+            mixTracks.erase(std::remove_if(mixTracks.begin(), mixTracks.end(),
+                [orderInMixToRemove](const database::MixTrack& track)
+                {
+                    return track.orderInMix == orderInMixToRemove;
+                }),
+                mixTracks.end());
+
+            if (mixTracks.size() + 1 != beforeCount)
             {
-                spdlog::error("Failed to remove track from database.");
+                spdlog::error("Failed to find selected track instance at order {} for deletion", orderInMixToRemove);
+                if (wasPlaying) playbackController->play();
+                return false;
+            }
+
+            for (int i = 0; i < static_cast<int>(mixTracks.size()); ++i)
+            {
+                mixTracks[i].orderInMix = i;
+            }
+
+            auto mixInfo = m_mixLoader->getMixInfo();
+            if (!theTrackLibrary.getMixManager().createOrUpdateMix(mixInfo, mixTracks))
+            {
+                spdlog::error("Failed to persist mix after track deletion.");
                 // Attempt to restart playback if it was active
                 if (wasPlaying) playbackController->play();
                 return false;
@@ -235,24 +258,22 @@ namespace jucyaudio
                 return;
             }
 
-            const auto trackId = m_selectedTrack->getTrackId();
-
             // Find the track data in our views
             for (const auto &view : m_trackViews)
             {
-                if (view.mixTrackData && view.trackInfoData && view.mixTrackData->trackId == trackId)
+                if (view.mixTrackData && view.trackInfoData && view.component.get() == m_selectedTrack)
                 {
                     // Copy the data to clipboard
                     m_clipboard.mixTrack = *view.mixTrackData;
                     m_clipboard.trackInfo = *view.trackInfoData;
                     m_clipboard.isValid = true;
 
-                    spdlog::info("Copied track {} to clipboard", trackId);
+                    spdlog::info("Copied track {} (order {}) to clipboard", view.mixTrackData->trackId, view.mixTrackData->orderInMix);
                     return;
                 }
             }
 
-            spdlog::error("Failed to find track data for clipboard copy");
+            spdlog::error("Failed to find selected track data for clipboard copy");
         }
 
         void TimelineComponent::cutSelectedTrackToClipboard()
@@ -276,9 +297,10 @@ namespace jucyaudio
             if (m_clipboard.isValid)
             {
                 const auto trackId = m_selectedTrack->getTrackId();
-                if (removeTrackFromMixOnly(trackId))
+                const auto orderInMix = m_selectedTrack->getOrderInMix();
+                if (removeTrackFromMixOnly(orderInMix))
                 {
-                    spdlog::info("Cut track {} to clipboard", trackId);
+                    spdlog::info("Cut track {} (order {}) to clipboard", trackId, orderInMix);
                 }
             }
         }
@@ -419,6 +441,11 @@ namespace jucyaudio
                     // Refresh the UI
                     populateFrom();
 
+                    if (onMixPlaybackReloadRequested)
+                    {
+                        onMixPlaybackReloadRequested();
+                    }
+
                     if (onMixChanged)
                     {
                         onMixChanged();
@@ -461,23 +488,29 @@ namespace jucyaudio
             const int selectedOrder = m_selectedTrack->getOrderInMix();
             const auto &mixTracks = m_mixLoader->getMixTracks();
 
-            // Collect IDs of tracks to remove (all with orderInMix > selectedOrder)
-            std::vector<TrackId> tracksToRemove;
-            for (const auto &track : mixTracks)
-            {
-                if (track.orderInMix > selectedOrder)
-                {
-                    tracksToRemove.push_back(track.trackId);
-                }
-            }
+            auto updatedMixTracks = mixTracks;
+            const auto oldCount = updatedMixTracks.size();
+            updatedMixTracks.erase(
+                std::remove_if(updatedMixTracks.begin(), updatedMixTracks.end(),
+                    [selectedOrder](const database::MixTrack& track)
+                    {
+                        return track.orderInMix > selectedOrder;
+                    }),
+                updatedMixTracks.end());
 
-            if (tracksToRemove.empty())
+            const auto removedCount = oldCount - updatedMixTracks.size();
+            if (removedCount == 0)
             {
                 spdlog::info("removeAllTracksAfterSelected: No tracks to remove after selected track");
                 return;
             }
 
-            spdlog::info("Removing {} tracks after order {} (from mix only, keeping in working set)", tracksToRemove.size(), selectedOrder);
+            spdlog::info("Removing {} tracks after order {} (from mix only, keeping in working set)", removedCount, selectedOrder);
+
+            for (int i = 0; i < static_cast<int>(updatedMixTracks.size()); ++i)
+            {
+                updatedMixTracks[i].orderInMix = i;
+            }
 
             // --- FIX: Stop playback BEFORE any data model changes ---
             const bool wasPlaying = playbackController->isPlaying();
@@ -491,10 +524,8 @@ namespace jucyaudio
                 juce::Thread::sleep(50); // Give audio thread a moment to stop
             }
 
-            const auto currentMixId = m_mixLoader->getMixId();
-            
-            // Use the efficient batch removal method
-            if (theTrackLibrary.getMixManager().removeTracksFromMix(currentMixId, tracksToRemove))
+            auto mixInfo = m_mixLoader->getMixInfo();
+            if (theTrackLibrary.getMixManager().createOrUpdateMix(mixInfo, updatedMixTracks))
             {
                 spdlog::info("Successfully removed tracks from database.");
                 // Reload from database to get the updated mix
@@ -526,11 +557,11 @@ namespace jucyaudio
             }
             else
             {
-                spdlog::error("Failed to remove tracks from mix using batch operation.");
+                spdlog::error("Failed to persist mix after removing tracks after order {}", selectedOrder);
             }
         }
 
-        bool TimelineComponent::removeTrackFromMixOnly(TrackId trackIdToRemove)
+        bool TimelineComponent::removeTrackFromMixOnly(int orderInMixToRemove)
         {
             if (!m_mixLoader)
             {
@@ -539,17 +570,42 @@ namespace jucyaudio
             }
 
             const auto currentMixId = m_mixLoader->getMixId();
-            spdlog::info("Removing track {} from mix {} (mix only, not working set)", trackIdToRemove, currentMixId);
+            spdlog::info("Removing track at order {} from mix {} (mix only, not working set)", orderInMixToRemove, currentMixId);
 
-            // Remove from mix database
-            if (!theTrackLibrary.getMixManager().removeTrackFromMix(currentMixId, trackIdToRemove))
+            auto mixTracks = m_mixLoader->getMixTracks();
+            const auto beforeCount = mixTracks.size();
+
+            mixTracks.erase(std::remove_if(mixTracks.begin(), mixTracks.end(),
+                [orderInMixToRemove](const database::MixTrack& track)
+                {
+                    if (track.orderInMix == orderInMixToRemove)
+                    {
+                        return true;
+                    }
+                    return false;
+                }),
+                mixTracks.end());
+
+            if (mixTracks.size() + 1 != beforeCount)
             {
-                spdlog::error("Failed to remove track from mix.");
+                spdlog::error("Failed to find track at order {} for removal.", orderInMixToRemove);
                 return false;
             }
 
-            // Clear selection if we removed the selected track
-            if (m_selectedTrack && m_selectedTrack->getTrackId() == trackIdToRemove)
+            for (int i = 0; i < static_cast<int>(mixTracks.size()); ++i)
+            {
+                mixTracks[i].orderInMix = i;
+            }
+
+            auto mixInfo = m_mixLoader->getMixInfo();
+            if (!theTrackLibrary.getMixManager().createOrUpdateMix(mixInfo, mixTracks))
+            {
+                spdlog::error("Failed to persist mix after removing track at order {}.", orderInMixToRemove);
+                return false;
+            }
+
+            // Clear selection if we removed the selected component
+            if (m_selectedTrack && m_selectedTrack->getOrderInMix() == orderInMixToRemove)
             {
                 m_selectedTrack = nullptr;
             }
@@ -562,6 +618,11 @@ namespace jucyaudio
             }
 
             populateFrom();
+
+            if (onMixPlaybackReloadRequested)
+            {
+                onMixPlaybackReloadRequested();
+            }
 
             if (onMixChanged)
             {
@@ -580,34 +641,10 @@ namespace jucyaudio
             }
 
             const auto &mixTracks = m_mixLoader->getMixTracks();
-            const auto trackId = mixTracks[trackIndex].trackId;
-            const auto currentMixId = m_mixLoader->getMixId();
-
-            if (theTrackLibrary.getMixManager().removeTrackFromMix(currentMixId, trackId))
+            const auto orderInMix = mixTracks[trackIndex].orderInMix;
+            if (removeTrackFromMixOnly(orderInMix))
             {
                 spdlog::info("Deleted track at index {}", trackIndex);
-
-                // Clear selection if we deleted the selected track
-                if (m_selectedTrack && m_selectedTrack->getTrackId() == trackId)
-                {
-                    m_selectedTrack = nullptr;
-                }
-
-                // Reload from database to get the updated mix
-                if (m_mixLoader->reloadFromDatabase())
-                {
-                    // Refresh the UI
-                    populateFrom();
-
-                    if (onMixChanged)
-                    {
-                        onMixChanged();
-                    }
-                }
-                else
-                {
-                    spdlog::error("Failed to reload mix after deleting track");
-                }
             }
             else
             {

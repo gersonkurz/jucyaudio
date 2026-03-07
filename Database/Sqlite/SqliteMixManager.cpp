@@ -471,28 +471,33 @@ WHERE m.export_folder IS NULL
             {
                 const auto oldTracks = loadMixTracksForMix(m_db, mixId);
 
-                // First, collect the orderInMix values of tracks being deleted
+                // Resolve concrete row instances (order_in_mix) from the pre-delete snapshot.
+                // This is critical when the same track_id appears multiple times in one mix.
                 std::vector<int> deletedOrders;
-                for (const auto &trackId : trackIds)
+                std::unordered_map<TrackId, int> requestedCounts;
+                for (const auto trackId : trackIds)
                 {
-                    SqliteStatement getOrderStmt{m_db, "SELECT order_in_mix FROM MixTracks WHERE mix_id = ? AND track_id = ?"};
-                    getOrderStmt.addParam(mixId);
-                    getOrderStmt.addParam(trackId);
-                    if (getOrderStmt.getNextResult())
+                    requestedCounts[trackId]++;
+                }
+                for (const auto &track : oldTracks)
+                {
+                    auto it = requestedCounts.find(track.trackId);
+                    if (it != requestedCounts.end() && it->second > 0)
                     {
-                        deletedOrders.push_back(getOrderStmt.getInt32(0));
+                        deletedOrders.push_back(track.orderInMix);
+                        --it->second;
                     }
                 }
                 
                 // Sort the orders so we can calculate the shift correctly
                 std::sort(deletedOrders.begin(), deletedOrders.end());
                 
-                // Delete all the tracks
-                SqliteStatement stmt{m_db, "DELETE FROM MixTracks WHERE mix_id = ? AND track_id = ?"};
-                for (const auto &trackId : trackIds)
+                // Delete each concrete row by order_in_mix to avoid deleting all duplicates.
+                SqliteStatement stmt{m_db, "DELETE FROM MixTracks WHERE mix_id = ? AND order_in_mix = ?"};
+                for (const auto deletedOrder : deletedOrders)
                 {
                     stmt.addParam(mixId);
-                    stmt.addParam(trackId);
+                    stmt.addParam(deletedOrder);
                     if (!stmt.execute())
                     {
                         return transaction.rollback();
@@ -517,7 +522,7 @@ WHERE m.export_folder IS NULL
                 
                 if (!deletedOrders.empty())
                 {
-                    spdlog::info("Re-enumerated orderInMix after deleting {} tracks", trackIds.size());
+                    spdlog::info("Re-enumerated orderInMix after deleting {} tracks", deletedOrders.size());
                 }
 
                 if (!recalculateNewAdjacenciesAfterTrackRemoval(m_db, mixId, oldTracks))
@@ -542,8 +547,8 @@ WHERE m.export_folder IS NULL
             {
                 const auto oldTracks = loadMixTracksForMix(m_db, mixId);
 
-                // First, get the orderInMix of the track being deleted
-                SqliteStatement getOrderStmt{m_db, "SELECT order_in_mix FROM MixTracks WHERE mix_id = ? AND track_id = ?"};
+                // Pick one concrete instance (lowest order) when duplicates exist.
+                SqliteStatement getOrderStmt{m_db, "SELECT order_in_mix FROM MixTracks WHERE mix_id = ? AND track_id = ? ORDER BY order_in_mix LIMIT 1"};
                 getOrderStmt.addParam(mixId);
                 getOrderStmt.addParam(trackId);
                 
@@ -553,10 +558,16 @@ WHERE m.export_folder IS NULL
                     deletedTrackOrder = getOrderStmt.getInt32(0);
                 }
                 
-                // Delete the track
-                SqliteStatement stmt{m_db, "DELETE FROM MixTracks WHERE mix_id = ? AND track_id = ?"};
+                if (deletedTrackOrder < 0)
+                {
+                    spdlog::warn("Track {} not found in mix {}, nothing to delete", trackId, mixId);
+                    return transaction.rollback();
+                }
+
+                // Delete exactly one row instance.
+                SqliteStatement stmt{m_db, "DELETE FROM MixTracks WHERE mix_id = ? AND order_in_mix = ?"};
                 stmt.addParam(mixId);
-                stmt.addParam(trackId);
+                stmt.addParam(deletedTrackOrder);
                 if (!stmt.execute())
                 {
                     return transaction.rollback();

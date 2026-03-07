@@ -44,13 +44,13 @@ namespace jucyaudio
         {
             m_children.clear();
 
-            // Sort mixes by export date (newest first)
+            // Sort mixes by export date (oldest first)
             auto sortedMixes = m_mixes;
             std::sort(sortedMixes.begin(), sortedMixes.end(),
                      [](const MixInfo& a, const MixInfo& b) {
                          if (a.exportedAt.has_value() && b.exportedAt.has_value())
                          {
-                             return a.exportedAt.value() > b.exportedAt.value();
+                             return a.exportedAt.value() < b.exportedAt.value();
                          }
                          return false;
                      });

@@ -80,8 +80,8 @@ namespace jucyaudio
                 }
             }
 
-            // Create year nodes (in reverse order - newest first)
-            for (auto it = mixesByYear.rbegin(); it != mixesByYear.rend(); ++it)
+            // Create year nodes in chronological order (oldest first)
+            for (auto it = mixesByYear.begin(); it != mixesByYear.end(); ++it)
             {
                 m_children.emplace_back(new ExportYearNode{this, m_folderInfo.name, it->first, it->second});
             }

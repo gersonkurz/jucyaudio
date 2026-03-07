@@ -57,8 +57,8 @@ namespace jucyaudio
                 }
             }
 
-            // Create month nodes (in reverse order - newest first)
-            for (auto it = mixesByMonth.rbegin(); it != mixesByMonth.rend(); ++it)
+            // Create month nodes in chronological order (January -> December)
+            for (auto it = mixesByMonth.begin(); it != mixesByMonth.end(); ++it)
             {
                 m_children.emplace_back(new ExportMonthNode{this, m_folderName, m_year, it->first, it->second});
             }

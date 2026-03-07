@@ -298,7 +298,7 @@ namespace jucyaudio
             void recalculateTrackPositions();
 
             void deleteTrackAtIndex(size_t trackIndex);
-            bool removeTrackFromMixOnly(TrackId trackId);
+            bool removeTrackFromMixOnly(int orderInMix);
 
             /**
              * @brief Converts a Y coordinate to an orderInMix position.
