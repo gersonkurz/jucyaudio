@@ -32,7 +32,7 @@
 namespace jucyaudio::database::background_tasks
 {
     // Maximum samples per channel we'll load (~45 minutes at 48kHz, ~1GB for stereo)
-    constexpr int64_t MAX_SAMPLES_FOR_ANALYSIS = 130'000'000;
+    constexpr int64_t MAX_SAMPLES_FOR_ANALYSIS = 200'000'000;
 
     namespace
     {

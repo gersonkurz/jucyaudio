@@ -9,10 +9,7 @@ namespace jucyaudio
 
         CheckboxLookAndFeel::CheckboxLookAndFeel()
         {
-            // Copy colors from parent - TODO: use from theme instead
-            setColour(juce::ToggleButton::textColourId, juce::Colours::black);
-            setColour(juce::ToggleButton::tickColourId, juce::Colours::black);
-            setColour(juce::ToggleButton::tickDisabledColourId, juce::Colours::grey);
+            // Colors are resolved dynamically in drawToggleButton() from the active default look-and-feel.
         }
 
         std::unique_ptr<CheckboxLookAndFeel> s_instance;
@@ -37,6 +34,11 @@ namespace jucyaudio
         void CheckboxLookAndFeel::drawToggleButton(
             juce::Graphics &g, juce::ToggleButton &button, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
         {
+            const auto &defaultLf = juce::LookAndFeel::getDefaultLookAndFeel();
+            const auto textColour = defaultLf.findColour(juce::ToggleButton::textColourId);
+            const auto tickColour = defaultLf.findColour(juce::ToggleButton::tickColourId);
+            const auto disabledTickColour = defaultLf.findColour(juce::ToggleButton::tickDisabledColourId);
+
             const auto fontSize = juce::jmin(15.0f, button.getHeight() * 0.75f);
             const auto tickWidth = fontSize * 1.1f;
 
@@ -44,13 +46,13 @@ namespace jucyaudio
             juce::Rectangle<float> tickBounds(4.0f, (button.getHeight() - tickWidth) * 0.5f, tickWidth, tickWidth);
 
             // Use a contrasting color for the box outline
-            g.setColour(button.findColour(juce::ToggleButton::textColourId).withAlpha(0.8f));
+            g.setColour(textColour.withAlpha(0.8f));
             g.drawRect(tickBounds, 1.0f);
 
             // Fill if checked
             if (button.getToggleState())
             {
-                g.setColour(button.findColour(juce::ToggleButton::tickColourId));
+                g.setColour(button.isEnabled() ? tickColour : disabledTickColour);
                 const auto tick = tickBounds.reduced(tickWidth * 0.25f);
 
                 // Draw checkmark
@@ -63,7 +65,7 @@ namespace jucyaudio
             }
 
             // Draw text
-            g.setColour(button.findColour(juce::ToggleButton::textColourId));
+            g.setColour(textColour);
             g.setFont(fontSize);
 
             if (!button.isEnabled())

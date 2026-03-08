@@ -3632,7 +3632,7 @@ namespace jucyaudio
                             auto maintenanceProgressCb = [&progressCb, this](int percentComplete, const std::string &statusMessage)
                             {
                                 // Adjust progress if we did backup first
-                                int adjustedPercent = m_doBackup ? (10 + (percentComplete * 90 / 100)) : percentComplete;
+                                const int adjustedPercent = m_doBackup ? (10 + (percentComplete * 90 / 100)) : percentComplete;
                                 progressCb(adjustedPercent, statusMessage);
                             };
 

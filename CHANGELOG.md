@@ -46,7 +46,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - User preference toggle for smart transitions
 
 ### Changed
-- *(Planned)* Library Organizer - automated file organization based on metadata
 
 ### Fixed
 - Fix shuffle and repeat mode persistence by saving to TOML backend

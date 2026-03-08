@@ -67,7 +67,9 @@ namespace jucyaudio
             //uint64_t index = 0;
             for (const auto &track : tracksInScope)
             {
-                if (track.is_missing)
+                // Keep already-missing tracks in scope when the user asked for deletion.
+                // Otherwise they can never be collected for removal in subsequent scans.
+                if (track.is_missing && !m_removeMissingFiles)
                     continue; // Skip missing tracks
 
                 // register this folder as existing

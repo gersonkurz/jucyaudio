@@ -10,15 +10,19 @@ Ship 2.0 once all MUST-HAVE features are complete and a minimum quality gate is 
 
 ## 2. Remaining MUST-HAVE Features
 
-- 2.1 User Manual
 - 2.2 Dedupe System
-- 3.3 Library Organizer
+- Windows installer migration from NSIS to MSIS (`setup/*.nsi`)
 
 **Completed MUST-HAVE Features:**
 
 - 1.1 ProjectM Integration
 - 1.2 VST3 Support
 - 2.3 Smart Automix
+
+**Deferred to 2.x:**
+
+- 2.1 User Manual — low demand, high manual effort (screenshots, etc.)
+- 3.3 Library Organizer — design not mature enough for 2.0 scope
 
 Reference: `docs/ROADMAP.md`
 
@@ -43,17 +47,13 @@ Reference: `docs/ROADMAP.md`
 
 ## 5. Workstreams
 
-1. User Manual
-- Define structure and publishing path.
-- Ensure coverage for library, mix editor, export, plugins, visualizer, settings.
-
-2. Dedupe System
+1. Dedupe System
 - Finalize matching strategy (hash + acoustic constraints where needed).
 - Add safety UX for conflict review before destructive actions.
 
-3. Library Organizer
-- Define move/rename safety model, dry-run, rollback/logging strategy.
-- Validate behavior against large-library edge cases.
+2. Windows Installer (NSIS → MSIS)
+- Migrate `setup/*.nsi` scripts to MSIS equivalents.
+- Validate installer for x64, x86, and arm64 targets.
 
 ## 6. Execution Strategy (remaining MUST-HAVE scope)
 
@@ -66,19 +66,11 @@ Reference: `docs/ROADMAP.md`
 Exit criteria:
 - Each feature has: scope boundary, non-goals, acceptance tests, rollback/fallback behavior.
 
-## Phase B: Implementation (2-4 weeks total, parallelized)
+## Phase B: Implementation
 
-1. User Manual
-- Deliver docs skeleton and top-level navigation first.
-- Fill critical operator workflows before edge-case coverage.
-
-2. Dedupe System
+1. Dedupe System
 - Implement read-only detection/reporting mode first.
 - Add action modes second (mark/merge/remove) with explicit confirmation paths.
-
-3. Library Organizer
-- Ship dry-run and preview output first.
-- Ship write mode only after conflict handling and rollback logs are verified.
 
 Exit criteria:
 - All MUST-HAVE code paths implemented behind stable UI/UX flows.
@@ -96,23 +88,14 @@ Exit criteria:
 
 ## 7. Feature Acceptance Criteria (minimum)
 
-1. User Manual
-- New user can complete: library setup, mix creation, export, plugin scan/use.
-- Documentation matches current UI labels and behavior.
-
-2. Dedupe System
+1. Dedupe System
 - Duplicate candidates are reproducible across runs.
 - False-positive rate is acceptable on test corpus.
 - No file-destructive action without explicit user confirmation.
 
-3. Library Organizer
-- Dry-run output is accurate and complete.
-- Collision handling is deterministic.
-- Abort/recovery path is documented and tested.
-
 ## 8. Risks And Mitigations
 
-- Risk: User trust risk from dedupe/organizer destructive paths.
+- Risk: User trust risk from dedupe destructive paths.
 - Mitigation: default read-only previews, explicit confirmations, detailed logs.
 
 - Risk: Documentation drift from UI.
@@ -143,7 +126,8 @@ Use this section for iterative revisions from each assistant. Keep entries short
 
 ### Claude Review
 
-- 2026-03-07: Moved Smart Automix (2.3) to completed — fully implemented and in active use. Reduced remaining MUST-HAVEs to 3: User Manual, Dedupe, Library Organizer. Fixed Section 4 list indentation. Removed stale Smart Automix workstream/acceptance/risk entries.
+- 2026-03-07: Moved Smart Automix (2.3) to completed — fully implemented and in active use. Fixed Section 4 list indentation.
+- 2026-03-07: Deferred User Manual (2.1) and Library Organizer (3.3) to 2.x. Dedupe System is the sole remaining MUST-HAVE for 2.0.
 
 ### Gemini Review
 
@@ -153,3 +137,5 @@ Use this section for iterative revisions from each assistant. Keep entries short
 
 - 2026-03-07: Prioritized quick wins first (docs sync + branch workflow clarification) before deep feature strategy.
 - 2026-03-07: Expanded joint release plan into phased execution strategy with explicit acceptance criteria and cross-agent revision protocol.
+- 2026-03-07: Descoped User Manual and Library Organizer from 2.0 — Manual has low demand and high manual effort; Organizer design needs more time to mature. Dedupe is the only remaining blocker.
+- 2026-03-07: Added Windows installer migration (NSIS → MSIS) as 2.0 MUST-HAVE.

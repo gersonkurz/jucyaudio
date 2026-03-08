@@ -8,18 +8,18 @@
 
 ## Release Criteria
 
-**Version 2.0 requires all MUST HAVE features. NICE TO HAVE features can ship in 2.x minor releases.**
+**Version 2.0 requires all MUST HAVE features (currently: Dedupe System only). NICE TO HAVE features can ship in 2.x minor releases.**
 
 | ID   | Feature                | Priority      | Target | Status |
 |------|------------------------|---------------|--------|--------|
 | 1.1  | ProjectM Integration   | MUST HAVE     | 2.0    | DONE   |
 | 1.2  | VST3 Support           | MUST HAVE     | 2.0    | DONE   |
-| 2.1  | User Manual            | MUST HAVE     | 2.0    |        |
+| 2.1  | User Manual            | NICE TO HAVE  | 2.x    |        |
 | 2.2  | Dedupe System          | MUST HAVE     | 2.0    |        |
 | 2.3  | Smart Automix          | MUST HAVE     | 2.0    | DONE   |
 | 3.1  | AI Stem Separation     | NICE TO HAVE  | 2.2    |        |
 | 3.2  | AI Metadata Enrichment | NICE TO HAVE  | 2.1    |        |
-| 3.3  | Library Organizer      | MUST HAVE     | 2.0    |        |
+| 3.3  | Library Organizer      | NICE TO HAVE  | 2.x    |        |
 | 4.1  | Linux Port             | NICE TO HAVE  | 2.3    |        |
 
 ---
@@ -81,7 +81,7 @@ When a bug is fixed in 1.x:
 
 **Goal**: Refine the existing toolset and help users manage their libraries better.
 
-2.1. **User Manual** (`docs/features/user-manual.md`) — MUST HAVE
+2.1. **User Manual** (`docs/features/user-manual.md`) — NICE TO HAVE
     - **Why**: Essential for onboarding. Low technical risk.
     - **Tech**: MkDocs, GitHub Pages.
 2.2. **Dedupe System** (`docs/features/dedupe.md`) — MUST HAVE
@@ -101,7 +101,7 @@ When a bug is fixed in 1.x:
 3.2. **AI Metadata Enrichment** (`docs/features/enrich.md`) — NICE TO HAVE
     - **Why**: Automates the tedious task of tagging.
     - **Tech**: Python, Claude API / Ollama (Local).
-3.3. **Library Organizer** (`docs/features/library-org.md`) — MUST HAVE
+3.3. **Library Organizer** (`docs/features/library-org.md`) — NICE TO HAVE
     - **Why**: Physical file management based on metadata.
     - **Tech**: C++ File Operations.
 
