@@ -17,8 +17,9 @@ namespace jucyaudio
                                 public juce::ComboBox::Listener
         {
         public:
-            using OnExportCallback = std::function<void(bool success, const audio::ActiveExportSettings& settings)>;
-            
+            enum class Result { Cancelled, ExportNow, ScheduleForLater };
+            using OnExportCallback = std::function<void(Result result, const audio::ActiveExportSettings& settings)>;
+
             ExportMixDialog(const database::MixInfo& mixInfo, OnExportCallback callback);
             ~ExportMixDialog() override;
             
@@ -47,7 +48,7 @@ namespace jucyaudio
             void handleNewFolder();
             void handleExport();
             void handleCancel();
-            void closeDialog(bool success);
+            void closeDialog(Result result);
             
             database::MixInfo m_mixInfo;
             OnExportCallback m_callback;
@@ -89,6 +90,9 @@ namespace jucyaudio
             juce::Label m_commentLabel;
             juce::TextEditor m_commentEditor;
             
+            // Schedule option
+            juce::ToggleButton m_scheduleCheckbox{"Schedule for later"};
+
             // Buttons
             juce::TextButton m_exportButton;
             juce::TextButton m_cancelButton;

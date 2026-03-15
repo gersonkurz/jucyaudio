@@ -139,6 +139,7 @@ namespace
             undo_stack_position INTEGER DEFAULT 0,
             exported_at INTEGER,
             export_folder TEXT,
+            pending_export_settings TEXT,
             FOREIGN KEY(source_ws_id) REFERENCES WorkingSets(ws_id)
         );)SQL",
         R"SQL(
@@ -648,7 +649,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 21;
+            const int latestSchemaVersion = 23;
 
             if (currentVersion == 0)
             {
@@ -2223,6 +2224,41 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 22;
+            }
+
+            if (currentVersion < 23)
+            {
+                spdlog::info("Migrating database from version 22 to 23 (add pending_export_settings to Mixes)...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    if (!m_db.execute("ALTER TABLE Mixes ADD COLUMN pending_export_settings TEXT;"))
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to add pending_export_settings column.");
+                    }
+
+                    if (auto result = setDBSchemaVersion(23); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 23.");
+                    }
+
+                    if (transaction.commit())
+                    {
+                        spdlog::info("Successfully migrated to version 23 (pending_export_settings).");
+                    }
+                    else
+                    {
+                        const auto error{m_db.getLastError()};
+                        spdlog::error("Failed to commit migration transaction: {}", error);
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration: " + error);
+                    }
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 23;
             }
 
             return DbResult::success();

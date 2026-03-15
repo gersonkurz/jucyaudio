@@ -2,6 +2,7 @@
 #include <UI/Settings.h>
 #include <UI/ThemeManager.h>
 #include <Database/TrackLibrary.h>
+#include <Database/Includes/IMixManager.h>
 #include <format>
 #include <spdlog/spdlog.h>
 
@@ -104,6 +105,10 @@ namespace jucyaudio
             m_commentEditor.setReturnKeyStartsNewLine(true);
             m_commentEditor.addListener(this);
 
+            // Schedule checkbox
+            addAndMakeVisible(m_scheduleCheckbox);
+            m_scheduleCheckbox.addListener(this);
+
             // Buttons
             addAndMakeVisible(m_exportButton);
             addAndMakeVisible(m_cancelButton);
@@ -113,11 +118,41 @@ namespace jucyaudio
             // Load default values
             loadDefaultTags();
 
+            // Pre-populate from saved pending export settings if available
+            const auto pending = database::theTrackLibrary.getMixManager().getPendingExportSettings(mixInfo.mixId);
+            if (pending.has_value())
+            {
+                const auto& s = *pending;
+                m_filenameComponent->setCurrentFile(juce::File{s.outputPath.string()}, true, juce::dontSendNotification);
+                m_artistEditor.setText(s.artist);
+                m_albumEditor.setText(s.album);
+                m_trackTitleEditor.setText(s.title);
+                m_trackNumberEditor.setText(s.trackNumber);
+                m_yearEditor.setText(s.year);
+                m_genreEditor.setText(s.genre);
+                m_commentEditor.setText(s.comment);
+                m_scheduleCheckbox.setToggleState(true, juce::dontSendNotification);
+                m_exportButton.setButtonText("Schedule");
+
+                // Select the saved export folder
+                if (!s.exportFolder.empty())
+                {
+                    for (int i = 0; i < m_exportFolderCombo.getNumItems(); ++i)
+                    {
+                        if (m_exportFolderCombo.getItemText(i) == juce::String{s.exportFolder})
+                        {
+                            m_exportFolderCombo.setSelectedItemIndex(i, juce::dontSendNotification);
+                            break;
+                        }
+                    }
+                }
+            }
+
             // Set initial visibility based on file extension
             updateTagFieldsVisibility();
-            
-            // Set size after all components are created (increased for folder selection)
-            setSize(600, 550);
+
+            // Set size after all components are created (increased for schedule checkbox)
+            setSize(600, 580);
 
             // Set initial focus
             juce::Component::SafePointer<ExportMixDialog> safeThis = this;
@@ -210,6 +245,10 @@ namespace jucyaudio
             m_commentLabel.setBounds(row);
             m_commentEditor.setBounds(area.removeFromTop(60));
 
+            // Schedule checkbox
+            area.removeFromTop(10);
+            m_scheduleCheckbox.setBounds(area.removeFromTop(25));
+
             // Buttons at bottom
             auto buttonArea = getLocalBounds().removeFromBottom(40).reduced(20, 5);
             const int buttonWidth = 100;
@@ -233,6 +272,10 @@ namespace jucyaudio
             else if (button == &m_newFolderButton)
             {
                 handleNewFolder();
+            }
+            else if (button == &m_scheduleCheckbox)
+            {
+                m_exportButton.setButtonText(m_scheduleCheckbox.getToggleState() ? "Schedule" : "Export");
             }
         }
 
@@ -488,8 +531,10 @@ namespace jucyaudio
                 return;
             }
 
-            // Check if file exists and ask for confirmation
-            if (file.exists())
+            const bool scheduling = m_scheduleCheckbox.getToggleState();
+
+            // Only warn about existing files for immediate export
+            if (!scheduling && file.exists())
             {
                 const auto result = juce::AlertWindow::showOkCancelBox(
                     juce::AlertWindow::WarningIcon, "File Exists", "The file already exists. Do you want to overwrite it?", "Overwrite", "Cancel");
@@ -506,40 +551,48 @@ namespace jucyaudio
             // Save the selected folder for next time
             config::theSettings.exportSettings.lastUsedExportFolder.set(m_settings.exportFolder);
 
-            spdlog::info("Exporting mix '{}' to: {} (Folder: '{}')",
-                m_mixInfo.name, m_settings.outputPath.string(), m_settings.exportFolder);
-            if (file.hasFileExtension(".mp3"))
+            if (scheduling)
             {
-                spdlog::info("ID3 tags - Artist: '{}', Album: '{}', Title: '{}', Track: '{}', Year: '{}', Genre: '{}', Comment: '{}'",
-                    m_settings.artist,
-                    m_settings.album,
-                    m_settings.title,
-                    m_settings.trackNumber,
-                    m_settings.year,
-                    m_settings.genre,
-                    m_settings.comment);
+                spdlog::info("Scheduling mix '{}' for export to: {} (Folder: '{}')",
+                    m_mixInfo.name, m_settings.outputPath.string(), m_settings.exportFolder);
+                closeDialog(Result::ScheduleForLater);
             }
-
-            closeDialog(true);
+            else
+            {
+                spdlog::info("Exporting mix '{}' to: {} (Folder: '{}')",
+                    m_mixInfo.name, m_settings.outputPath.string(), m_settings.exportFolder);
+                if (file.hasFileExtension(".mp3"))
+                {
+                    spdlog::info("ID3 tags - Artist: '{}', Album: '{}', Title: '{}', Track: '{}', Year: '{}', Genre: '{}', Comment: '{}'",
+                        m_settings.artist,
+                        m_settings.album,
+                        m_settings.title,
+                        m_settings.trackNumber,
+                        m_settings.year,
+                        m_settings.genre,
+                        m_settings.comment);
+                }
+                closeDialog(Result::ExportNow);
+            }
         }
 
         void ExportMixDialog::handleCancel()
         {
             spdlog::debug("Export cancelled by user");
-            closeDialog(false);
+            closeDialog(Result::Cancelled);
         }
 
-        void ExportMixDialog::closeDialog(bool success)
+        void ExportMixDialog::closeDialog(Result result)
         {
             if (m_callback)
             {
-                m_callback(success, m_settings);
+                m_callback(result, m_settings);
                 m_callback = nullptr; // Clear callback after use
             }
 
             if (auto *dw = findParentComponentOfClass<juce::DialogWindow>())
             {
-                dw->exitModalState(success ? 1 : 0);
+                dw->exitModalState(result != Result::Cancelled ? 1 : 0);
             }
         }
 

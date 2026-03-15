@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Audio/Includes/ActiveExportSettings.h>
 #include <Database/Includes/Constants.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/ExportFolderInfo.h>
@@ -172,6 +173,35 @@ namespace jucyaudio
             // @param exportFolder If provided, get mixes in this export folder. If empty, get editable mixes
             // @return A vector of MixInfo objects matching the criteria
             virtual std::vector<MixInfo> getMixesByLocation(std::optional<std::string_view> exportFolder = std::nullopt) const = 0;
+
+            // --- Scheduled Export methods ---
+
+            // @brief Save export settings on a mix for deferred batch export.
+            // @param mixId The mix to schedule.
+            // @param settings The export settings to persist.
+            // @return True on success.
+            virtual bool setPendingExportSettings(MixId mixId, const audio::ActiveExportSettings& settings) const = 0;
+
+            // @brief Clear pending export settings for a mix (unschedule).
+            // @param mixId The mix to unschedule.
+            // @return True on success.
+            virtual bool clearPendingExportSettings(MixId mixId) const = 0;
+
+            // @brief Retrieve saved export settings for a mix, if any.
+            // @param mixId The mix to query.
+            // @return The settings if scheduled, nullopt otherwise.
+            virtual std::optional<audio::ActiveExportSettings> getPendingExportSettings(MixId mixId) const = 0;
+
+            // @brief A mix paired with its pending export settings.
+            struct ScheduledExport
+            {
+                MixInfo mixInfo;
+                audio::ActiveExportSettings settings;
+            };
+
+            // @brief Get all mixes that have pending export settings.
+            // @return A vector of ScheduledExport entries.
+            virtual std::vector<ScheduledExport> getMixesScheduledForExport() const = 0;
         };
 
     } // namespace database

@@ -47,6 +47,12 @@ namespace jucyaudio
             bool createExportFolder(std::string_view name, std::string_view description = "") const override;
             std::vector<MixInfo> getMixesByLocation(std::optional<std::string_view> exportFolder = std::nullopt) const override;
 
+            // Scheduled export methods
+            bool setPendingExportSettings(MixId mixId, const audio::ActiveExportSettings& settings) const override;
+            bool clearPendingExportSettings(MixId mixId) const override;
+            std::optional<audio::ActiveExportSettings> getPendingExportSettings(MixId mixId) const override;
+            std::vector<ScheduledExport> getMixesScheduledForExport() const override;
+
         private:
             database::SqliteDatabase &m_db;
         };

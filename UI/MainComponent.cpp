@@ -24,6 +24,7 @@
 #include <UI/EditMixMetaDataDialog.h>
 #include <UI/EditWorkingSetMetaDataDialog.h>
 #include <UI/EqualizerDialog.h>
+#include <UI/BatchExportDialog.h>
 #include <UI/ExportMixDialog.h>
 #include <UI/ILongRunningTask.h>
 #include <UI/LibraryRootsComponent.h>
@@ -376,6 +377,9 @@ namespace jucyaudio
                         juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier),
                     {"-"},
                     makeActionItem("Export Mix...", "Export the selected mix to audio file", DataAction::ExportMix, 'e', juce::ModifierKeys::commandModifier),
+                    makeStaticItem("Export Scheduled Mixes...",
+                        "Export all mixes scheduled for batch export",
+                        [&]() { onBatchExport(); }),
                     {"-"},
                     makeStaticItem(
                         "Scan Folders...",
@@ -2626,17 +2630,136 @@ namespace jucyaudio
 
             // Create and show the export dialog instead of just a file chooser
             auto *dialog = new ExportMixDialog{mixInfo,
-                [this, mixInfo](bool success, const audio::ActiveExportSettings &settings)
+                [this, mixInfo](ExportMixDialog::Result result, const audio::ActiveExportSettings &settings)
                 {
-                    if (success)
+                    if (result == ExportMixDialog::Result::ExportNow)
                     {
                         this->onExportMixSettingsReceived(mixInfo, settings);
+                    }
+                    else if (result == ExportMixDialog::Result::ScheduleForLater)
+                    {
+                        if (theTrackLibrary.getMixManager().setPendingExportSettings(mixInfo.mixId, settings))
+                        {
+                            spdlog::info("Mix '{}' scheduled for export", mixInfo.name);
+                        }
+                        else
+                        {
+                            spdlog::error("Failed to schedule mix '{}' for export", mixInfo.name);
+                        }
                     }
                 }};
 
             juce::DialogWindow::LaunchOptions launchOptions;
             launchOptions.content.setOwned(dialog);
             launchOptions.dialogTitle = "Export Mix";
+            launchOptions.componentToCentreAround = this;
+            launchOptions.escapeKeyTriggersCloseButton = true;
+            launchOptions.resizable = false;
+            launchOptions.launchAsync();
+        }
+
+        class BatchFinalizeAndExportTask : public ILongRunningTask
+        {
+        public:
+            BatchFinalizeAndExportTask(std::vector<IMixManager::ScheduledExport> mixes, const audio::IMixExporter &exporter)
+                : ILongRunningTask{"Batch Export", true},
+                  m_mixes{std::move(mixes)},
+                  m_exporter{exporter}
+            {
+            }
+
+            void run(ProgressCallback progressCb, CompletionCallback completionCb, std::atomic<bool> &shouldCancel) override
+            {
+                int successCount = 0;
+                int failCount = 0;
+
+                for (size_t i = 0; i < m_mixes.size(); ++i)
+                {
+                    if (shouldCancel)
+                    {
+                        completionCb(false, std::format("Cancelled after {}/{} mixes.", successCount, m_mixes.size()));
+                        return;
+                    }
+
+                    const auto& entry = m_mixes[i];
+                    const auto& mixInfo = entry.mixInfo;
+                    const auto& settings = entry.settings;
+
+                    progressCb(static_cast<int>((i * 100) / m_mixes.size()),
+                        std::format("Exporting {}/{}: {}...", i + 1, m_mixes.size(), mixInfo.name));
+
+                    // Finalize
+                    if (!theTrackLibrary.getMixManager().finalizeMix(mixInfo.mixId))
+                    {
+                        spdlog::error("Batch export: failed to finalize mix '{}'", mixInfo.name);
+                        ++failCount;
+                        continue;
+                    }
+
+                    // Export
+                    const auto exportResult = m_exporter.exportMixToFile(mixInfo.mixId, settings,
+                        [&](float progress, const std::string&)
+                        {
+                            const auto overallProgress = (static_cast<float>(i) + progress) / static_cast<float>(m_mixes.size());
+                            progressCb(static_cast<int>(overallProgress * 100.0f),
+                                std::format("Exporting {}/{}: {}...", i + 1, m_mixes.size(), mixInfo.name));
+                            return !shouldCancel.load();
+                        });
+
+                    if (exportResult.success)
+                    {
+                        // Mark exported and clear pending settings
+                        theTrackLibrary.getMixManager().setMixExported(mixInfo.mixId, settings.exportFolder);
+                        theTrackLibrary.getMixManager().clearPendingExportSettings(mixInfo.mixId);
+                        ++successCount;
+                        spdlog::info("Batch export: successfully exported mix '{}'", mixInfo.name);
+                    }
+                    else
+                    {
+                        ++failCount;
+                        spdlog::error("Batch export: failed to export mix '{}': {}", mixInfo.name, exportResult.message);
+                    }
+                }
+
+                if (failCount == 0)
+                {
+                    completionCb(true, std::format("Successfully exported all {} mixes.", successCount));
+                }
+                else
+                {
+                    completionCb(false, std::format("Exported {}/{} mixes ({} failed).",
+                        successCount, m_mixes.size(), failCount));
+                }
+            }
+
+        private:
+            std::vector<IMixManager::ScheduledExport> m_mixes;
+            const audio::IMixExporter &m_exporter;
+        };
+
+        void MainComponent::onBatchExport()
+        {
+            auto *dialog = new BatchExportDialog{
+                [this](std::vector<IMixManager::ScheduledExport> mixesToExport)
+                {
+                    if (mixesToExport.empty())
+                        return;
+
+                    stopMixPlayback();
+
+                    auto *task = new BatchFinalizeAndExportTask{
+                        std::move(mixesToExport), m_audioLibrary.getMixExporter()};
+                    TaskDialog::launch("Batch Export", task, TaskDialog::AutoCloseMode::NoAutoClose, 500, this,
+                        [this](bool /*success*/)
+                        {
+                            m_navigationTree.onMixExportStatusChanged();
+                        });
+                    task->release(REFCOUNT_DEBUG_ARGS);
+                }};
+
+            juce::DialogWindow::LaunchOptions launchOptions;
+            launchOptions.content.setOwned(dialog);
+            launchOptions.dialogTitle = "Export Scheduled Mixes";
             launchOptions.componentToCentreAround = this;
             launchOptions.escapeKeyTriggersCloseButton = true;
             launchOptions.resizable = false;

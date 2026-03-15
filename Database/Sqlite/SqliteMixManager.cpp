@@ -1334,6 +1334,91 @@ WHERE m.export_folder IS NULL
             return mixes;
         }
 
+        bool SqliteMixManager::setPendingExportSettings(MixId mixId, const audio::ActiveExportSettings& settings) const
+        {
+            const nlohmann::json j = settings;
+            SqliteStatement stmt{m_db, "UPDATE Mixes SET pending_export_settings = ? WHERE mix_id = ?;"};
+            stmt.addParam(j.dump());
+            stmt.addParam(mixId);
+
+            if (!stmt.execute())
+            {
+                spdlog::error("Failed to set pending export settings for mix {}", mixId);
+                return false;
+            }
+            spdlog::info("Scheduled mix {} for export", mixId);
+            return true;
+        }
+
+        bool SqliteMixManager::clearPendingExportSettings(MixId mixId) const
+        {
+            SqliteStatement stmt{m_db, "UPDATE Mixes SET pending_export_settings = NULL WHERE mix_id = ?;"};
+            stmt.addParam(mixId);
+
+            if (!stmt.execute())
+            {
+                spdlog::error("Failed to clear pending export settings for mix {}", mixId);
+                return false;
+            }
+            return true;
+        }
+
+        std::optional<audio::ActiveExportSettings> SqliteMixManager::getPendingExportSettings(MixId mixId) const
+        {
+            SqliteStatement stmt{m_db, "SELECT pending_export_settings FROM Mixes WHERE mix_id = ?;"};
+            stmt.addParam(mixId);
+
+            if (stmt.getNextResult() && !stmt.isNull(0))
+            {
+                try
+                {
+                    const auto j = nlohmann::json::parse(stmt.getText(0));
+                    return j.get<audio::ActiveExportSettings>();
+                }
+                catch (const nlohmann::json::exception& e)
+                {
+                    spdlog::error("Failed to parse pending export settings for mix {}: {}", mixId, e.what());
+                }
+            }
+            return std::nullopt;
+        }
+
+        std::vector<IMixManager::ScheduledExport> SqliteMixManager::getMixesScheduledForExport() const
+        {
+            std::vector<ScheduledExport> result;
+
+            SqliteStatement stmt{m_db,
+                "SELECT mix_id, name, timestamp, track_count, total_length, source_ws_id, status, "
+                "exported_at, export_folder, pending_export_settings "
+                "FROM Mixes WHERE pending_export_settings IS NOT NULL ORDER BY mix_id ASC;"};
+
+            while (stmt.getNextResult())
+            {
+                MixInfo mix;
+                mix.mixId = stmt.getInt64(0);
+                mix.name = stmt.getText(1);
+                mix.timestamp = timestampFromInt64(stmt.getInt64(2));
+                mix.numberOfTracks = stmt.getInt64(3);
+                mix.totalDuration = Duration_t{stmt.getInt64(4)};
+                if (!stmt.isNull(5)) mix.source_ws_id = stmt.getInt64(5);
+                mix.status = stmt.getText(6);
+                if (!stmt.isNull(7)) mix.exportedAt = timestampFromInt64(stmt.getInt64(7));
+                if (!stmt.isNull(8)) mix.exportFolder = stmt.getText(8);
+
+                try
+                {
+                    const auto j = nlohmann::json::parse(stmt.getText(9));
+                    auto settings = j.get<audio::ActiveExportSettings>();
+                    result.push_back({std::move(mix), std::move(settings)});
+                }
+                catch (const nlohmann::json::exception& e)
+                {
+                    spdlog::error("Skipping mix {} with invalid pending export settings: {}", mix.mixId, e.what());
+                }
+            }
+
+            return result;
+        }
 
     } // namespace database
 } // namespace jucyaudio
