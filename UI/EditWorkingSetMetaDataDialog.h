@@ -34,6 +34,7 @@ namespace jucyaudio
         protected:
             bool performRename(const std::string& newName) override;
             std::string getErrorMessage() const override;
+            bool hasAdditionalChanges() const override;
 
         private:
             WorkingSetInfo m_workingSetInfo;

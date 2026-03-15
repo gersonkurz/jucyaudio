@@ -153,11 +153,16 @@ namespace jucyaudio
             virtual bool performRename(const std::string& newName) = 0;
             virtual std::string getErrorMessage() const = 0;
 
+            /// @brief Override to indicate that the dialog has changes beyond just the name field.
+            virtual bool hasAdditionalChanges() const { return false; }
+
         private:
             void saveChanges()
             {
                 const auto newName = m_nameEditor.getText().toStdString();
-                if (newName.empty() || newName == m_initialName)
+                const bool nameChanged = !newName.empty() && newName != m_initialName;
+
+                if (!nameChanged && !hasAdditionalChanges())
                 {
                     closeDialog(false);
                     return;
@@ -170,8 +175,8 @@ namespace jucyaudio
                 else
                 {
                     juce::AlertWindow::showMessageBoxAsync(
-                        juce::AlertWindow::WarningIcon, 
-                        "Error", 
+                        juce::AlertWindow::WarningIcon,
+                        "Error",
                         getErrorMessage());
                 }
             }

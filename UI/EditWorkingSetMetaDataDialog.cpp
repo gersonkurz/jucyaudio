@@ -87,6 +87,12 @@ namespace jucyaudio
             return success;
         }
 
+        bool EditWorkingSetMetaDataDialog::hasAdditionalChanges() const
+        {
+            const int currentValue = m_mixNumberEditor.getText().getIntValue();
+            return currentValue != m_initialMixNumber && currentValue > 0;
+        }
+
         std::string EditWorkingSetMetaDataDialog::getErrorMessage() const
         {
             return "Failed to update the working set metadata.";
