@@ -869,8 +869,8 @@ WHERE m.export_folder IS NULL
                         }
                     }
 
-                    // 3c. Update the mix's status to 'Finalized'
-                    if (!transaction.execute("UPDATE Mixes SET status = 'Finalized' WHERE mix_id = ?;", mixId))
+                    // 3c. Update the mix's status and clear the source working set link (no longer needed)
+                    if (!transaction.execute("UPDATE Mixes SET status = 'Finalized', source_ws_id = NULL WHERE mix_id = ?;", mixId))
                     {
                         spdlog::error("FinalizeMix: Failed to update mix status for mix ID {}", mixId);
                         return transaction.rollback();
@@ -1175,7 +1175,7 @@ WHERE m.export_folder IS NULL
             const auto now = std::chrono::system_clock::now();
 
             SqliteStatement stmt{m_db,
-                "UPDATE Mixes SET export_folder = ?, exported_at = ?, status = 'Exported' WHERE mix_id = ?;"};
+                "UPDATE Mixes SET export_folder = ?, exported_at = ?, status = 'Exported', source_ws_id = NULL WHERE mix_id = ?;"};
             stmt.addParam(std::string{exportFolder});
             stmt.addParam(timestampToInt64(now));
             stmt.addParam(mixId);
