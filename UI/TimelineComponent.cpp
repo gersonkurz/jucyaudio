@@ -749,7 +749,8 @@ namespace jucyaudio
             const float clipRight = static_cast<float>(clipBounds.getRight());
             
             // Draw the time grid - but only for the visible area
-            g.setColour(getLookAndFeel().findColour(juce::TextEditor::outlineColourId));
+            const auto gridLineColour = getLookAndFeel().findColour(juce::TextEditor::outlineColourId);
+            const auto textColour = getLookAndFeel().findColour(juce::Label::textColourId);
             
             // Calculate the first and last visible grid lines
             const float gridSpacing = 30.0f * m_pixelsPerSecond; // 30-second intervals
@@ -763,6 +764,7 @@ namespace jucyaudio
                 // Only draw if actually in the clip region
                 if (x >= clipLeft - 1 && x <= clipRight + 1)
                 {
+                    g.setColour(gridLineColour);
                     g.drawVerticalLine(juce::roundToInt(x), 0.0f, static_cast<float>(getHeight()));
 
                     int minutes = (i * 30) / 60;
@@ -770,6 +772,7 @@ namespace jucyaudio
                     const int hours = minutes / 60;
                     minutes %= 60;
                     juce::String time = juce::String::formatted("%d:%02d:%02d", hours, minutes, seconds);
+                    g.setColour(textColour);
                     g.drawText(time, juce::roundToInt(x) + 4, 4, 100, 20, juce::Justification::topLeft);
                 }
             }

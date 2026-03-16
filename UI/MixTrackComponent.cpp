@@ -48,8 +48,10 @@ namespace jucyaudio
                 generateThumbnailFromFile();
             }
 
-            const auto infoText{
-                std::format("{} - {} - {} ({})", m_trackInfo.artist_name, m_trackInfo.album_title, m_trackInfo.title, durationToString(m_trackInfo.duration))};
+            const auto hasMetadata = !m_trackInfo.artist_name.empty() || !m_trackInfo.title.empty();
+            const auto infoText{hasMetadata
+                ? std::format("{} - {} - {} ({})", m_trackInfo.artist_name, m_trackInfo.album_title, m_trackInfo.title, durationToString(m_trackInfo.duration))
+                : std::format("{} ({})", m_trackInfo.filename, durationToString(m_trackInfo.duration))};
             m_infoLabel.setText(infoText, juce::dontSendNotification);
             m_infoLabel.setJustificationType(juce::Justification::centredLeft);
             addAndMakeVisible(m_infoLabel);
@@ -57,8 +59,10 @@ namespace jucyaudio
             // Initialize m_gainSlider
             m_gainSlider.setSliderStyle(juce::Slider::LinearHorizontal);
             m_gainSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 50, 20);
-            m_gainSlider.setRange(0.0, 4.0, 0.01); // Range from 0.0 to 2.0, with 0.01 step
-            m_gainSlider.setDoubleClickReturnValue(true, 1.0); // Allow double-click to reset to 1.0
+            m_gainSlider.setRange(0.0, 4.0, 0.01);
+            m_gainSlider.setDoubleClickReturnValue(true, 1.0);
+            m_gainSlider.setPopupDisplayEnabled(true, true, this);
+            m_gainSlider.setTextValueSuffix("x volume");
             
             // Temporarily remove listener to prevent callback during initialization
             m_gainSlider.removeListener(this); 
