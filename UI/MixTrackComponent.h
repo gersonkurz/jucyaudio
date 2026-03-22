@@ -122,14 +122,14 @@ namespace jucyaudio
              */
             void updateMixTrackData(const MixTrack &updatedMixTrack)
             {
-                // Check what changed
                 const bool cueAttachChanged = (m_mixTrack.cueStart != updatedMixTrack.cueStart ||
-                                              m_mixTrack.cueEnd != updatedMixTrack.cueEnd ||
-                                              m_mixTrack.attachFrom != updatedMixTrack.attachFrom ||
-                                              m_mixTrack.attachTo != updatedMixTrack.attachTo);
-
+                                               m_mixTrack.cueEnd != updatedMixTrack.cueEnd ||
+                                               m_mixTrack.attachFrom != updatedMixTrack.attachFrom ||
+                                               m_mixTrack.attachTo != updatedMixTrack.attachTo);
                 const bool envelopeChanged = (m_mixTrack.envelopePoints != updatedMixTrack.envelopePoints);
-                const bool dataChanged = cueAttachChanged || envelopeChanged;
+                const bool identityChanged = (m_mixTrack.orderInMix != updatedMixTrack.orderInMix ||
+                                              m_mixTrack.gainAdjustment != updatedMixTrack.gainAdjustment);
+                const bool dataChanged = cueAttachChanged || envelopeChanged || identityChanged;
 
                 if (dataChanged)
                 {
@@ -155,6 +155,17 @@ namespace jucyaudio
                                      m_mixTrack.trackId, m_mixTrack.orderInMix, updatedMixTrack.envelopePoints.size());
                         m_mixTrack.envelopePoints = updatedMixTrack.envelopePoints;
                     }
+
+                    if (identityChanged)
+                    {
+                        spdlog::debug("[SYNC-DATA] Updating MixTrackComponent identity for track {}: OrderInMix {}->{}, Gain {}->{}",
+                                     m_mixTrack.trackId,
+                                     m_mixTrack.orderInMix, updatedMixTrack.orderInMix,
+                                     m_mixTrack.gainAdjustment, updatedMixTrack.gainAdjustment);
+                    }
+
+                    m_mixTrack.orderInMix = updatedMixTrack.orderInMix;
+                    m_mixTrack.gainAdjustment = updatedMixTrack.gainAdjustment;
 
                     repaint();
                 }
