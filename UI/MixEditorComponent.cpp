@@ -851,8 +851,8 @@ namespace jucyaudio
         {
             spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Entry");
             
-            // Get the track ID to remove
             int trackIdToRemove = -1;
+            int orderInMixToRemove = -1;
 
             auto* selectedTrackComponent = m_timeline.getSelectedTrack();
             if (!selectedTrackComponent)
@@ -862,6 +862,7 @@ namespace jucyaudio
                 return;
             }
             trackIdToRemove = selectedTrackComponent->getTrackId();
+            orderInMixToRemove = selectedTrackComponent->getOrderInMix();
             
             if (!m_node)
             {
@@ -976,9 +977,9 @@ namespace jucyaudio
             
             // 4. Perform DB Deletions
             spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Removing track from DB.");
-            if (!database::theTrackLibrary.getMixManager().removeTrackFromMix(mixId, trackIdToRemove))
+            if (!database::theTrackLibrary.getMixManager().removeTrackFromMixAtOrder(mixId, orderInMixToRemove))
             {
-                spdlog::error("Failed to remove track {} from mix {}", trackIdToRemove, mixId);
+                spdlog::error("Failed to remove track {} at order {} from mix {}", trackIdToRemove, orderInMixToRemove, mixId);
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Error", "Failed to remove track from database.");
                 return;
             }
@@ -997,12 +998,12 @@ namespace jucyaudio
                 }
             }
             
-            // 5. Reload data model from DB
-            spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Reloading mix loader from DB.");
-            if (!mixLoader.reloadFromDatabase())
+            // 5. Update the in-memory loader incrementally.
+            spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Updating mix loader incrementally.");
+            if (!mixLoader.removeTrackAtOrder(orderInMixToRemove))
             {
-                spdlog::critical("CRITICAL: Failed to reload mix loader from DB after deletion! The application state is now inconsistent.");
-                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Critical Error", "Failed to reload mix data after deletion. Please restart the application.");
+                spdlog::critical("CRITICAL: Failed to update mix loader after deletion! The application state is now inconsistent.");
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Critical Error", "Failed to update mix data after deletion. Please restart the application.");
                 return;
             }
             
@@ -1016,7 +1017,7 @@ namespace jucyaudio
             if (!wasPlaying)
             {
                 spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Refreshing timeline UI.");
-                m_timeline.refreshAfterDeletion(trackIdToRemove);
+                m_timeline.refreshAfterDeletion(orderInMixToRemove);
 
             }
             
@@ -1041,7 +1042,7 @@ namespace jucyaudio
                 
                 // Now refresh the UI after playback has resumed
                 spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Refreshing timeline UI after playback resume.");
-                m_timeline.refreshAfterDeletion(trackIdToRemove);
+                m_timeline.refreshAfterDeletion(orderInMixToRemove);
                 
             }
             

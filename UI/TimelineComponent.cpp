@@ -228,10 +228,10 @@ namespace jucyaudio
                 }
             }
 
-            // 6. CRITICAL: Refresh the in-memory loader from the database.
-            if (!m_mixLoader->reloadFromDatabase())
+            // 6. Update the in-memory loader incrementally to avoid rebuilding the full UI.
+            if (!m_mixLoader->removeTrackAtOrder(orderInMixToRemove))
             {
-                spdlog::error("Failed to reload MixProjectLoader from database after deletion!");
+                spdlog::error("Failed to update MixProjectLoader after deletion!");
                 return false;
             }
 
@@ -246,8 +246,15 @@ namespace jucyaudio
                 playbackController->playMixFrom(playbackPosition);
             }
 
-            // 7. Repopulate the UI from the fresh, updated loader.
-            return populateFrom();
+            // 7. Refresh the existing UI incrementally so we don't recreate thumbnails.
+            refreshAfterDeletion(orderInMixToRemove);
+
+            if (onMixChanged)
+            {
+                onMixChanged();
+            }
+
+            return true;
         }
 
         void TimelineComponent::copySelectedTrackToClipboard()
@@ -652,7 +659,7 @@ namespace jucyaudio
             }
         }
 
-        void TimelineComponent::refreshAfterDeletion(TrackId deletedTrackId)
+        void TimelineComponent::refreshAfterDeletion(int deletedOrderInMix)
         {
             if (!m_mixLoader)
             {
@@ -664,9 +671,9 @@ namespace jucyaudio
             // Step 1: Remove the UI component and its view from our list
             auto it = std::find_if(m_trackViews.begin(),
                 m_trackViews.end(),
-                [deletedTrackId](const TrackView &view)
+                [deletedOrderInMix](const TrackView &view)
                 {
-                    return view.component && view.component->getTrackId() == deletedTrackId;
+                    return view.component && view.component->getOrderInMix() == deletedOrderInMix;
                 });
 
             if (it != m_trackViews.end())
@@ -676,33 +683,36 @@ namespace jucyaudio
                     m_selectedTrack = nullptr;
                 }
                 m_trackViews.erase(it);
-                spdlog::info("Removed TrackView for track ID {}", deletedTrackId);
+                spdlog::info("Removed TrackView for orderInMix {}", deletedOrderInMix);
             }
             else
             {
-                spdlog::warn("Could not find TrackView for deleted track ID {}. Performing full repopulation.", deletedTrackId);
+                spdlog::warn("Could not find TrackView for deleted orderInMix {}. Performing full repopulation.", deletedOrderInMix);
                 populateFrom();
                 return;
             }
 
-            // Step 2: Update data pointers and re-sort the view vector
+            // Step 2: Update data pointers using the old order indices so duplicate track IDs remain stable.
             const auto &newMixTracks = m_mixLoader->getMixTracks();
-            std::unordered_map<TrackId, database::MixTrack *> newDataMap;
-            for (const auto &track : newMixTracks)
-            {
-                newDataMap[track.trackId] = const_cast<database::MixTrack *>(&track);
-            }
 
             for (auto &view : m_trackViews)
             {
-                auto findIt = newDataMap.find(view.component->getTrackId());
-                if (findIt != newDataMap.end())
+                const auto oldOrder = view.component->getOrderInMix();
+                const auto newOrder = oldOrder > deletedOrderInMix ? oldOrder - 1 : oldOrder;
+                if (newOrder >= 0 && newOrder < static_cast<int>(newMixTracks.size()))
                 {
-                    view.mixTrackData = findIt->second;
+                    view.mixTrackData = const_cast<database::MixTrack *>(&newMixTracks[static_cast<size_t>(newOrder)]);
+                    view.trackInfoData = m_mixLoader->getTrackInfoForId(view.mixTrackData->trackId);
+                    if (!view.trackInfoData)
+                    {
+                        spdlog::error("Missing TrackInfo in refreshAfterDeletion for track {}. Falling back to full populate.", view.mixTrackData->trackId);
+                        populateFrom();
+                        return;
+                    }
                 }
                 else
                 {
-                    spdlog::error("Inconsistent state in refreshAfterDeletion for track {}. Falling back to full populate.", view.component->getTrackId());
+                    spdlog::error("Inconsistent state in refreshAfterDeletion for old order {}. Falling back to full populate.", oldOrder);
                     populateFrom();
                     return;
                 }
@@ -1417,14 +1427,35 @@ namespace jucyaudio
                                  view.mixTrackData->orderInMix, startX, width, m_pixelsPerSecond);
                     view.component->setBounds(startX, yPos, width, trackHeight);
                 }
-                // Check if only Y position needs updating (common case for window resize)
-                else if (currentBounds.getY() != yPos && 
-                         currentBounds.getHeight() == trackHeight &&
+                // Check if only Y position needs updating (common case for pure vertical resize).
+                // After edits like deletion, X and width may also change, so validate them first.
+                else if (currentBounds.getHeight() == trackHeight &&
                          currentBounds.getWidth() > 0)
                 {
-                    fastPathCount++;
-                    // Fast path: just update Y position
-                    view.component->setTopLeftPosition(currentBounds.getX(), yPos);
+                    const double startTime = std::chrono::duration<double>(view.componentStartTime).count();
+                    const int startX = static_cast<int>(startTime * m_pixelsPerSecond);
+                    const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
+                    const int width = static_cast<int>(effectiveDuration * m_pixelsPerSecond);
+
+                    if (currentBounds.getX() == startX &&
+                        currentBounds.getWidth() == width &&
+                        currentBounds.getY() != yPos)
+                    {
+                        fastPathCount++;
+                        // Fast path: just update Y position
+                        view.component->setTopLeftPosition(currentBounds.getX(), yPos);
+                    }
+                    else
+                    {
+                        fullRecalcCount++;
+                        if (currentBounds.getX() != startX ||
+                            currentBounds.getY() != yPos ||
+                            currentBounds.getWidth() != width ||
+                            currentBounds.getHeight() != trackHeight)
+                        {
+                            view.component->setBounds(startX, yPos, width, trackHeight);
+                        }
+                    }
                 }
                 else
                 {

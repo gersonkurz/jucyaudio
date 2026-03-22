@@ -67,6 +67,9 @@ namespace jucyaudio
             
             Duration_t calculateMixDuration() const;
 
+            // Remove a concrete row from the in-memory mix state without reloading the full mix.
+            bool removeTrackAtOrder(int orderInMix);
+
             // Reorder tracks in the mix
             // @param trackMoves Vector of pairs where first is the track ID and second is the new position
             // @return true if reordering was successful
@@ -79,6 +82,7 @@ namespace jucyaudio
 
         private:
             void dumpContext(const char *file, int line) const;
+            void rebuildTrackInfoMap();
             // Helper to move a single track to a new position
             bool reorderSingleTrack(TrackId trackId, int newPosition);
 

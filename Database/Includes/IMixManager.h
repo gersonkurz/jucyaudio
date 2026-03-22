@@ -106,6 +106,12 @@ namespace jucyaudio
             // @return True if the track was successfully removed from the mix, false otherwise.            
             virtual bool removeTrackFromMix(MixId mixId, TrackId trackId) const = 0;
 
+            // @brief Remove the concrete track row at a specific order from a mix.
+            // @param mixId The ID of the mix from which to remove the track.
+            // @param orderInMix The concrete 0-based row position to remove.
+            // @return True if the track row was successfully removed from the mix, false otherwise.
+            virtual bool removeTrackFromMixAtOrder(MixId mixId, int orderInMix) const = 0;
+
             // @brief Remove multiple tracks from a mix.
             // @param mixId The ID of the mix from which to remove the tracks.
             // @param trackIds A vector of TrackIds to remove from the mix.

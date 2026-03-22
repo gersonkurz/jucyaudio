@@ -603,6 +603,59 @@ WHERE m.export_folder IS NULL
             return false;
         }
 
+        bool SqliteMixManager::removeTrackFromMixAtOrder(MixId mixId, int orderInMix) const
+        {
+            if (SqliteTransaction transaction{m_db})
+            {
+                const auto oldTracks = loadMixTracksForMix(m_db, mixId);
+
+                const auto trackIt = std::find_if(
+                    oldTracks.begin(),
+                    oldTracks.end(),
+                    [orderInMix](const MixTrack &track)
+                    {
+                        return track.orderInMix == orderInMix;
+                    });
+
+                if (trackIt == oldTracks.end())
+                {
+                    spdlog::warn("Track order {} not found in mix {}, nothing to delete", orderInMix, mixId);
+                    return transaction.rollback();
+                }
+
+                SqliteStatement stmt{m_db, "DELETE FROM MixTracks WHERE mix_id = ? AND order_in_mix = ?"};
+                stmt.addParam(mixId);
+                stmt.addParam(orderInMix);
+                if (!stmt.execute())
+                {
+                    return transaction.rollback();
+                }
+
+                SqliteStatement updateStmt{m_db, "UPDATE MixTracks SET order_in_mix = order_in_mix - 1 WHERE mix_id = ? AND order_in_mix > ?"};
+                updateStmt.addParam(mixId);
+                updateStmt.addParam(orderInMix);
+                if (!updateStmt.execute())
+                {
+                    spdlog::error("Failed to re-enumerate orderInMix after track deletion");
+                    return transaction.rollback();
+                }
+
+                if (!recalculateNewAdjacenciesAfterTrackRemoval(m_db, mixId, oldTracks))
+                {
+                    spdlog::error("Failed to recalculate transitions after track deletion");
+                    return transaction.rollback();
+                }
+
+                if (transaction.commit())
+                {
+                    recordMixChange(mixId);
+                    return true;
+                }
+                transaction.rollback();
+            }
+            return false;
+        }
+
         bool SqliteMixManager::reorderTrackInMix(MixId mixId, TrackId trackId, int newOrderInMix) const
         {
             if (SqliteTransaction transaction{m_db})

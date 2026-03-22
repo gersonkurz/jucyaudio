@@ -16,6 +16,15 @@ namespace jucyaudio
         {
         }
 
+        void MixProjectLoader::rebuildTrackInfoMap()
+        {
+            m_trackInfosMap.clear();
+            for (const auto &ti : m_trackInfos)
+            {
+                m_trackInfosMap[ti.trackId] = &ti;
+            }
+        }
+
         bool MixProjectLoader::loadMix(MixId mixId)
         {
             spdlog::debug("MixProjectLoader: Loading mix with ID {}", mixId);
@@ -42,12 +51,7 @@ namespace jucyaudio
             m_trackInfos = theTrackLibrary.getTracks(getMixTrackQueryArgs(m_mixId));
             spdlog::info("MixProjectLoader: Loaded {} track infos for mix ID {}", m_trackInfos.size(), m_mixId);
 
-            m_trackInfosMap.clear();
-
-            for (const auto &ti : m_trackInfos)
-            {
-                m_trackInfosMap[ti.trackId] = &ti;
-            }
+            rebuildTrackInfoMap();
             //int index = 0;
             
             // Only dump context in debug builds or when explicitly debugging
@@ -61,6 +65,47 @@ namespace jucyaudio
         bool MixProjectLoader::reloadFromDatabase()
         {
             return loadMix(m_mixId);
+        }
+
+        bool MixProjectLoader::removeTrackAtOrder(int orderInMix)
+        {
+            if (orderInMix < 0 || orderInMix >= static_cast<int>(m_mixTracks.size()))
+            {
+                spdlog::error("MixProjectLoader::removeTrackAtOrder - Invalid order {}", orderInMix);
+                return false;
+            }
+
+            const auto removedTrackId = m_mixTracks[orderInMix].trackId;
+            m_mixTracks.erase(m_mixTracks.begin() + orderInMix);
+
+            for (int i = orderInMix; i < static_cast<int>(m_mixTracks.size()); ++i)
+            {
+                m_mixTracks[i].orderInMix = i;
+            }
+
+            const bool stillReferenced = std::any_of(
+                m_mixTracks.begin(),
+                m_mixTracks.end(),
+                [removedTrackId](const MixTrack &track)
+                {
+                    return track.trackId == removedTrackId;
+                });
+
+            if (!stillReferenced)
+            {
+                m_trackInfos.erase(
+                    std::remove_if(
+                        m_trackInfos.begin(),
+                        m_trackInfos.end(),
+                        [removedTrackId](const TrackInfo &trackInfo)
+                        {
+                            return trackInfo.trackId == removedTrackId;
+                        }),
+                    m_trackInfos.end());
+            }
+
+            rebuildTrackInfoMap();
+            return true;
         }
 
         void MixProjectLoader::dumpContext(const char* file, int line) const
