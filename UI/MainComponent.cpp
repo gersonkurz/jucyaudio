@@ -95,6 +95,26 @@ namespace jucyaudio
                 stats.totalTracks,
                 formatDuration(stats.totalDurationMs));
         }
+
+        std::string formatMixProgressStatus(const database::MixInfo& mixInfo, std::optional<int64_t> remainingTracks)
+        {
+            const auto mixedTracks = mixInfo.numberOfTracks;
+            const auto totalTracks = mixedTracks + remainingTracks.value_or(0);
+            const auto durationText = durationToString(mixInfo.totalDuration);
+
+            if (remainingTracks.has_value())
+            {
+                return std::format("{:L}/{:L} tracks mixed, {:L} remaining, {} total mix length",
+                    mixedTracks,
+                    totalTracks,
+                    *remainingTracks,
+                    durationText);
+            }
+
+            return std::format("{:L} tracks in mix, {} total mix length",
+                mixedTracks,
+                durationText);
+        }
     } // namespace
 
     namespace ui
@@ -192,6 +212,10 @@ namespace jucyaudio
             m_mixEditorComponent.setOnMixExportStatusChangedCallback([this]()
             {
                 m_navigationTree.onMixExportStatusChanged();
+            });
+            m_mixEditorComponent.setOnMixSummaryChangedCallback([this]()
+            {
+                updateTrackCountStatus();
             });
 
             // --- Add and make visible all child components ---
@@ -4105,6 +4129,32 @@ namespace jucyaudio
             {
                 m_statusPanel.getStatusBar().setInfoMessage("");
                 return;
+            }
+
+            if (m_currentMainView == MainViewType::MixEditor)
+            {
+                if (const auto* mixNode = dynamic_cast<const database::MixNode*>(m_currentNode))
+                {
+                    const auto& mixInfo = mixNode->getMixInfo();
+                    std::optional<int64_t> remainingTracks;
+
+                    if (mixInfo.source_ws_id > 0)
+                    {
+                        const auto workingSets = theTrackLibrary.getWorkingSetManager().getWorkingSets({});
+                        const auto it = std::find_if(workingSets.begin(), workingSets.end(),
+                            [&mixInfo](const database::WorkingSetInfo& ws)
+                            {
+                                return ws.id == mixInfo.source_ws_id;
+                            });
+                        if (it != workingSets.end())
+                        {
+                            remainingTracks = it->numberOfTracks;
+                        }
+                    }
+
+                    m_statusPanel.getStatusBar().setInfoMessage(formatMixProgressStatus(mixInfo, remainingTracks));
+                    return;
+                }
             }
 
             // Try album stats first (for Albums node)

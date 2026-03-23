@@ -1012,6 +1012,8 @@ namespace jucyaudio
                 static_cast<int>(mixLoader.getMixTracks().size()),
                 mixLoader.calculateMixDuration()
             );
+            if (m_onMixSummaryChanged)
+                m_onMixSummaryChanged();
 
             // 6. Refresh the timeline UI first (but only if not playing - otherwise do it after)
             if (!wasPlaying)
@@ -1168,6 +1170,8 @@ namespace jucyaudio
                     static_cast<int>(mixLoader.getMixTracks().size()),
                     mixLoader.calculateMixDuration()
                 );
+                if (m_onMixSummaryChanged)
+                    m_onMixSummaryChanged();
 
                 // Refresh the timeline
                 spdlog::info("[PASTE_DB] Refreshing timeline with updated mix");
@@ -1276,6 +1280,8 @@ namespace jucyaudio
                     static_cast<int>(mixLoader.getMixTracks().size()),
                     mixLoader.calculateMixDuration()
                 );
+                if (m_onMixSummaryChanged)
+                    m_onMixSummaryChanged();
 
                 // Resume playback if it was playing
                 if (wasPlaying)

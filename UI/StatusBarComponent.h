@@ -13,7 +13,9 @@ namespace jucyaudio
             StatusBarComponent();
             ~StatusBarComponent() override;
 
+            void paint(juce::Graphics& g) override;
             void resized() override;
+            void lookAndFeelChanged() override;
 
             void setInfoMessage(const juce::String& message);
             void postMessage(const juce::String& message, bool isError = false);
