@@ -10,6 +10,7 @@
 #include <Utils/UiUtils.h>
 #include <Database/TrackLibrary.h>
 #include <Database/UndoManager.h>
+#include <format>
 
 namespace jucyaudio
 {
@@ -386,7 +387,18 @@ namespace jucyaudio
                         req.trackId = trackId;
                         req.filePath = trackInfo->reconstructFullPath();
                         req.needsLoading = needsLoading;
-                        req.trackName = trackInfo->title;
+                        if (!trackInfo->artist_name.empty() && !trackInfo->title.empty())
+                        {
+                            req.trackName = std::format("{} - {}", trackInfo->artist_name, trackInfo->title);
+                        }
+                        else if (!trackInfo->title.empty())
+                        {
+                            req.trackName = trackInfo->title;
+                        }
+                        else
+                        {
+                            req.trackName = req.filePath.filename().string();
+                        }
                         waveformRequests.push_back(req);
                         
                         if (needsLoading)

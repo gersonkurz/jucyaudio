@@ -6,6 +6,7 @@
 #include <vector>
 #include <memory>
 #include <filesystem>
+#include <optional>
 
 namespace jucyaudio
 {
@@ -32,6 +33,14 @@ namespace jucyaudio
                     std::filesystem::path filePath;
                     bool needsLoading{true}; // false if already cached
                     std::string trackName; // For progress reporting
+                };
+
+                struct FailedWaveform
+                {
+                    TrackId trackId{0};
+                    std::string trackName;
+                    std::filesystem::path filePath;
+                    std::string reason;
                 };
 
                 /**
@@ -62,9 +71,9 @@ namespace jucyaudio
                 
                 /**
                  * @brief Get the tracks that failed to load
-                 * @return Vector of track IDs that failed
+                 * @return Vector of failure details
                  */
-                const std::vector<TrackId>& getFailedTracks() const { return m_failedTracks; }
+                const std::vector<FailedWaveform>& getFailedTracks() const { return m_failedTracks; }
 
             private:
                 /**
@@ -82,10 +91,10 @@ namespace jucyaudio
                  * 
                  * @param request The waveform request to process
                  * @param progressCb Progress callback for status updates
-                 * @return true if successful, false if failed
+                 * @return Empty on success, otherwise a human-readable failure reason
                  */
-                bool loadWaveformFromFile(const WaveformRequest& request,
-                                         ProgressCallback progressCb);
+                std::optional<std::string> loadWaveformFromFile(const WaveformRequest& request,
+                                                                ProgressCallback progressCb);
 
                 /**
                  * @brief Generate and cache a waveform
@@ -93,11 +102,14 @@ namespace jucyaudio
                  * @param trackId Track ID for caching
                  * @param audioFile File to load
                  * @param progressCb Progress callback for status updates
-                 * @return true if successful, false if failed
+                 * @return Empty on success, otherwise a human-readable failure reason
                  */
-                bool generateAndCacheWaveform(TrackId trackId,
-                                             const juce::File& audioFile,
-                                             ProgressCallback progressCb);
+                std::optional<std::string> generateAndCacheWaveform(TrackId trackId,
+                                                                    const juce::File& audioFile,
+                                                                    ProgressCallback progressCb);
+
+                std::string buildFinalMessage(int needLoadingCount) const;
+                std::string buildFailureLabel(const FailedWaveform& failure) const;
 
                 std::vector<WaveformRequest> m_requests;
                 juce::AudioFormatManager& m_formatManager;
@@ -105,7 +117,7 @@ namespace jucyaudio
                 
                 int m_successCount{0};
                 int m_cachedCount{0};
-                std::vector<TrackId> m_failedTracks;
+                std::vector<FailedWaveform> m_failedTracks;
                 
                 // Batch processing settings
                 static constexpr int BATCH_SIZE = 3;  // Process 3 waveforms at a time

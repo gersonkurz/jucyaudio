@@ -4,6 +4,7 @@
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <format>
+#include <sstream>
 
 namespace jucyaudio
 {
@@ -94,65 +95,63 @@ namespace jucyaudio
                     progressCb(progressPercent, statusMessage);
                     
                     // Load the waveform
-                    bool success = loadWaveformFromFile(request, progressCb);
+                    const auto failureReason = loadWaveformFromFile(request, progressCb);
                     
-                    if (success)
+                    if (!failureReason.has_value())
                     {
                         m_successCount++;
                         spdlog::info("[WaveformLoadingTask] Successfully loaded waveform for track {}", request.trackId);
                     }
                     else
                     {
-                        m_failedTracks.push_back(request.trackId);
-                        spdlog::warn("[WaveformLoadingTask] Failed to load waveform for track {}", request.trackId);
+                        m_failedTracks.push_back(FailedWaveform{
+                            request.trackId,
+                            request.trackName,
+                            request.filePath,
+                            *failureReason});
+                        spdlog::warn("[WaveformLoadingTask] Failed to load waveform for track {} ({}): {}",
+                                     request.trackId, request.trackName, *failureReason);
                     }
                     
                     processed++;
                 }
                 
                 // Final status
-                std::string finalMessage;
-                if (m_failedTracks.empty())
-                {
-                    finalMessage = std::format("Successfully loaded {} waveforms ({} cached)", 
-                                              m_successCount, m_cachedCount);
-                }
-                else
-                {
-                    finalMessage = std::format("Loaded {} of {} waveforms ({} failed, {} cached)", 
-                                              m_successCount, needLoadingCount, 
-                                              m_failedTracks.size(), m_cachedCount);
-                }
+                const auto finalMessage = buildFinalMessage(needLoadingCount);
                 
                 spdlog::info("[WaveformLoadingTask] Completed: {}", finalMessage);
                 completionCb(m_failedTracks.empty(), finalMessage);
             }
 
-            bool WaveformLoadingTask::loadWaveformFromFile(const WaveformRequest& request,
-                                                          ProgressCallback progressCb)
+            std::optional<std::string> WaveformLoadingTask::loadWaveformFromFile(const WaveformRequest& request,
+                                                                                 ProgressCallback progressCb)
             {
+                (void) progressCb;
+
                 // Check if file exists
                 if (!std::filesystem::exists(request.filePath))
                 {
                     spdlog::error("[WaveformLoadingTask] File not found: {}", request.filePath.string());
-                    return false;
+                    return "file not found";
                 }
                 
                 juce::File audioFile{ui::jucePathFromFs(request.filePath)};
                 if (!audioFile.existsAsFile())
                 {
                     spdlog::error("[WaveformLoadingTask] JUCE File not found: {}", audioFile.getFullPathName().toStdString());
-                    return false;
+                    return "file not found";
                 }
                 
                 // Try to generate and cache the waveform
                 return generateAndCacheWaveform(request.trackId, audioFile, progressCb);
             }
 
-            bool WaveformLoadingTask::generateAndCacheWaveform(TrackId trackId,
-                                                              const juce::File& audioFile,
-                                                              ProgressCallback progressCb)
+            std::optional<std::string> WaveformLoadingTask::generateAndCacheWaveform(TrackId trackId,
+                                                                                     const juce::File& audioFile,
+                                                                                     ProgressCallback progressCb)
             {
+                (void) progressCb;
+
                 try
                 {
                     // Create a thumbnail for loading
@@ -170,7 +169,7 @@ namespace jucyaudio
                         if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() > LOAD_TIMEOUT_MS)
                         {
                             spdlog::error("[WaveformLoadingTask] Timeout loading waveform for track {}", trackId);
-                            return false;
+                            return std::format("timed out after {} seconds", LOAD_TIMEOUT_MS / 1000);
                         }
                         
                         // Small sleep to avoid busy waiting
@@ -193,32 +192,90 @@ namespace jucyaudio
                         {
                             spdlog::info("[WaveformLoadingTask] Cached waveform for track {} ({} bytes)", 
                                         trackId, waveformData.size());
-                            return true;
+                            return std::nullopt;
                         }
                         else
                         {
-                            spdlog::error("[WaveformLoadingTask] Failed to save waveform to cache for track {}", 
-                                         trackId);
-                            return false;
+                            spdlog::error("[WaveformLoadingTask] Failed to save waveform to cache for track {}: {}",
+                                         trackId, result.errorMessage);
+                            return "failed to save waveform cache";
                         }
                     }
                     else
                     {
                         spdlog::error("[WaveformLoadingTask] Generated empty waveform for track {}", trackId);
-                        return false;
+                        return "generated empty waveform";
                     }
                 }
                 catch (const std::exception& e)
                 {
                     spdlog::error("[WaveformLoadingTask] Exception generating waveform for track {}: {}", 
                                  trackId, e.what());
-                    return false;
+                    return std::format("decoder error: {}", e.what());
                 }
                 catch (...)
                 {
                     spdlog::error("[WaveformLoadingTask] Unknown exception generating waveform for track {}", trackId);
-                    return false;
+                    return "unknown decoder error";
                 }
+            }
+
+            std::string WaveformLoadingTask::buildFinalMessage(int needLoadingCount) const
+            {
+                if (m_failedTracks.empty())
+                {
+                    return std::format("Successfully loaded {} waveform{} ({} cached)",
+                                       m_successCount,
+                                       m_successCount == 1 ? "" : "s",
+                                       m_cachedCount);
+                }
+
+                std::ostringstream message;
+                message << "Failed to load " << m_failedTracks.size() << " waveform"
+                        << (m_failedTracks.size() == 1 ? "" : "s");
+
+                if (needLoadingCount > 0)
+                {
+                    message << " (" << m_successCount << "/" << needLoadingCount << " loaded";
+                    if (m_cachedCount > 0)
+                    {
+                        message << ", " << m_cachedCount << " cached";
+                    }
+                    message << ")";
+                }
+
+                message << ": ";
+
+                constexpr size_t maxFailuresToList = 3;
+                for (size_t i = 0; i < m_failedTracks.size() && i < maxFailuresToList; ++i)
+                {
+                    if (i > 0)
+                    {
+                        message << "; ";
+                    }
+                    message << buildFailureLabel(m_failedTracks[i]);
+                }
+
+                if (m_failedTracks.size() > maxFailuresToList)
+                {
+                    message << std::format("; and {} more", m_failedTracks.size() - maxFailuresToList);
+                }
+
+                return message.str();
+            }
+
+            std::string WaveformLoadingTask::buildFailureLabel(const FailedWaveform& failure) const
+            {
+                const auto displayName = !failure.trackName.empty()
+                    ? failure.trackName
+                    : failure.filePath.filename().string();
+
+                if (!displayName.empty())
+                {
+                    return std::format("{} ({})", displayName, failure.reason);
+                }
+
+                return std::format("track {} ({})", failure.trackId, failure.reason);
             }
 
         } // namespace background_tasks
