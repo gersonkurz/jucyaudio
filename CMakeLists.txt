@@ -590,6 +590,8 @@ target_sources(jucyaudio PRIVATE
     UI/ExportMixDialog.cpp
     UI/BatchExportDialog.h
     UI/BatchExportDialog.cpp
+    UI/BatchExportProgressDialog.h
+    UI/BatchExportProgressDialog.cpp
     UI/VUMeterComponent.h
     UI/VUMeterComponent.cpp
     UI/StatusBarComponent.h
