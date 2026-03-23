@@ -1,31 +1,9 @@
 # JucyAudio - Open Tasks
 
-## Performance: Slow UI after track removal in large mixes
+## Scheduled Exports
 
-**Symptom**: Removing a track from a large mix takes ~5 seconds for the UI to update. Audio playback of the next track starts near-instantly.
-
-**Root cause**: `MixProjectLoader::reloadFromDatabase()` does a full reload after every single-track removal:
-1. `getMixTracks(mixId)` — re-fetches all MixTrack rows from DB
-2. `getTracks(queryArgs)` — re-fetches full TrackInfo for every track in the mix
-3. `readAllTagTracks()` — issues a second query with an `IN (...)` clause containing every track ID
-
-For a mix with hundreds of tracks, steps 2 and 3 dominate.
-
-**Fix approach**: Add an incremental removal path to `MixProjectLoader`:
-- Remove the single MixTrack entry from `m_mixTracks`
-- Remove the single TrackInfo from `m_trackInfos` and `m_trackInfosMap`
-- Re-index `orderInMix` values on the remaining entries
-- Skip the full DB reload entirely
-
-The timeline's `refreshAfterDeletion()` already handles incremental UI updates — it just needs the data layer to also be incremental.
-
-**Key files**:
-- `Audio/MixProjectLoader.cpp` — `reloadFromDatabase()` / `loadMix()` (lines 19-59, 61-63)
-- `UI/MixEditorComponent.cpp` — `handleDeleteSelectedTrack()` (line 1002 calls reload)
-- `UI/TimelineComponent.cpp` — `refreshAfterDeletion()` (already incremental)
-- `Database/Sqlite/SqliteTrackDatabase.cpp` — `getTracks()` + `readAllTagTracks()` (lines 2803-2836, 2849+)
-
-**Risk**: The reload is also used after reorder, add, and undo operations. The incremental path should only apply to single-track removal. All other mutations can continue using the full reload.
+When you click on Export mix, and select "Schedule for Later" - the mix tracks aren't removed. So when you create ANOTHER mix, it will include the tracks you had selected for this mix. 
+And it's probably not a good idea to remove them from the second mix, - not sure, but probably this action affects the "scheduled" mix as well...
 
 ---
 
@@ -91,22 +69,6 @@ The timeline's `refreshAfterDeletion()` already handles incremental UI updates �
 
 ---
 
-## Bug: Tracks with missing metadata show empty label like " - - (00:06:37,000)"
-
-**Symptom**: When a track has no artist/title metadata, the waveform label shows something like ` - - (00:06:37,000)` which is useless.
-
-**Fix**: Fall back to the filename (without extension) when artist and title are both empty. E.g. show `mytrack.mp3 (00:06:37)` instead of ` - - (00:06:37,000)`.
-
----
-
-## Visual: Mix editor time ruler text is hard to read
-
-**Symptom**: The time labels along the top ruler of the mix editor are drawn in a gray color that has poor contrast against both dark and light backgrounds.
-
-**Fix**: Use the standard text colour from the LookAndFeel (e.g. `findColour(juce::Label::textColourId)`) instead of a hardcoded gray.
-
----
-
 ## Feature: Show track details from mix editor
 
 **Symptom**: In the mix editor, there's no way to see a track's filename, path, format, bitrate, or other file properties. The waveform just shows artist/title but nothing else.
@@ -155,11 +117,6 @@ The timeline's `refreshAfterDeletion()` already handles incremental UI updates �
 
 ---
 
-## Nice-to-have: Gain knob tooltip showing current value
-
-**Context**: The per-track gain knob doesn't show what the current gain value is. A tooltip or overlay (e.g. "0.8x" or "-2 dB") while dragging would help the user make precise adjustments.
-
----
 
 ## Nice-to-have: Populate the empty status bar
 

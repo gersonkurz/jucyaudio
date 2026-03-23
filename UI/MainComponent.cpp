@@ -1253,7 +1253,7 @@ namespace jucyaudio
             auto timeSinceReport = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastReportTime);
             if (timeSinceReport.count() >= 1000)
             {
-                spdlog::info("MainComponent::resized called {} times in last second", resizeCallCount);
+                spdlog::debug("MainComponent::resized called {} times in last second", resizeCallCount);
                 resizeCallCount = 0;
                 lastReportTime = now;
             }
@@ -1343,10 +1343,9 @@ namespace jucyaudio
             const auto mixEditorDuration = std::chrono::duration_cast<std::chrono::microseconds>(mixEditorEnd - mixEditorStart);
             const auto totalDuration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
             
-            // Always log to see what's happening
-            spdlog::info("MainComponent::resized Performance:");
-            spdlog::info("  MixEditor.setBounds: {} µs", mixEditorDuration.count());
-            spdlog::info("  Total: {} µs ({} ms)", totalDuration.count(), totalDuration.count() / 1000);
+            spdlog::debug("MainComponent::resized Performance:");
+            spdlog::debug("  MixEditor.setBounds: {} µs", mixEditorDuration.count());
+            spdlog::debug("  Total: {} µs ({} ms)", totalDuration.count(), totalDuration.count() / 1000);
         }
 
         void MainComponent::adjustSplitterPosition([[maybe_unused]] int desiredNewNavPanelLeftEdge) // Or pass delta

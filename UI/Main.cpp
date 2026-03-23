@@ -25,6 +25,7 @@
 #include <functional>
 #include <optional>
 #include <stdexcept>
+#include <cstdlib>
 #include <string>
 #include <vector>
 #include "Utils/LoggingUtils.h"
@@ -253,6 +254,21 @@ namespace jucyaudio
                 splashScreen->setVisible(false);
                 mainWindow->setVisible(true);
                 mainWindow->toFront(true);
+
+#if JUCE_WINDOWS
+                if (auto* peer = mainWindow->getPeer())
+                {
+                    const auto engines = peer->getAvailableRenderingEngines();
+                    spdlog::info("Available rendering engines: {}", engines.joinIntoString(", ").toStdString());
+
+                    const int32_t rendererIndex = 1;
+                    spdlog::info("Applying renderer override JUCYAUDIO_RENDERER={} ({})",
+                                    rendererIndex,
+                                    engines[rendererIndex].toStdString());
+                    peer->setCurrentRenderingEngine(rendererIndex);
+                }
+#endif
+
                 splashScreen = nullptr;
                 spdlog::info("Initialization complete");
             }
