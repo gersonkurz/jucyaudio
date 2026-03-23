@@ -1,12 +1,5 @@
 # JucyAudio - Open Tasks
 
-## Scheduled Exports
-
-When you click on Export mix, and select "Schedule for Later" - the mix tracks aren't removed. So when you create ANOTHER mix, it will include the tracks you had selected for this mix. 
-And it's probably not a good idea to remove them from the second mix, - not sure, but probably this action affects the "scheduled" mix as well...
-
----
-
 ## Nice-to-have: Show mix progress / track counts in mix editor
 
 **Context**: When working with a large mix, there's no indication of how many tracks remain to be mixed vs. how many are already in the mixed area. Makes it hard to gauge progress.

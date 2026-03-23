@@ -2637,7 +2637,7 @@ namespace jucyaudio
                     }
                     else if (result == ExportMixDialog::Result::ScheduleForLater)
                     {
-                        if (theTrackLibrary.getMixManager().setPendingExportSettings(mixInfo.mixId, settings))
+                        if (theTrackLibrary.getMixManager().scheduleMixForExport(mixInfo.mixId, settings))
                         {
                             spdlog::info("Mix '{}' scheduled for export", mixInfo.name);
                         }

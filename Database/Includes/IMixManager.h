@@ -188,6 +188,12 @@ namespace jucyaudio
             // @return True on success.
             virtual bool setPendingExportSettings(MixId mixId, const audio::ActiveExportSettings& settings) const = 0;
 
+            // @brief Finalize a mix for deferred export and persist its export settings atomically.
+            // @param mixId The mix to schedule.
+            // @param settings The export settings to persist.
+            // @return True on success.
+            virtual bool scheduleMixForExport(MixId mixId, const audio::ActiveExportSettings& settings) const = 0;
+
             // @brief Clear pending export settings for a mix (unschedule).
             // @param mixId The mix to unschedule.
             // @return True on success.

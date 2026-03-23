@@ -50,6 +50,7 @@ namespace jucyaudio
 
             // Scheduled export methods
             bool setPendingExportSettings(MixId mixId, const audio::ActiveExportSettings& settings) const override;
+            bool scheduleMixForExport(MixId mixId, const audio::ActiveExportSettings& settings) const override;
             bool clearPendingExportSettings(MixId mixId) const override;
             std::optional<audio::ActiveExportSettings> getPendingExportSettings(MixId mixId) const override;
             std::vector<ScheduledExport> getMixesScheduledForExport() const override;

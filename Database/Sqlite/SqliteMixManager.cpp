@@ -26,6 +26,70 @@ namespace
     using namespace jucyaudio;
     using namespace jucyaudio::database;
 
+    bool finalizeMixForExportTransaction(SqliteDatabase& db, SqliteTransaction& transaction, MixId mixId)
+    {
+        SqliteStatement stmt_info{db, "SELECT status, source_ws_id FROM Mixes WHERE mix_id = ?;"};
+        stmt_info.addParam(mixId);
+        if (!stmt_info.getNextResult())
+        {
+            spdlog::error("FinalizeMix: Could not find mix with ID {}", mixId);
+            return false;
+        }
+
+        std::string status = stmt_info.getText(0);
+        std::optional<WorkingSetId> source_ws_id;
+        if (!stmt_info.isNull(1))
+        {
+            source_ws_id = stmt_info.getInt64(1);
+        }
+
+        if (status != "New" || !source_ws_id.has_value())
+        {
+            return true;
+        }
+
+        SqliteStatement stmt_prune{db,
+            "SELECT track_id FROM MixTracks WHERE mix_id = ? AND order_in_mix <= "
+            "(SELECT MAX(order_in_mix) FROM MixTracks WHERE mix_id = ?)"};
+        stmt_prune.addParam(mixId);
+        stmt_prune.addParam(mixId);
+
+        std::vector<TrackId> tracksToPrune;
+        while (stmt_prune.getNextResult())
+        {
+            tracksToPrune.push_back(stmt_prune.getInt64(0));
+        }
+
+        if (!tracksToPrune.empty())
+        {
+            StringWriter delete_query;
+            delete_query.append("DELETE FROM WorkingSetTracks WHERE ws_id = ? AND track_id IN (");
+            for (size_t i = 0; i < tracksToPrune.size(); ++i)
+            {
+                delete_query.append(std::to_string(tracksToPrune[i]));
+                if (i < tracksToPrune.size() - 1)
+                    delete_query.append(",");
+            }
+            delete_query.append(");");
+
+            SqliteStatement stmt_delete{db, delete_query.asString()};
+            stmt_delete.addParam(source_ws_id.value());
+            if (!stmt_delete.execute())
+            {
+                spdlog::error("FinalizeMix: Failed to prune tracks from working set {}", source_ws_id.value());
+                return false;
+            }
+        }
+
+        if (!transaction.execute("UPDATE Mixes SET status = 'Finalized', source_ws_id = NULL WHERE mix_id = ?;", mixId))
+        {
+            spdlog::error("FinalizeMix: Failed to update mix status for mix ID {}", mixId);
+            return false;
+        }
+
+        return true;
+    }
+
     MixInfo mixInfoFromStatement(const SqliteStatement &stmt)
     {
         MixInfo info{};
@@ -868,66 +932,9 @@ WHERE m.export_folder IS NULL
         {
             if (SqliteTransaction transaction{m_db})
             {
-                // 1. Fetch mix status and source working set ID
-                SqliteStatement stmt_info{m_db, "SELECT status, source_ws_id FROM Mixes WHERE mix_id = ?;"};
-                stmt_info.addParam(mixId);
-                if (!stmt_info.getNextResult())
+                if (!finalizeMixForExportTransaction(m_db, transaction, mixId))
                 {
-                    spdlog::error("FinalizeMix: Could not find mix with ID {}", mixId);
                     return transaction.rollback();
-                }
-
-                std::string status = stmt_info.getText(0);
-                std::optional<WorkingSetId> source_ws_id;
-                if (!stmt_info.isNull(1))
-                {
-                    source_ws_id = stmt_info.getInt64(1);
-                }
-
-                // 2. Check if the mix is new and has a source
-                if (status == "New" && source_ws_id.has_value())
-                {
-                    // 3a. Identify all tracks in the mix up to the last active track
-                    SqliteStatement stmt_prune{m_db,
-                        "SELECT track_id FROM MixTracks WHERE mix_id = ? AND order_in_mix <= "
-                        "(SELECT MAX(order_in_mix) FROM MixTracks WHERE mix_id = ?)"};
-                    stmt_prune.addParam(mixId);
-                    stmt_prune.addParam(mixId);
-
-                    std::vector<TrackId> tracksToPrune;
-                    while (stmt_prune.getNextResult())
-                    {
-                        tracksToPrune.push_back(stmt_prune.getInt64(0));
-                    }
-
-                    // 3b. Prune these tracks from the source Working Set
-                    if (!tracksToPrune.empty())
-                    {
-                        StringWriter delete_query;
-                        delete_query.append("DELETE FROM WorkingSetTracks WHERE ws_id = ? AND track_id IN (");
-                        for (size_t i = 0; i < tracksToPrune.size(); ++i)
-                        {
-                            delete_query.append(std::to_string(tracksToPrune[i]));
-                            if (i < tracksToPrune.size() - 1)
-                                delete_query.append(",");
-                        }
-                        delete_query.append(");");
-
-                        SqliteStatement stmt_delete{m_db, delete_query.asString()};
-                        stmt_delete.addParam(source_ws_id.value());
-                        if (!stmt_delete.execute())
-                        {
-                            spdlog::error("FinalizeMix: Failed to prune tracks from working set {}", source_ws_id.value());
-                            return transaction.rollback();
-                        }
-                    }
-
-                    // 3c. Update the mix's status and clear the source working set link (no longer needed)
-                    if (!transaction.execute("UPDATE Mixes SET status = 'Finalized', source_ws_id = NULL WHERE mix_id = ?;", mixId))
-                    {
-                        spdlog::error("FinalizeMix: Failed to update mix status for mix ID {}", mixId);
-                        return transaction.rollback();
-                    }
                 }
 
                 return transaction.commit();
@@ -1401,6 +1408,39 @@ WHERE m.export_folder IS NULL
             }
             spdlog::info("Scheduled mix {} for export", mixId);
             return true;
+        }
+
+        bool SqliteMixManager::scheduleMixForExport(MixId mixId, const audio::ActiveExportSettings& settings) const
+        {
+            if (SqliteTransaction transaction{m_db})
+            {
+                if (!finalizeMixForExportTransaction(m_db, transaction, mixId))
+                {
+                    return transaction.rollback();
+                }
+
+                const nlohmann::json j = settings;
+                SqliteStatement stmt{m_db, "UPDATE Mixes SET pending_export_settings = ? WHERE mix_id = ?;"};
+                stmt.addParam(j.dump());
+                stmt.addParam(mixId);
+
+                if (!stmt.execute())
+                {
+                    spdlog::error("Failed to schedule mix {} for export", mixId);
+                    return transaction.rollback();
+                }
+
+                if (!transaction.commit())
+                {
+                    spdlog::error("Failed to commit scheduled export for mix {}", mixId);
+                    return false;
+                }
+
+                spdlog::info("Scheduled mix {} for export", mixId);
+                return true;
+            }
+
+            return false;
         }
 
         bool SqliteMixManager::clearPendingExportSettings(MixId mixId) const
