@@ -8,6 +8,12 @@ namespace jucyaudio
 {
     namespace database
     {
+        const DataActions MixTrackRowActions{
+            DataAction::Play,
+            DataAction::ShowDetails,
+            DataAction::Delete
+        };
+
         MixNode::MixNode(INavigationNode *parent, const MixInfo &mixInfo)
             : LibraryNode{parent, mixInfo.name, "Mix", "Mixes"},
               m_mixInfo{mixInfo}
@@ -76,6 +82,11 @@ namespace jucyaudio
             {
                 children.emplace_back(new MixNode{parent, mix});
             }
+        }
+
+        const DataActions &MixNode::getRowActions([[maybe_unused]] RowIndex_t rowIndex) const
+        {
+            return MixTrackRowActions;
         }
         
         const TrackInfo *MixNode::getTrackInfoForRow(RowIndex_t rowIndex) const

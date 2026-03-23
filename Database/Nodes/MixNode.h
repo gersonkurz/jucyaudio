@@ -36,6 +36,7 @@ namespace jucyaudio
             void refreshMixInfo();
             void updateSummaryMetadata(int trackCount, Duration_t totalDuration);
             static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
+            const DataActions &getRowActions(RowIndex_t rowIndex) const override;
 
             audio::MixProjectLoader &getMixProjectLoader() const
             {

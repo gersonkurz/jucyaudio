@@ -912,7 +912,15 @@ namespace jucyaudio
                     const auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
                     if (!selectedRows.empty())
                     {
-                        onDeleteTracksFromLibrary();
+                        if (dynamic_cast<database::MixNode*>(m_currentNode) != nullptr ||
+                            dynamic_cast<database::WorkingSetNode*>(m_currentNode) != nullptr)
+                        {
+                            onDataActionRemoveNamedObjects();
+                        }
+                        else
+                        {
+                            onDeleteTracksFromLibrary();
+                        }
                         return true;
                     }
                 }
