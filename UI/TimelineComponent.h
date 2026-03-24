@@ -301,15 +301,15 @@ namespace jucyaudio
             bool removeTrackFromMixOnly(int orderInMix);
 
             /**
-             * @brief Converts a Y coordinate to an orderInMix position.
+             * @brief Converts a mouse position to an orderInMix position.
              *
-             * This function calculates which track position (0-based orderInMix) corresponds
-             * to a given Y coordinate on the timeline, taking into account the zigzag lane layout.
+             * This function finds the concrete track component under the cursor and returns
+             * its current 0-based orderInMix value.
              *
-             * @param yPos The Y coordinate in pixels.
+             * @param position The mouse position in pixels.
              * @return The calculated orderInMix position, or -1 if the position is invalid.
              */
-            int yCoordinateToOrderInMix(int yPos) const;
+            int pointToOrderInMix(juce::Point<int> position) const;
 
             /**
              * @brief A helper struct that tightly couples a UI component with its underlying data.

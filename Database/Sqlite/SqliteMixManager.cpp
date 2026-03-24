@@ -720,28 +720,12 @@ WHERE m.export_folder IS NULL
             return false;
         }
 
-        bool SqliteMixManager::reorderTrackInMix(MixId mixId, TrackId trackId, int newOrderInMix) const
+        bool SqliteMixManager::reorderTrackInMix(MixId mixId, int currentOrderInMix, int newOrderInMix) const
         {
             if (SqliteTransaction transaction{m_db})
             {
-                // Get the current orderInMix of the track being moved
-                SqliteStatement getOrderStmt{m_db, "SELECT order_in_mix FROM MixTracks WHERE mix_id = ? AND track_id = ?"};
-                getOrderStmt.addParam(mixId);
-                getOrderStmt.addParam(trackId);
-
-                int currentOrder = -1;
-                if (getOrderStmt.getNextResult())
-                {
-                    currentOrder = getOrderStmt.getInt32(0);
-                }
-                else
-                {
-                    spdlog::error("Track {} not found in mix {}", trackId, mixId);
-                    return false;
-                }
-
                 // If the position hasn't changed, nothing to do
-                if (currentOrder == newOrderInMix)
+                if (currentOrderInMix == newOrderInMix)
                 {
                     return true;
                 }
@@ -753,6 +737,12 @@ WHERE m.export_folder IS NULL
                 if (countStmt.getNextResult())
                 {
                     trackCount = countStmt.getInt32(0);
+                }
+
+                if (currentOrderInMix < 0 || currentOrderInMix >= trackCount)
+                {
+                    spdlog::error("Invalid currentOrderInMix {} for mix {} with {} tracks", currentOrderInMix, mixId, trackCount);
+                    return false;
                 }
 
                 if (newOrderInMix < 0 || newOrderInMix >= trackCount)
@@ -768,7 +758,7 @@ WHERE m.export_folder IS NULL
                 //    - DECREMENT order_in_mix for all tracks in range (currentOrder, newOrderInMix]
                 // 3. Set the moved track's order_in_mix = newOrderInMix
 
-                if (newOrderInMix < currentOrder)
+                if (newOrderInMix < currentOrderInMix)
                 {
                     // Moving UP - shift tracks down
                     SqliteStatement updateStmt{m_db,
@@ -776,7 +766,7 @@ WHERE m.export_folder IS NULL
                         "WHERE mix_id = ? AND order_in_mix >= ? AND order_in_mix < ?"};
                     updateStmt.addParam(mixId);
                     updateStmt.addParam(newOrderInMix);
-                    updateStmt.addParam(currentOrder);
+                    updateStmt.addParam(currentOrderInMix);
                     if (!updateStmt.execute())
                     {
                         spdlog::error("Failed to shift tracks for reorder (moving up)");
@@ -790,7 +780,7 @@ WHERE m.export_folder IS NULL
                         "UPDATE MixTracks SET order_in_mix = order_in_mix - 1 "
                         "WHERE mix_id = ? AND order_in_mix > ? AND order_in_mix <= ?"};
                     updateStmt.addParam(mixId);
-                    updateStmt.addParam(currentOrder);
+                    updateStmt.addParam(currentOrderInMix);
                     updateStmt.addParam(newOrderInMix);
                     if (!updateStmt.execute())
                     {
@@ -800,17 +790,17 @@ WHERE m.export_folder IS NULL
                 }
 
                 // Finally, set the moved track's new position
-                SqliteStatement setOrderStmt{m_db, "UPDATE MixTracks SET order_in_mix = ? WHERE mix_id = ? AND track_id = ?"};
+                SqliteStatement setOrderStmt{m_db, "UPDATE MixTracks SET order_in_mix = ? WHERE mix_id = ? AND order_in_mix = ?"};
                 setOrderStmt.addParam(newOrderInMix);
                 setOrderStmt.addParam(mixId);
-                setOrderStmt.addParam(trackId);
+                setOrderStmt.addParam(currentOrderInMix);
                 if (!setOrderStmt.execute())
                 {
-                    spdlog::error("Failed to set new order_in_mix for track {}", trackId);
+                    spdlog::error("Failed to set new order_in_mix for mix {} row {}", mixId, currentOrderInMix);
                     return transaction.rollback();
                 }
 
-                spdlog::info("Reordered track {} in mix {} from position {} to {}", trackId, mixId, currentOrder, newOrderInMix);
+                spdlog::info("Reordered mix {} row from position {} to {}", mixId, currentOrderInMix, newOrderInMix);
 
                 if (transaction.commit())
                 {

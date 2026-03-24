@@ -1144,7 +1144,7 @@ namespace jucyaudio
                 m_currentDragPosition = event.position.toInt();
 
                 // Calculate the target drop position based on mouse Y coordinate
-                const int targetOrder = yCoordinateToOrderInMix(event.position.y);
+                const int targetOrder = pointToOrderInMix(event.position.toInt());
 
                 if (targetOrder != m_dropTargetOrderInMix && targetOrder >= 0)
                 {
@@ -1160,29 +1160,27 @@ namespace jucyaudio
         {
             if (m_isDraggingTrackForReorder && m_draggedTrackForReorder && m_dropTargetOrderInMix >= 0)
             {
-                // Get the database track ID and current order from the dragged track
-                TrackId trackId = -1;
+                // Get the current row position from the dragged track component.
                 int currentOrder = -1;
 
                 for (size_t i = 0; i < m_trackViews.size(); ++i)
                 {
                     if (m_trackViews[i].component.get() == m_draggedTrackForReorder)
                     {
-                        trackId = m_trackViews[i].trackInfoData->trackId;
                         currentOrder = m_trackViews[i].mixTrackData->orderInMix;
                         break;
                     }
                 }
 
-                if (trackId >= 0 && currentOrder != m_dropTargetOrderInMix && m_mixLoader)
+                if (currentOrder >= 0 && currentOrder != m_dropTargetOrderInMix && m_mixLoader)
                 {
-                    spdlog::info("[Timeline] Executing reorder: track {} from order {} to {}",
-                                trackId, currentOrder, m_dropTargetOrderInMix);
+                    spdlog::info("[Timeline] Executing reorder from order {} to {}",
+                                currentOrder, m_dropTargetOrderInMix);
 
                     // Get the mix manager and execute the reorder
                     const auto mixId = m_mixLoader->getMixInfo().mixId;
 
-                    if (theTrackLibrary.getMixManager().reorderTrackInMix(mixId, trackId, m_dropTargetOrderInMix))
+                    if (theTrackLibrary.getMixManager().reorderTrackInMix(mixId, currentOrder, m_dropTargetOrderInMix))
                     {
                         spdlog::info("[Timeline] Track reordered successfully, scheduling reload");
 
@@ -1233,15 +1231,13 @@ namespace jucyaudio
             return nullptr;
         }
 
-        int TimelineComponent::yCoordinateToOrderInMix(int yPos) const
+        int TimelineComponent::pointToOrderInMix(juce::Point<int> position) const
         {
-            // Find which track is actually at this Y position (considering current viewport/scroll)
-            // We use a point with X=0 because we only care about Y position
-            const auto trackAtPos = getTrackAtPosition(juce::Point<int>(0, yPos));
+            const auto trackAtPos = getTrackAtPosition(position);
 
             if (!trackAtPos)
             {
-                return -1; // No track at this Y position
+                return -1; // No track at this position
             }
 
             // Find the orderInMix for this track

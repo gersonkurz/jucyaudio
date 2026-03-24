@@ -34,7 +34,7 @@ namespace jucyaudio
             bool removeTrackFromMix(MixId mixId, TrackId trackId) const override;
             bool removeTrackFromMixAtOrder(MixId mixId, int orderInMix) const override;
             bool removeTracksFromMix(MixId mixId, const std::vector<TrackId> &trackIds) const override;
-            bool reorderTrackInMix(MixId mixId, TrackId trackId, int newOrderInMix) const override;
+            bool reorderTrackInMix(MixId mixId, int currentOrderInMix, int newOrderInMix) const override;
             bool finalizeMix(MixId mixId) const override;
             bool clearMixWorkingSetId(MixId mixId) const override;
             bool updateMixTrack(MixId mixId, const MixTrack& updatedTrack) const override;
