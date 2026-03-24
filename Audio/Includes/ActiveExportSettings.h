@@ -28,10 +28,21 @@ namespace nlohmann
 {
     template <> struct adl_serializer<jucyaudio::audio::ActiveExportSettings>
     {
+        static std::string pathToUtf8String(const std::filesystem::path& path)
+        {
+            const auto utf8Path = path.u8string();
+            return std::string{utf8Path.begin(), utf8Path.end()};
+        }
+
+        static std::filesystem::path pathFromUtf8String(const std::string& utf8Path)
+        {
+            return std::filesystem::u8path(utf8Path);
+        }
+
         static void to_json(json& j, const jucyaudio::audio::ActiveExportSettings& s)
         {
             j = json{
-                {"outputPath", s.outputPath.string()},
+                {"outputPath", pathToUtf8String(s.outputPath)},
                 {"exportFolder", s.exportFolder},
                 {"artist", s.artist},
                 {"album", s.album},
@@ -45,7 +56,7 @@ namespace nlohmann
 
         static void from_json(const json& j, jucyaudio::audio::ActiveExportSettings& s)
         {
-            s.outputPath = j.value("outputPath", std::string{});
+            s.outputPath = pathFromUtf8String(j.value("outputPath", std::string{}));
             s.exportFolder = j.value("exportFolder", std::string{});
             s.artist = j.value("artist", std::string{});
             s.album = j.value("album", std::string{});
