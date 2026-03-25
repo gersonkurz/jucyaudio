@@ -119,18 +119,18 @@ namespace jucyaudio
         private:
             void nodeHasBeenDeleted(INavigationNode *node) override
             {
-                // if the node exists in our children, we remove it
-                auto it = std::remove_if(m_children.begin(),
+                const auto it = std::find_if(m_children.begin(),
                     m_children.end(),
                     [node](INavigationNode *child)
                     {
                         return child->getUniqueId() == node->getUniqueId();
                     });
+
                 if (it != m_children.end())
                 {
                     spdlog::debug("Node {} has been deleted, removing from children.", node->getName());
-                    (*it)->release(REFCOUNT_DEBUG_ARGS); // Release the node before removing
-                    m_children.erase(it, m_children.end());
+                    (*it)->release(REFCOUNT_DEBUG_ARGS);
+                    m_children.erase(it);
                 }
                 else
                 {

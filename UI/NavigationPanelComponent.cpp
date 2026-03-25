@@ -462,13 +462,14 @@ namespace jucyaudio
 
         NavTreeViewItem *NavigationPanelComponent::findTreeViewItemForNode(juce::TreeViewItem *currentItem, INavigationNode *targetNode)
         {
-            if (currentItem == nullptr)
+            if (currentItem == nullptr || targetNode == nullptr)
             {
                 return nullptr;
             }
 
             auto *navItem = dynamic_cast<NavTreeViewItem *>(currentItem);
-            if (navItem && navItem->getNode() == targetNode)
+            if (navItem && navItem->getNode() != nullptr
+                && navItem->getNode()->getUniqueId() == targetNode->getUniqueId())
             {
                 return navItem;
             }
@@ -481,6 +482,11 @@ namespace jucyaudio
                 }
             }
             return nullptr;
+        }
+
+        void NavigationPanelComponent::clearSelection()
+        {
+            m_treeView.clearSelectedItems();
         }
 
         void NavigationPanelComponent::refreshNode(INavigationNode *nodeToRefresh)
@@ -507,55 +513,7 @@ namespace jucyaudio
             spdlog::info("NavigationPanel::refreshNode - Refreshing GUI sub-items for "
                          "TreeViewItem displaying node: {}",
                 strDisplayNode);
-
-            // To force a rebuild of its GUI children based on the now-updated
-            // model: a. Mark its current GUI children as not built (if they
-            // were). b. If it's open, this should trigger itemOpennessChanged
-            // -> buildSubItems. c. If it's closed, opening it later will
-            // trigger buildSubItems.
-
-            // Simplest way to force NavTreeViewItem::buildSubItems() to run
-            // again:
-            treeViewItemToRefresh->clearSubItems(); // Removes all existing GUI child items from
-                                                    // this item and calls their destructors
-                                                    // (which releases their nodes). This is
-                                                    // important for refcounting.
-            // treeViewItemToRefresh->m_subItemsBuilt = false; // Manually reset
-            // the flag.
-            // ^^^^ This direct member access is bad. NavTreeViewItem needs a
-            // method.
-
-            // Add a method to NavTreeViewItem to allow external invalidation of
-            // its children build state: void
-            // NavTreeViewItem::invalidateSubItems() {
-            //     clearSubItems(); // This already removes and destroys GUI
-            //     children m_subItemsBuilt = false;
-            // }
-            // Then call:
-            // treeViewItemToRefresh->invalidateSubItems();
-
-            // Let's assume NavTreeViewItem has a public method:
             treeViewItemToRefresh->rebuildSubItemsFromModel(); // You will create this method
-
-            // If the item was open, it should now re-populate based on the
-            // fresh model children. If it wasn't open, it will build them when
-            // next opened. To ensure it visibly updates if it was already open:
-            if (treeViewItemToRefresh->isOpen())
-            {
-                // JUCE's TreeView might not automatically re-query children
-                // just because clearSubItems() was called if no explicit signal
-                // is sent to the TreeView itself about the structure changing
-                // for an *already open item*. Forcing it open again after
-                // clearing often works, or telling the TreeView item height
-                // changed. treeViewItemToRefresh->setOpen(false); // Close it
-                // treeViewItemToRefresh->setOpen(true);  // And reopen it to
-                // trigger buildSubItems via itemOpennessChanged This causes a
-                // visual flicker.
-
-                // A cleaner way might be needed if just calling a rebuild
-                // method doesn't refresh an open tree. For now, let's assume
-                // rebuildSubItemsFromModel() does what's needed.
-            }
 
             m_treeView.repaint(); // Ensure the tree view repaints
         }
@@ -580,8 +538,6 @@ namespace jucyaudio
             spdlog::info("NavigationPanel::refreshNode - Refreshing GUI sub-items for "
                          "TreeViewItem displaying node: {}",
                 strDisplayNode);
-
-            treeViewItemToRefresh->clearSubItems(); 
 
             treeViewItemToRefresh->rebuildSubItemsFromModel(); // You will create this method
 

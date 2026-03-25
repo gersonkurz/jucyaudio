@@ -80,7 +80,9 @@ namespace jucyaudio
                     parent->nodeHasBeenDeleted(node);
                     juce::MessageManager::callAsync([this, parent]()
                     {
+                        m_npc.clearSelection();
                         m_npc.refreshNode(parent);
+                        m_npc.expand(parent);
                         m_npc.selectNode(parent);
                         parent->release(REFCOUNT_DEBUG_ARGS);
                     });

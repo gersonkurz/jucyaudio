@@ -73,6 +73,7 @@ namespace jucyaudio
             void refreshNode(INavigationNode *node);                // rootNode will be retained
             void selectNode(const INavigationNode *nodeToSelect);         // Selects a node in the
             void expand(INavigationNode *node);
+            void clearSelection();
             bool expandPathAndSelectTarget(const std::vector<INavigationNode*>& pathFromRoot);
 
             // Callback for when a node is selected in the TreeView
