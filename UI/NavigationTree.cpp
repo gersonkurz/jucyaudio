@@ -57,21 +57,34 @@ namespace jucyaudio
 
         bool NavigationTree::deleteObject(INavigationNode* node)
         {
-            // TODO: tell parent to update the visuals
+            if (node == nullptr)
+            {
+                return false;
+            }
+
+            auto* parent = node->getParent();
+            if (parent)
+            {
+                parent->retain(REFCOUNT_DEBUG_ARGS);
+            }
+
             const bool deleted = node->deleteThisObject();
             if (deleted)
             {
-                const auto parent{node->getParent()};
-
-                // tell the parent that this node has been deleted
-                parent->nodeHasBeenDeleted(node);
-
-                // in the navigation panel, we need to remove the node from the tree
-                m_npc.removeNodeFromTree(node);
-
-                // also we now need to find a differnt node to select: the easiest being the parent to that node
-                m_npc.selectNode(parent);
+                if (parent)
+                {
+                    // Update the model first, then rebuild the parent branch in the UI.
+                    parent->nodeHasBeenDeleted(node);
+                    m_npc.refreshNode(parent);
+                    m_npc.selectNode(parent);
+                }
             }
+
+            if (parent)
+            {
+                parent->release(REFCOUNT_DEBUG_ARGS);
+            }
+
             return deleted;
         }
         
