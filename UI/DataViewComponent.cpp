@@ -1,6 +1,7 @@
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Nodes/MixNode.h>
 #include <Database/Nodes/AlbumsNode.h>
+#include <Database/Nodes/WorkingSetNode.h>
 #include <Database/TrackLibrary.h>
 #include <UI/DataViewComponent.h>
 #include <UI/MainComponent.h>
@@ -35,6 +36,23 @@ namespace jucyaudio
                 // Normal scrolling
                 TableListBox::mouseWheelMove(event, wheel);
             }
+        }
+
+        bool ScalableTableListBox::keyPressed(const juce::KeyPress &key)
+        {
+            if ((key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
+                && !key.getModifiers().isAnyModifierKeyDown())
+            {
+                if (auto *dataView = findParentComponentOfClass<DataViewComponent>())
+                {
+                    if (dataView->handleDeleteShortcut())
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return TableListBox::keyPressed(key);
         }
 
         bool ScalableTableListBox::isInterestedInDragSource(const SourceDetails &dragSourceDetails)
@@ -604,6 +622,28 @@ namespace jucyaudio
         {
             // Notify MainComponent to update status bar with selection stats
             m_mainComponent.updateTrackCountStatus();
+        }
+
+        bool DataViewComponent::handleDeleteShortcut()
+        {
+            if (m_currentNode == nullptr || m_onRowActionRequested == nullptr)
+            {
+                return false;
+            }
+
+            const auto selectedRows = getSelectedRowIndices();
+            if (selectedRows.empty())
+            {
+                return false;
+            }
+
+            const auto action = (dynamic_cast<database::MixNode *>(m_currentNode) != nullptr
+                    || dynamic_cast<database::WorkingSetNode *>(m_currentNode) != nullptr)
+                ? DataAction::RemoveTracks
+                : DataAction::DeleteTracksFromLibrary;
+
+            m_onRowActionRequested(selectedRows.front(), action, {});
+            return true;
         }
 
         juce::var DataViewComponent::getDragSourceDescription(const juce::SparseSet<int> &selectedRows)

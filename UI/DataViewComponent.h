@@ -71,6 +71,7 @@ namespace jucyaudio
 
             void mouseWheelMove(const juce::MouseEvent &event, const juce::MouseWheelDetails &wheel) override;
             void resized() override;
+            bool keyPressed(const juce::KeyPress &key) override;
 
             // DragAndDropTarget overrides
             bool isInterestedInDragSource(const SourceDetails &dragSourceDetails) override;
@@ -160,6 +161,7 @@ namespace jucyaudio
             // Drag & drop support
             juce::var getDragSourceDescription(const juce::SparseSet<int> &selectedRows) override;
             void selectedRowsChanged(int lastRowSelected) override;
+            bool handleDeleteShortcut();
 
             void updateTableColumns();
 
