@@ -73,10 +73,18 @@ namespace jucyaudio
             {
                 if (parent)
                 {
-                    // Update the model first, then rebuild the parent branch in the UI.
+                    // Update the model immediately, but defer the TreeView rebuild until
+                    // the current UI event has unwound. Deleting/rebuilding TreeView items
+                    // synchronously from within the delete action can leave JUCE painting
+                    // stale GUI items.
                     parent->nodeHasBeenDeleted(node);
-                    m_npc.refreshNode(parent);
-                    m_npc.selectNode(parent);
+                    juce::MessageManager::callAsync([this, parent]()
+                    {
+                        m_npc.refreshNode(parent);
+                        m_npc.selectNode(parent);
+                        parent->release(REFCOUNT_DEBUG_ARGS);
+                    });
+                    parent = nullptr; // Ownership transferred to async callback.
                 }
             }
 
