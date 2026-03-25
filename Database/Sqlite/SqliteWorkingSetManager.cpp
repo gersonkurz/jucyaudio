@@ -313,6 +313,46 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
             return false;
         }
 
+        bool SqliteWorkingSetManager::addVirtualFolderToWorkingSet(WorkingSetId workingSetId, int64_t folderId, bool recursive)
+        {
+            const auto &folderDb = theTrackLibrary.getFolderDatabase();
+            const auto allChildren = folderDb.getAllChildFolders({folderId});
+
+            if (SqliteTransaction transaction{m_db})
+            {
+                if (recursive)
+                {
+                    StringWriter stmt;
+                    stmt.append("INSERT OR IGNORE INTO WorkingSetTracks (ws_id, track_id) ");
+                    stmt.append("SELECT ?, track_id FROM Tracks WHERE folder_id IN (");
+                    bool first = true;
+                    for (const auto &childFolderId : allChildren)
+                    {
+                        if (first)
+                        {
+                            first = false;
+                        }
+                        else
+                        {
+                            stmt.append(", ");
+                        }
+                        stmt.append(std::to_string(childFolderId));
+                    }
+                    stmt.append(");");
+                    return transaction.execute(stmt.asString(), workingSetId) && transaction.commit();
+                }
+
+                return transaction.execute(
+                           "INSERT OR IGNORE INTO WorkingSetTracks (ws_id, track_id) "
+                           "SELECT ?, track_id FROM Tracks WHERE folder_id = ?;",
+                           workingSetId,
+                           folderId)
+                    && transaction.commit();
+            }
+
+            return false;
+        }
+
         bool SqliteWorkingSetManager::renameWorkingSet(WorkingSetId workingSetId, std::string_view name) const
         {
             if (SqliteTransaction transaction{m_db})

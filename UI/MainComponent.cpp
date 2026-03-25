@@ -2610,9 +2610,28 @@ namespace jucyaudio
             else
             {
                 // Append to existing working set
-                const auto trackResult = node->getAllTrackInfosForOperation();
+                bool success = false;
+                int64_t addedTrackCount = 0;
 
-                bool success = theTrackLibrary.getWorkingSetManager().addToWorkingSet(targetWsId, trackResult.trackInfos);
+                if (const auto *virtualFolderNode = dynamic_cast<const VirtualFolderNode *>(node))
+                {
+                    success = theTrackLibrary.getWorkingSetManager().addVirtualFolderToWorkingSet(targetWsId, virtualFolderNode->getFolderId(), true);
+                    if (success)
+                    {
+                        TrackQueryArgs args;
+                        const auto &folderDb = theTrackLibrary.getFolderDatabase();
+                        const auto allChildFolders = folderDb.getAllChildFolders({virtualFolderNode->getFolderId()});
+                        args.folderIds = std::vector<FolderId>{allChildFolders.begin(), allChildFolders.end()};
+                        args.usePaging = false;
+                        addedTrackCount = static_cast<int64_t>(theTrackLibrary.getTracks(args).size());
+                    }
+                }
+                else
+                {
+                    const auto trackResult = node->getAllTrackInfosForOperation();
+                    success = theTrackLibrary.getWorkingSetManager().addToWorkingSet(targetWsId, trackResult.trackInfos);
+                    addedTrackCount = static_cast<int64_t>(trackResult.trackInfos.size());
+                }
 
                 if (success)
                 {
@@ -2629,7 +2648,7 @@ namespace jucyaudio
                     {
                         workingSetInfo = *it;
                         m_statusPanel.getStatusBar().postMessage(
-                            std::format("Added {} tracks to working set '{}'", trackResult.trackInfos.size(), workingSetInfo.name), false);
+                            std::format("Added {} tracks to working set '{}'", addedTrackCount, workingSetInfo.name), false);
                         // Refresh the working set node to show the new track count
                         m_navigationTree.onWorkingSetCreated(targetWsId);
                     }

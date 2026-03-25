@@ -31,6 +31,9 @@ namespace jucyaudio
                 WorkingSetInfo &newWorkingSet) const override;
             bool addToWorkingSet(WorkingSetId workingSetId,
                                  const std::vector<TrackInfo> &trackInfos) override;
+            bool addVirtualFolderToWorkingSet(WorkingSetId workingSetId,
+                                              int64_t folderId,
+                                              bool recursive = true) override;
             bool renameWorkingSet(WorkingSetId workingSetId, std::string_view name) const override;
             bool removeTracksFromWorkingSet(
                 WorkingSetId workingSetId,
