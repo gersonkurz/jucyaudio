@@ -70,8 +70,20 @@ namespace jucyaudio
                 // Reload mix in playback controller for hot-reloading gain/envelope changes
                 if (m_playbackController && m_node)
                 {
+                    const bool wasPlaying = m_playbackController->isPlaying();
+                    const double playbackPosition = m_playbackController->getCurrentPositionSeconds();
                     auto& mixLoader = m_node->getMixProjectLoader();
-                    m_playbackController->loadMix(&mixLoader);
+                    if (m_playbackController->loadMix(&mixLoader))
+                    {
+                        if (wasPlaying)
+                        {
+                            m_playbackController->playMixFrom(playbackPosition);
+                        }
+                        else
+                        {
+                            m_playbackController->seek(playbackPosition);
+                        }
+                    }
                 }
             };
 
