@@ -3,6 +3,7 @@
 #include <Database/TrackLibrary.h>
 #include <UI/ThemeManager.h>
 #include <format>
+#include <numeric>
 #include <spdlog/spdlog.h>
 
 namespace jucyaudio
@@ -189,6 +190,22 @@ namespace jucyaudio
                         return;
                     }
 
+                    const auto mixWeight = [](const database::MixInfo& mixInfo) -> int64_t
+                    {
+                        return mixInfo.numberOfTracks > 0 ? mixInfo.numberOfTracks : int64_t{1};
+                    };
+
+                    const auto totalWeight = std::accumulate(
+                        mixes.begin(),
+                        mixes.end(),
+                        int64_t{0},
+                        [&mixWeight](int64_t sum, const database::IMixManager::ScheduledExport& scheduled)
+                        {
+                            return sum + mixWeight(scheduled.mixInfo);
+                        });
+
+                    int64_t completedWeight = 0;
+
                     for (size_t i = 0; i < totalMixes; ++i)
                     {
                         if (shouldCancel->load())
@@ -200,8 +217,9 @@ namespace jucyaudio
                         const auto& entry = mixes[i];
                         const auto& mixInfo = entry.mixInfo;
                         const auto& settings = entry.settings;
+                        const auto currentMixWeight = mixWeight(mixInfo);
 
-                        postProgress(static_cast<int>((i * 100) / totalMixes),
+                        postProgress(static_cast<int>((completedWeight * 100) / totalWeight),
                                      std::format("Mix {} of {}: {}", i + 1, totalMixes, mixInfo.name),
                                      0,
                                      std::format("Finalizing '{}'...", mixInfo.name));
@@ -210,7 +228,8 @@ namespace jucyaudio
                         {
                             ++failCount;
                             spdlog::error("Batch export: failed to finalize mix '{}'", mixInfo.name);
-                            postProgress(static_cast<int>(((i + 1) * 100) / totalMixes),
+                            completedWeight += currentMixWeight;
+                            postProgress(static_cast<int>((completedWeight * 100) / totalWeight),
                                          std::format("Mix {} of {}: {}", i + 1, totalMixes, mixInfo.name),
                                          0,
                                          std::format("Failed to finalize '{}'", mixInfo.name));
@@ -224,7 +243,8 @@ namespace jucyaudio
                             {
                                 const auto clamped = juce::jlimit(0.0f, 1.0f, progress);
                                 const auto currentPercent = static_cast<int>(clamped * 100.0f);
-                                const auto overallPercent = static_cast<int>(((static_cast<float>(i) + clamped) / static_cast<float>(totalMixes)) * 100.0f);
+                                const auto weightedProgress = static_cast<double>(completedWeight) + (static_cast<double>(clamped) * static_cast<double>(currentMixWeight));
+                                const auto overallPercent = static_cast<int>((weightedProgress / static_cast<double>(totalWeight)) * 100.0);
 
                                 postProgress(overallPercent,
                                              std::format("Mix {} of {}: {}", i + 1, totalMixes, mixInfo.name),
@@ -251,6 +271,8 @@ namespace jucyaudio
                             ++failCount;
                             spdlog::error("Batch export: failed to export mix '{}': {}", mixInfo.name, exportResult.message);
                         }
+
+                        completedWeight += currentMixWeight;
                     }
 
                     if (failCount == 0)
