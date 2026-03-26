@@ -126,6 +126,7 @@ namespace jucyaudio
             // Handle track reordering from drag & drop
             void handleTrackReorder(int sourceRow, int targetRow);
             void handleTracksReorder(const std::vector<int> &sourceRows, int targetRow);
+            bool handleDeleteShortcut();
 
             // Public access methods for media key support
             int getTotalRowCount()
@@ -161,7 +162,6 @@ namespace jucyaudio
             // Drag & drop support
             juce::var getDragSourceDescription(const juce::SparseSet<int> &selectedRows) override;
             void selectedRowsChanged(int lastRowSelected) override;
-            bool handleDeleteShortcut();
 
             void updateTableColumns();
 

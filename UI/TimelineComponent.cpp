@@ -228,12 +228,17 @@ namespace jucyaudio
                 }
             }
 
-            // 6. Update the in-memory loader incrementally to avoid rebuilding the full UI.
-            if (!m_mixLoader->removeTrackAtOrder(orderInMixToRemove))
+            // 6. Reload the updated mix data from the database so recalculated
+            // adjacencies/attach points are reflected in the live timeline.
+            if (!m_mixLoader->reloadFromDatabase())
             {
-                spdlog::error("Failed to update MixProjectLoader after deletion!");
+                spdlog::error("Failed to reload MixProjectLoader from database after deletion!");
                 return false;
             }
+
+            playbackPosition = std::min(
+                playbackPosition,
+                std::chrono::duration<double>(m_mixLoader->calculateMixDuration()).count());
 
             // --- FIX: Reload the now-modified mix into the playback engine ---
             spdlog::debug("TimelineComponent: Reloading mix in playback controller.");

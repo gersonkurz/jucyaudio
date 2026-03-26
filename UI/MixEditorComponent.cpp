@@ -16,7 +16,6 @@ namespace jucyaudio
 {
     namespace ui
     {
-
         MixEditorComponent::MixEditorComponent()
             : m_timeline{m_formatManager, m_thumbnailCache}
         {
@@ -1022,14 +1021,19 @@ namespace jucyaudio
                 }
             }
             
-            // 5. Update the in-memory loader incrementally.
-            spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Updating mix loader incrementally.");
-            if (!mixLoader.removeTrackAtOrder(orderInMixToRemove))
+            // 5. Reload the updated mix data from the database so new adjacencies/attach
+            // points match the persisted mix state after deletion.
+            spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Reloading mix loader from database.");
+            if (!mixLoader.reloadFromDatabase())
             {
-                spdlog::critical("CRITICAL: Failed to update mix loader after deletion! The application state is now inconsistent.");
-                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Critical Error", "Failed to update mix data after deletion. Please restart the application.");
+                spdlog::critical("CRITICAL: Failed to reload mix loader after deletion! The application state is now inconsistent.");
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Critical Error", "Failed to reload mix data after deletion. Please restart the application.");
                 return;
             }
+
+            playbackPosition = std::min(
+                playbackPosition,
+                std::chrono::duration<double>(mixLoader.calculateMixDuration()).count());
             
             // Update the node's cached summary metadata after successful deletion
             m_node->updateSummaryMetadata(
