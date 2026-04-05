@@ -137,6 +137,7 @@ namespace jucyaudio
             {
                 m_tableListBox.selectRow(rowIndex);
             }
+            bool selectTrackById(TrackId trackId, bool shouldScrollToRow = true, bool shouldSelectRow = true);
 
             // Now playing highlight
             void setPlayingTrackId(TrackId trackId);

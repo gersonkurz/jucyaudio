@@ -107,6 +107,16 @@ namespace jucyaudio
                 m_onMixSummaryChanged = std::move(callback);
             }
 
+            void setOnShowTrackInLibraryCallback(std::function<void(TrackId)> callback)
+            {
+                m_onShowTrackInLibrary = std::move(callback);
+            }
+
+            void setOnShowTrackDetailsCallback(std::function<void(TrackId)> callback)
+            {
+                m_onShowTrackDetails = std::move(callback);
+            }
+
             // Playback is now handled by PlaybackController
 
             void handleDeleteSelectedTrack();
@@ -161,6 +171,8 @@ namespace jucyaudio
             // Callback for when mix export status changes
             std::function<void()> m_onMixExportStatusChanged;
             std::function<void()> m_onMixSummaryChanged;
+            std::function<void(TrackId)> m_onShowTrackInLibrary;
+            std::function<void(TrackId)> m_onShowTrackDetails;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixEditorComponent)
         };

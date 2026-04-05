@@ -83,6 +83,8 @@ namespace jucyaudio
             std::function<void(int orderInMix, const database::MixTrack&)> onCueAttachChanged;
             std::function<void(int orderInMix, const std::vector<database::EnvelopePoint>&)> onEnvelopeChanged;
             std::function<void(int orderInMix, float newGain)> onGainAdjustmentChanged;
+            std::function<void(TrackId)> onShowTrackInLibraryRequested;
+            std::function<void(TrackId)> onShowTrackDetailsRequested;
             std::function<void()> onZoomChanged;
 
 

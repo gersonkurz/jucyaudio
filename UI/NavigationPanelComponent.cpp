@@ -395,10 +395,19 @@ namespace jucyaudio
 
                 // This is the key: If the current GUI item's children haven't been built, build them now.
                 auto *currentNavItem = dynamic_cast<NavTreeViewItem *>(currentItem);
-                if (currentNavItem && !currentNavItem->isOpen())
+                if (currentNavItem)
                 {
-                    // Opening the item will trigger buildSubItems(), creating the next level of the GUI.
-                    currentNavItem->setOpen(true);
+                    if (!currentNavItem->isOpen())
+                    {
+                        // Opening the item will trigger buildSubItems(), creating the next level of the GUI.
+                        currentNavItem->setOpen(true);
+                    }
+                    else
+                    {
+                        // If the branch is already open, its GUI children may still be stale.
+                        // Rebuild them now so path traversal can see newly added/removed nodes.
+                        currentNavItem->rebuildSubItemsFromModel();
+                    }
                 }
 
                 // Now find the specific child item we need for the next step of the path.
@@ -725,12 +734,14 @@ namespace jucyaudio
             //    nodeToRefreshModel->m_children.
             buildSubItems();
 
-            // 4. If the item is open, the TreeView should now reflect the new
-            // children.
-            //    If TreeView needs an extra hint:
-            //    TreeView* owner = getOwnerView();
-            //    if (owner) owner->repaint(); // Or owner->updateContent() if
-            //    that's relevant for TreeView
+            // 4. Force JUCE to recompute visible rows and repaint. Without this,
+            // the branch can stay visually stale until the user manually toggles
+            // openness, even though the model and selection are already correct.
+            treeHasChanged();
+            if (auto* owner = getOwnerView())
+            {
+                owner->repaint();
+            }
         }
 
         void NavigationPanelComponent::removeNodeFromTree(INavigationNode *nodeToRemove)

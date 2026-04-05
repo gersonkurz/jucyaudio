@@ -68,6 +68,12 @@ namespace jucyaudio
             
             // Callback when the gain adjustment changes
             std::function<void(int orderInMix, float newGain)> onGainAdjustmentChanged;
+
+            // Callback to jump to this track in the library view
+            std::function<void(TrackId)> onShowTrackInLibrary;
+
+            // Callback to show track properties/details
+            std::function<void(TrackId)> onShowTrackDetails;
             
             // Callback during cue/attach point dragging for visual feedback
             // isAttachPoint: true for attach points, false for cue points

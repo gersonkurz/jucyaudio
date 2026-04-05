@@ -1060,6 +1060,9 @@ namespace jucyaudio
             menu.addItem(5, "Delete", true); // Always enabled when track is selected
             menu.addSeparator();
             menu.addItem(6, "Remove All Following Tracks", true);
+            menu.addSeparator();
+            menu.addItem(7, "Show in Library", onShowTrackInLibrary != nullptr);
+            menu.addItem(8, "Track Details", onShowTrackDetails != nullptr);
 
             // Show the menu and handle the result
             menu.showMenuAsync(juce::PopupMenu::Options(),
@@ -1112,6 +1115,18 @@ namespace jucyaudio
             case 6: // Remove All Following Tracks
                 spdlog::info("[MixTrackComponent] Context menu: Remove All Following Tracks selected");
                 timeline->removeAllTracksAfterSelected();
+                break;
+
+            case 7: // Show in Library
+                spdlog::info("[MixTrackComponent] Context menu: Show in Library selected");
+                if (onShowTrackInLibrary)
+                    onShowTrackInLibrary(m_mixTrack.trackId);
+                break;
+
+            case 8: // Track Details
+                spdlog::info("[MixTrackComponent] Context menu: Track Details selected");
+                if (onShowTrackDetails)
+                    onShowTrackDetails(m_mixTrack.trackId);
                 break;
 
             default:

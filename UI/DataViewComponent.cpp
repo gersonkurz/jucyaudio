@@ -761,22 +761,33 @@ namespace jucyaudio
                 m_tableListBox.repaint();  // Repaint to show/update the highlight
 
                 // Scroll to make the playing track visible
-                if (trackId >= 0 && m_currentNode != nullptr)
+                if (trackId >= 0)
+                    selectTrackById(trackId, true, false);
+            }
+        }
+
+        bool DataViewComponent::selectTrackById(TrackId trackId, bool shouldScrollToRow, bool shouldSelectRow)
+        {
+            if (trackId < 0 || m_currentNode == nullptr)
+            {
+                return false;
+            }
+
+            const int numRows = m_tableListBox.getNumRows();
+            for (int row = 0; row < numRows; ++row)
+            {
+                const auto trackResult = m_currentNode->getTrackInfosForOperation({static_cast<RowIndex_t>(row)});
+                if (!trackResult.trackInfos.empty() && trackResult.trackInfos[0].trackId == trackId)
                 {
-                    // Find the row number for this track ID
-                    const int numRows = m_tableListBox.getNumRows();
-                    for (int row = 0; row < numRows; ++row)
-                    {
-                        const auto trackResult = m_currentNode->getTrackInfosForOperation({static_cast<RowIndex_t>(row)});
-                        if (!trackResult.trackInfos.empty() && trackResult.trackInfos[0].trackId == trackId)
-                        {
-                            // Found the row - scroll to it
-                            m_tableListBox.scrollToEnsureRowIsOnscreen(row);
-                            break;
-                        }
-                    }
+                    if (shouldSelectRow)
+                        m_tableListBox.selectRow(row);
+                    if (shouldScrollToRow)
+                        m_tableListBox.scrollToEnsureRowIsOnscreen(row);
+                    return true;
                 }
             }
+
+            return false;
         }
 
         void DataViewComponent::clearPlayingTrack()

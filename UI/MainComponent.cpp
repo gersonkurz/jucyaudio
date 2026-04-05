@@ -116,6 +116,71 @@ namespace jucyaudio
                 mixedTracks,
                 durationText);
         }
+
+        juce::String formatTrackDetails(const database::TrackInfo& trackInfo)
+        {
+            const auto& trackDb = theTrackLibrary.getTrackDatabase();
+            const auto fullPath = trackInfo.reconstructFullPath(trackDb);
+            const juce::String bitrateText = trackInfo.bitrate > 0 ? juce::String(trackInfo.bitrate) + " kbps" : "Unknown";
+            const juce::String sampleRateText = trackInfo.samplerate > 0 ? juce::String(trackInfo.samplerate) + " Hz" : "Unknown";
+            const juce::String channelsText = trackInfo.channels > 0 ? juce::String(trackInfo.channels) : "Unknown";
+            const juce::String codecText = trackInfo.codec_name.empty() ? "Unknown" : juce::String(trackInfo.codec_name);
+            const juce::String titleText = trackInfo.title.empty() ? juce::String(trackInfo.filename) : juce::String(trackInfo.title);
+            const juce::String artistText = trackInfo.artist_name.empty() ? "Unknown" : juce::String(trackInfo.artist_name);
+            const juce::String albumText = trackInfo.album_title.empty() ? "Unknown" : juce::String(trackInfo.album_title);
+            const juce::String bpmText = trackInfo.bpm.has_value() ? juce::String(static_cast<double>(*trackInfo.bpm) / 1000.0, 1) : "Unknown";
+            const juce::String yearText = trackInfo.year > 0 ? juce::String(trackInfo.year) : "Unknown";
+
+            juce::String details;
+            details << "Title: " << titleText
+                    << "\nArtist: " << artistText
+                    << "\nAlbum: " << albumText
+                    << "\nYear: " << yearText
+                    << "\nTrack ID: " << juce::String(trackInfo.trackId)
+                    << "\n\nFile: " << juce::String(trackInfo.filename)
+                    << "\nPath: " << ui::jucePathFromFs(fullPath)
+                    << "\n\nDuration: " << juce::String(durationToString(trackInfo.duration))
+                    << "\nFormat: " << codecText
+                    << "\nBitrate: " << bitrateText
+                    << "\nSample Rate: " << sampleRateText
+                    << "\nChannels: " << channelsText
+                    << "\nBPM: " << bpmText
+                    << "\nFile Size: " << juce::File::descriptionOfSizeInBytes(static_cast<juce::int64>(trackInfo.filesize_bytes));
+            return details;
+        }
+
+        INavigationNode* findMixNodeByIdRecursive(INavigationNode* node, MixId mixId)
+        {
+            if (node == nullptr)
+                return nullptr;
+
+            if (auto* mixNode = dynamic_cast<database::MixNode*>(node))
+            {
+                if (mixNode->getMixInfo().mixId == mixId)
+                {
+                    node->retain(REFCOUNT_DEBUG_ARGS);
+                    return node;
+                }
+            }
+
+            if (!node->canExpand())
+                return nullptr;
+
+            std::vector<INavigationNode*> children;
+            if (!node->expand(children))
+                return nullptr;
+
+            INavigationNode* found = nullptr;
+            for (auto* child : children)
+            {
+                found = findMixNodeByIdRecursive(child, mixId);
+                child->release(REFCOUNT_DEBUG_ARGS);
+                if (found != nullptr)
+                    break;
+            }
+
+            return found;
+        }
     } // namespace
 
     namespace ui
@@ -217,6 +282,14 @@ namespace jucyaudio
             m_mixEditorComponent.setOnMixSummaryChangedCallback([this]()
             {
                 updateTrackCountStatus();
+            });
+            m_mixEditorComponent.setOnShowTrackInLibraryCallback([this](TrackId trackId)
+            {
+                showTrackInLibrary(trackId);
+            });
+            m_mixEditorComponent.setOnShowTrackDetailsCallback([this](TrackId trackId)
+            {
+                showTrackDetailsDialog(trackId);
             });
 
             // --- Add and make visible all child components ---
@@ -2692,6 +2765,8 @@ namespace jucyaudio
                         if (theTrackLibrary.getMixManager().scheduleMixForExport(mixInfo.mixId, settings))
                         {
                             spdlog::info("Mix '{}' scheduled for export", mixInfo.name);
+                            m_navigationTree.onMixExportStatusChanged();
+                            navigateToMixesRoot();
                         }
                         else
                         {
@@ -2723,6 +2798,7 @@ namespace jucyaudio
                         [this](bool /*success*/)
                         {
                             m_navigationTree.onMixExportStatusChanged();
+                            navigateToMixesRoot();
                         });
                 }};
 
@@ -2861,6 +2937,7 @@ namespace jucyaudio
                 {
                     // Refresh navigation tree after export completes
                     m_navigationTree.onMixExportStatusChanged();
+                    navigateToMixesRoot();
                 });
             task->release(REFCOUNT_DEBUG_ARGS);
             // Note: tags will be deleted by FinalizeAndExportTask destructor
@@ -2980,6 +3057,7 @@ namespace jucyaudio
 
                             // Refresh navigation tree to show the change immediately
                             m_navigationTree.onMixExportStatusChanged();
+                            navigateToMixById(mixInfo.mixId);
 
                             // If the mix is currently loaded in the editor, reload it to update read-only state
                             if (m_mixEditorComponent.getCurrentMixNode() &&
@@ -3260,6 +3338,98 @@ namespace jucyaudio
             {
                 m_statusPanel.getStatusBar().postMessage("Show in folder is only available for albums", true);
             }
+        }
+
+        bool MainComponent::showTrackInLibrary(TrackId trackId)
+        {
+            if (trackId < 0)
+            {
+                return false;
+            }
+
+            auto rootNode{m_navigationTree.getRootNode()};
+            if (!rootNode)
+            {
+                m_statusPanel.getStatusBar().postMessage("Library navigation is unavailable.", true);
+                return false;
+            }
+
+            auto* libraryNode = rootNode->get(getLibraryRootNodeName());
+            rootNode->release(REFCOUNT_DEBUG_ARGS);
+
+            if (!libraryNode)
+            {
+                m_statusPanel.getStatusBar().postMessage("Library node not found.", true);
+                return false;
+            }
+
+            navigateToNode(libraryNode);
+
+            if (m_dataViewComponent.selectTrackById(trackId))
+            {
+                m_statusPanel.getStatusBar().postMessage("Track selected in library.", false);
+                return true;
+            }
+
+            if (!m_dynamicToolbar.getFilterText().isEmpty())
+            {
+                m_dynamicToolbar.setFilterText({}, juce::sendNotification);
+                if (m_dataViewComponent.selectTrackById(trackId))
+                {
+                    m_statusPanel.getStatusBar().postMessage("Track selected in library.", false);
+                    return true;
+                }
+            }
+
+            m_statusPanel.getStatusBar().postMessage("Track could not be located in the current library view.", true);
+            return false;
+        }
+
+        bool MainComponent::navigateToMixById(MixId mixId)
+        {
+            auto* rootNode = m_navigationTree.getRootNode();
+            if (rootNode == nullptr)
+                return false;
+
+            auto* mixNode = findMixNodeByIdRecursive(rootNode, mixId);
+            rootNode->release(REFCOUNT_DEBUG_ARGS);
+
+            if (mixNode == nullptr)
+                return false;
+
+            navigateToNode(mixNode);
+            return true;
+        }
+
+        bool MainComponent::navigateToMixesRoot()
+        {
+            auto* rootNode = m_navigationTree.getRootNode();
+            if (rootNode == nullptr)
+                return false;
+
+            auto* mixesRootNode = rootNode->getMixesRootNode();
+            rootNode->release(REFCOUNT_DEBUG_ARGS);
+
+            if (mixesRootNode == nullptr)
+                return false;
+
+            navigateToNode(mixesRootNode);
+            return true;
+        }
+
+        void MainComponent::showTrackDetailsDialog(TrackId trackId)
+        {
+            const auto trackInfo = theTrackLibrary.getTrackById(trackId);
+            if (!trackInfo.has_value())
+            {
+                m_statusPanel.getStatusBar().postMessage("Track details are unavailable.", true);
+                return;
+            }
+
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::InfoIcon,
+                "Track Details",
+                formatTrackDetails(*trackInfo));
         }
 
         void MainComponent::onDataActionDelete(INavigationNode *node)

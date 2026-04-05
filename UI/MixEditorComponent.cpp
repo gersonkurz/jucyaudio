@@ -64,6 +64,18 @@ namespace jucyaudio
                 saveMixChanges();
             };
 
+            m_timeline.onShowTrackInLibraryRequested = [this](TrackId trackId)
+            {
+                if (m_onShowTrackInLibrary)
+                    m_onShowTrackInLibrary(trackId);
+            };
+
+            m_timeline.onShowTrackDetailsRequested = [this](TrackId trackId)
+            {
+                if (m_onShowTrackDetails)
+                    m_onShowTrackDetails(trackId);
+            };
+
             m_timeline.onMixPlaybackReloadRequested = [this]()
             {
                 // Reload mix in playback controller for hot-reloading gain/envelope changes
@@ -1048,7 +1060,6 @@ namespace jucyaudio
             {
                 spdlog::debug("JUCYAUDIO: handleDeleteSelectedTrack -> Refreshing timeline UI.");
                 m_timeline.refreshAfterDeletion(orderInMixToRemove);
-
             }
             
             // 7. Re-load mix in playback controller only if needed

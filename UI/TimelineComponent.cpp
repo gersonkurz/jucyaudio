@@ -1615,6 +1615,16 @@ namespace jucyaudio
                         // No need to call onMixChanged here, as updateMixTrack handles its own undo and persistence
                         // The UI will be refreshed by the TimelineComponent's own update mechanism if needed.
                     };
+                    view.component->onShowTrackInLibrary = [this](TrackId trackId)
+                    {
+                        if (onShowTrackInLibraryRequested)
+                            onShowTrackInLibraryRequested(trackId);
+                    };
+                    view.component->onShowTrackDetails = [this](TrackId trackId)
+                    {
+                        if (onShowTrackDetailsRequested)
+                            onShowTrackDetailsRequested(trackId);
+                    };
                     view.component->onCueDragInProgress = [this](int orderInMix, bool isAttachPoint, std::optional<Duration_t> previewTime)
                     {
                         if (previewTime.has_value())
