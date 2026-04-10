@@ -49,7 +49,7 @@ namespace jucyaudio
 
             INavigationNode *m_node;      // Retained
             NavigationPanelComponent &m_ownerPanel; // To call back when selected
-            // bool m_subItemsBuilt{false}; // not sure this optimization is needed 
+            bool m_rebuildingFromModel{false}; // Suppresses itemOpennessChanged during programmatic rebuilds
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(NavTreeViewItem)
         };

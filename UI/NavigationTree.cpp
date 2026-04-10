@@ -28,7 +28,7 @@ namespace jucyaudio
             }
 
             m_root = new RootNode{};           // Create the root node (throws std::bad_alloc on failure)
-            
+
             if (!m_npc.setRootNode(m_root))
             {
                 return false;
@@ -97,21 +97,18 @@ namespace jucyaudio
 
             return deleted;
         }
-        
+
         void NavigationTree::onMixCreated(MixId mixId)
         {
             if (const auto mixesRootNode{m_root->getMixesRootNode()})
             {
-                juce::MessageManager::callAsync([this, mixesRootNode, mixId]()
+                m_npc.expand(mixesRootNode);
+                if (const auto newMixNode{mixesRootNode->get(mixId)})
                 {
-                    m_npc.expand(mixesRootNode);
-                    if (const auto newMixNode{mixesRootNode->get(mixId)})
-                    {
-                        m_npc.selectNode(newMixNode);
-                        newMixNode->release(REFCOUNT_DEBUG_ARGS);
-                    }
-                    mixesRootNode->release(REFCOUNT_DEBUG_ARGS);
-                });
+                    m_npc.selectNode(newMixNode);
+                    newMixNode->release(REFCOUNT_DEBUG_ARGS);
+                }
+                mixesRootNode->release(REFCOUNT_DEBUG_ARGS);
             }
         }
 
@@ -119,16 +116,13 @@ namespace jucyaudio
         {
             if (const auto workingSetsRootNode{m_root->getWorkingSetsRootNode()})
             {
-                juce::MessageManager::callAsync([this, workingSetsRootNode, workingSetId]()
+                m_npc.expand(workingSetsRootNode);
+                if (const auto newWorkingSetNode{workingSetsRootNode->get(workingSetId)})
                 {
-                    m_npc.expand(workingSetsRootNode);
-                    if (const auto newWorkingSetNode{workingSetsRootNode->get(workingSetId)})
-                    {
-                        m_npc.selectNode(newWorkingSetNode);
-                        newWorkingSetNode->release(REFCOUNT_DEBUG_ARGS);
-                    }
-                    workingSetsRootNode->release(REFCOUNT_DEBUG_ARGS);
-                });
+                    m_npc.selectNode(newWorkingSetNode);
+                    newWorkingSetNode->release(REFCOUNT_DEBUG_ARGS);
+                }
+                workingSetsRootNode->release(REFCOUNT_DEBUG_ARGS);
             }
         }
 
@@ -146,35 +140,22 @@ namespace jucyaudio
             // Refresh the Mixes node to show/hide mixes based on export status
             if (const auto mixesRootNode{m_root->getMixesRootNode()})
             {
-                juce::MessageManager::callAsync([this, mixesRootNode]()
-                {
-                    m_npc.expand(mixesRootNode);
-                    mixesRootNode->release(REFCOUNT_DEBUG_ARGS);
-                });
+                m_npc.refreshNode(mixesRootNode);
+                mixesRootNode->release(REFCOUNT_DEBUG_ARGS);
             }
 
             // Refresh the Exported node to show newly exported/unlocked mixes
             std::vector<INavigationNode *> children;
             if (m_root->expand(children))
             {
-                INavigationNode* exportedNode = nullptr;
                 // Find the Exported node
                 for (auto child : children)
                 {
                     if (child->getName() == "Exported")
                     {
-                        exportedNode = child;
+                        m_npc.refreshNode(child);
                         break;
                     }
-                }
-                if (exportedNode != nullptr)
-                {
-                    exportedNode->retain(REFCOUNT_DEBUG_ARGS);
-                    juce::MessageManager::callAsync([this, exportedNode]()
-                    {
-                        m_npc.expand(exportedNode);
-                        exportedNode->release(REFCOUNT_DEBUG_ARGS);
-                    });
                 }
                 // Release all children
                 for (const auto child : children)

@@ -149,38 +149,6 @@ namespace jucyaudio
             return details;
         }
 
-        INavigationNode* findMixNodeByIdRecursive(INavigationNode* node, MixId mixId)
-        {
-            if (node == nullptr)
-                return nullptr;
-
-            if (auto* mixNode = dynamic_cast<database::MixNode*>(node))
-            {
-                if (mixNode->getMixInfo().mixId == mixId)
-                {
-                    node->retain(REFCOUNT_DEBUG_ARGS);
-                    return node;
-                }
-            }
-
-            if (!node->canExpand())
-                return nullptr;
-
-            std::vector<INavigationNode*> children;
-            if (!node->expand(children))
-                return nullptr;
-
-            INavigationNode* found = nullptr;
-            for (auto* child : children)
-            {
-                found = findMixNodeByIdRecursive(child, mixId);
-                child->release(REFCOUNT_DEBUG_ARGS);
-                if (found != nullptr)
-                    break;
-            }
-
-            return found;
-        }
     } // namespace
 
     namespace ui
@@ -2766,7 +2734,6 @@ namespace jucyaudio
                         {
                             spdlog::info("Mix '{}' scheduled for export", mixInfo.name);
                             m_navigationTree.onMixExportStatusChanged();
-                            navigateToMixesRoot();
                         }
                         else
                         {
@@ -2798,7 +2765,6 @@ namespace jucyaudio
                         [this](bool /*success*/)
                         {
                             m_navigationTree.onMixExportStatusChanged();
-                            navigateToMixesRoot();
                         });
                 }};
 
@@ -2937,7 +2903,6 @@ namespace jucyaudio
                 {
                     // Refresh navigation tree after export completes
                     m_navigationTree.onMixExportStatusChanged();
-                    navigateToMixesRoot();
                 });
             task->release(REFCOUNT_DEBUG_ARGS);
             // Note: tags will be deleted by FinalizeAndExportTask destructor
@@ -3057,7 +3022,6 @@ namespace jucyaudio
 
                             // Refresh navigation tree to show the change immediately
                             m_navigationTree.onMixExportStatusChanged();
-                            navigateToMixById(mixInfo.mixId);
 
                             // If the mix is currently loaded in the editor, reload it to update read-only state
                             if (m_mixEditorComponent.getCurrentMixNode() &&
@@ -3383,38 +3347,6 @@ namespace jucyaudio
 
             m_statusPanel.getStatusBar().postMessage("Track could not be located in the current library view.", true);
             return false;
-        }
-
-        bool MainComponent::navigateToMixById(MixId mixId)
-        {
-            auto* rootNode = m_navigationTree.getRootNode();
-            if (rootNode == nullptr)
-                return false;
-
-            auto* mixNode = findMixNodeByIdRecursive(rootNode, mixId);
-            rootNode->release(REFCOUNT_DEBUG_ARGS);
-
-            if (mixNode == nullptr)
-                return false;
-
-            navigateToNode(mixNode);
-            return true;
-        }
-
-        bool MainComponent::navigateToMixesRoot()
-        {
-            auto* rootNode = m_navigationTree.getRootNode();
-            if (rootNode == nullptr)
-                return false;
-
-            auto* mixesRootNode = rootNode->getMixesRootNode();
-            rootNode->release(REFCOUNT_DEBUG_ARGS);
-
-            if (mixesRootNode == nullptr)
-                return false;
-
-            navigateToNode(mixesRootNode);
-            return true;
         }
 
         void MainComponent::showTrackDetailsDialog(TrackId trackId)

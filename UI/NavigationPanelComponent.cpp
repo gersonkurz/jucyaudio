@@ -122,22 +122,12 @@ namespace jucyaudio
 
         void NavTreeViewItem::itemOpennessChanged(bool isNowOpen)
         {
-            //if (isNowOpen && !m_subItemsBuilt)
+            if (m_rebuildingFromModel)
+                return; // Suppress during programmatic rebuild to avoid double-build
+
             if (isNowOpen)
             {
                 buildSubItems();
-            }
-            else 
-            {
-                // TreeViewItem's clearSubItems() will handle destroying
-                // children. If we had custom logic for when an item is closed
-                // (e.g., releasing resources specifically loaded by
-                // buildSubItems beyond just the child nodes themselves), it
-                // would go here. For now, the automatic destruction of child
-                // NavTreeViewItems (which releases their nodes) is sufficient.
-                // We could set subItemsBuilt = false here if we want them
-                // rebuilt on next open, but clearSubItems() effectively does
-                // this.
             }
         }
 
@@ -395,19 +385,10 @@ namespace jucyaudio
 
                 // This is the key: If the current GUI item's children haven't been built, build them now.
                 auto *currentNavItem = dynamic_cast<NavTreeViewItem *>(currentItem);
-                if (currentNavItem)
+                if (currentNavItem && !currentNavItem->isOpen())
                 {
-                    if (!currentNavItem->isOpen())
-                    {
-                        // Opening the item will trigger buildSubItems(), creating the next level of the GUI.
-                        currentNavItem->setOpen(true);
-                    }
-                    else
-                    {
-                        // If the branch is already open, its GUI children may still be stale.
-                        // Rebuild them now so path traversal can see newly added/removed nodes.
-                        currentNavItem->rebuildSubItemsFromModel();
-                    }
+                    // Opening the item will trigger buildSubItems(), creating the next level of the GUI.
+                    currentNavItem->setOpen(true);
                 }
 
                 // Now find the specific child item we need for the next step of the path.
@@ -500,61 +481,34 @@ namespace jucyaudio
 
         void NavigationPanelComponent::refreshNode(INavigationNode *nodeToRefresh)
         {
-            if (!m_currentRootNode || !m_treeView.getRootItem())
-            {
+            if (!m_currentRootNode || !nodeToRefresh || !m_treeView.getRootItem())
                 return;
-            }
 
-            if (!nodeToRefresh)
-            {
-                return;
-            }
             nodeToRefresh->refreshChildren();
 
-            // Find the TreeViewItem associated with the nodeToRemove
-            const auto treeViewItemToRefresh = findTreeViewItemForNode(nodeToRefresh);
-            if (!treeViewItemToRefresh)
+            if (const auto treeItem = findTreeViewItemForNode(nodeToRefresh))
             {
-                return;
+                spdlog::info("NavigationPanel::refreshNode - Refreshing '{}'", nodeToRefresh->getName());
+                treeItem->rebuildSubItemsFromModel();
             }
-            // 5. Trigger the GUI update for this TreeViewItem's children
-            const std::string strDisplayNode{treeViewItemToRefresh->getNode() ? treeViewItemToRefresh->getNode()->getName() : "UNKNOWN_NODE_IN_GUI_ITEM"};
-            spdlog::info("NavigationPanel::refreshNode - Refreshing GUI sub-items for "
-                         "TreeViewItem displaying node: {}",
-                strDisplayNode);
-            treeViewItemToRefresh->rebuildSubItemsFromModel(); // You will create this method
-
-            m_treeView.repaint(); // Ensure the tree view repaints
         }
 
         void NavigationPanelComponent::expand(INavigationNode *nodeToExpand)
         {
             if (!m_currentRootNode || !nodeToExpand || !m_treeView.getRootItem())
-            {
                 return;
-            }
 
             nodeToExpand->refreshChildren();
 
-            // Find the TreeViewItem associated with the nodeToRemove
-            const auto treeViewItemToRefresh = findTreeViewItemForNode(nodeToExpand);
-            if (!treeViewItemToRefresh)
+            if (const auto treeItem = findTreeViewItemForNode(nodeToExpand))
             {
-                return;
-            }
-            // 5. Trigger the GUI update for this TreeViewItem's children
-            const std::string strDisplayNode{treeViewItemToRefresh->getNode() ? treeViewItemToRefresh->getNode()->getName() : "UNKNOWN_NODE_IN_GUI_ITEM"};
-            spdlog::info("NavigationPanel::refreshNode - Refreshing GUI sub-items for "
-                         "TreeViewItem displaying node: {}",
-                strDisplayNode);
+                spdlog::info("NavigationPanel::expand - Expanding '{}'", nodeToExpand->getName());
+                treeItem->rebuildSubItemsFromModel();
 
-            treeViewItemToRefresh->rebuildSubItemsFromModel(); // You will create this method
-
-            if (!treeViewItemToRefresh->isOpen())
-            {
-                treeViewItemToRefresh->setOpen(true); // Open it to trigger buildSubItems
+                // expand() always opens the node (unlike refreshNode which preserves state)
+                if (treeItem->getNumSubItems() > 0 && !treeItem->isOpen())
+                    treeItem->setOpen(true);
             }
-            m_treeView.repaint(); // Ensure the tree view repaints
         }
         
         bool NavigationPanelComponent::expandPathAndSelectTarget(const std::vector<INavigationNode*>& pathFromRoot)
@@ -712,36 +666,51 @@ namespace jucyaudio
 
         void NavTreeViewItem::rebuildSubItemsFromModel()
         {
-            // This method explicitly clears existing GUI children and rebuilds
-            // them from the current state of m_node->m_children. It
-            // assumes m_node->refreshChildren() (the model update)
-            // has already been called.
+            // Rebuild JUCE sub-items from the current model state.
+            // Assumes refreshChildren() was already called on the model node.
 
-            spdlog::debug("NavTreeViewItem (Node: {}): Rebuilding sub-items from model.", m_node ? m_node->getName() : "null");
+            if (!m_node)
+                return;
 
-            // 1. Clear existing GUI sub-items. This is crucial.
-            //    clearSubItems() destroys the child NavTreeViewItem objects,
-            //    which in turn release their associated INavigationNode models.
+            const bool wasOpen = isOpen();
+
+            // Suppress itemOpennessChanged to prevent buildSubItems() from
+            // firing when we call setOpen() below — we already have the items.
+            m_rebuildingFromModel = true;
+
+            // 1. Remove all existing GUI sub-items.
             clearSubItems();
 
-            // 2. Reset the flag so buildSubItems knows to run.
-            //m_subItemsBuilt = false;
-
-            // 3. Call buildSubItems to repopulate with new GUI items based on
-            // the (already refreshed) model.
-            //    This will call m_node->expand() which should
-            //    return the updated list of child models from
-            //    nodeToRefreshModel->m_children.
-            buildSubItems();
-
-            // 4. Force JUCE to recompute visible rows and repaint. Without this,
-            // the branch can stay visually stale until the user manually toggles
-            // openness, even though the model and selection are already correct.
-            treeHasChanged();
-            if (auto* owner = getOwnerView())
+            // 2. Rebuild from the current model children.
+            if (m_node->canExpand())
             {
-                owner->repaint();
+                std::vector<INavigationNode *> nodes;
+                if (m_node->expand(nodes))
+                {
+                    for (auto &node : nodes)
+                    {
+                        addSubItem(new NavTreeViewItem{node, m_ownerPanel});
+                        node->release(REFCOUNT_DEBUG_ARGS);
+                    }
+                }
             }
+
+            // 3. Manage openness: keep the previous state if there are children,
+            //    close if children were removed.
+            const bool hasChildren = getNumSubItems() > 0;
+            if (hasChildren)
+            {
+                setOpen(wasOpen);
+            }
+            else if (wasOpen)
+            {
+                setOpen(false);
+            }
+
+            m_rebuildingFromModel = false;
+
+            // 4. Force JUCE to recalculate visible rows and repaint.
+            treeHasChanged();
         }
 
         void NavigationPanelComponent::removeNodeFromTree(INavigationNode *nodeToRemove)

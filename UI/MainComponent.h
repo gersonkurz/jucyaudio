@@ -155,8 +155,6 @@ namespace jucyaudio
             void onShowInFolder(RowIndex_t rowIndex);
             bool showTrackInLibrary(TrackId trackId);
             void showTrackDetailsDialog(TrackId trackId);
-            bool navigateToMixById(MixId mixId);
-            bool navigateToMixesRoot();
 
             // Equalizer management
             void showEqualizerWindow();
