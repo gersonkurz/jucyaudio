@@ -36,11 +36,16 @@ namespace jucyaudio
         {
             const auto &defaultLf = juce::LookAndFeel::getDefaultLookAndFeel();
             const auto textColour = defaultLf.findColour(juce::ToggleButton::textColourId);
-            const auto tickColour = defaultLf.findColour(juce::ToggleButton::tickColourId);
-            const auto disabledTickColour = defaultLf.findColour(juce::ToggleButton::tickDisabledColourId);
 
             const auto fontSize = juce::jmin(15.0f, button.getHeight() * 0.75f);
             const auto tickWidth = fontSize * 1.1f;
+
+            // Subtle hover/pressed background feedback
+            if (button.isEnabled() && (shouldDrawButtonAsHighlighted || shouldDrawButtonAsDown))
+            {
+                g.setColour(textColour.withAlpha(shouldDrawButtonAsDown ? 0.1f : 0.05f));
+                g.fillRect(button.getLocalBounds().toFloat());
+            }
 
             // Draw checkbox outline (the missing piece in light theme!)
             juce::Rectangle<float> tickBounds(4.0f, (button.getHeight() - tickWidth) * 0.5f, tickWidth, tickWidth);
@@ -49,10 +54,11 @@ namespace jucyaudio
             g.setColour(textColour.withAlpha(0.8f));
             g.drawRect(tickBounds, 1.0f);
 
-            // Fill if checked
+            // Fill if checked — use the text colour for the tick so it is always
+            // visible regardless of theme (tickColourId is not set by the theme)
             if (button.getToggleState())
             {
-                g.setColour(button.isEnabled() ? tickColour : disabledTickColour);
+                g.setColour(textColour.withAlpha(button.isEnabled() ? 1.0f : 0.4f));
                 const auto tick = tickBounds.reduced(tickWidth * 0.25f);
 
                 // Draw checkmark
