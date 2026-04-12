@@ -2187,6 +2187,16 @@ namespace jucyaudio
                         theTrackLibrary.getTrackDatabase().updateTrackStatus(track.trackId, database::TrackStatus::Ok);
                     }
 
+                    // Update play count and last_played timestamp
+                    theTrackLibrary.getTrackDatabase().incrementTrackPlayCount(track.trackId);
+
+                    // Refresh the data view so play count / last_played are visible immediately
+                    if (m_currentNode)
+                    {
+                        m_currentNode->refreshCache(true);
+                        m_dataViewComponent.refreshView();
+                    }
+
                     // Load waveform when playback starts successfully
                     m_enhancedPlayer.loadFile(audioFile, std::format("{} / {} / {}", track.artist_name, track.album_title, track.title), track.trackId);
 

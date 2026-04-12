@@ -1,6 +1,7 @@
 #include <UI/PlaybackController.h>
 #include <Audio/MixPlaybackEngine.h>
 #include <Audio/MixProjectLoader.h>
+#include <Database/TrackLibrary.h>
 #include <UI/Settings.h>
 #include <Config/toml_backend.h>
 #include <spdlog/spdlog.h>
@@ -889,6 +890,8 @@ namespace jucyaudio
 
             if (success)
             {
+                // Update play count and last_played timestamp
+                database::theTrackLibrary.getTrackDatabase().incrementTrackPlayCount(trackInfo->trackId);
                 notifyTrackChanged();
             }
 
