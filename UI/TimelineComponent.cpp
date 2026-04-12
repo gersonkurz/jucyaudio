@@ -255,10 +255,10 @@ namespace jucyaudio
             // 7. Refresh the existing UI incrementally so we don't recreate thumbnails.
             refreshAfterDeletion(orderInMixToRemove);
 
-            if (onMixChanged)
-            {
-                onMixChanged();
-            }
+            // Note: do NOT fire onMixChanged here. The createOrUpdateMix call above
+            // already persisted the change and recorded an undo state. Firing onMixChanged
+            // would trigger saveMixChanges, which calls createOrUpdateMix a second time,
+            // pushing a duplicate undo state (requiring two Ctrl+Z to undo one delete).
 
             return true;
         }
@@ -551,10 +551,8 @@ namespace jucyaudio
                     // Refresh the UI
                     populateFrom();
 
-                    if (onMixChanged)
-                    {
-                        onMixChanged();
-                    }
+                    // Note: do NOT fire onMixChanged here. The createOrUpdateMix call above
+                    // already persisted the change and recorded an undo state.
 
                     // --- FIX: Resume playback if it was active before ---
                     if (wasPlaying && loadSuccess)
@@ -637,10 +635,8 @@ namespace jucyaudio
                 onMixPlaybackReloadRequested();
             }
 
-            if (onMixChanged)
-            {
-                onMixChanged();
-            }
+            // Note: do NOT fire onMixChanged here. The createOrUpdateMix call above
+            // already persisted the change and recorded an undo state.
 
             return true;
         }
