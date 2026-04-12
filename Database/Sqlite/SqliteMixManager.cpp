@@ -751,13 +751,28 @@ WHERE m.export_folder IS NULL
                     return false;
                 }
 
-                // Move the track:
-                // 1. If moving UP (newOrderInMix < currentOrder):
-                //    - INCREMENT order_in_mix for all tracks in range [newOrderInMix, currentOrder)
-                // 2. If moving DOWN (newOrderInMix > currentOrder):
-                //    - DECREMENT order_in_mix for all tracks in range (currentOrder, newOrderInMix]
-                // 3. Set the moved track's order_in_mix = newOrderInMix
+                // Step 0: Identify the track being moved by its track_id (stable primary key)
+                // before shifting neighbors, since the shift will create an order_in_mix collision.
+                SqliteStatement selectStmt{m_db,
+                    "SELECT track_id FROM MixTracks WHERE mix_id = ? AND order_in_mix = ?"};
+                selectStmt.addParam(mixId);
+                selectStmt.addParam(currentOrderInMix);
+                int64_t movedTrackId = -1;
+                if (selectStmt.getNextResult())
+                {
+                    movedTrackId = selectStmt.getInt64(0);
+                }
+                if (movedTrackId < 0)
+                {
+                    spdlog::error("Could not find track at order {} in mix {}", currentOrderInMix, mixId);
+                    return false;
+                }
 
+                // Step 1: Shift neighbors to open a gap.
+                // If moving UP (newOrderInMix < currentOrder):
+                //    - INCREMENT order_in_mix for all tracks in range [newOrderInMix, currentOrder)
+                // If moving DOWN (newOrderInMix > currentOrder):
+                //    - DECREMENT order_in_mix for all tracks in range (currentOrder, newOrderInMix]
                 if (newOrderInMix < currentOrderInMix)
                 {
                     // Moving UP - shift tracks down
@@ -789,14 +804,16 @@ WHERE m.export_folder IS NULL
                     }
                 }
 
-                // Finally, set the moved track's new position
-                SqliteStatement setOrderStmt{m_db, "UPDATE MixTracks SET order_in_mix = ? WHERE mix_id = ? AND order_in_mix = ?"};
+                // Step 2: Set the moved track's new position using track_id (not order_in_mix,
+                // which is now ambiguous after the shift).
+                SqliteStatement setOrderStmt{m_db,
+                    "UPDATE MixTracks SET order_in_mix = ? WHERE mix_id = ? AND track_id = ?"};
                 setOrderStmt.addParam(newOrderInMix);
                 setOrderStmt.addParam(mixId);
-                setOrderStmt.addParam(currentOrderInMix);
+                setOrderStmt.addParam(movedTrackId);
                 if (!setOrderStmt.execute())
                 {
-                    spdlog::error("Failed to set new order_in_mix for mix {} row {}", mixId, currentOrderInMix);
+                    spdlog::error("Failed to set new order_in_mix for mix {} track {}", mixId, movedTrackId);
                     return transaction.rollback();
                 }
 

@@ -2,6 +2,7 @@
 #include <UI/Settings.h>
 #include <UI/TimelineComponent.h>
 #include <UI/PlaybackController.h>
+#include <limits>
 #include <spdlog/spdlog.h>
 #include <toml++/toml.h> // Include the parser implementation here
 
@@ -1238,23 +1239,41 @@ namespace jucyaudio
 
         int TimelineComponent::pointToOrderInMix(juce::Point<int> position) const
         {
-            const auto trackAtPos = getTrackAtPosition(position);
+            if (m_trackViews.empty())
+                return -1;
 
-            if (!trackAtPos)
+            // If cursor is directly over a track component, use that (most precise)
+            if (const auto trackAtPos = getTrackAtPosition(position))
             {
-                return -1; // No track at this position
-            }
-
-            // Find the orderInMix for this track
-            for (const auto &view : m_trackViews)
-            {
-                if (view.component.get() == trackAtPos)
+                for (const auto &view : m_trackViews)
                 {
-                    return view.mixTrackData->orderInMix;
+                    if (view.component.get() == trackAtPos)
+                        return view.mixTrackData->orderInMix;
                 }
             }
 
-            return -1; // Track not found (shouldn't happen)
+            // Not over a track - find the closest track by x-coordinate (time position)
+            const double cursorTime = position.x / m_pixelsPerSecond;
+
+            int closestOrder = -1;
+            double closestDistance = std::numeric_limits<double>::max();
+
+            for (const auto &view : m_trackViews)
+            {
+                const double startTime = std::chrono::duration<double>(view.componentStartTime).count();
+                const double effectiveDuration = std::chrono::duration<double>(
+                    view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
+                const double midTime = startTime + effectiveDuration / 2.0;
+
+                const double distance = std::abs(cursorTime - midTime);
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    closestOrder = view.mixTrackData->orderInMix;
+                }
+            }
+
+            return closestOrder;
         }
 
         void TimelineComponent::setSelectedTrack(MixTrackComponent *track)
