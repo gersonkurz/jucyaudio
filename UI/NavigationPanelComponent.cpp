@@ -151,38 +151,30 @@ namespace jucyaudio
         {
             if (!m_node)
             {
-                spdlog::error("buildSubItems: Node is null, cannot build sub-items.");
+                spdlog::error("[NAV] buildSubItems: Node is null, cannot build sub-items.");
                 return false;
             }
 
-            //if (m_subItemsBuilt)
-            //{
-            //    spdlog::warn("buildSubItems: Sub-items already built, skipping.");
-            //    return true; // Already built, nothing to do
-            // }
+            spdlog::debug("[NAV] buildSubItems: '{}' - refreshing children and rebuilding", m_node->getName());
 
-            clearSubItems(); // Clear any existing (shouldn't be any if subItemsBuilt is false, but good practice)
-            if (m_node->canExpand())
+            clearSubItems();
+
+            // Always refresh the model when building sub-items (user expanded a node,
+            // or selectNode() is traversing a path). This ensures we show current data.
+            // Previously relied on canExpand()'s side-effect to do lazy init, but that
+            // made the refresh timing unpredictable.
+            m_node->refreshChildren();
+
+            std::vector<INavigationNode *> nodes;
+            if (m_node->expand(nodes))
             {
-                std::vector<INavigationNode *> nodes;
-                if (m_node->expand(nodes))
+                for (auto &node : nodes)
                 {
-                    for (auto &node : nodes)
-                    {
-                        // The NavTreeViewItem constructor will take its own
-                        // retain() on childNode. The childNode pointer from the
-                        // 'children' vector can then be released.
-                        addSubItem(new NavTreeViewItem{node, m_ownerPanel});
-                        node->release(REFCOUNT_DEBUG_ARGS); // Release the original node pointer
-                    }
+                    addSubItem(new NavTreeViewItem{node, m_ownerPanel});
+                    node->release(REFCOUNT_DEBUG_ARGS);
                 }
-                spdlog::info("buildSubItems: built a total of {} sub-items for node '{}'.", nodes.size(), m_node->getName());
+                spdlog::debug("[NAV] buildSubItems: '{}' - built {} sub-items.", m_node->getName(), nodes.size());
             }
-            else
-            {
-                spdlog::info("buildSubItems: Node '{}' cannot expand, no sub-items built.", m_node->getName());
-            }
-            //m_subItemsBuilt = true;
             return true;
         }
 
@@ -396,9 +388,9 @@ namespace jucyaudio
                 for (int j = 0; j < currentItem->getNumSubItems(); ++j)
                 {
                     auto *subItem = dynamic_cast<NavTreeViewItem *>(currentItem->getSubItem(j));
-                    // Compare by unique ID instead of pointer, since we might have different instances
-                    if (subItem && subItem->getNode() && 
-                        subItem->getNode()->getUniqueId() == targetChildNode->getUniqueId())
+                    // Compare by pointer identity. The path nodes come from getParent() chain
+                    // and are the same instances that NavTreeViewItems wrap via expand().
+                    if (subItem && subItem->getNode() == targetChildNode)
                     {
                         nextItem = subItem;
                         break;
@@ -458,8 +450,11 @@ namespace jucyaudio
             }
 
             auto *navItem = dynamic_cast<NavTreeViewItem *>(currentItem);
-            if (navItem && navItem->getNode() != nullptr
-                && navItem->getNode()->getUniqueId() == targetNode->getUniqueId())
+            // Compare by pointer identity, NOT by getUniqueId().
+            // Different node types use different ID spaces (BaseNode auto-counter
+            // vs database IDs in MixNode/WorkingSetNode/VirtualFolderNode), so
+            // uniqueId collisions are possible and cause the wrong node to be found.
+            if (navItem && navItem->getNode() == targetNode)
             {
                 return navItem;
             }
@@ -484,12 +479,16 @@ namespace jucyaudio
             if (!m_currentRootNode || !nodeToRefresh || !m_treeView.getRootItem())
                 return;
 
+            spdlog::debug("[NAV] refreshNode: '{}' - refreshing model then GUI", nodeToRefresh->getName());
             nodeToRefresh->refreshChildren();
 
             if (const auto treeItem = findTreeViewItemForNode(nodeToRefresh))
             {
-                spdlog::info("NavigationPanel::refreshNode - Refreshing '{}'", nodeToRefresh->getName());
-                treeItem->rebuildSubItemsFromModel();
+                treeItem->rebuildSubItemsFromModel(false);
+            }
+            else
+            {
+                spdlog::debug("[NAV] refreshNode: '{}' - TreeViewItem NOT FOUND, GUI not updated!", nodeToRefresh->getName());
             }
         }
 
@@ -498,16 +497,20 @@ namespace jucyaudio
             if (!m_currentRootNode || !nodeToExpand || !m_treeView.getRootItem())
                 return;
 
+            spdlog::debug("[NAV] expand: '{}' - refreshing model then GUI (forceOpen)", nodeToExpand->getName());
             nodeToExpand->refreshChildren();
 
             if (const auto treeItem = findTreeViewItemForNode(nodeToExpand))
             {
-                spdlog::info("NavigationPanel::expand - Expanding '{}'", nodeToExpand->getName());
-                treeItem->rebuildSubItemsFromModel();
-
-                // expand() always opens the node (unlike refreshNode which preserves state)
-                if (treeItem->getNumSubItems() > 0 && !treeItem->isOpen())
-                    treeItem->setOpen(true);
+                // Use forceOpen=true so the node is opened inside the
+                // m_rebuildingFromModel guard. This avoids the old double-build
+                // where setOpen(true) was called AFTER rebuildSubItemsFromModel,
+                // triggering itemOpennessChanged → buildSubItems → clear + rebuild.
+                treeItem->rebuildSubItemsFromModel(true);
+            }
+            else
+            {
+                spdlog::debug("[NAV] expand: '{}' - TreeViewItem NOT FOUND, GUI not updated!", nodeToExpand->getName());
             }
         }
         
@@ -664,15 +667,25 @@ namespace jucyaudio
             return false;
         }
 
-        void NavTreeViewItem::rebuildSubItemsFromModel()
+        void NavTreeViewItem::rebuildSubItemsFromModel(bool forceOpen)
         {
             // Rebuild JUCE sub-items from the current model state.
             // Assumes refreshChildren() was already called on the model node.
+            //
+            // Key design decisions:
+            // - Does NOT call canExpand() because that has a side-effect
+            //   (triggers refreshChildren() when m_children is empty), which
+            //   would double-refresh the model and create unpredictable timing.
+            // - Calls expand() directly, which is a pure read of m_children.
+            // - Handles openness (including forceOpen) inside the
+            //   m_rebuildingFromModel guard so that setOpen() does NOT trigger
+            //   itemOpennessChanged → buildSubItems, avoiding a double-build.
 
             if (!m_node)
                 return;
 
             const bool wasOpen = isOpen();
+            spdlog::debug("[NAV] rebuildSubItemsFromModel: '{}' wasOpen={} forceOpen={}", m_node->getName(), wasOpen, forceOpen);
 
             // Suppress itemOpennessChanged to prevent buildSubItems() from
             // firing when we call setOpen() below — we already have the items.
@@ -681,26 +694,25 @@ namespace jucyaudio
             // 1. Remove all existing GUI sub-items.
             clearSubItems();
 
-            // 2. Rebuild from the current model children.
-            if (m_node->canExpand())
+            // 2. Rebuild from the current model children via expand() only.
+            //    Skip canExpand() — it has side-effects we don't want here.
+            std::vector<INavigationNode *> nodes;
+            if (m_node->expand(nodes))
             {
-                std::vector<INavigationNode *> nodes;
-                if (m_node->expand(nodes))
+                for (auto &node : nodes)
                 {
-                    for (auto &node : nodes)
-                    {
-                        addSubItem(new NavTreeViewItem{node, m_ownerPanel});
-                        node->release(REFCOUNT_DEBUG_ARGS);
-                    }
+                    addSubItem(new NavTreeViewItem{node, m_ownerPanel});
+                    node->release(REFCOUNT_DEBUG_ARGS);
                 }
             }
 
-            // 3. Manage openness: keep the previous state if there are children,
-            //    close if children were removed.
+            spdlog::debug("[NAV] rebuildSubItemsFromModel: '{}' rebuilt with {} sub-items", m_node->getName(), getNumSubItems());
+
+            // 3. Manage openness inside the guard so setOpen() doesn't trigger buildSubItems().
             const bool hasChildren = getNumSubItems() > 0;
             if (hasChildren)
             {
-                setOpen(wasOpen);
+                setOpen(forceOpen || wasOpen);
             }
             else if (wasOpen)
             {

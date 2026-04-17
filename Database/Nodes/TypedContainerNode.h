@@ -54,17 +54,16 @@ namespace jucyaudio
 
             void refreshChildren() override
             {
-                spdlog::debug("Refreshing children for TypedContainerNode: {}", getName());
-
                 if (m_children.empty())
                 {
-                    spdlog::debug("No children to refresh, calling client "
-                                  "creation method.");
+                    spdlog::debug("[NAV] refreshChildren '{}': m_children empty, querying DB", getName());
                     m_clientCreationMethod(this, m_children);
+                    spdlog::debug("[NAV] refreshChildren '{}': DB returned {} children", getName(), m_children.size());
                 }
                 else
                 {
-                    spdlog::debug("Children already exist, using optimized variant");
+                    const auto oldCount = m_children.size();
+                    spdlog::debug("[NAV] refreshChildren '{}': merging (had {} children)", getName(), oldCount);
 
                     // we start by creating a temporary copy of the current children
                     // so that we can safely replace the m_children vector without
@@ -105,14 +104,15 @@ namespace jucyaudio
                         }
                         else
                         {
-                            // Child is new, but the caller has already retained it: nothing to see here, move along
+                            spdlog::debug("[NAV] refreshChildren '{}': new child id={}", getName(), thisId);
                         }
                     }
                     for (const auto &[id, child] : existingChildrenMap)
                     {
-                        // Child was removed, release it
+                        spdlog::debug("[NAV] refreshChildren '{}': removed child id={}", getName(), id);
                         child->release(REFCOUNT_DEBUG_ARGS);
                     }
+                    spdlog::debug("[NAV] refreshChildren '{}': merged {} → {} children", getName(), oldCount, m_children.size());
                 }
             }
 
@@ -157,6 +157,7 @@ namespace jucyaudio
             {
                 if (m_children.empty())
                 {
+                    spdlog::debug("[NAV] canExpand '{}': m_children empty, triggering refreshChildren()", getName());
                     auto pme = const_cast<TypedContainerNode<T> *>(this);
                     pme->refreshChildren();
                 }

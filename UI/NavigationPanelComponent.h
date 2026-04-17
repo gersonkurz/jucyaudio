@@ -31,7 +31,7 @@ namespace jucyaudio
 
             // This is the key method for selection changes on THIS item
             void itemSelectionChanged(bool isNowSelected) override;
-            void rebuildSubItemsFromModel();
+            void rebuildSubItemsFromModel(bool forceOpen = false);
 
             // itemClicked can be useful if you need to distinguish single
             // click from selection, or handle right-clicks specifically on

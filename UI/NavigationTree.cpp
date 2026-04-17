@@ -100,27 +100,43 @@ namespace jucyaudio
 
         void NavigationTree::onMixCreated(MixId mixId)
         {
+            spdlog::debug("[NAV] onMixCreated: mixId={}", mixId);
             if (const auto mixesRootNode{m_root->getMixesRootNode()})
             {
                 m_npc.expand(mixesRootNode);
                 if (const auto newMixNode{mixesRootNode->get(mixId)})
                 {
+                    spdlog::debug("[NAV] onMixCreated: found new mix node '{}', selecting", newMixNode->getName());
                     m_npc.selectNode(newMixNode);
                     newMixNode->release(REFCOUNT_DEBUG_ARGS);
                 }
+                else
+                {
+                    spdlog::debug("[NAV] onMixCreated: mixId={} NOT FOUND in model children after expand!", mixId);
+                }
                 mixesRootNode->release(REFCOUNT_DEBUG_ARGS);
+            }
+            else
+            {
+                spdlog::debug("[NAV] onMixCreated: getMixesRootNode() returned null!");
             }
         }
 
         void NavigationTree::onWorkingSetCreated(WorkingSetId workingSetId)
         {
+            spdlog::debug("[NAV] onWorkingSetCreated: workingSetId={}", workingSetId);
             if (const auto workingSetsRootNode{m_root->getWorkingSetsRootNode()})
             {
                 m_npc.expand(workingSetsRootNode);
                 if (const auto newWorkingSetNode{workingSetsRootNode->get(workingSetId)})
                 {
+                    spdlog::debug("[NAV] onWorkingSetCreated: found node '{}', selecting", newWorkingSetNode->getName());
                     m_npc.selectNode(newWorkingSetNode);
                     newWorkingSetNode->release(REFCOUNT_DEBUG_ARGS);
+                }
+                else
+                {
+                    spdlog::debug("[NAV] onWorkingSetCreated: id={} NOT FOUND in model children after expand!", workingSetId);
                 }
                 workingSetsRootNode->release(REFCOUNT_DEBUG_ARGS);
             }
@@ -137,6 +153,8 @@ namespace jucyaudio
 
         void NavigationTree::onMixExportStatusChanged()
         {
+            spdlog::debug("[NAV] onMixExportStatusChanged: refreshing Mixes and Exported nodes");
+
             // Refresh the Mixes node to show/hide mixes based on export status
             if (const auto mixesRootNode{m_root->getMixesRootNode()})
             {
@@ -148,16 +166,15 @@ namespace jucyaudio
             std::vector<INavigationNode *> children;
             if (m_root->expand(children))
             {
-                // Find the Exported node
                 for (auto child : children)
                 {
                     if (child->getName() == "Exported")
                     {
+                        spdlog::debug("[NAV] onMixExportStatusChanged: refreshing Exported node");
                         m_npc.refreshNode(child);
                         break;
                     }
                 }
-                // Release all children
                 for (const auto child : children)
                 {
                     child->release(REFCOUNT_DEBUG_ARGS);

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.26)
 project(jucyaudio VERSION 2.0.0)
 
 # Enable export of compile commands for IDEs
@@ -843,10 +843,10 @@ endif()
 add_custom_command(
     TARGET jucyaudio POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${THEMES_DEST_DIR}"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_newer
             "${THEMES_SOURCE_DIR}" # Source
             "${THEMES_DEST_DIR}"   # Destination
-    COMMENT "Copying themes to application bundle..."
+    COMMENT "Copying themes to application bundle (if newer)..."
 )
 
 # --- Post-Build Step: Copy projectM community presets ---
@@ -862,12 +862,12 @@ if(projectm_presets_POPULATED)
     add_custom_command(
         TARGET jucyaudio POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${PROJECTM_PRESETS_DEST_DIR}"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        COMMAND ${CMAKE_COMMAND} -E copy_directory_if_newer
                 "${PROJECTM_PRESETS_SOURCE_DIR}"
                 "${PROJECTM_PRESETS_DEST_DIR}"
         # Remove .git directory from copied presets (not needed, causes permission issues)
         COMMAND ${CMAKE_COMMAND} -E rm -rf "${PROJECTM_PRESETS_DEST_DIR}/.git"
-        COMMENT "Copying projectM community presets to application bundle..."
+        COMMENT "Copying projectM community presets to application bundle (if newer)..."
     )
 endif()
 
