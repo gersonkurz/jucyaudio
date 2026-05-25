@@ -137,6 +137,10 @@ namespace jucyaudio
             {
                 m_tableListBox.selectRow(rowIndex);
             }
+            void clearSelection()
+            {
+                m_tableListBox.deselectAllRows();
+            }
             bool selectTrackById(TrackId trackId, bool shouldScrollToRow = true, bool shouldSelectRow = true);
 
             // Now playing highlight

@@ -1642,6 +1642,10 @@ namespace jucyaudio
                         m_currentMainViewComponent = &m_dataViewComponent;
                         m_currentMainView = MainViewType::DataView;
                         m_dataViewComponent.setVisible(true);
+                        // Arriving in DataView from a different view (typically MixEditor): any preserved row selection
+                        // is stale, because the node's tracks may have changed while we were away (e.g. a working set
+                        // loses tracks after mix export). Row indices would otherwise highlight different songs.
+                        m_dataViewComponent.clearSelection();
                     }
                 }
 
