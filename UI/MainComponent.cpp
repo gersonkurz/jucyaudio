@@ -2376,7 +2376,9 @@ namespace jucyaudio
                                     }
                                 }
 
-                                // Refresh the data view
+                                // Refresh the data view. Clear selection too: the removed rows are gone and rows
+                                // below them have shifted up, so the old row indices no longer mean anything.
+                                m_dataViewComponent.clearSelection();
                                 m_dataViewComponent.refreshView();
 
                                 // Show success message
@@ -2464,7 +2466,9 @@ namespace jucyaudio
 
                             if (success)
                             {
-                                // Refresh the data view
+                                // Refresh the data view; clear selection because deleted rows are gone and the
+                                // row indices below them have shifted.
+                                m_dataViewComponent.clearSelection();
                                 m_dataViewComponent.refreshView();
 
                                 // Show success message
