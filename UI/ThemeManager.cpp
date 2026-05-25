@@ -53,6 +53,7 @@ namespace jucyaudio
                         juce::Label::textColourId,
                         juce::TextEditor::textColourId,
                         juce::ToggleButton::textColourId,
+                        juce::ToggleButton::tickColourId,
                         juce::PopupMenu::textColourId,
                         juce::PopupMenu::headerTextColourId,
                         juce::ListBox::textColourId,
@@ -64,10 +65,12 @@ namespace jucyaudio
                     }
                 },
                 {
-                    "disabledForeground", 
+                    "disabledForeground",
                     {
-                        jucyaudio::ui::folderOfflineTextColourId, juce::TextButton::textColourOffId
-                    }   
+                        jucyaudio::ui::folderOfflineTextColourId,
+                        juce::TextButton::textColourOffId,
+                        juce::ToggleButton::tickDisabledColourId,
+                    }
                 },
             };
 
