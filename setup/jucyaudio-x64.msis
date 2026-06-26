@@ -1,0 +1,54 @@
+<?xml version='1.0' encoding='utf-8'?>
+<setup>
+    <!-- Setup script uses MSIS - see https://github.com/gersonkurz/msis
+         Built with /STANDALONE so a plain .msi is produced. Build on an x64 host
+         via `just package-x64`. Keep PRODUCT_VERSION in sync with the CMakeLists
+         project() version on release.
+
+         No <requires vcredist> here (unlike the ptraced-qt example): the cmake
+         install step stages the MSVC runtime DLLs app-local in bin\, so the
+         payload is self-contained and a launch condition would only risk falsely
+         blocking install. -->
+    <set name="PRODUCT_NAME" value="jucyaudio"/>
+    <set name="PRODUCT_VERSION" value="2.0.0"/>
+    <set name="LANGUAGE" value="en-us"/>
+    <set name="PLATFORM" value="x64"/>
+    <set name="REPAIR_ENABLED" value="True"/>
+    <set name="REMOVE_ENABLED" value="True"/>
+    <set name="BUILD_TARGET" value="jucyaudio-{{PRODUCT_VERSION}}-x64.msi"/>
+    <!-- UPGRADE_CODE is the permanent product-family identity across all versions — never change it. -->
+    <set name="UPGRADE_CODE" value="{E732F0D2-BC2D-4E6C-BCCF-616C28327D31}"/>
+    <set name="MANUFACTURER" value="p-nand-q.com"/>
+    <!-- Plain "jucyaudio" under Program Files, matching the legacy NSIS install path. -->
+    <set name="INSTALLDIR" value="jucyaudio"/>
+    <set name="INSTALL_DIR_DIALOG" value="True"/>
+    <!-- "Launch jucyaudio" checkbox on the final dialog. MSI Formatted path;
+         [INSTALLDIR] already ends in a backslash, so no extra '\'. -->
+    <set name="START_EXE" value="[INSTALLDIR]JucyAudio.exe"/>
+
+    <feature name="jucyaudio" enabled="yes" allowed="no">
+        <!-- Everything the cmake install target staged: JucyAudio.exe, projectM-4.dll,
+             glew.dll, the app-local MSVC runtime, presets\, themes\, and licenses\.
+             msis enumerates a source DIRECTORY recursively (a "dir\*" wildcard is NOT
+             expanded — os.Stat fails on the literal '*' and silently yields nothing). -->
+        <files source="..\install-x64-release\bin" target="INSTALLDIR"/>
+
+        <feature name="Start-Menu Shortcut" enabled="yes" allowed="yes">
+            <shortcut name="jucyaudio"
+                    target="STARTMENU"
+                    file="[INSTALLDIR]JucyAudio.exe"
+                    description="Audio player, mix editor, and library manager"/>
+        </feature>
+
+        <feature name="Desktop Shortcut" enabled="yes" allowed="yes">
+            <shortcut name="jucyaudio"
+                    target="DESKTOP"
+                    file="[INSTALLDIR]JucyAudio.exe"
+                    description="Audio player, mix editor, and library manager"/>
+        </feature>
+
+        <feature name="Shell Integration (Open with)" enabled="yes" allowed="yes">
+            <registry file="shell-integration.reg"/>
+        </feature>
+    </feature>
+</setup>

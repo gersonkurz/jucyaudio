@@ -1,0 +1,17 @@
+Windows Registry Editor Version 5.00
+
+; "Open with jucyaudio" entry in the right-click menu of any file.
+; [INSTALLDIR] is a WiX/MSI property that resolves at install time to the chosen
+; install directory (with a trailing backslash), so the command points at the
+; installed JucyAudio.exe wherever the user put it. The keys are removed on
+; uninstall. (MSIS does NOT expand $$VAR$$ here -- only its own variables are
+; substituted at generation time; INSTALLDIR is a runtime property.)
+; Replaces the legacy NSIS "Register Shell Extension" section.
+
+[HKEY_CLASSES_ROOT\*\shell\jucyaudio]
+@="Open with jucyaudio"
+"Icon"="[INSTALLDIR]JucyAudio.exe"
+"Position"="Middle"
+
+[HKEY_CLASSES_ROOT\*\shell\jucyaudio\command]
+@="\"[INSTALLDIR]JucyAudio.exe\" \"%1\""

@@ -184,6 +184,10 @@ $RECYCLE.BIN/
 *.msm
 *.msp
 
+# MSIS-generated WiX source + staged release artifacts (msis emits .wxs next to the .msis)
+setup/*.wxs
+/releases/
+
 # Windows shortcuts
 *.lnk
 

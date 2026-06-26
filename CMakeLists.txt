@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 3.28)
 project(jucyaudio VERSION 2.0.0)
 
 # Enable export of compile commands for IDEs
@@ -86,6 +86,7 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
     GIT_TAG 8.0.10
     GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
 )
 
 # Add nlohmann/json
@@ -94,6 +95,7 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/nlohmann/json.git
     GIT_TAG v3.12.0
     GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
 )
 
 # Add tabulate for pretty table printing
@@ -102,6 +104,7 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/p-ranav/tabulate.git
     GIT_TAG v1.5
     GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
 )
 
 # Add spdlog with std::format support
@@ -110,6 +113,7 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
     GIT_TAG v1.16.0
     GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
 )
 
 # Configure spdlog to use std::format and build as compiled static library
@@ -128,6 +132,7 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
     GIT_TAG v3.4.0
     GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
 )
 
 # Add taglib for ID3 tag reading
@@ -136,6 +141,7 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/taglib/taglib.git
     GIT_TAG v2.1.1
     GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
 )
 
 # Add SoundTouch for BPM detection
@@ -144,6 +150,7 @@ FetchContent_Declare(
     GIT_REPOSITORY https://codeberg.org/soundtouch/soundtouch.git
     GIT_TAG 2.3.3
     GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
 )
 
 # Add LAME for MP3 encoding (properly-scoped CMake wrapper)
@@ -152,6 +159,7 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/gersonkurz/lamers-paradise.git
     GIT_TAG main
     GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
 )
 
 # Add GLEW for OpenGL extension loading (required by projectM on Windows)
@@ -161,6 +169,7 @@ if(WIN32)
         GIT_REPOSITORY https://github.com/Perlmint/glew-cmake.git
         GIT_TAG glew-cmake-2.2.0
         GIT_SHALLOW TRUE
+        EXCLUDE_FROM_ALL
     )
 endif()
 
@@ -170,6 +179,7 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/projectM-visualizer/projectm.git
     GIT_TAG v4.1.1
     GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
 )
 
 # Add projectM curated presets (Cream of the Crop - best of the best)
@@ -178,6 +188,7 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/projectM-visualizer/presets-cream-of-the-crop.git
     GIT_TAG master
     GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
 )
 
 # Allow SoundTouch's older CMake version requirement
