@@ -1,15 +1,6 @@
 # JucyAudio - Open Tasks
 
-Select n tracks. Click "Remove" in the context menu. They are removed, but the selection remains.
 If you are exporting from a Workingset named FOO, and you want to export, default to a folder named FOO, not "the first one in the list".
-
----
-
-## Feature: Show track details from mix editor
-
-**Symptom**: In the mix editor, there's no way to see a track's filename, path, format, bitrate, or other file properties. The waveform just shows artist/title but nothing else.
-
-**Recommended approach**: Right-click context menu action "Show in Library" that navigates to and highlights the track in the library tree. This gives access to all existing track details without duplicating UI. Additionally, a properties dialog (or the existing track details view) accessible from the mix editor's context menu would cover the "quick glance" case without leaving the mix.
 
 ---
 
