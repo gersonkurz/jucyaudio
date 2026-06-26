@@ -42,7 +42,7 @@ Coming from Windows to the Mac, I was surprised that nothing really fit *my* bil
 Download the latest release from the [Releases](https://github.com/gersonkurz/jucyaudio/releases) page.
 
 - **macOS:** Download the DMG, drag JucyAudio to Applications
-- **Windows:** Download the installer or portable ZIP
+- **Windows:** Download and run the MSI installer (x64)
 
 ## Building from Source
 

@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Build System
 - Offline build mode for airplane-safe development (`just build-offline`)
 - Consolidated build automation in justfile (removed legacy .cmd scripts)
+- Windows installer migrated from NSIS to a self-contained **MSI** built with the `msis` tool / WiX (`just package-x64`); ships the app-local MSVC runtime, so no VC++ redistributable is required
+- `cmake --install` now stages a clean payload (dependency install rules suppressed via `EXCLUDE_FROM_ALL`)
 
 #### Smart Automix
 - Energy-aware, intelligent transition point discovery

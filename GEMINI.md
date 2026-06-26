@@ -26,7 +26,7 @@ The project uses **CMake** and the **just** task runner for automation.
 - **Run:** `just run` (builds and executes the application).
 - **Offline Mode:** `just build-offline` (airplane-safe; requires a prior online build to cache dependencies).
 - **Clean:** `just clean`.
-- **Package:** `just publish` (generates DMG on macOS or installer/ZIP on Windows for multiple architectures).
+- **Package:** `just publish` (DMG on macOS; on Windows, an x64 MSI built via the `msis` tool — `just package-x64`).
 
 ### Dependencies
 Managed via CMake's `FetchContent`. Major dependencies include:

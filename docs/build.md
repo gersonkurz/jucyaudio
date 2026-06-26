@@ -202,3 +202,27 @@ just build-offline
 
 The offline build works the same way as on macOS - dependencies are cached in `build-{arch}/_deps/` after the first online build.
 
+### Creating the MSI Installer (Windows)
+
+The Windows distributable is an **MSI** built with the [`msis`](https://github.com/gersonkurz/msis) tool (a declarative front-end over the WiX Toolset 6/7).
+
+Prerequisites (one-time):
+
+```powershell
+# msis on PATH (https://github.com/gersonkurz/msis/releases), then provision WiX + extensions:
+msis /SETUP-WIX
+```
+
+Build the installer:
+
+```powershell
+just package-x64    # configure + build + cmake --install + msis /BUILD /STANDALONE
+```
+
+This produces `releases/jucyaudio-<version>-x64.msi`. Under the hood:
+
+1. `cmake --install` stages a clean, **self-contained** payload into `install-x64-release/bin/` — the app, the projectM/GLEW DLLs, the ~9,800 visualizer presets, themes, licenses, **and the app-local MSVC runtime DLLs**. (Dependency install rules are suppressed via `EXCLUDE_FROM_ALL`, so no headers/static libs/debug DLLs leak in.)
+2. `msis /BUILD /STANDALONE setup/jucyaudio-x64.msis` turns that directory into the MSI. Because the runtime ships app-local, no VC++ redistributable prerequisite is required.
+
+The installer creates desktop + Start-Menu shortcuts and an "Open with jucyaudio" shell entry, and registers in Add/Remove Programs. 2.0 ships **x64 only**; the legacy NSIS scripts (`setup/*.nsi`) are superseded by `setup/jucyaudio-x64.msis`.
+
