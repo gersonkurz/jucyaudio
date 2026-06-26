@@ -1,20 +1,22 @@
+system = "base16"
 name = "Dracula"
+author = "clach04 (https://github.com/clach04)"
+variant = "dark"
 
-[colors]
-"Label::textWhenEditingColourId"           = "#FFf8f8f2"  # Foreground when editing
-"Label::backgroundWhenEditingColourId"     = "#FF44475a"  # Current line background
-"ListBox::outlineColourId"                 = "#FF44475a"  # Selection border
-"TabbedComponent::outlineColourId"         = "#FF44475a"
-"TabbedButtonBar::tabOutlineColourId"      = "#FF44475a"
-"Slider::trackColourId"                    = "#FF44475a"
-"Slider::textBoxOutlineColourId"           = "#FF44475a"
-"ScrollBar::trackColourId"                 = "#FF44475a"
-"TextButton::buttonColourId"               = "#FF44475a"
-"TextEditor::outlineColourId"              = "#FF44475a"
-"TreeView::linesColourId"                  = "#FF6272a4"  # Comment color for lines
-"waveformColourId"                         = "#FFbd93f9"  # Purple waveform
-"accent"                                   = "#FFff79c6"  # Pink accent
-"mainBackground"                           = "#FF282a36"  # Dracula background
-"alternateBackground"                      = "#FF44475a"  # Current line / selection
-"mainForeground"                           = "#FFf8f8f2"  # Foreground
-"disabledForeground"                       = "#FF6272a4"  # Comment color
+[palette]
+base00 = "#282a36"
+base01 = "#21222c"
+base02 = "#44475a"
+base03 = "#6272a4"
+base04 = "#9ea8c7"
+base05 = "#f8f8f2"
+base06 = "#f8f8f2"
+base07 = "#ffffff"
+base08 = "#ff5555"
+base09 = "#ffb86c"
+base0A = "#f1fa8c"
+base0B = "#50fa7b"
+base0C = "#8be9fd"
+base0D = "#bd93f9"
+base0E = "#ff79c6"
+base0F = "#993333"

@@ -1,20 +1,22 @@
+system = "base16"
 name = "Tomorrow Night Blue"
+author = "Chris Kempson (http://chriskempson.com)"
+variant = "dark"
 
-[colors]
-"Label::textWhenEditingColourId"           = "#FFFFFFFF"  # White text when editing
-"Label::backgroundWhenEditingColourId"     = "#FF00346e"  # Lighter blue background when editing
-"ListBox::outlineColourId"                 = "#FF003f8e"  # Blue border for lists/tables
-"TabbedComponent::outlineColourId"         = "#FF003f8e"  # Blue border
-"TabbedButtonBar::tabOutlineColourId"      = "#FF003f8e"  # Tab borders
-"Slider::trackColourId"                    = "#FF003f8e"
-"Slider::textBoxOutlineColourId"           = "#FF003f8e"  # Blue border for slider text boxes
-"ScrollBar::trackColourId"                 = "#FF003f8e"  # Blue for scrollbar track
-"TextButton::buttonColourId"               = "#FF003f8e"  # "Off" state for buttons
-"TextEditor::outlineColourId"              = "#FF003f8e"
-"TreeView::linesColourId"                  = "#FF003f8e"  # The indent lines
-"waveformColourId"                         = "#FF99ffff"  # Cyan waveform
-"accent"                                   = "#FF99ffff"  # Cyan accent for icons
-"mainBackground"                           = "#FF002451"  # Tomorrow Night Blue background
-"alternateBackground"                      = "#FF00346e"  # Slightly lighter blue
-"mainForeground"                           = "#FFFFFFFF"  # White
-"disabledForeground"                       = "#FF7285b7"  # Muted blue-gray (comment color)
+[palette]
+base00 = "#002451"
+base01 = "#00346e"
+base02 = "#003f8e"
+base03 = "#7285b7"
+base04 = "#a3b2d6"
+base05 = "#ffffff"
+base06 = "#ffffff"
+base07 = "#ffffff"
+base08 = "#ff9da4"
+base09 = "#ffc58f"
+base0A = "#ffeead"
+base0B = "#d1f1a9"
+base0C = "#99ffff"
+base0D = "#bbdaff"
+base0E = "#ebbbff"
+base0F = "#d18f52"
