@@ -1,6 +1,6 @@
 # JucyAudio Development Roadmap
 
-## Current Working Reality (as of 2026-03-07)
+## Current Working Reality (as of 2026-06-07)
 
 - Active development happens on `dev/2.0`.
 - `main` is not receiving ongoing feature work during 2.0 development.
@@ -8,19 +8,26 @@
 
 ## Release Criteria
 
-**Version 2.0 requires all MUST HAVE features (currently: Dedupe System only). NICE TO HAVE features can ship in 2.x minor releases.**
+**Version 2.0 is feature-complete.** All remaining MUST HAVE *features* are DONE. The full
+Dedupe System was descoped to 2.1 (2026-06-07) — only the existing working-set metadata dedup
+ships in 2.0. The remaining 2.0 work is the **MSI installer** (via the `msis` tool) plus a tail
+of bug fixes; see `tasks.md` and `docs/release-plan-2.0.md`.
 
-| ID   | Feature                | Priority      | Target | Status |
-|------|------------------------|---------------|--------|--------|
-| 1.1  | ProjectM Integration   | MUST HAVE     | 2.0    | DONE   |
-| 1.2  | VST3 Support           | MUST HAVE     | 2.0    | DONE   |
-| 2.1  | User Manual            | NICE TO HAVE  | 2.x    |        |
-| 2.2  | Dedupe System          | MUST HAVE     | 2.0    |        |
-| 2.3  | Smart Automix          | MUST HAVE     | 2.0    | DONE   |
-| 3.1  | AI Stem Separation     | NICE TO HAVE  | 2.2    |        |
-| 3.2  | AI Metadata Enrichment | NICE TO HAVE  | 2.1    |        |
-| 3.3  | Library Organizer      | NICE TO HAVE  | 2.x    |        |
-| 4.1  | Linux Port             | NICE TO HAVE  | 2.3    |        |
+| ID   | Feature                | Priority      | Target | Status              |
+|------|------------------------|---------------|--------|---------------------|
+| 1.1  | ProjectM Integration   | MUST HAVE     | 2.0    | DONE                |
+| 1.2  | VST3 Support           | MUST HAVE     | 2.0    | DONE                |
+| 2.1  | User Manual            | NICE TO HAVE  | 2.x    |                     |
+| 2.2  | Dedupe System          | MUST HAVE     | 2.1    | DESCOPED to 2.1     |
+| 2.3  | Smart Automix          | MUST HAVE     | 2.0    | DONE                |
+| 3.1  | AI Stem Separation     | NICE TO HAVE  | 2.2    |                     |
+| 3.2  | AI Metadata Enrichment | NICE TO HAVE  | 2.1    |                     |
+| 3.3  | Library Organizer      | NICE TO HAVE  | 2.x    |                     |
+| 4.1  | Linux Port             | NICE TO HAVE  | 2.3    |                     |
+
+> **2.2 Dedupe note:** 2.0 ships only the in-working-set metadata dedup ("Remove Duplicates",
+> keyed on artist/album/title/bpm/duration). SHA-256 file hashing, Chromaprint fingerprinting,
+> and the library-wide review/marking system (`docs/features/dedupe.md`) move to 2.1.
 
 ---
 
@@ -84,9 +91,12 @@ When a bug is fixed in 1.x:
 2.1. **User Manual** (`docs/features/user-manual.md`) — NICE TO HAVE
     - **Why**: Essential for onboarding. Low technical risk.
     - **Tech**: MkDocs, GitHub Pages.
-2.2. **Dedupe System** (`docs/features/dedupe.md`) — MUST HAVE
+2.2. **Dedupe System** (`docs/features/dedupe.md`) — DESCOPED to 2.1
     - **Why**: Solves a major pain point for users with large libraries.
     - **Tech**: SHA-256, Chromaprint.
+    - **2.0 status**: Only the working-set metadata dedup ships in 2.0. Full system moved to 2.1
+      (2026-06-07) — it was the riskiest, least-started MUST-HAVE and was blocking an otherwise
+      feature-complete release.
 2.3. **Smart Automix** (`docs/features/automix-improvement.md`) — DONE
     - **Why**: Upgrades the "Auto-DJ" from a toy to a useful tool.
     - **Tech**: BTrack (Beat Detection), SoundTouch (Time Stretch).

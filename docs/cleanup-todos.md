@@ -43,8 +43,17 @@ These columns in `Tracks` are 0% populated. Dropping would require full table re
 |--------|-------|
 | `rating` | User rating feature, never implemented |
 | `liked_status` | Like/dislike feature, never implemented |
-| `play_count` | Play tracking, never implemented |
 | `user_notes` | User notes feature, never implemented |
+
+**Now in use (2026-06-07):**
+| Column | Notes |
+|--------|-------|
+| `play_count` | Incremented on playback (commit 16012ed) — no longer dead |
+| `last_played` | Timestamped on playback (commit 16012ed) — no longer dead |
+
+> The `idx_tracks_rating` / `idx_tracks_liked_status` index drops below are still valid, but re-check
+> populated columns against the live DB before running any migration — this doc was last verified
+> against schema v21 in Feb 2026.
 
 **Action**: Keep all columns for now. The truly dead ones are NULL/0 and cost minimal space.
 
@@ -125,5 +134,5 @@ These are currently 0-1% populated, so repurposing is safe.
 
 ---
 
-*Last updated: 2026-02-01*
-*Database analyzed: 1,437,558 tracks, schema v21*
+*Last updated: 2026-06-07 (play_count/last_played reclassified as in-use)*
+*Database analyzed: 1,437,558 tracks, schema v21 (Feb 2026 — re-verify before migrating)*

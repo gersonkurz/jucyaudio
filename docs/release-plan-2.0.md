@@ -8,10 +8,13 @@ Scope: align and ship 2.0 with clear cross-agent review.
 
 Ship 2.0 once all MUST-HAVE features are complete and a minimum quality gate is met.
 
-## 2. Remaining MUST-HAVE Features
+## 2. Remaining 2.0 Work
 
-- 2.2 Dedupe System
-- Windows installer migration from NSIS to MSIS (`setup/*.nsi`)
+2.0 is **feature-complete**. What remains is packaging plus a bug tail:
+
+- Windows MSI installer via the `msis` tool (`C:\NGBT\MSIS\msis-3.x`, WiX 6 backend) — replaces the
+  legacy NSIS scripts under `setup/*.nsi`. See Section 5.
+- Bug fixes tracked in `tasks.md`.
 
 **Completed MUST-HAVE Features:**
 
@@ -22,6 +25,8 @@ Ship 2.0 once all MUST-HAVE features are complete and a minimum quality gate is 
 **Deferred to 2.x:**
 
 - 2.1 User Manual — low demand, high manual effort (screenshots, etc.)
+- 2.2 Dedupe System (full) — descoped to 2.1 (2026-06-07); 2.0 keeps only the working-set metadata
+  dedup. SHA-256/Chromaprint/library review move to 2.1.
 - 3.3 Library Organizer — design not mature enough for 2.0 scope
 
 Reference: `docs/ROADMAP.md`
@@ -51,9 +56,17 @@ Reference: `docs/ROADMAP.md`
 - Finalize matching strategy (hash + acoustic constraints where needed).
 - Add safety UX for conflict review before destructive actions.
 
-2. Windows Installer (NSIS → MSIS)
-- Migrate `setup/*.nsi` scripts to MSIS equivalents.
-- Validate installer for x64, x86, and arm64 targets.
+2. Windows Installer (NSIS → MSI via `msis`)
+- Author `.msis` scripts and build MSIs with the `msis` tool (WiX 6 backend) at `C:\NGBT\MSIS\msis-3.x`.
+- Payload (from `build-<arch>-release/jucyaudio_artefacts/Release/`): `JucyAudio.exe`, `glew.dll`,
+  `projectM-4.dll`, `presets/` (~9,800 files, ~115 MB), `themes/`, and `licenses/`. Exclude the `.pdb`.
+- Replicate NSIS behaviour: desktop + Start Menu shortcuts, "open with jucyaudio" shell extension,
+  Add/Remove Programs entry, license page.
+- Handle the MSVC runtime via a `vcredist 2022` bundle prerequisite (do not hand-ship runtime DLLs).
+- Build a universal bundle `.exe` wrapping the per-arch MSIs; validate x64, x86, and arm64.
+- NOTE: the legacy NSIS script (`setup/setup-x64.nsi`) is stale — it predates projectM and ships only
+  `JucyAudio.exe` + themes, omitting `glew.dll`, `projectM-4.dll`, and `presets/`. The MSI must not
+  inherit that gap.
 
 ## 6. Execution Strategy (remaining MUST-HAVE scope)
 
@@ -128,6 +141,9 @@ Use this section for iterative revisions from each assistant. Keep entries short
 
 - 2026-03-07: Moved Smart Automix (2.3) to completed — fully implemented and in active use. Fixed Section 4 list indentation.
 - 2026-03-07: Deferred User Manual (2.1) and Library Organizer (3.3) to 2.x. Dedupe System is the sole remaining MUST-HAVE for 2.0.
+- 2026-06-07: Descoped full Dedupe System to 2.1 — 2.0 is now feature-complete. Replaced "NSIS → MSIS"
+  with concrete MSI plan (`msis` tool / WiX 6), documented the real install payload, and flagged that
+  the legacy NSIS script ships a broken (projectM-less) payload.
 
 ### Gemini Review
 
@@ -139,3 +155,7 @@ Use this section for iterative revisions from each assistant. Keep entries short
 - 2026-03-07: Expanded joint release plan into phased execution strategy with explicit acceptance criteria and cross-agent revision protocol.
 - 2026-03-07: Descoped User Manual and Library Organizer from 2.0 — Manual has low demand and high manual effort; Organizer design needs more time to mature. Dedupe is the only remaining blocker.
 - 2026-03-07: Added Windows installer migration (NSIS → MSIS) as 2.0 MUST-HAVE.
+- 2026-06-07: Descoped the full Dedupe System to 2.1; 2.0 keeps only the working-set metadata dedup.
+  With that, all 2.0 MUST-HAVE features are DONE and 2.0 is feature-complete.
+- 2026-06-07: Confirmed installer direction is MSI built with the in-house `msis` tool (WiX 6), not a
+  hand-written WiX/MSIX migration. Per-arch MSIs + a universal bundle with a vcredist 2022 prerequisite.
