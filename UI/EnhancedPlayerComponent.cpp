@@ -95,6 +95,11 @@ namespace jucyaudio
             }
         }
 
+        void EnhancedPlayerComponent::setWaveformVisible(bool shouldBeVisible)
+        {
+            m_waveformDisplay.setVisible(shouldBeVisible);
+        }
+
         void EnhancedPlayerComponent::lookAndFeelChanged()
         {
             // Reload icons with new accent color when theme changes

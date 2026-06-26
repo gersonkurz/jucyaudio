@@ -1636,6 +1636,10 @@ namespace jucyaudio
                         m_currentMainViewComponent = &m_mixEditorComponent;
                         m_currentMainView = MainViewType::MixEditor;
                         m_mixEditorComponent.setVisible(true);
+                        // Hide the bottom-bar waveform: in the mix editor it would show whatever track the
+                        // standalone player last loaded, which is rarely the track being edited or played
+                        // back from the mix — confusing rather than informative.
+                        m_enhancedPlayer.setWaveformVisible(false);
                     }
                     else
                     {
@@ -1646,6 +1650,7 @@ namespace jucyaudio
                         // is stale, because the node's tracks may have changed while we were away (e.g. a working set
                         // loses tracks after mix export). Row indices would otherwise highlight different songs.
                         m_dataViewComponent.clearSelection();
+                        m_enhancedPlayer.setWaveformVisible(true);
                     }
                 }
 

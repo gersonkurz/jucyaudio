@@ -47,6 +47,11 @@ namespace jucyaudio
 
             void setRightHandPadding(int padding);
 
+            // Hide/show the waveform display. Hidden while editing a mix, since the bottom-bar waveform
+            // would show whatever track was last loaded into the standalone player — not necessarily the
+            // mix track being edited or played back.
+            void setWaveformVisible(bool shouldBeVisible);
+
             // Callbacks for external control
             std::function<void(TrackId, std::chrono::milliseconds, bool isNewMarker)> onMarkerAction;
             std::function<void()> onNextTrack;
