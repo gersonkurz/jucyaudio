@@ -3,6 +3,8 @@
 #include <spdlog/spdlog.h>
 #include <toml++/toml.h> // Include the parser implementation here
 #include <UI/CheckboxLookAndFeel.h>
+#include <array>
+#include <cstdlib>
 
 namespace jucyaudio
 {
@@ -94,6 +96,42 @@ namespace jucyaudio
                 {"mainForeground", jucyaudio::ui::mainForegroundColourId},
                 {"disabledForeground", jucyaudio::ui::disabledForegroundColourId},
             };
+
+            // Parse a base16 hex colour ("#RRGGBB" or "RRGGBB") into an opaque juce::Colour.
+            juce::Colour parseHex6(std::string s)
+            {
+                if (!s.empty() && s.front() == '#')
+                {
+                    s.erase(0, 1);
+                }
+                const auto v{static_cast<uint32_t>(std::strtoul(s.c_str(), nullptr, 16))};
+                return juce::Colour{0xff000000u | (v & 0x00ffffffu)};
+            }
+
+            // The crux of base16 theming: map the 16 palette slots (base00..base0F) onto
+            // jucyaudio's semantic colour roles. Single source of truth, so every theme is
+            // just 16 colours. base00 = bg, base05 = fg, base03 = muted, base0D = accent.
+            std::unordered_map<std::string, juce::Colour> resolveBase16(const std::array<juce::Colour, 16> &b)
+            {
+                return {
+                    {"mainBackground", b[0]},                       // base00 - default background
+                    {"alternateBackground", b[1]},                  // base01 - lighter background (rows)
+                    {"mainForeground", b[5]},                       // base05 - default foreground
+                    {"disabledForeground", b[3]},                   // base03 - comments / muted
+                    {"accent", b[13]},                              // base0D - blue accent (per theme)
+                    {"waveformColourId", b[13]},                    // base0D - accent-coloured waveform
+                    {"TreeView::linesColourId", b[3]},              // base03
+                    {"Label::textWhenEditingColourId", b[5]},       // base05
+                    {"Label::backgroundWhenEditingColourId", b[0]}, // base00
+                    {"TextEditor::outlineColourId", b[2]},          // base02 - selection/border
+                    {"ListBox::outlineColourId", b[2]},
+                    {"TabbedComponent::outlineColourId", b[2]},
+                    {"TabbedButtonBar::tabOutlineColourId", b[2]},
+                    {"Slider::trackColourId", b[2]},
+                    {"Slider::textBoxOutlineColourId", b[2]},
+                    {"ScrollBar::trackColourId", b[1]},             // base01
+                };
+            }
         } // namespace
 
         std::optional<JucyTheme> ThemeManager::loadThemeFromFile(const std::filesystem::path &path)
@@ -106,40 +144,65 @@ namespace jucyaudio
                 theme.name = tbl["name"].value_or("Unnamed Theme");
                 spdlog::info("Loading theme: {} -----------------------------", theme.name);
 
-                if (auto *colors = tbl["colors"].as_table())
+                // Resolve a semantic-name -> colour map from either a base16 [palette] table
+                // (the current format) or a legacy [colors] table (semantic names directly).
+                std::unordered_map<std::string, juce::Colour> values;
+
+                if (auto *palette = tbl["palette"].as_table())
+                {
+                    static constexpr std::array<const char *, 16> slot{"base00",
+                        "base01",
+                        "base02",
+                        "base03",
+                        "base04",
+                        "base05",
+                        "base06",
+                        "base07",
+                        "base08",
+                        "base09",
+                        "base0A",
+                        "base0B",
+                        "base0C",
+                        "base0D",
+                        "base0E",
+                        "base0F"};
+                    std::array<juce::Colour, 16> base;
+                    for (size_t i = 0; i < base.size(); ++i)
+                    {
+                        const auto hex{(*palette)[slot[i]].value<std::string>()};
+                        if (!hex)
+                        {
+                            spdlog::error("Theme '{}' is missing palette slot '{}'", theme.name, slot[i]);
+                            return std::nullopt;
+                        }
+                        base[i] = parseHex6(*hex);
+                    }
+                    values = resolveBase16(base);
+                }
+                else if (auto *colors = tbl["colors"].as_table())
                 {
                     for (const auto &[key, value] : *colors)
                     {
-                        const std::string nameOfColour{key.str()};
-
-                        const auto semanticKey{semanticColourMap.find(nameOfColour)};
-                        if (semanticKey != semanticColourMap.end())
+                        if (auto colorStr = value.value<std::string>())
                         {
-                            if (auto colorStr = value.value<std::string>())
-                            {
-                                // Parse the color string (e.g., "#RRGGBB")
-                                const auto decodedColour{juce::Colour::fromString(*colorStr)};
-                                spdlog::info("Decoded semantic {} to '#{}'", *colorStr, decodedColour.toString().toStdString());
-                                for (const auto idOfColour : semanticKey->second)
-                                {
-                                    theme.colours[idOfColour] = decodedColour;
-                                }
-                            }
+                            values[std::string{key.str()}] = juce::Colour::fromString(*colorStr);
                         }
+                    }
+                }
 
-                        // Find the integer ColourId for this string key
-                        const auto it = colourNameMap.find(nameOfColour);
-                        if (it != colourNameMap.end())
+                // Fan each semantic name out to the JUCE ColourIds it drives.
+                for (const auto &[nameOfColour, colour] : values)
+                {
+                    if (const auto semanticKey{semanticColourMap.find(nameOfColour)}; semanticKey != semanticColourMap.end())
+                    {
+                        for (const auto idOfColour : semanticKey->second)
                         {
-                            const int idOfColour = it->second;
-                            if (auto colorStr = value.value<std::string>())
-                            {
-                                // Parse the color string (e.g., "#RRGGBB")
-                                const auto decodedColour = juce::Colour::fromString(*colorStr);
-                                theme.colours[idOfColour] = decodedColour;
-                                spdlog::info("Decoded color string '{}' with id {} to '#{}'", *colorStr, idOfColour, decodedColour.toString().toStdString());
-                            }
+                            theme.colours[idOfColour] = colour;
                         }
+                    }
+                    if (const auto it{colourNameMap.find(nameOfColour)}; it != colourNameMap.end())
+                    {
+                        theme.colours[it->second] = colour;
                     }
                 }
                 return theme;
@@ -165,6 +228,24 @@ namespace jucyaudio
                 }
             }
             m_currentThemeIndex = getThemeIndexByName(currentThemeName);
+
+            // If the saved theme name no longer exists (e.g. a legacy "Jucy Dark" after the
+            // base16 migration), getThemeIndexByName() silently returns 0 — which would land
+            // an upgrading user on an arbitrary (alphabetically first) theme. Prefer the brand
+            // theme instead so the default stays a dark, orange-accented look.
+            bool found = false;
+            for (const auto &t : m_availableThemes)
+            {
+                if (t.name == currentThemeName)
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                m_currentThemeIndex = getThemeIndexByName("JucyAudio Orange");
+            }
         }
 
         std::string ThemeManager::applyTheme(juce::LookAndFeel_V4 &lookAndFeel, size_t themeIndex, juce::Component *pComponent)
