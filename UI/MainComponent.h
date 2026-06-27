@@ -129,6 +129,8 @@ namespace jucyaudio
             bool onShowConfigureColumnsDialog();
             bool onShowAboutDialog();
             bool onApplyThemeByIndex(size_t themeIndex);
+            std::string applyThemeLive(size_t themeIndex); // apply to the whole UI without persisting
+            void onShowThemeDialog();
 
             // Helper to check if a DataAction is available for current node
             bool isActionAvailable(DataAction action) const;

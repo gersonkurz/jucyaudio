@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -15,6 +16,10 @@ namespace jucyaudio
         {
             std::string name;
             std::unordered_map<int, juce::Colour> colours;
+            // Raw base16 palette (base00..base0F) for swatch previews, and the light/dark
+            // classification used to split themes in the picker. Populated from [palette].
+            std::array<juce::Colour, 16> palette{};
+            bool isDark{true};
         };
 
         class ThemeManager final
@@ -33,6 +38,11 @@ namespace jucyaudio
             bool isCurrentIndex(size_t index) const
             {
                 return index == m_currentThemeIndex;
+            }
+
+            size_t getCurrentThemeIndex() const
+            {
+                return m_currentThemeIndex;
             }
 
             std::string applyTheme(juce::LookAndFeel_V4& lookAndFeel, size_t themeIndex, juce::Component* pComponent);

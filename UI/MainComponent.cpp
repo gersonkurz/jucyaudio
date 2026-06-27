@@ -16,6 +16,7 @@
 #include <Database/UndoManager.h>
 #include <UI/AboutDialog.h>
 #include <UI/CheckboxLookAndFeel.h>
+#include <UI/ThemeBrowserDialog.h>
 #include <UI/DatabaseMaintenanceDialog.h>
 #include <Database/DatabaseBackupManager.h>
 #include <UI/ColumnConfiguratorDialog.h>
@@ -635,29 +636,10 @@ namespace jucyaudio
                             }
                         },
                         'r',
-                        juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier)});
-
-            // 2. Define dynamic theme submenu
-            std::vector<MenuItem> themeItems;
-            const auto &availableThemes = theThemeManager.getAvailableThemes();
-            for (size_t i = 0; i < availableThemes.size(); ++i)
-            {
-                themeItems.emplace_back(MenuItem{
-                    availableThemes[i].name,
-                    "Select this theme",
-                    [this, i]()
-                    {
-                        onApplyThemeByIndex(i);
-                    }, // Lambda captures index
-                    {},
-                    true, // isRadioButton
-                    [i]()
-                    {
-                        return theThemeManager.isCurrentIndex(i);
-                    } // isTicked lambda
-                });
-            }
-            menuManager.addSubMenu("View", "Theme", themeItems);
+                        juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier),
+                    {"-"},
+                    // Theme picker dialog: Light/Dark columns with 16-colour swatches + live preview.
+                    makeStaticItem("Theme...", "Choose a colour theme", [this]() { onShowThemeDialog(); })});
 
             menuManager.registerMenu("Tools",
                 {
@@ -3758,19 +3740,27 @@ namespace jucyaudio
             return std::find(availableActions.begin(), availableActions.end(), action) != availableActions.end();
         }
 
+        std::string MainComponent::applyThemeLive(size_t themeIndex)
+        {
+            // Apply a theme to the whole UI WITHOUT persisting it — used for live preview as well
+            // as the persisting path below. Returns the applied theme's name.
+            const auto selectedThemeName = theThemeManager.applyTheme(m_lookAndFeel, themeIndex, this);
+            m_navigationPanel.sendLookAndFeelChange();
+            m_dataViewComponent.sendLookAndFeelChange();
+            m_mixEditorComponent.sendLookAndFeelChange();
+            m_enhancedPlayer.sendLookAndFeelChange();
+            m_statusPanel.sendLookAndFeelChange();
+            m_dynamicToolbar.sendLookAndFeelChange();
+            CheckboxLookAndFeel::getInstance()->setDefaultLookAndFeel(&m_lookAndFeel);
+            return selectedThemeName;
+        }
+
         bool MainComponent::onApplyThemeByIndex(size_t themeIndex)
         {
             const auto &availableThemes = theThemeManager.getAvailableThemes();
             if (themeIndex < availableThemes.size())
             {
-                const auto selectedThemeName = theThemeManager.applyTheme(m_lookAndFeel, themeIndex, this);
-                m_navigationPanel.sendLookAndFeelChange();
-                m_dataViewComponent.sendLookAndFeelChange();
-                m_mixEditorComponent.sendLookAndFeelChange();
-                m_enhancedPlayer.sendLookAndFeelChange();
-                m_statusPanel.sendLookAndFeelChange();
-                m_dynamicToolbar.sendLookAndFeelChange();
-                CheckboxLookAndFeel::getInstance()->setDefaultLookAndFeel(&m_lookAndFeel);
+                const auto selectedThemeName = applyThemeLive(themeIndex);
 
                 config::TomlBackend backend{g_strConfigFilename};
                 config::theSettings.uiSettings.theme.set(selectedThemeName);
@@ -3779,6 +3769,17 @@ namespace jucyaudio
             }
             spdlog::error("Invalid theme index: {}", themeIndex);
             return false;
+        }
+
+        void MainComponent::onShowThemeDialog()
+        {
+            const auto openingIndex = theThemeManager.getCurrentThemeIndex();
+            ThemeBrowserDialog::launch(this,
+                theThemeManager.getAvailableThemes(),
+                openingIndex,
+                [this](size_t i) { applyThemeLive(i); },     // preview (no persist)
+                [this](size_t i) { onApplyThemeByIndex(i); }, // commit (apply + persist)
+                [this](size_t i) { applyThemeLive(i); });    // restore opening theme (no persist)
         }
 
         bool MainComponent::onShowMaintenanceDialog()

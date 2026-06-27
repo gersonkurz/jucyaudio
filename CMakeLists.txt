@@ -556,6 +556,8 @@ target_sources(jucyaudio PRIVATE
     UI/CheckboxLookAndFeel.cpp
     UI/ThemeManager.cpp
     UI/ThemeManager.h
+    UI/ThemeBrowserDialog.cpp
+    UI/ThemeBrowserDialog.h
     UI/Plugins/PluginScanDialog.cpp
     UI/Plugins/PluginScanDialog.h
     UI/Plugins/PluginChainEditor.cpp
@@ -769,6 +771,8 @@ endif()
 target_include_directories(jucyaudio PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${EXTERNAL_INCLUDES}
+    # fkYAML - header-only YAML reader (vendored, single header) for loading base16 .yaml themes.
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fkYAML/include
 )
 
 # Platform-specific preprocessor definitions
