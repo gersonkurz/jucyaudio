@@ -1,7 +1,7 @@
 # JucyAudio 2.0 Joint Release Plan
 
-Date: 2026-03-07
-Branch baseline: `dev/2.0`
+Date: 2026-03-07 (branch policy updated 2026-06-27)
+Branch baseline: `main` (the 2.0 line was consolidated from `dev/2.0` onto `main` on 2026-06-27; `dev/2.0` deleted)
 Scope: align and ship 2.0 with clear cross-agent review.
 
 ## 1. Objective
@@ -41,14 +41,14 @@ Reference: `docs/ROADMAP.md`
 
 ## 4. Branch And Merge Policy
 
-- Active implementation continues on `dev/2.0`.
-- `main` remains release-only until 2.0 cut.
-- 1.x hotfix flow is optional and only activated if real issues are reported.
-- 2.0 ship cut:
-  1. Stabilization window on `dev/2.0`.
-  2. Merge `dev/2.0` to `main`.
-  3. Tag `v2.0.0`.
-  4. Create `release/2.x` for 2.0.x maintenance.
+- Active implementation is on `main` (the 2.0 line was consolidated from `dev/2.0` onto `main` on
+  2026-06-27; `dev/2.0` is deleted).
+- 1.x hotfix flow is optional and only activated if real issues are reported; forward-port from
+  `release/1.x` to `main`.
+- 2.0 ship cut (remaining):
+  1. Stabilization window on `main`.
+  2. Tag `v2.0.0`.
+  3. Create `release/2.x` for 2.0.x maintenance.
 
 ## 5. Workstreams
 
@@ -144,6 +144,9 @@ Use this section for iterative revisions from each assistant. Keep entries short
 - 2026-06-07: Descoped full Dedupe System to 2.1 — 2.0 is now feature-complete. Replaced "NSIS → MSIS"
   with concrete MSI plan (`msis` tool / WiX 6), documented the real install payload, and flagged that
   the legacy NSIS script ships a broken (projectM-less) payload.
+- 2026-06-27: Consolidated the 2.0 line onto `main` and deleted `dev/2.0`. Forward-ported the 1.x
+  accidental-reorder fix (the undo-deadlock fix was already present in 2.0 in another form). Shipped the
+  x64 MSI build, and migrated theming to base16 (20 schemes + an orange brand default).
 
 ### Gemini Review
 
@@ -159,3 +162,7 @@ Use this section for iterative revisions from each assistant. Keep entries short
   With that, all 2.0 MUST-HAVE features are DONE and 2.0 is feature-complete.
 - 2026-06-07: Confirmed installer direction is MSI built with the in-house `msis` tool (WiX 6), not a
   hand-written WiX/MSIX migration. Per-arch MSIs + a universal bundle with a vcredist 2022 prerequisite.
+- 2026-06-27: 2.0 ships x64-only and self-contained (app-local MSVC runtime), so no vcredist
+  prerequisite and no bundle — a single `jucyaudio-<version>-x64.msi`.
+- 2026-06-27: Merged `dev/2.0` into `main` (fast-forward via reset + force-push) and deleted `dev/2.0`;
+  `main` is now the active branch. `v2.0.0` tag and `release/2.x` deferred until the release gates close.

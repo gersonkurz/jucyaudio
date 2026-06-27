@@ -1,10 +1,11 @@
 # JucyAudio Development Roadmap
 
-## Current Working Reality (as of 2026-06-07)
+## Current Working Reality (as of 2026-06-27)
 
-- Active development happens on `dev/2.0`.
-- `main` is not receiving ongoing feature work during 2.0 development.
-- 1.x hotfixes are done only if real user-reported issues require them.
+- Active development happens on `main`. The 2.0 line (formerly `dev/2.0`) was consolidated onto
+  `main` on 2026-06-27 and `dev/2.0` was deleted.
+- `release/1.x` is retained for 1.x hotfixes (done only if real user-reported issues require them).
+- 2.0 has not been tagged yet — see `docs/release-plan-2.0.md` for the remaining release gates.
 
 ## Release Criteria
 
@@ -31,43 +32,35 @@ of bug fixes; see `tasks.md` and `docs/release-plan-2.0.md`.
 
 ---
 
-## Migration Strategy (1.x → 2.x)
-
-This section reflects the intended release flow. Current day-to-day work remains on `dev/2.0` until 2.0 is ready to ship.
-
-### Branch Structure
+## Branch Structure (current)
 
 ```
-main          ← stable releases only (currently no active 1.x stream)
-  │
-  └─ release/1.x  ← optional hotfix branch, created only if needed
-
-dev/2.0       ← 2.0 development (feature work)
+main          ← active development + the 2.0 line (dev/2.0 was merged here and deleted)
+release/1.x   ← retained for 1.x hotfixes (forward-port to main if still relevant)
 ```
 
-### Optional Forward-Porting Workflow (only when 1.x hotfixes exist)
+`dev/2.0` no longer exists — its 79 commits plus the forward-ported accidental-reorder hotfix
+were consolidated onto `main` on 2026-06-27. The undo-deadlock 1.x hotfix was already solved
+independently in the 2.0 code, so it was not re-applied.
 
-When a bug is fixed in 1.x:
+### Forward-Porting Workflow (only when 1.x hotfixes exist)
 
-1. **Fix in `release/1.x`** → Tag and release (e.g., 1.0.3)
-2. **Cherry-pick to `dev/2.0`**:
+When a bug is fixed in `release/1.x`:
+
+1. **Fix in `release/1.x`** → tag and release (e.g., 1.1.1)
+2. **Cherry-pick to `main`**:
    ```bash
-   git checkout dev/2.0
-   git cherry-pick -x <commit-hash>   # -x adds reference to original commit
+   git checkout main
+   git cherry-pick -x <commit-hash>   # -x records the original commit
    ```
-3. **Resolve conflicts** if 2.0 code has diverged. Document any adaptations in the commit message.
+3. **Resolve conflicts** if the 2.0 code has diverged — and first check whether the fix is already
+   present in a different form (as the undo-deadlock fix was). Document adaptations in the message.
 
-### Conflict Prevention (if forward-porting is active)
+### Remaining steps to cut 2.0
 
-- Keep 1.x fixes **minimal and surgical** - avoid refactoring in hotfix commits
-- Tag forward-ported commits with `[forward-port]` prefix in commit message
-- Maintain a `CHANGELOG-2.0.md` noting which 1.x fixes are included
-
-### When 2.0 Ships
-
-1. Merge `dev/2.0` → `main`
-2. Create `release/2.x` branch for future 2.0.x maintenance
-3. Archive `release/1.x` if it was created
+1. Close out the release gates in `docs/release-plan-2.0.md` (stabilization, QA).
+2. Tag `v2.0.0` on `main`.
+3. Create `release/2.x` for future 2.0.x maintenance.
 
 ---
 
