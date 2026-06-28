@@ -3,8 +3,10 @@
 #include <Utils/AssortedUtils.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <spdlog/spdlog.h>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 namespace jucyaudio
 {
@@ -87,6 +89,13 @@ namespace jucyaudio
 
             spdlog::debug("Cache built with {} folders and {} tracks.", existingTrackCache.size(), tracksInScope.size());
 
+            // Files already handled in THIS scan run, keyed by (folderId, normalized filename).
+            // Overlapping roots (e.g. D:\MP3 and D:\MP3\DARKGAZE) reach the same physical folder
+            // twice; without this guard the destructive existingTrackCache erase makes the second
+            // encounter look new and insert a duplicate. The UNIQUE(folder_id, filename) index is
+            // the hard backstop; this just avoids the wasted insert + failure log.
+            std::set<std::pair<FolderId, std::string>> processedThisRun;
+
             int filesProcessedThisSession = 0;
             for (const auto &rootFolderId : folderIdsToScan)
             {
@@ -125,7 +134,13 @@ namespace jucyaudio
 
                     const auto normalizedFilename = normalizeForCache(filename);
 
-                    // let's check if the folder existed before: 
+                    // Skip if this physical file was already processed this run via another root.
+                    if (!processedThisRun.insert({parentFolderId, normalizedFilename}).second)
+                    {
+                        continue;
+                    }
+
+                    // let's check if the folder existed before:
                     auto item = existingTrackCache.find(parentFolderId);
                     if (item == existingTrackCache.end())
                     {

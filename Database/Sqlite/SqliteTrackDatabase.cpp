@@ -105,7 +105,8 @@ namespace
             FOREIGN KEY (folder_id) REFERENCES Folders(folder_id) ON DELETE CASCADE,
             FOREIGN KEY (album_id) REFERENCES Albums(album_id) ON DELETE SET NULL
         );)SQL",
-        "CREATE INDEX IF NOT EXISTS idx_tracks_parent_filename ON Tracks(folder_id, filename);",
+        // UNIQUE so one physical file is one track row (overlapping roots / re-scans can't duplicate).
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_parent_filename ON Tracks(folder_id, filename);",
         "CREATE INDEX IF NOT EXISTS idx_tracks_artist ON Tracks (artist_name COLLATE NOCASE);",
         "CREATE INDEX IF NOT EXISTS idx_tracks_album ON Tracks (album_title COLLATE NOCASE);",
         "CREATE INDEX IF NOT EXISTS idx_tracks_title ON Tracks (title COLLATE NOCASE);",
@@ -649,7 +650,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 23;
+            const int latestSchemaVersion = 24;
 
             if (currentVersion == 0)
             {
@@ -2259,6 +2260,80 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 23;
+            }
+
+            if (currentVersion < 24)
+            {
+                spdlog::info("Migrating database from version 23 to 24 (de-duplicate tracks; enforce UNIQUE(folder_id, filename))...");
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Collapse duplicate Tracks rows sharing (folder_id, filename) onto the lowest
+                    // track_id, remapping every reference, so the UNIQUE index can be created. Older
+                    // libraries accumulated duplicates from overlapping roots + repeated scans.
+                    const char *dedupeSteps[] = {
+                        "CREATE TEMP TABLE _dup_map AS "
+                        "SELECT t.track_id AS old_id, m.canonical_id FROM Tracks t "
+                        "JOIN (SELECT folder_id, filename, MIN(track_id) AS canonical_id FROM Tracks "
+                        "GROUP BY folder_id, filename HAVING COUNT(*) > 1) m "
+                        "ON t.folder_id = m.folder_id AND t.filename = m.filename WHERE t.track_id <> m.canonical_id;",
+                        "CREATE INDEX _dup_map_idx ON _dup_map(old_id);",
+                        "UPDATE MixTracks SET track_id=(SELECT canonical_id FROM _dup_map WHERE old_id=MixTracks.track_id) "
+                        "WHERE track_id IN (SELECT old_id FROM _dup_map);",
+                        "UPDATE TrackMarkers SET track_id=(SELECT canonical_id FROM _dup_map WHERE old_id=TrackMarkers.track_id) "
+                        "WHERE track_id IN (SELECT old_id FROM _dup_map);",
+                        "INSERT OR IGNORE INTO WorkingSetTracks(ws_id, track_id) "
+                        "SELECT ws_id,(SELECT canonical_id FROM _dup_map WHERE old_id=w.track_id) FROM WorkingSetTracks w "
+                        "WHERE w.track_id IN (SELECT old_id FROM _dup_map);",
+                        "DELETE FROM WorkingSetTracks WHERE track_id IN (SELECT old_id FROM _dup_map);",
+                        "INSERT OR IGNORE INTO TrackTags(track_id, tag_id) "
+                        "SELECT (SELECT canonical_id FROM _dup_map WHERE old_id=g.track_id),tag_id FROM TrackTags g "
+                        "WHERE g.track_id IN (SELECT old_id FROM _dup_map);",
+                        "DELETE FROM TrackTags WHERE track_id IN (SELECT old_id FROM _dup_map);",
+                        "DELETE FROM WaveformCache WHERE track_id IN (SELECT old_id FROM _dup_map);",
+                        "DELETE FROM Tracks WHERE track_id IN (SELECT old_id FROM _dup_map);",
+                        "DROP TABLE _dup_map;",
+                        "DROP INDEX IF EXISTS idx_tracks_parent_filename;",
+                        "CREATE UNIQUE INDEX idx_tracks_parent_filename ON Tracks(folder_id, filename);",
+                        "INSERT INTO TracksSearchFTS(TracksSearchFTS) VALUES('rebuild');",
+                    };
+                    bool ok = true;
+                    for (const char *step : dedupeSteps)
+                    {
+                        if (!m_db.execute(step))
+                        {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    if (!ok)
+                    {
+                        const auto error{m_db.getLastError()};
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "v24 de-duplication migration failed: " + error);
+                    }
+
+                    if (auto result = setDBSchemaVersion(24); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 24.");
+                    }
+
+                    if (transaction.commit())
+                    {
+                        spdlog::info("Successfully migrated to version 24 (de-duplicated tracks; UNIQUE(folder_id, filename)).");
+                    }
+                    else
+                    {
+                        const auto error{m_db.getLastError()};
+                        spdlog::error("Failed to commit migration transaction: {}", error);
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration: " + error);
+                    }
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 24;
             }
 
             return DbResult::success();
