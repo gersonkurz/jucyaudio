@@ -188,23 +188,20 @@ namespace jucyaudio
 
         juce::String getSafeDisplayText(const juce::String &text)
         {
+            // Pass through all printable Unicode so non-Latin names (CJK, emoji, the
+            // mathematical-fraktur letters some releases use, etc.) render correctly — the
+            // same text the list view shows. Only strip control characters, which can
+            // corrupt a single-line layout. (Previously this replaced everything above
+            // U+00FF with '?', turning any supplementary-plane name into "????????".)
             juce::String result;
-
-            for (int i = 0; i < text.length(); ++i)
+            for (auto cp = text.getCharPointer(); !cp.isEmpty();)
             {
-                juce::juce_wchar ch = text[i];
-
-                // Keep "safe" characters: ASCII + basic Latin extended
-                if (ch <= 127 || (ch >= 160 && ch <= 255))
+                const juce::juce_wchar ch = cp.getAndAdvance();
+                if (ch >= 32 || ch == '\t')
                 {
                     result += ch;
                 }
-                else
-                {
-                    result += "?"; // Replace with question mark
-                }
             }
-
             return result;
         }
         std::filesystem::path jucePathToFs(const juce::String &jucePath)
