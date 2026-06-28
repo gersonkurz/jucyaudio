@@ -36,7 +36,9 @@ namespace nlohmann
 
         static std::filesystem::path pathFromUtf8String(const std::string& utf8Path)
         {
-            return std::filesystem::u8path(utf8Path);
+            // C++20: constructing a path from a std::u8string interprets the bytes as UTF-8.
+            // Replaces the now-deprecated std::filesystem::u8path().
+            return std::filesystem::path{std::u8string{utf8Path.begin(), utf8Path.end()}};
         }
 
         static void to_json(json& j, const jucyaudio::audio::ActiveExportSettings& s)

@@ -1,6 +1,17 @@
 cmake_minimum_required(VERSION 3.28)
 project(jucyaudio VERSION 2.0.0)
 
+# On Apple, JUCE compiles its modules as Objective-C++ (.mm) sources inside the
+# jucyaudio target. Enable OBJC/OBJCXX so CMake classifies those sources as
+# OBJCXX/OBJC instead of CXX. This is what makes the precompiled-header guard
+# "$<$<COMPILE_LANGUAGE:CXX>:pch.h>" correctly exclude .mm files; otherwise the
+# C++ PCH (Objective-C disabled) is force-included into Objective-C++ compiles,
+# producing "Objective-C was disabled in precompiled file ... but is currently enabled".
+if(APPLE)
+    enable_language(OBJC)
+    enable_language(OBJCXX)
+endif()
+
 # Enable export of compile commands for IDEs
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -903,6 +914,17 @@ endif()
 # macOS Bundle Dependencies - Bundle all dylibs into the .app
 # ============================================================================
 if(APPLE)
+    # The POST_BUILD dylibbundler step (below) copies every dependent dylib into
+    # Contents/libs and rewrites the executable's rpath to @executable_path/../libs.
+    # Build the binary with that final rpath up front and disable CMake's own
+    # install-time rpath rewriting: otherwise install(TARGETS jucyaudio BUNDLE)
+    # runs `install_name_tool -delete_rpath <build-tree dir>`, but dylibbundler has
+    # already removed that rpath, so cpack/DragNDrop aborts with
+    # "no LC_RPATH load command with path ... found".
+    set_target_properties(jucyaudio PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "@executable_path/../libs")
+
     # Find dylibbundler
     find_program(DYLIBBUNDLER dylibbundler)
 
@@ -916,7 +938,7 @@ if(APPLE)
             # Bundle dependencies
             COMMAND ${DYLIBBUNDLER}
                 -od -b
-                -x "$<TARGET_BUNDLE_DIR:jucyaudio>/Contents/MacOS/jucyaudio"
+                -x "$<TARGET_FILE:jucyaudio>"
                 -d "$<TARGET_BUNDLE_DIR:jucyaudio>/Contents/libs/"
                 -p "@executable_path/../libs/"
                 -s "${CMAKE_BINARY_DIR}"
@@ -965,23 +987,33 @@ if(APPLE)
         set(CODESIGN_IDENTITY "$ENV{MACOS_CODESIGN_IDENTITY}")
         message(STATUS "Will sign with identity: ${CODESIGN_IDENTITY}")
 
-        install(CODE [[
-            file(GLOB dylibs "${CMAKE_INSTALL_PREFIX}/JucyAudio.app/Contents/libs/*.dylib")
-            foreach(dylib ${dylibs})
+        # NOTE: this MUST be a double-quoted install(CODE "...") block, not a
+        # bracket [[ ... ]] block. Bracket arguments do no variable expansion, so
+        # ${CODESIGN_IDENTITY} would be written literally into cmake_install.cmake
+        # and evaluate to empty at install time -> `codesign --sign \"\"` -> "no
+        # identity found" -> the bundled dylibs keep dylibbundler's ad-hoc
+        # signature, giving them a different Team ID than the Developer-ID-signed
+        # executable, which makes dyld refuse to load them at launch.
+        # codesign --deep on the .app below does NOT descend into the non-standard
+        # Contents/libs directory, so these dylibs must be signed explicitly here,
+        # inside-out (dylibs first, then the app).
+        install(CODE "
+            file(GLOB dylibs \"\${CMAKE_INSTALL_PREFIX}/JucyAudio.app/Contents/libs/*.dylib\")
+            foreach(dylib \${dylibs})
                 execute_process(
                     COMMAND codesign --force --verify --verbose
-                            --sign "${CODESIGN_IDENTITY}"
+                            --sign \"${CODESIGN_IDENTITY}\"
                             --options runtime
-                            "${dylib}"
+                            \"\${dylib}\"
                     RESULT_VARIABLE result
                     OUTPUT_VARIABLE output
                     ERROR_VARIABLE error
                 )
                 if(NOT result EQUAL 0)
-                    message(WARNING "Code signing dylib failed: ${dylib} ${error}")
+                    message(WARNING \"Code signing dylib failed: \${dylib} \${error}\")
                 endif()
             endforeach()
-        ]])
+        ")
 
         install(CODE "
             execute_process(

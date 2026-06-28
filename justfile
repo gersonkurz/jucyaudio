@@ -132,7 +132,7 @@ run config=default_build_type:
 _build-macos config arch_target:
     cmake -B build-{{arch_target}} -DCMAKE_BUILD_TYPE={{config}} -DCMAKE_OSX_ARCHITECTURES={{arch_target}}
     cmake --build build-{{arch_target}} -j{{cpu_count}}
-    @echo "Build complete: build-{{arch_target}}/{{arch_target}}-{{config}}/"
+    @echo "Build complete: build-{{arch_target}}/jucyaudio_artefacts/{{config}}/JucyAudio.app"
 
 [macos]
 _build-offline-macos config arch_target:
@@ -165,7 +165,7 @@ build-all config="Release":
 [macos]
 run config=default_build_type:
     @just build {{config}}
-    ./build-{{arch}}/{{arch}}-{{config}}/jucyaudio.app/Contents/MacOS/jucyaudio
+    ./build-{{arch}}/jucyaudio_artefacts/{{config}}/JucyAudio.app/Contents/MacOS/JucyAudio
 
 # ============================================================================
 # Package Commands - Windows
@@ -217,7 +217,7 @@ _package-offline-macos arch_target config="Release":
 [macos]
 _bundle-licenses-macos arch_target config:
     #!/usr/bin/env bash
-    app_path="build-{{arch_target}}/{{arch_target}}-{{config}}/jucyaudio.app/Contents/Resources"
+    app_path="build-{{arch_target}}/jucyaudio_artefacts/{{config}}/JucyAudio.app/Contents/Resources"
     if [ -d "$app_path" ]; then
         mkdir -p "$app_path/licenses"
         cp -f LICENSE THIRD_PARTY_NOTICES.txt "$app_path/licenses/"
