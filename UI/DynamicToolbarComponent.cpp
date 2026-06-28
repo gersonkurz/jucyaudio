@@ -22,6 +22,12 @@ namespace jucyaudio
             m_filterTextEditor.setTextToShowWhenEmpty("Search or filter (e.g., year:1991, bpm:>120)", juce::Colours::grey);
             addAndMakeVisible(m_filterTextEditor);
 
+            // "?" button next to the filter box: opens a popup explaining the filter syntax.
+            m_filterHelpButton.setButtonText("?");
+            m_filterHelpButton.setTooltip("Filter syntax help");
+            m_filterHelpButton.onClick = [this] { showFilterHelp(); };
+            addAndMakeVisible(m_filterHelpButton);
+
             // Create all possible action buttons upfront (for consistent UI)
             const DataAction allActions[] = {
                 DataAction::Play,
@@ -157,6 +163,7 @@ namespace jucyaudio
 
             m_filterLabel.setBounds(bounds.removeFromLeft(labelWidth));
             m_filterTextEditor.setBounds(bounds.removeFromLeft(filterBoxWidth).reduced(0, 2)); // Reduce vertical padding a bit
+            m_filterHelpButton.setBounds(bounds.removeFromLeft(buttonSize).reduced(2, 2)); // "?" syntax-help button
 
             // First, position the always-visible buttons on the right
             const int buttonY = (bounds.getHeight() - buttonSize) / 2 + bounds.getY();
@@ -287,6 +294,47 @@ namespace jucyaudio
             {
                 m_onNodeActionClicked(action);
             }
+        }
+
+        void DynamicToolbarComponent::showFilterHelp()
+        {
+            // Reference for the syntax that already exists (FilterParser field filters + SQLite
+            // FTS5 free-text). Shown as a CallOutBox bubble anchored to the "?" button.
+            const juce::String help =
+                "FILTER SYNTAX\n"
+                "\n"
+                "Field filters - exact, case-insensitive (whole field):\n"
+                "  artist:Autechre   title:Roygbiv   codec:FLAC\n"
+                "  (single word; matches the entire field exactly)\n"
+                "\n"
+                "Numeric fields - compare or range:\n"
+                "  bpm:120   bpm:>120   year:<2000   year:1990..1995\n"
+                "\n"
+                "Fields:\n"
+                "  artist, album, album_artist, title, year, bpm, key,\n"
+                "  codec, bitrate, rating, track, disc, samplerate,\n"
+                "  channels, play_count\n"
+                "\n"
+                "Free text - full-text search (whole words, any text field):\n"
+                "  boards               word match anywhere\n"
+                "  board*               prefix match\n"
+                "  \"boards of canada\"    exact phrase\n"
+                "  drum OR bass         deep NOT house\n"
+                "\n"
+                "Combine freely:\n"
+                "  artist:Autechre year:1994..1998 ambient\n";
+
+            auto content = std::make_unique<juce::TextEditor>();
+            content->setMultiLine(true, false);
+            content->setReadOnly(true);
+            content->setCaretVisible(false);
+            content->setScrollbarsShown(true);
+            content->setPopupMenuEnabled(false);
+            content->setFont(juce::Font{juce::FontOptions{}.withName(juce::Font::getDefaultMonospacedFontName()).withHeight(13.0f)});
+            content->setText(help, false);
+            content->setSize(460, 340);
+
+            juce::CallOutBox::launchAsynchronously(std::move(content), m_filterHelpButton.getScreenBounds(), nullptr);
         }
 
     } // namespace ui

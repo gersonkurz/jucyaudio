@@ -59,12 +59,15 @@ namespace jucyaudio
             void updateActionButtons();
             // Helper to handle when an action button is clicked
             void handleActionButtonClicked(DataAction action);
+            // Shows a popup explaining the filter box syntax (field filters + full-text search).
+            void showFilterHelp();
 
             // Non-owning pointer to the INavigationNode currently providing actions.
             INavigationNode *m_currentNode{nullptr};
 
             juce::TextEditor m_filterTextEditor;
-            juce::Label m_filterLabel; // Optional label for the filter box
+            juce::Label m_filterLabel;          // Optional label for the filter box
+            juce::TextButton m_filterHelpButton; // "?" — opens the filter-syntax popup
             
             // Store all possible action buttons (for "show all with disabled state" approach)
             struct ActionButtonInfo
