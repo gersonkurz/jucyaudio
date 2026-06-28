@@ -1,0 +1,24 @@
+system: "base16"
+name: "JucyAudio Orange"
+author: "p-nand-q.com"
+variant: "dark"
+# jucyaudio's brand theme. A neutral dark grey ramp (base00-07) with the signature
+# orange (#f96e00) in the accent slot (base0D), so the per-theme base0D accent mapping
+# yields the classic jucyaudio look. The only authored (non-upstream) scheme.
+palette:
+  base00: "#0a0a0c"
+  base01: "#16161a"
+  base02: "#26262c"
+  base03: "#5a5a64"
+  base04: "#8a8a96"
+  base05: "#e6e6ea"
+  base06: "#f2f2f5"
+  base07: "#ffffff"
+  base08: "#ff5c57"
+  base09: "#ff9e3b"
+  base0A: "#f9c74f"
+  base0B: "#8fd16d"
+  base0C: "#43aa8b"
+  base0D: "#f96e00"
+  base0E: "#c77dff"
+  base0F: "#d68c45"
