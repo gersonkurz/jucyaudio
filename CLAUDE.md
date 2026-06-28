@@ -44,15 +44,19 @@ just publish-offline    # macOS only - publish using cached deps
 **Windows-specific:**
 ```bash
 just configure x64-release   # Configure using CMake presets (requires VS 2026)
-just build-x64               # Build for specific architecture
-just build-x86
-just build-arm64
-just build-all               # Build all three Windows architectures
+just build-x64               # Build x64 (alias of `just build`)
+just build-x86               # Build x86
+just build-all               # Build x64 + x86
 just package-x64             # Build + clean install + MSI installer (x64)
 just package                 # Alias for package-x64
 ```
 
-`CMakePresets.json` pins the `Visual Studio 18 2026` generator, so `just configure` / `cmake --preset` requires VS 2026. The architecture-specific `just build-*` recipes invoke `cmake` directly and work with any installed VS toolchain.
+All Windows build recipes drive the **CMake presets** in `CMakePresets.json` (which pin the
+`Visual Studio 18 2026` generator), so `just build`/`run` and Visual Studio share one configured
+tree under `build-<arch>-<config>` (e.g. `build-x64-release`). This requires **VS 2026**. Presets
+exist for x64 and x86 (debug/release) only — there is no Windows-arm64 preset (2.0 ships x64 only;
+add an arm64 preset if that changes). macOS builds are unaffected — they use the `[macos]` justfile
+recipes (`build-arm64`/`build-x86_64`/`build-universal`), not presets.
 
 The Windows installer is an **MSI** built with the [`msis`](https://github.com/gersonkurz/msis) tool (WiX 6/7 backend) from `setup/jucyaudio-x64.msis`. `package-x64` configures, builds, runs `cmake --install` (which stages a clean, self-contained payload including the app-local MSVC runtime into `install-x64-release/bin/`), then invokes `msis /BUILD /STANDALONE`. Requires `msis` on PATH (`msis /SETUP-WIX` provisions WiX). 2.0 ships x64 only; the legacy NSIS scripts under `setup/*.nsi` are superseded.
 

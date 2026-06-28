@@ -73,13 +73,11 @@ rebuild config=default_build_type:
     @just clean
     @just build {{config}}
 
-# Clean build directories
+# Clean build directories (all build-*/install-* trees, incl. the CMakePresets dirs)
 [windows]
 clean:
-    if (Test-Path build) { Remove-Item -Recurse -Force build }
-    if (Test-Path build-x64) { Remove-Item -Recurse -Force build-x64 }
-    if (Test-Path build-x86) { Remove-Item -Recurse -Force build-x86 }
-    if (Test-Path build-arm64) { Remove-Item -Recurse -Force build-arm64 }
+    Get-ChildItem -Path . -Directory -Filter 'build*' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+    Get-ChildItem -Path . -Directory -Filter 'install*' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
     if (Test-Path releases) { Remove-Item -Recurse -Force releases }
 
 [unix]
@@ -90,17 +88,20 @@ clean:
 # Windows-Specific Build Commands
 # ============================================================================
 
+# Build via the CMakePresets (build-<arch>-<config>), so just, Visual Studio, and
+# `just package-x64` all share one configured tree. Presets pin VS 2026 and exist for
+# x64 and x86 (debug/release); there is no Windows-arm64 preset (2.0 ships x64 only).
 [windows]
 _build-windows config arch_target:
-    cmake -B build-{{arch_target}} -A {{ if arch_target == "x64" { "x64" } else if arch_target == "x86" { "Win32" } else { "ARM64" } }} -DCMAKE_BUILD_TYPE={{config}}
-    cmake --build build-{{arch_target}} --config {{config}} --parallel {{cpu_count}}
-    Write-Host "Build complete: build-{{arch_target}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe"
+    cmake --preset {{arch_target}}-{{lowercase(config)}}
+    cmake --build build-{{arch_target}}-{{lowercase(config)}} --config {{config}} --parallel {{cpu_count}}
+    Write-Host "Build complete: build-{{arch_target}}-{{lowercase(config)}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe"
 
 [windows]
 _build-offline-windows config arch_target:
-    cmake -B build-{{arch_target}} -A {{ if arch_target == "x64" { "x64" } else if arch_target == "x86" { "Win32" } else { "ARM64" } }} -DCMAKE_BUILD_TYPE={{config}} -DJUCYAUDIO_OFFLINE_BUILD=ON
-    cmake --build build-{{arch_target}} --config {{config}} --parallel {{cpu_count}}
-    Write-Host "Offline build complete: build-{{arch_target}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe"
+    cmake --preset {{arch_target}}-{{lowercase(config)}} -DJUCYAUDIO_OFFLINE_BUILD=ON
+    cmake --build build-{{arch_target}}-{{lowercase(config)}} --config {{config}} --parallel {{cpu_count}}
+    Write-Host "Offline build complete: build-{{arch_target}}-{{lowercase(config)}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe"
 
 [windows]
 build-x64 config=default_build_type:
@@ -111,22 +112,17 @@ build-x86 config=default_build_type:
     @just _build-windows {{config}} x86
 
 [windows]
-build-arm64 config=default_build_type:
-    @just _build-windows {{config}} arm64
-
-[windows]
 build-all config="Release":
     Write-Host "Building all Windows architectures..."
     just build-x64 {{config}}
     just build-x86 {{config}}
-    just build-arm64 {{config}}
     Write-Host "All builds complete!"
 
 # Run the application (Windows)
 [windows]
 run config=default_build_type:
     just build {{config}}
-    & "build-{{arch}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe"
+    & "build-{{arch}}-{{lowercase(config)}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe"
 
 # ============================================================================
 # macOS-Specific Build Commands
