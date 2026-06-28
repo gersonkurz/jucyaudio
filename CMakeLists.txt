@@ -84,7 +84,7 @@ endif()
 FetchContent_Declare(
     JUCE
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG 8.0.10
+    GIT_TAG 8.0.14
     GIT_SHALLOW TRUE
     EXCLUDE_FROM_ALL
 )
@@ -300,15 +300,6 @@ juce_add_gui_app(jucyaudio
     COMPANY_NAME "P-nand-Q"
     COMPANY_COPYRIGHT "Copyright (c) 2025 P-nand-Q"
 )
-
-# Generate version.nsi only on Windows (used by NSIS installer)
-if(WIN32)
-    configure_file(
-        "${CMAKE_SOURCE_DIR}/setup/version.nsi.in"
-        "${CMAKE_SOURCE_DIR}/setup/version.nsi"
-        @ONLY
-    )
-endif()
 
 # Add Windows resource file for icon
 if(WIN32)

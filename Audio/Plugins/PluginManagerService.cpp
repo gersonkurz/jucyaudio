@@ -27,7 +27,10 @@ namespace jucyaudio
                 }
             }
 
-            m_formatManager.addDefaultFormats();
+            // JUCE 8.0.14 removed AudioPluginFormatManager::addDefaultFormats() in favour of the
+            // free function addDefaultFormatsToManager() (the UI-capable variant; there is also a
+            // headless one). We host plugins with editor windows, so use the full version.
+            juce::addDefaultFormatsToManager(m_formatManager);
             loadPluginList();
 
             m_initialized = true;
