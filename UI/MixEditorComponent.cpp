@@ -39,7 +39,8 @@ namespace jucyaudio
             // Set the timeline as the component to be viewed by the viewport.
             m_viewport.setViewedComponent(&m_timeline, false); // false = don't delete when replaced
             m_viewport.setScrollBarsShown(true, true);
-            
+            m_viewport.setScrollBarThickness(16); // default 8 is a tiny grab target when zoomed in
+
             // Listen for scroll events
             m_viewport.getHorizontalScrollBar().addListener(this);
             m_viewport.getVerticalScrollBar().addListener(this);
