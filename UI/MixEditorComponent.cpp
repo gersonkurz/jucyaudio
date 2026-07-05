@@ -605,8 +605,16 @@ namespace jucyaudio
                     {
                         spdlog::info("Reloading mix after {} change",
                                     attachChanged ? "attach point" : "first track cueStart");
-                        // Reload the mix to update positions
-                        m_playbackController->loadMix(&m_node->getMixProjectLoader());
+                        // Reload the mix to update positions, preserving playhead (loadMix resets engine to 0)
+                        const bool wasPlaying = m_playbackController->isPlaying();
+                        const double playbackPosition = m_playbackController->getCurrentPositionSeconds();
+                        if (m_playbackController->loadMix(&m_node->getMixProjectLoader()))
+                        {
+                            if (wasPlaying)
+                                m_playbackController->playMixFrom(playbackPosition);
+                            else
+                                m_playbackController->seek(playbackPosition);
+                        }
                     }
                     break;
                 }
