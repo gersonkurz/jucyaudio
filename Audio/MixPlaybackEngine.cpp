@@ -87,6 +87,21 @@ namespace jucyaudio
                 spdlog::debug("[PlaybackEngine] buildPlaybackState -> Engine is prepared, creating track sources");
                 state->trackSources.reserve(mixTracks.size());
 
+                // Salvage already-warmed readers from the current state so a rebuild (attach
+                // edit, track removal, ...) reuses their MP3 frame tables instead of creating
+                // fresh readers that must re-scan on the audio thread. Only fully-ready readers
+                // are eligible: a still-warming reader would race the old state's warm thread.
+                // Safe: the audio thread reaches a reader only via readerSource (a raw pointer),
+                // never via this shared_ptr, and copying the shared_ptr here just bumps its
+                // atomic refcount.
+                std::unordered_map<TrackId, std::shared_ptr<juce::AudioFormatReader>> reusableReaders;
+                if (auto oldState = m_currentPlaybackState.load())
+                {
+                    for (const auto &s : oldState->trackSources)
+                        if (s && s->reader && s->ready.load(std::memory_order_acquire))
+                            reusableReaders.emplace(s->trackId, s->reader);
+                }
+
                 for (size_t i = 0; i < mixTracks.size(); ++i)
                 {
                     const auto& mixTrack = mixTracks[i];
@@ -100,7 +115,11 @@ namespace jucyaudio
 
                     auto source = std::make_unique<PlaybackTrackSource>(mixTrack.trackId, i, trackInfo, mixTrack);
 
-                    if (source->prepare(m_formatManager, m_sampleRate, m_blockSize, state->trackStartTimes[i]))
+                    std::shared_ptr<juce::AudioFormatReader> reused;
+                    if (auto rit = reusableReaders.find(mixTrack.trackId); rit != reusableReaders.end())
+                        reused = rit->second;
+
+                    if (source->prepare(m_formatManager, m_sampleRate, m_blockSize, state->trackStartTimes[i], std::move(reused)))
                     {
                         state->trackSources.push_back(std::move(source));
                     }
@@ -109,6 +128,44 @@ namespace jucyaudio
                         spdlog::error("[PlaybackEngine] buildPlaybackState -> Failed to prepare track source for trackId={}", mixTrack.trackId);
                     }
                 }
+            }
+
+            // Pre-build MP3 seek indexes off the audio thread so scrubbing long tracks
+            // doesn't stall the realtime callback. Reused readers are already warmed, so this
+            // only touches genuinely new (first-seen) readers. Only warm when paused: while
+            // paused the audio thread doesn't read any reader, so the warm thread has exclusive
+            // access and gated sources (skipped in mixActiveTracksForBlock) are silent only
+            // until ready.
+            //
+            // While PLAYING we don't gate/warm: reused readers already seek fast, and a
+            // genuinely new track added mid-playback (rare) just pays JUCE's forward-scan on
+            // its first seek, as before - no dropout for the tracks that were already playing.
+            const bool warmInBackground = m_isPaused.load(std::memory_order_acquire);
+            if (warmInBackground)
+            {
+                // One warm thread per source: with many long MP3s a single serial thread
+                // would leave later tracks gated (silent) for a long time. Concurrent warms
+                // make them all ready in roughly one track's scan time.
+                PlaybackState *raw = state.get();
+                for (auto &s : state->trackSources)
+                {
+                    if (s && !s->ready.load(std::memory_order_acquire))
+                    {
+                        PlaybackTrackSource *src = s.get();
+                        state->warmThreads.emplace_back(
+                            [raw, src]
+                            {
+                                if (!raw->warmStop.load(std::memory_order_acquire))
+                                    src->warmSeekIndex(raw->warmStop);
+                            });
+                    }
+                }
+            }
+            else
+            {
+                for (auto &s : state->trackSources)
+                    if (s)
+                        s->ready.store(true, std::memory_order_release);
             }
 
             spdlog::debug("[PlaybackEngine] buildPlaybackState -> Exit (state created with {} tracks, {} sources)",
@@ -145,7 +202,8 @@ namespace jucyaudio
         }
 
         bool PlaybackTrackSource::prepare(juce::AudioFormatManager &formatManager, double targetSampleRate, int blockSize,
-                                           Duration_t trackStartTime)
+                                           Duration_t trackStartTime,
+                                           std::shared_ptr<juce::AudioFormatReader> reusedReader)
         {
             const auto trackPath{trackInfo->reconstructFullPath()};
             juce::File sourceFile{ui::jucePathFromFs(trackPath)};
@@ -170,7 +228,18 @@ namespace jucyaudio
                 return false;
             }
 
-            reader.reset(formatManager.createReaderFor(sourceFile));
+            const bool didReuse = (reusedReader != nullptr);
+            if (didReuse)
+            {
+                // Inherited from the previous PlaybackState: its MP3 frame table is already
+                // built, so seeks stay fast and no re-warm is needed.
+                reader = std::move(reusedReader);
+                spdlog::info("[MP3-WARM] Reusing warmed reader for track {}", trackId);
+            }
+            else
+            {
+                reader.reset(formatManager.createReaderFor(sourceFile));
+            }
 
             if (!reader)
             {
@@ -213,7 +282,44 @@ namespace jucyaudio
             // Store cueStart in SOURCE sample rate (reader's rate) for file read offset calculations
             cueStartSamples = static_cast<juce::int64>((mixTrack.cueStart.count() / 1000.0) * reader->sampleRate);
 
+            // MP3 seeks are O(n) forward-decodes until the frame table is built; defer that
+            // to a background warm-up so the audio thread never pays it. Other formats seek
+            // instantly and stay ready. A reused reader is already warmed, so leave it ready.
+            if (!didReuse && reader->getFormatName().containsIgnoreCase("mp3"))
+                ready.store(false, std::memory_order_release);
+
             return true;
+        }
+
+        void PlaybackTrackSource::warmSeekIndex(const std::atomic<bool> &stopFlag)
+        {
+            if (!reader || reader->lengthInSamples <= 1152)
+            {
+                ready.store(true, std::memory_order_release);
+                return;
+            }
+
+            const auto startMs = juce::Time::getMillisecondCounterHiRes();
+
+            // Reading at an advancing position drives the same forward frame scan the audio
+            // thread would otherwise hit on the first seek - but off the realtime thread, in
+            // ~30s chunks so a stop request (state teardown) is honoured promptly.
+            juce::AudioBuffer<float> scratch(std::max(1, static_cast<int>(reader->numChannels)), 1152);
+            const juce::int64 len = reader->lengthInSamples;
+            const juce::int64 step = std::max<juce::int64>(1, static_cast<juce::int64>(reader->sampleRate) * 30);
+
+            for (juce::int64 pos = step; pos < len; pos += step)
+            {
+                if (stopFlag.load(std::memory_order_acquire))
+                    return;  // aborted; leave ready=false, this state is being discarded anyway
+                reader->read(&scratch, 0, 1152, pos, true, true);
+            }
+            if (!stopFlag.load(std::memory_order_acquire))
+                reader->read(&scratch, 0, 1152, len - 1152, true, true);
+
+            ready.store(true, std::memory_order_release);
+            spdlog::info("[MP3-WARM] Built seek index for track {} ({} samples) in {:.1f} ms",
+                        trackId, len, juce::Time::getMillisecondCounterHiRes() - startMs);
         }
 
         MixPlaybackEngine::MixPlaybackEngine()
@@ -552,6 +658,13 @@ namespace jucyaudio
                 auto &source = state->trackSources[i];
 
                 if (!source || !source->trackInfo || !source->reader)
+                {
+                    continue;
+                }
+
+                // Skip until the seek index is built (MP3 warm-up). Prevents a data race
+                // on the reader between the warm thread and this callback.
+                if (!source->ready.load(std::memory_order_acquire))
                 {
                     continue;
                 }

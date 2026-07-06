@@ -11,6 +11,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 namespace jucyaudio
@@ -44,6 +45,21 @@ namespace jucyaudio
             std::vector<Duration_t> trackStartTimes;
             Duration_t totalDuration{0};
 
+            // Background pre-warming of MP3 seek indexes (see buildPlaybackState).
+            // One thread per source so long tracks warm concurrently instead of
+            // starving each other. Threads are owned by this state and joined in the
+            // destructor, so the sources they touch always outlive them.
+            std::atomic<bool> warmStop{false};
+            std::vector<std::thread> warmThreads;
+
+            ~PlaybackState()
+            {
+                warmStop.store(true, std::memory_order_release);
+                for (auto &t : warmThreads)
+                    if (t.joinable())
+                        t.join();
+            }
+
             // Helper to find TrackInfo by ID (returns pointer into trackInfos vector)
             const TrackInfo* getTrackInfo(TrackId trackId) const
             {
@@ -61,12 +77,20 @@ namespace jucyaudio
             const TrackInfo *trackInfo;  // SAFE: Points into PlaybackState->trackInfos (owned by PlaybackState)
             MixTrack mixTrack;           // OWNED copy (MixTrack is POD, cheap to copy)
 
-            std::unique_ptr<juce::AudioFormatReader> reader;
+            // shared_ptr so a rebuilt PlaybackState can inherit an already-warmed reader
+            // from the previous state (see buildPlaybackState). readerSource/resampler wrap
+            // reader.get() and are always rebuilt per source.
+            std::shared_ptr<juce::AudioFormatReader> reader;
             std::unique_ptr<juce::AudioFormatReaderSource> readerSource;
             std::unique_ptr<juce::ResamplingAudioSource> resampler;
 
             // Current playback position in samples (in source file's sample rate)
             std::atomic<juce::int64> currentPositionInSourceSamples{0};
+
+            // Seek-index readiness. WAV/FLAC seek instantly and are ready immediately;
+            // MP3 needs its frame table built first (see warmSeekIndex). The audio thread
+            // skips a source until this is true, so warming never races with playback.
+            std::atomic<bool> ready{true};
 
             // Pre-calculated sample positions at target sample rate (avoids per-block math)
             juce::int64 startSampleAtTargetRate{0};
@@ -76,8 +100,16 @@ namespace jucyaudio
             PlaybackTrackSource(TrackId id, size_t index, const TrackInfo *ti, const MixTrack& mt);
             ~PlaybackTrackSource() = default;
 
+            // If reusedReader is non-null it is adopted as-is (already warmed); otherwise a
+            // fresh reader is created for the file. trackStartTime comes from trackStartTimes.
             bool prepare(juce::AudioFormatManager &formatManager, double targetSampleRate, int blockSize,
-                        Duration_t trackStartTime);  // trackStartTime from trackStartTimes array
+                        Duration_t trackStartTime,
+                        std::shared_ptr<juce::AudioFormatReader> reusedReader);
+
+            // Forces JUCE's MP3 reader to build its frame-position table by scanning
+            // forward in chunks, then sets `ready`. Runs on a background thread; bails
+            // out early when stopFlag is set. No-op cost for already-fast formats.
+            void warmSeekIndex(const std::atomic<bool> &stopFlag);
             juce::AudioSource *getAudioSource()
             {
                 return resampler ? static_cast<juce::AudioSource*>(resampler.get())
