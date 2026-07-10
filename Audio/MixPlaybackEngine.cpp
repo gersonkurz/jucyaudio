@@ -89,8 +89,8 @@ namespace jucyaudio
 
                 // Salvage already-warmed readers from the current state so a rebuild (attach
                 // edit, track removal, ...) reuses their MP3 frame tables instead of creating
-                // fresh readers that must re-scan on the audio thread. Only fully-ready readers
-                // are eligible: a still-warming reader would race the old state's warm thread.
+                // fresh readers that must re-scan on the audio thread. Only fully-warmed
+                // readers are eligible: a still-warming reader would race the warm thread.
                 // Safe: the audio thread reaches a reader only via readerSource (a raw pointer),
                 // never via this shared_ptr, and copying the shared_ptr here just bumps its
                 // atomic refcount.
@@ -98,7 +98,7 @@ namespace jucyaudio
                 if (auto oldState = m_currentPlaybackState.load())
                 {
                     for (const auto &s : oldState->trackSources)
-                        if (s && s->reader && s->ready.load(std::memory_order_acquire))
+                        if (s && s->reader && s->warmed.load(std::memory_order_acquire))
                             reusableReaders.emplace(s->trackId, s->reader);
                 }
 
@@ -108,7 +108,7 @@ namespace jucyaudio
                     auto it = trackInfoMap.find(mixTrack.trackId);
                     if (it == trackInfoMap.end())
                     {
-                        spdlog::warn("[PlaybackEngine] buildPlaybackState -> TrackInfo not found for trackId={}", mixTrack.trackId);
+                        spdlog::error("[PlaybackEngine] buildPlaybackState -> TrackInfo not found for trackId={}; this track will be silent", mixTrack.trackId);
                         continue;
                     }
                     const auto* trackInfo = it->second;
@@ -130,42 +130,54 @@ namespace jucyaudio
                 }
             }
 
-            // Pre-build MP3 seek indexes off the audio thread so scrubbing long tracks
-            // doesn't stall the realtime callback. Reused readers are already warmed, so this
-            // only touches genuinely new (first-seen) readers. Only warm when paused: while
-            // paused the audio thread doesn't read any reader, so the warm thread has exclusive
-            // access and gated sources (skipped in mixActiveTracksForBlock) are silent only
-            // until ready.
+            // Pre-build MP3 seek indexes off the audio thread so scrubbing doesn't stall the
+            // realtime callback. Reused readers are already warmed; this only touches new
+            // (first-seen) readers, and only while paused - setPaused(false) stops and joins
+            // the pool before the audio thread reads anything, so warming never races playback
+            // (that's why mixActiveTracksForBlock has no readiness gate).
             //
-            // While PLAYING we don't gate/warm: reused readers already seek fast, and a
-            // genuinely new track added mid-playback (rare) just pays JUCE's forward-scan on
-            // its first seek, as before - no dropout for the tracks that were already playing.
+            // Bounded on two axes so a huge mix (e.g. 1000+ tracks) can't explode: at most
+            // kMaxEagerWarm tracks, in timeline order (you play from the start), via a pool of
+            // at most hardware_concurrency workers. Un-warmed tracks simply pay JUCE's
+            // forward-scan on their first seek - slower, but they always play.
             const bool warmInBackground = m_isPaused.load(std::memory_order_acquire);
             if (warmInBackground)
             {
-                // One warm thread per source: with many long MP3s a single serial thread
-                // would leave later tracks gated (silent) for a long time. Concurrent warms
-                // make them all ready in roughly one track's scan time.
-                PlaybackState *raw = state.get();
+                constexpr size_t kMaxEagerWarm = 32;
+                auto toWarm = std::make_shared<std::vector<PlaybackTrackSource *>>();
                 for (auto &s : state->trackSources)
                 {
-                    if (s && !s->ready.load(std::memory_order_acquire))
+                    if (s && !s->warmed.load(std::memory_order_acquire))
                     {
-                        PlaybackTrackSource *src = s.get();
+                        toWarm->push_back(s.get());
+                        if (toWarm->size() >= kMaxEagerWarm)
+                            break;
+                    }
+                }
+
+                if (!toWarm->empty())
+                {
+                    PlaybackState *raw = state.get();
+                    auto nextIndex = std::make_shared<std::atomic<size_t>>(0);
+                    const unsigned hw = std::max(1u, std::thread::hardware_concurrency());
+                    const unsigned workers = std::min<unsigned>(hw, static_cast<unsigned>(toWarm->size()));
+                    for (unsigned w = 0; w < workers; ++w)
+                    {
                         state->warmThreads.emplace_back(
-                            [raw, src]
+                            [raw, toWarm, nextIndex]
                             {
-                                if (!raw->warmStop.load(std::memory_order_acquire))
-                                    src->warmSeekIndex(raw->warmStop);
+                                for (;;)
+                                {
+                                    if (raw->warmStop.load(std::memory_order_acquire))
+                                        return;
+                                    const size_t i = nextIndex->fetch_add(1, std::memory_order_relaxed);
+                                    if (i >= toWarm->size())
+                                        return;
+                                    (*toWarm)[i]->warmSeekIndex(raw->warmStop);
+                                }
                             });
                     }
                 }
-            }
-            else
-            {
-                for (auto &s : state->trackSources)
-                    if (s)
-                        s->ready.store(true, std::memory_order_release);
             }
 
             spdlog::debug("[PlaybackEngine] buildPlaybackState -> Exit (state created with {} tracks, {} sources)",
@@ -283,10 +295,10 @@ namespace jucyaudio
             cueStartSamples = static_cast<juce::int64>((mixTrack.cueStart.count() / 1000.0) * reader->sampleRate);
 
             // MP3 seeks are O(n) forward-decodes until the frame table is built; defer that
-            // to a background warm-up so the audio thread never pays it. Other formats seek
-            // instantly and stay ready. A reused reader is already warmed, so leave it ready.
+            // to a background warm-up. Other formats seek instantly. A reused reader is
+            // already warmed, so leave it marked warmed.
             if (!didReuse && reader->getFormatName().containsIgnoreCase("mp3"))
-                ready.store(false, std::memory_order_release);
+                warmed.store(false, std::memory_order_release);
 
             return true;
         }
@@ -295,29 +307,30 @@ namespace jucyaudio
         {
             if (!reader || reader->lengthInSamples <= 1152)
             {
-                ready.store(true, std::memory_order_release);
+                warmed.store(true, std::memory_order_release);
                 return;
             }
 
             const auto startMs = juce::Time::getMillisecondCounterHiRes();
 
             // Reading at an advancing position drives the same forward frame scan the audio
-            // thread would otherwise hit on the first seek - but off the realtime thread, in
-            // ~30s chunks so a stop request (state teardown) is honoured promptly.
+            // thread would otherwise hit on the first seek - but off the realtime thread. Small
+            // (~10s) chunks keep a stop request (play pressed, state teardown) responsive: a
+            // pending stop is noticed within roughly one chunk's decode.
             juce::AudioBuffer<float> scratch(std::max(1, static_cast<int>(reader->numChannels)), 1152);
             const juce::int64 len = reader->lengthInSamples;
-            const juce::int64 step = std::max<juce::int64>(1, static_cast<juce::int64>(reader->sampleRate) * 30);
+            const juce::int64 step = std::max<juce::int64>(1, static_cast<juce::int64>(reader->sampleRate) * 10);
 
             for (juce::int64 pos = step; pos < len; pos += step)
             {
                 if (stopFlag.load(std::memory_order_acquire))
-                    return;  // aborted; leave ready=false, this state is being discarded anyway
+                    return;  // aborted; leave warmed=false, this reader won't be reused
                 reader->read(&scratch, 0, 1152, pos, true, true);
             }
             if (!stopFlag.load(std::memory_order_acquire))
                 reader->read(&scratch, 0, 1152, len - 1152, true, true);
 
-            ready.store(true, std::memory_order_release);
+            warmed.store(true, std::memory_order_release);
             spdlog::info("[MP3-WARM] Built seek index for track {} ({} samples) in {:.1f} ms",
                         trackId, len, juce::Time::getMillisecondCounterHiRes() - startMs);
         }
@@ -504,7 +517,16 @@ namespace jucyaudio
 
         void MixPlaybackEngine::setPaused(bool shouldPause)
         {
-            spdlog::debug("JUCYAUDIO: MixPlaybackEngine::setPaused -> Setting paused to: {}", shouldPause);
+            spdlog::debug("MixPlaybackEngine::setPaused -> {}", shouldPause);
+
+            // Warm-up runs only while paused and must not touch a reader once the audio
+            // thread does. Stop and join it before un-pausing so the two never overlap.
+            if (!shouldPause)
+            {
+                if (auto state = m_currentPlaybackState.load())
+                    state->stopWarm();
+            }
+
             m_isPaused = shouldPause;
         }
 
@@ -658,13 +680,6 @@ namespace jucyaudio
                 auto &source = state->trackSources[i];
 
                 if (!source || !source->trackInfo || !source->reader)
-                {
-                    continue;
-                }
-
-                // Skip until the seek index is built (MP3 warm-up). Prevents a data race
-                // on the reader between the warm thread and this callback.
-                if (!source->ready.load(std::memory_order_acquire))
                 {
                     continue;
                 }

@@ -45,19 +45,24 @@ namespace jucyaudio
             std::vector<Duration_t> trackStartTimes;
             Duration_t totalDuration{0};
 
-            // Background pre-warming of MP3 seek indexes (see buildPlaybackState).
-            // One thread per source so long tracks warm concurrently instead of
-            // starving each other. Threads are owned by this state and joined in the
-            // destructor, so the sources they touch always outlive them.
+            // Background pre-warming of MP3 seek indexes (see buildPlaybackState). A bounded
+            // pool warms the first tracks in timeline order while paused; warming is stopped
+            // (and joined) before playback starts, so it never races the audio thread. Threads
+            // are owned by this state, so the sources they touch always outlive them.
             std::atomic<bool> warmStop{false};
             std::vector<std::thread> warmThreads;
 
-            ~PlaybackState()
+            void stopWarm()
             {
                 warmStop.store(true, std::memory_order_release);
                 for (auto &t : warmThreads)
                     if (t.joinable())
                         t.join();
+            }
+
+            ~PlaybackState()
+            {
+                stopWarm();
             }
 
             // Helper to find TrackInfo by ID (returns pointer into trackInfos vector)
@@ -87,10 +92,10 @@ namespace jucyaudio
             // Current playback position in samples (in source file's sample rate)
             std::atomic<juce::int64> currentPositionInSourceSamples{0};
 
-            // Seek-index readiness. WAV/FLAC seek instantly and are ready immediately;
-            // MP3 needs its frame table built first (see warmSeekIndex). The audio thread
-            // skips a source until this is true, so warming never races with playback.
-            std::atomic<bool> ready{true};
+            // True once this source's MP3 seek index is fully built (or for formats that
+            // don't need one). Used only to decide whether a rebuilt state can inherit this
+            // reader; it does NOT gate playback (warming is stopped before playback starts).
+            std::atomic<bool> warmed{true};
 
             // Pre-calculated sample positions at target sample rate (avoids per-block math)
             juce::int64 startSampleAtTargetRate{0};

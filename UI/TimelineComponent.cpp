@@ -1607,7 +1607,7 @@ namespace jucyaudio
                         }
 
                         if (targetMixTrack) {
-                            spdlog::warn("=== GAIN CHANGE === TimelineComponent: Updating gain for track order {} to {}", orderInMix, newGain);
+                            spdlog::debug("TimelineComponent: updating gain for track order {} to {}", orderInMix, newGain);
 
                             // Create a copy of the found MixTrack to pass to the manager
                             MixTrack updatedTrack = *targetMixTrack;
@@ -1625,12 +1625,11 @@ namespace jucyaudio
                                     // Reload mix in playback controller so the audio thread picks up the new gain
                                     if (onMixPlaybackReloadRequested)
                                     {
-                                        spdlog::warn("=== GAIN CHANGE === Calling onMixPlaybackReloadRequested to update audio");
                                         onMixPlaybackReloadRequested();
                                     }
                                     else
                                     {
-                                        spdlog::error("=== GAIN CHANGE === onMixPlaybackReloadRequested is NULL!");
+                                        spdlog::error("TimelineComponent: onMixPlaybackReloadRequested is null; gain change won't reach the audio engine");
                                     }
                                 }
                             }
