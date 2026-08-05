@@ -77,6 +77,7 @@ namespace jucyaudio
             std::function<void(double)> onSeekRequested;
             std::function<void(TrackId, std::chrono::milliseconds)> onTrackPositionChanged;
             std::function<void()> onMixChanged;
+            std::function<void()> onMixSummaryChanged; // track count / duration changed (add/remove) - refresh node summary + status bar
             std::function<void(double)> onMixPlaybackRequested;
             std::function<void(double)> onMixPlaybackAlwaysRequested; // For double-clicks
             std::function<void()> onMixPlaybackReloadRequested; // For hot-reloading mix data during playback

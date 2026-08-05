@@ -65,6 +65,21 @@ namespace jucyaudio
                 saveMixChanges();
             };
 
+            m_timeline.onMixSummaryChanged = [this]()
+            {
+                // A structural change (track added/removed) updated the persisted mix; refresh
+                // the node's cached summary so the status bar shows the new count/duration.
+                if (m_node)
+                {
+                    auto &loader = m_node->getMixProjectLoader();
+                    m_node->updateSummaryMetadata(
+                        static_cast<int>(loader.getMixTracks().size()),
+                        loader.calculateMixDuration());
+                }
+                if (m_onMixSummaryChanged)
+                    m_onMixSummaryChanged();
+            };
+
             m_timeline.onShowTrackInLibraryRequested = [this](TrackId trackId)
             {
                 if (m_onShowTrackInLibrary)

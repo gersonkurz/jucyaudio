@@ -255,6 +255,10 @@ namespace jucyaudio
             // 7. Refresh the existing UI incrementally so we don't recreate thumbnails.
             refreshAfterDeletion(orderInMixToRemove);
 
+            // Track count/duration changed - refresh the node summary and status bar.
+            if (onMixSummaryChanged)
+                onMixSummaryChanged();
+
             // Note: do NOT fire onMixChanged here. The createOrUpdateMix call above
             // already persisted the change and recorded an undo state. Firing onMixChanged
             // would trigger saveMixChanges, which calls createOrUpdateMix a second time,
@@ -634,6 +638,10 @@ namespace jucyaudio
             {
                 onMixPlaybackReloadRequested();
             }
+
+            // Track count/duration changed - refresh the node summary and status bar.
+            if (onMixSummaryChanged)
+                onMixSummaryChanged();
 
             // Note: do NOT fire onMixChanged here. The createOrUpdateMix call above
             // already persisted the change and recorded an undo state.
