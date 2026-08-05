@@ -1873,8 +1873,17 @@ namespace jucyaudio
                 onRunBpmAnalysisForSelectedRows();
                 break;
             case DataAction::ShowDetails:
-                m_statusPanel.getStatusBar().postMessage("Show details for: " + std::to_string(rowIndex), false);
+            {
+                const auto trackResult = m_currentNode ? m_currentNode->getTrackInfosForOperation({rowIndex})
+                                                       : database::TrackInfosForOperationResult{};
+                if (trackResult.trackInfos.empty())
+                {
+                    m_statusPanel.getStatusBar().postMessage("No track details available for row: " + std::to_string(rowIndex), true);
+                    break;
+                }
+                showTrackDetailsDialog(trackResult.trackInfos[0].trackId);
                 break;
+            }
             case DataAction::ShowInFolder:
                 onShowInFolder(rowIndex);
                 break;
