@@ -650,7 +650,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 24;
+            const int latestSchemaVersion = 25;
 
             if (currentVersion == 0)
             {
@@ -2334,6 +2334,59 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 24;
+            }
+
+            if (currentVersion < 25)
+            {
+                spdlog::info("Migrating database from version 24 to 25 - Keeping the FTS search index in sync...");
+                // The Tracks/TrackTags triggers maintain the TracksSearchData content table, but
+                // nothing kept the external-content FTS index (TracksSearchFTS) in sync - it was
+                // only ever populated by an explicit 'rebuild'. So tracks added/edited by a scan
+                // never became searchable. Add triggers on TracksSearchData itself (where old/new
+                // search_content are available, exactly what FTS5's external-content 'delete'
+                // needs) and rebuild once to repair the existing backlog.
+                if (SqliteTransaction transaction{m_db})
+                {
+                    const char *ftsSyncSteps[] = {
+                        R"SQL(CREATE TRIGGER IF NOT EXISTS tracksdata_fts_ai AFTER INSERT ON TracksSearchData BEGIN
+                            INSERT INTO TracksSearchFTS(rowid, search_content) VALUES (new.track_id, new.search_content);
+                        END;)SQL",
+                        R"SQL(CREATE TRIGGER IF NOT EXISTS tracksdata_fts_ad AFTER DELETE ON TracksSearchData BEGIN
+                            INSERT INTO TracksSearchFTS(TracksSearchFTS, rowid, search_content) VALUES ('delete', old.track_id, old.search_content);
+                        END;)SQL",
+                        R"SQL(CREATE TRIGGER IF NOT EXISTS tracksdata_fts_au AFTER UPDATE ON TracksSearchData BEGIN
+                            INSERT INTO TracksSearchFTS(TracksSearchFTS, rowid, search_content) VALUES ('delete', old.track_id, old.search_content);
+                            INSERT INTO TracksSearchFTS(rowid, search_content) VALUES (new.track_id, new.search_content);
+                        END;)SQL",
+                        "INSERT INTO TracksSearchFTS(TracksSearchFTS) VALUES('rebuild');",
+                    };
+                    for (const char *step : ftsSyncSteps)
+                    {
+                        if (!m_db.execute(step))
+                        {
+                            const auto error{m_db.getLastError()};
+                            transaction.rollback();
+                            return DbResult::failure(DbResultStatus::ErrorDB, "v25 FTS-sync migration failed: " + error);
+                        }
+                    }
+
+                    if (auto result = setDBSchemaVersion(25); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 25.");
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated to version 25 - FTS index now stays in sync automatically.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 25;
             }
 
             return DbResult::success();
