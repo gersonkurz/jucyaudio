@@ -110,6 +110,10 @@ namespace jucyaudio
             return formatStringTypeWithThousandsSeparator<std::string>(number);
         }
 
+        // @brief Copies text to the system clipboard.
+        // @param text The text to place on the clipboard (replaces any existing content).
+        void copyTextToClipboard(const juce::String &text);
+
         // @brief Converts a JUCE string path to std::filesystem::path
         // @param jucePath The JUCE string containing a file system path
         // @return std::filesystem::path object with proper UTF-8 encoding

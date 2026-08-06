@@ -13,6 +13,11 @@ namespace jucyaudio
 
         // Helper to convert DataAction to a displayable string (simple version)
         // In a real app, this might be more sophisticated, perhaps with localization.
+        void copyTextToClipboard(const juce::String &text)
+        {
+            juce::SystemClipboard::copyTextToClipboard(text);
+        }
+
         juce::String dataActionToString(DataAction action, const INavigationNode* node)
         {
             switch (action)
@@ -45,6 +50,8 @@ namespace jucyaudio
                 return "Show Track Editor";
             case DataAction::ShowInFolder:
                 return "Show in Folder";
+            case DataAction::CopyToClipboard:
+                return "Copy to Clipboard";
             case DataAction::Separator:
                 return "------";
             case DataAction::RemoveDuplicates:

@@ -1887,6 +1887,9 @@ namespace jucyaudio
             case DataAction::ShowInFolder:
                 onShowInFolder(rowIndex);
                 break;
+            case DataAction::CopyToClipboard:
+                onCopyToClipboard(rowIndex);
+                break;
             case DataAction::RemoveTracks: // TODO: we should do this only from the data View
                 onDataActionRemoveNamedObjects();
                 break;
@@ -3316,6 +3319,58 @@ namespace jucyaudio
             {
                 m_statusPanel.getStatusBar().postMessage("Show in folder is only available for albums", true);
             }
+        }
+
+        void MainComponent::onCopyToClipboard(RowIndex_t rowIndex)
+        {
+            if (!m_currentNode)
+            {
+                return;
+            }
+
+            auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
+            if (selectedRows.empty())
+            {
+                selectedRows = {rowIndex};
+            }
+
+            // Folder-backed rows (albums): copy the underlying filesystem folder path(s).
+            if (const auto *albumsNode = dynamic_cast<const database::AlbumsNode *>(m_currentNode))
+            {
+                juce::StringArray paths;
+                for (const auto row : selectedRows)
+                {
+                    const auto folderId = albumsNode->getFolderIdForRow(row);
+                    if (folderId < 0)
+                        continue;
+                    if (const auto folder = theTrackLibrary.getFolderDatabase().getFolderById(folderId))
+                    {
+                        const auto &path = folder->actualPath.empty() ? folder->path : folder->actualPath;
+                        if (!path.empty())
+                            paths.add(juce::String(path));
+                    }
+                }
+                if (paths.isEmpty())
+                {
+                    m_statusPanel.getStatusBar().postMessage("No folder path available to copy.", true);
+                    return;
+                }
+                copyTextToClipboard(paths.joinIntoString("\n"));
+                m_statusPanel.getStatusBar().postMessage(std::format("Copied {} folder path(s) to clipboard.", paths.size()), false);
+                return;
+            }
+
+            // Track rows: copy a tab-separated table of exactly the columns currently shown
+            // (pastes cleanly into a text editor or spreadsheet). Show/hide the Path column to
+            // control whether the full path is included.
+            const auto table = m_dataViewComponent.getRowsAsTable(selectedRows);
+            if (table.isEmpty())
+            {
+                m_statusPanel.getStatusBar().postMessage("Nothing to copy.", true);
+                return;
+            }
+            copyTextToClipboard(table);
+            m_statusPanel.getStatusBar().postMessage(std::format("Copied {} row(s) to clipboard.", selectedRows.size()), false);
         }
 
         bool MainComponent::showTrackInLibrary(TrackId trackId)

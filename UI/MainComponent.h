@@ -155,6 +155,7 @@ namespace jucyaudio
             void handleCloneMix(const database::MixInfo& mixInfo);
             juce::String generateCloneName(const std::string& originalName);
             void onShowInFolder(RowIndex_t rowIndex);
+            void onCopyToClipboard(RowIndex_t rowIndex);
             bool showTrackInLibrary(TrackId trackId);
             void showTrackDetailsDialog(TrackId trackId);
 

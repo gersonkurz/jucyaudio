@@ -11,6 +11,7 @@ namespace jucyaudio
         const DataActions MixTrackRowActions{
             DataAction::Play,
             DataAction::ShowDetails,
+            DataAction::CopyToClipboard,
             DataAction::Delete
         };
 

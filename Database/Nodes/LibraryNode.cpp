@@ -51,6 +51,7 @@ namespace jucyaudio
             DataAction::CreateWorkingSet,
             DataAction::CreateMix,
             DataAction::ShowDetails,
+            DataAction::CopyToClipboard,
             DataAction::DeleteTracksFromLibrary,
             DataAction::RunBpmAnalysis};
 

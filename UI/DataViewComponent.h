@@ -117,6 +117,10 @@ namespace jucyaudio
 
             std::vector<RowIndex_t> getSelectedRowIndices() const;
 
+            // Build a tab-separated table (header + one line per row) of the columns currently
+            // shown, in their on-screen order, using the same cell text the table renders.
+            juce::String getRowsAsTable(const std::vector<RowIndex_t> &rows);
+
             // Get aggregate statistics for currently selected rows
             bool getSelectionStats(database::AggregateStats& outStats) const;
 

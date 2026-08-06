@@ -29,7 +29,7 @@ namespace jucyaudio
     {
         const DataActions AlbumsNodeActions{DataAction::CreateWorkingSet, DataAction::CreateMix, DataAction::Delete};
 
-        const DataActions AlbumsRowActions{DataAction::ShowInFolder, DataAction::CreateWorkingSet, DataAction::CreateMix, DataAction::ShowDetails};
+        const DataActions AlbumsRowActions{DataAction::ShowInFolder, DataAction::CopyToClipboard, DataAction::CreateWorkingSet, DataAction::CreateMix, DataAction::ShowDetails};
 
         const std::vector<DataColumn> AlbumsColumns = {
             DataColumn{(ColumnIndex_t)Column::Artist, "album_artist", "Artist", 200, ColumnAlignment::Left, ColumnDataTypeHint::String},

@@ -16,7 +16,7 @@ namespace jucyaudio
             DataAction::RemoveDuplicates};
 
         const DataActions WorkingSetRowActions{
-            DataAction::Play, DataAction::CreateMix, DataAction::ShowDetails, DataAction::RemoveTracks, DataAction::RunBpmAnalysis};
+            DataAction::Play, DataAction::CreateMix, DataAction::ShowDetails, DataAction::CopyToClipboard, DataAction::RemoveTracks, DataAction::RunBpmAnalysis};
 
         WorkingSetNode::WorkingSetNode(INavigationNode *parent, const WorkingSetInfo &workingSet)
             : LibraryNode{parent, workingSet.name, "Working Set", "Working Sets"},

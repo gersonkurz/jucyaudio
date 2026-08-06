@@ -567,6 +567,46 @@ namespace jucyaudio
             return dataColumn.defaultWidth > 0 ? dataColumn.defaultWidth : 100;
         }
 
+        juce::String DataViewComponent::getRowsAsTable(const std::vector<RowIndex_t> &rows)
+        {
+            if (m_currentNode == nullptr)
+                return {};
+
+            // Resolve the columns currently visible, in the header's display order (so the copy
+            // matches exactly what the user sees, respecting any show/hide/reorder).
+            auto &header = m_tableListBox.getHeader();
+            struct VisibleColumn
+            {
+                juce::String name;
+                ColumnIndex_t index;
+            };
+            std::vector<VisibleColumn> cols;
+            juce::StringArray headerCells;
+            for (int i = 0; i < header.getNumColumns(true); ++i)
+            {
+                const int columnId = header.getColumnIdOfIndex(i, true);
+                const int dataColumnIndex = columnId - 1;
+                if (dataColumnIndex < 0 || static_cast<size_t>(dataColumnIndex) >= m_currentDataColumns.size())
+                    continue;
+                const auto *col = m_currentDataColumns[dataColumnIndex].column;
+                headerCells.add(juce::String(col->name));
+                cols.push_back({juce::String(col->name), col->index});
+            }
+
+            juce::String out{headerCells.joinIntoString("\t")};
+            out << '\n';
+            for (const auto row : rows)
+            {
+                juce::StringArray cells;
+                for (const auto &col : cols)
+                {
+                    cells.add(juce::String(m_currentNode->getCellRenderInfo(row, col.index).text));
+                }
+                out << cells.joinIntoString("\t") << '\n';
+            }
+            return out;
+        }
+
         void DataViewComponent::cellClicked(int rowNumber, [[maybe_unused]] int columnId, const juce::MouseEvent &e)
         {
             spdlog::info("DataViewComponent::cellClicked - row: {}, column: {}, position: ({}, {})", rowNumber, columnId, e.position.x, e.position.y);

@@ -216,6 +216,7 @@ namespace jucyaudio
             ShowMixEditor,          ///< Open the mix editor for the selected mix
             ShowTrackEditor,        ///< Open the track editor for the selected track
             ShowInFolder,           ///< Navigate to the folder containing the item
+            CopyToClipboard,        ///< Copy selection to clipboard (track table, or folder path for folder-backed rows)
             Separator,              ///< Separator in context menus (not an action)
             RemoveDuplicates,       ///< Remove duplicate tracks from the selection
             DeleteTracksFromLibrary,///< Delete selected tracks from library (with option to delete files)
