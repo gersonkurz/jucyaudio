@@ -572,6 +572,8 @@ target_sources(jucyaudio PRIVATE
     UI/AboutDialog.h
     UI/DatabaseMaintenanceDialog.cpp
     UI/DatabaseMaintenanceDialog.h
+    UI/TrackDetailsDialog.cpp
+    UI/TrackDetailsDialog.h
     UI/MenuPresenter.cpp
     UI/MenuPresenter.h
     UI/MixEditorComponent.cpp

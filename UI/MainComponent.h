@@ -158,6 +158,7 @@ namespace jucyaudio
             void onCopyToClipboard(RowIndex_t rowIndex);
             bool showTrackInLibrary(TrackId trackId);
             void showTrackDetailsDialog(TrackId trackId);
+            void launchTrackDetailsDialog(std::vector<database::TrackInfo> tracks);
 
             // Equalizer management
             void showEqualizerWindow();

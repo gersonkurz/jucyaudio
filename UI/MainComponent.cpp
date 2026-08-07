@@ -18,6 +18,7 @@
 #include <UI/CheckboxLookAndFeel.h>
 #include <UI/ThemeBrowserDialog.h>
 #include <UI/DatabaseMaintenanceDialog.h>
+#include <UI/TrackDetailsDialog.h>
 #include <Database/DatabaseBackupManager.h>
 #include <UI/ColumnConfiguratorDialog.h>
 #include <UI/CreateMixDialogComponent.h>
@@ -1874,14 +1875,12 @@ namespace jucyaudio
                 break;
             case DataAction::ShowDetails:
             {
-                const auto trackResult = m_currentNode ? m_currentNode->getTrackInfosForOperation({rowIndex})
-                                                       : database::TrackInfosForOperationResult{};
-                if (trackResult.trackInfos.empty())
-                {
-                    m_statusPanel.getStatusBar().postMessage("No track details available for row: " + std::to_string(rowIndex), true);
+                if (!m_currentNode)
                     break;
-                }
-                showTrackDetailsDialog(trackResult.trackInfos[0].trackId);
+                auto rows = m_dataViewComponent.getSelectedRowIndices();
+                if (rows.empty())
+                    rows = {rowIndex};
+                launchTrackDetailsDialog(m_currentNode->getTrackInfosForOperation(rows).trackInfos);
                 break;
             }
             case DataAction::ShowInFolder:
@@ -3426,11 +3425,43 @@ namespace jucyaudio
                 m_statusPanel.getStatusBar().postMessage("Track details are unavailable.", true);
                 return;
             }
+            launchTrackDetailsDialog({*trackInfo});
+        }
 
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::AlertWindow::InfoIcon,
-                "Track Details",
-                formatTrackDetails(*trackInfo));
+        void MainComponent::launchTrackDetailsDialog(std::vector<database::TrackInfo> tracks)
+        {
+            if (tracks.empty())
+            {
+                m_statusPanel.getStatusBar().postMessage("Track details are unavailable.", true);
+                return;
+            }
+
+            // Cap how many tracks the (paged) dialog will show; bulk data is what
+            // Copy to Clipboard is for. The cap is configurable.
+            const auto totalSelected = tracks.size();
+            const int maxPages = std::max(1, config::theSettings.uiSettings.maxTrackDetailsPages.get());
+            if (totalSelected > static_cast<size_t>(maxPages))
+                tracks.resize(static_cast<size_t>(maxPages));
+
+            std::vector<juce::String> pages;
+            pages.reserve(tracks.size());
+            for (const auto &t : tracks)
+                pages.push_back(formatTrackDetails(t));
+
+            auto *dialog = new TrackDetailsDialog{std::move(pages)};
+            juce::DialogWindow::LaunchOptions launchOptions;
+            launchOptions.content.setOwned(dialog);
+            launchOptions.dialogTitle = "Track Details";
+            launchOptions.componentToCentreAround = this;
+            launchOptions.escapeKeyTriggersCloseButton = true;
+            launchOptions.resizable = true;
+            launchOptions.launchAsync();
+
+            if (totalSelected > static_cast<size_t>(maxPages))
+            {
+                m_statusPanel.getStatusBar().postMessage(
+                    std::format("Showing details for the first {} of {} selected tracks.", maxPages, totalSelected), false);
+            }
         }
 
         void MainComponent::onDataActionDelete(INavigationNode *node)
