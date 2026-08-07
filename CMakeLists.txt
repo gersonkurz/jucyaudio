@@ -95,7 +95,7 @@ endif()
 FetchContent_Declare(
     JUCE
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG 8.0.14
+    GIT_TAG 9.0.0
     GIT_SHALLOW TRUE
     EXCLUDE_FROM_ALL
 )
@@ -122,7 +122,7 @@ FetchContent_Declare(
 FetchContent_Declare(
     spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG v1.16.0
+    GIT_TAG v1.17.0
     GIT_SHALLOW TRUE
     EXCLUDE_FROM_ALL
 )
@@ -150,7 +150,7 @@ FetchContent_Declare(
 FetchContent_Declare(
     taglib
     GIT_REPOSITORY https://github.com/taglib/taglib.git
-    GIT_TAG v2.1.1
+    GIT_TAG v2.3.1
     GIT_SHALLOW TRUE
     EXCLUDE_FROM_ALL
 )
@@ -159,7 +159,7 @@ FetchContent_Declare(
 FetchContent_Declare(
     soundtouch
     GIT_REPOSITORY https://codeberg.org/soundtouch/soundtouch.git
-    GIT_TAG 2.3.3
+    GIT_TAG 2.4.1
     GIT_SHALLOW TRUE
     EXCLUDE_FROM_ALL
 )
@@ -178,7 +178,7 @@ if(WIN32)
     FetchContent_Declare(
         glew
         GIT_REPOSITORY https://github.com/Perlmint/glew-cmake.git
-        GIT_TAG glew-cmake-2.2.0
+        GIT_TAG glew-cmake-2.3.1
         GIT_SHALLOW TRUE
         EXCLUDE_FROM_ALL
     )
@@ -188,7 +188,7 @@ endif()
 FetchContent_Declare(
     projectm
     GIT_REPOSITORY https://github.com/projectM-visualizer/projectm.git
-    GIT_TAG v4.1.1
+    GIT_TAG v4.1.7
     GIT_SHALLOW TRUE
     EXCLUDE_FROM_ALL
 )
