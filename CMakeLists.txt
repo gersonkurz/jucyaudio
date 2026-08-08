@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(jucyaudio VERSION 2.0.0)
+project(jucyaudio VERSION 2.1.0)
 
 # On Apple, JUCE compiles its modules as Objective-C++ (.mm) sources inside the
 # jucyaudio target. Enable OBJC/OBJCXX so CMake classifies those sources as

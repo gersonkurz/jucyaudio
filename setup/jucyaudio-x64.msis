@@ -10,7 +10,7 @@
          payload is self-contained and a launch condition would only risk falsely
          blocking install. -->
     <set name="PRODUCT_NAME" value="jucyaudio"/>
-    <set name="PRODUCT_VERSION" value="2.0.0"/>
+    <set name="PRODUCT_VERSION" value="2.1.0"/>
     <set name="LANGUAGE" value="en-us"/>
     <set name="PLATFORM" value="x64"/>
     <set name="REPAIR_ENABLED" value="True"/>

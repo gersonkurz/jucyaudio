@@ -4,7 +4,7 @@ Primary project guidance lives in `CLAUDE.md`.
 
 ## Project Snapshot (updated 2026-03-07)
 
-- Project: `jucyaudio` (C++20 + JUCE), current CMake project version is `2.0.0` (unreleased).
+- Project: `jucyaudio` (C++20 + JUCE), current CMake project version is `2.1.0` (unreleased).
 - Platforms: Windows and macOS (Apple Silicon + Intel packaging paths in `justfile`).
 - High-level architecture follows the library-first split:
   - `Database/`: SQLite-backed library logic, scanning, background tasks
