@@ -1,10 +1,12 @@
+MOST IMPORTANT: ALWAYS use direct English, as a competent engineer explaining it to a colleague. Remove dramatic framing, suspense-building, hype, and buzzy metaphors (e.g. 'load-bearing assumption', 'here's the kicker', 'the most instructive part', 'this changes everything'). Plain sentences, no reveals. Keep every technical fact, number, file path, command, and code block exactly intact — only the style changes, not the substance, and do not shorten beyond what removing fluff removes. Output only the rewritten text with no preamble or commentary.
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
-**JucyAudio** is an open-source audio player, mix editor, and library manager for macOS (Apple Silicon + Intel) and Windows. Modern C++20 core with JUCE 8 for the UI. SQLite for persistence. GPL licensed.
+**JucyAudio** is an open-source audio player, mix editor, and library manager for macOS (Apple Silicon + Intel) and Windows. Modern C++20 core with JUCE 9 for the UI. SQLite for persistence. GPL licensed.
 
 ## Collaboration Style
 
@@ -94,9 +96,23 @@ Core logic lives in decoupled namespaces, independent of the UI:
 | `jucyaudio::database` | `Database/` | SQLite data layer, navigation nodes, background tasks, scanning |
 | `jucyaudio::audio` | `Audio/` | Playback engine, mix export, DSP (EQ/reverb), VST3 plugin hosting |
 | `jucyaudio::ui` | `UI/` | JUCE-based components, dialogs, theming, visualizer |
-| `jucyaudio::config` | `Config/` | TOML-backed settings persistence |
+| `jucyaudio::config` | `Config/` | TOML backend + typed value/section machinery |
 
 `Utils/` contains shared helpers (string utils, filter parsing, `AtomicSharedPtr`).
+
+Note the split: `Config/` holds only the *mechanism* (`toml_backend.h`, `typed_value.h`, `section.*`).
+The actual settings *schema* is declared in `UI/Settings.h` as the `config::theSettings` singleton -
+that's where you add a new setting.
+
+### Runtime data locations
+
+Resolved in `UI/Main.cpp` (`initialise()`/`timerCallback()`) and `Utils/AssortedUtils.cpp` (`getConfigRoot()`, `getDefaultConfigRootTemplate()`, `expandPath()`):
+
+- Config root: platform default (`%LOCALAPPDATA%\jucyaudio` on Windows, `~/Library/Application Support/jucyaudio` on macOS), overridable via the `JUCYAUDIO_CONFIG` environment variable. Main.cpp exports that variable at startup so `${JUCYAUDIO_CONFIG}` expands inside config files.
+- Database: `${JUCYAUDIO_CONFIG}/jucyaudio.db` by default; `[Database] Filename` in the TOML config overrides it. `DatabaseBackupManager` runs a backup/prune check *before* the DB is opened.
+- Themes are **YAML**, not TOML: `Themes/*.yaml`, parsed with `fkYAML` (`third_party/fkYAML`) in `UI/ThemeManager.cpp`.
+
+Pointing the app at a scratch DB via `JUCYAUDIO_CONFIG` is the safe way to test schema/migration changes.
 
 ### The "Pure Cache" Model (Database)
 
@@ -147,9 +163,28 @@ Nodes implement a command pattern where the node itself decides behavior for UI 
 
 `Database/Sqlite/` contains domain-specific managers (e.g., `SqliteMixManager`, `SqliteTrackDatabase`, `SqliteFolderDatabase`). Each implements a corresponding `I*` interface from `Database/Includes/`. `SqliteDatabase` is the connection manager. `SqliteStatement`/`SqliteTransaction` are the query primitives. SQLite is compiled from source (`sqlite3.c`) with FTS5, JSON1, and STAT4 enabled.
 
+#### Schema versioning (easy to get wrong)
+
+All of it lives in `Database/Sqlite/SqliteTrackDatabase.cpp`:
+
+- `initialSqlStatements[]` (top of file) - the full schema used for a **brand-new** database.
+- `latestSchemaVersion` - a literal inside `createTablesIfNeeded()`; the version stamped into `SchemaInfo`.
+- `runMigrations()` - the `if (currentVersion < N)` ladder applied to **existing** databases.
+
+A schema change must touch all three, or new and upgraded databases diverge silently.
+
 ### Precompiled Header
 
 `pch.h` includes standard library headers and core `Database/Includes/` types. All source files use it.
+
+## Companion tooling
+
+Separate `uv`/Python projects, not part of the C++ build:
+
+- `scripts/refcountd/` - parses spdlog output for unbalanced `retain()`/`release()` pairs. The first thing to reach for when debugging the manual refcounting in the navigation node system.
+- `jucyaudio-python/` - read-only Python access to the jucyaudio SQLite DB (`JucyAudioDB` in `src/jucyaudio/db.py`, pydantic models in `models.py`). Handy for ad-hoc library queries without touching the app.
+
+Run either with `uv run` from its own directory.
 
 ## For AI Assistants
 
@@ -163,3 +198,5 @@ Nodes implement a command pattern where the node itself decides behavior for UI 
 - `AGENTS.md` - parallel guidance for non-Claude agents; declares this file as source of truth. Update if collaboration philosophy changes.
 - `GEMINI.md` - parallel guidance for Gemini; same caveat.
 - `tasks.md` - open bugs and feature requests at repo root, with file-level pointers. Useful starting point for "what's broken" / "what's next".
+
+REMEMBER THE MOST IMPORTANT RULE: ALWAYS use direct English, as a competent engineer explaining it to a colleague. Remove dramatic framing, suspense-building, hype, and buzzy metaphors (e.g. 'load-bearing assumption', 'here's the kicker', 'the most instructive part', 'this changes everything'). Plain sentences, no reveals. Keep every technical fact, number, file path, command, and code block exactly intact — only the style changes, not the substance, and do not shorten beyond what removing fluff removes. Output only the rewritten text with no preamble or commentary.
