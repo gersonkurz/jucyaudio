@@ -5,6 +5,7 @@
 #include <UI/Settings.h>
 #include <Utils/AssortedUtils.h>
 #include <nlohmann/json.hpp>
+#include <unordered_map>
 #include <spdlog/spdlog.h>
 
 namespace jucyaudio
@@ -299,6 +300,67 @@ namespace jucyaudio
         }
 
         // Helper methods
+        std::vector<GenreUsage> SqliteAlbumManager::getGenresWithUsage() const
+        {
+            std::vector<GenreUsage> genres;
+
+            {
+                SqliteStatement stmt{m_db, "SELECT name FROM Genres ORDER BY name COLLATE NOCASE;"};
+                while (stmt.getNextResult())
+                {
+                    genres.push_back(GenreUsage{stmt.getText(0), 0});
+                }
+            }
+
+            if (genres.empty())
+            {
+                return genres;
+            }
+
+            // Count usage by walking the albums that actually carry a genre. Albums.genres is a JSON
+            // array, so this cannot be a GROUP BY; but only labelled albums are read, which is a small
+            // fraction of the table and keeps the vocabulary and the counts in one round trip.
+            std::unordered_map<std::string, int> counts;
+            {
+                SqliteStatement stmt{m_db, "SELECT genres FROM Albums WHERE genres IS NOT NULL AND genres <> '' AND genres <> '[]';"};
+                while (stmt.getNextResult())
+                {
+                    for (const auto &name : jsonArrayToVector(stmt.getText(0)))
+                    {
+                        counts[normalizeForCache(name)]++;
+                    }
+                }
+            }
+
+            for (auto &genre : genres)
+            {
+                if (const auto it = counts.find(normalizeForCache(genre.name)); it != counts.end())
+                {
+                    genre.albumCount = it->second;
+                }
+            }
+
+            return genres;
+        }
+
+        bool SqliteAlbumManager::addGenre(const std::string& name)
+        {
+            const auto trimmed{trimToString(name)};
+            if (trimmed.empty())
+            {
+                return false;
+            }
+
+            SqliteStatement stmt{m_db, "INSERT OR IGNORE INTO Genres (name) VALUES (?);"};
+            stmt.addParam(trimmed);
+            if (!stmt.execute())
+            {
+                spdlog::error("Failed to add genre '{}': {}", trimmed, m_db.getLastError());
+                return false;
+            }
+            return true;
+        }
+
         std::vector<std::string> SqliteAlbumManager::jsonArrayToVector(const std::string& json) const
         {
             if (json.empty())

@@ -37,6 +37,106 @@ namespace
     };
 
     // --- THIS IS THE FINAL, CORRECTED SCHEMA FOR A NEW DATABASE ---
+    /**
+     * @brief Initial genre vocabulary for the Albums.genres headline genre.
+     *
+     * Seeded from the top-level folder names under D:\MP3\Resorted - the curated, current-taste
+     * vocabulary (ghetto-tech folded into ghettotech). The user can add to it from the UI; this is
+     * only the starting point, deliberately not the union with the older D:\MP3\Tracks folder names.
+     */
+    const char *defaultGenreVocabulary[] = {
+        "acid house",
+        "acid techno",
+        "alternative",
+        "ambient",
+        "atmospheric drum & bass",
+        "blackgaze",
+        "bleep techno",
+        "braindance",
+        "breakcore",
+        "chillout",
+        "coldwave",
+        "crust punk",
+        "dance",
+        "dark ambient",
+        "dark folk",
+        "dark rock",
+        "dark techno",
+        "darkwave",
+        "detroit techno",
+        "deutsch punk",
+        "dream pop",
+        "dream punk",
+        "drone rock",
+        "dub",
+        "ebm",
+        "ebm oldskool",
+        "electro",
+        "electro oldschool",
+        "electronic",
+        "experimental",
+        "folk-rock",
+        "french",
+        "french hip-hop",
+        "funk",
+        "garage rock",
+        "ghettotech",
+        "gothic",
+        "grindcore",
+        "hard rock",
+        "hard techno",
+        "heavy psych",
+        "idm",
+        "indie dance",
+        "indie folk",
+        "indie pop",
+        "indie rock",
+        "industrial",
+        "krautrock",
+        "martial",
+        "metal",
+        "minimal techno",
+        "modern classical",
+        "new wave",
+        "noise pop",
+        "noise rock",
+        "oldschool acid",
+        "oldschool breakbeat",
+        "oldschool eurodance",
+        "oldschool hiphop",
+        "oldschool rave",
+        "oldschool techno",
+        "oldschool trance",
+        "post-hardcore",
+        "post-metal",
+        "post-punk",
+        "post-rock",
+        "power electronics",
+        "psychedelia",
+        "psychedelic rock",
+        "psychedelic trance",
+        "punk rock",
+        "rock",
+        "sadcore",
+        "screamo",
+        "shoegaze",
+        "slowcore",
+        "sludge",
+        "space rock",
+        "stoner rock",
+        "synth-punk",
+        "synthpop",
+        "synthwave",
+        "tech house",
+        "techno",
+        "trance",
+        "uk bass",
+        "uk trance",
+        "vaporwave",
+        "witchhouse",
+        "witchtrap",
+    };
+
     const char *initialSqlStatements[] = {
         "PRAGMA foreign_keys = ON;",
         R"SQL(
@@ -121,6 +221,7 @@ namespace
             FOREIGN KEY (tag_id) REFERENCES Tags(tag_id) ON DELETE CASCADE
         );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_tracktags_tag_id ON TrackTags(tag_id);",
+        R"SQL(CREATE TABLE IF NOT EXISTS Genres (genre_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE);)SQL",
         R"SQL(CREATE TABLE IF NOT EXISTS SchemaInfo (key TEXT PRIMARY KEY, value TEXT);)SQL",
         R"SQL(
         CREATE TABLE IF NOT EXISTS WorkingSets(
@@ -650,7 +751,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 25;
+            const int latestSchemaVersion = 26;
 
             if (currentVersion == 0)
             {
@@ -667,6 +768,12 @@ namespace jucyaudio
                             transaction.rollback();
                             return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
                         }
+                    }
+
+                    if (const auto seedResult{seedDefaultGenres()}; !seedResult.isOk())
+                    {
+                        transaction.rollback();
+                        return seedResult;
                     }
 
                     // After creating tables, set the schema version to the latest.
@@ -774,6 +881,28 @@ namespace jucyaudio
             {
                 return DbResult::failure(DbResultStatus::ErrorDB, "Execute failed for setDBSchemaVersion: " + m_db.getLastError());
             }
+            return DbResult::success();
+        }
+
+        DbResult SqliteTrackDatabase::seedDefaultGenres()
+        {
+            SqliteStatement stmt{m_db, "INSERT OR IGNORE INTO Genres (name) VALUES (?);"};
+            if (!stmt.isValid())
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB, "Prepare failed for genre seeding: " + m_db.getLastError());
+            }
+
+            for (const auto *genre : defaultGenreVocabulary)
+            {
+                stmt.reset();
+                stmt.addParam(std::string_view{genre});
+                if (!stmt.execute())
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to seed genre '" + std::string{genre} + "': " + m_db.getLastError());
+                }
+            }
+
+            spdlog::info("Seeded {} default genres.", std::size(defaultGenreVocabulary));
             return DbResult::success();
         }
 
@@ -2387,6 +2516,46 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 25;
+            }
+
+            if (currentVersion < 26)
+            {
+                spdlog::info("Migrating database from version 25 to 26 - adding the Genres vocabulary...");
+                // Albums.genres has existed (unused, empty) since the table was created. The headline
+                // genre now written from the mix editor needs a controlled vocabulary to pick from, so
+                // add the table and seed it. No Albums data is touched.
+                if (SqliteTransaction transaction{m_db})
+                {
+                    if (!m_db.execute("CREATE TABLE IF NOT EXISTS Genres (genre_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE);"))
+                    {
+                        const auto error{m_db.getLastError()};
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "v26 Genres migration failed: " + error);
+                    }
+
+                    if (const auto seedResult{seedDefaultGenres()}; !seedResult.isOk())
+                    {
+                        transaction.rollback();
+                        return seedResult;
+                    }
+
+                    if (auto result = setDBSchemaVersion(26); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 26.");
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated to version 26 - Genres vocabulary available.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 26;
             }
 
             return DbResult::success();

@@ -2,6 +2,7 @@
 
 #include <Database/Includes/Constants.h>
 #include <Database/Includes/TrackMarker.h>
+#include <UI/GenreCloudComponent.h>
 #include <UI/PlaybackController.h>
 #include <functional>
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -51,6 +52,25 @@ namespace jucyaudio
             // would show whatever track was last loaded into the standalone player — not necessarily the
             // mix track being edited or played back.
             void setWaveformVisible(bool shouldBeVisible);
+
+            // Swap the waveform strip for the genre cloud while editing a mix. Same bounds - the strip
+            // beside the transport buttons is dead space in the mix editor.
+            void setGenreCloudVisible(bool shouldBeVisible);
+
+            GenreCloudComponent &getGenreCloud()
+            {
+                return m_genreCloud;
+            }
+
+            /// @brief Player height needed to show the whole genre cloud at the given total width.
+            /// @param totalWidth The width this component would be given.
+            /// @return Required height in pixels (cloud strip + bottom control row).
+            int getRequiredHeightForGenreCloud(int totalWidth) const;
+
+            // Layout constants, shared with MainPlaybackAndStatusComponent so it can size us.
+            static constexpr int kBottomRowHeight = 30;
+            static constexpr int kTransportButtonSize = 60;
+            static constexpr int kTransportAreaWidth = (kTransportButtonSize * 4) + 8;
 
             // Callbacks for external control
             std::function<void(TrackId, std::chrono::milliseconds, bool isNewMarker)> onMarkerAction;
@@ -111,6 +131,9 @@ namespace jucyaudio
 
             // Waveform display
             WaveformDisplay m_waveformDisplay;
+
+            GenreCloudComponent m_genreCloud;
+            bool m_genreCloudVisible{false};
 
             // Bottom row components
             juce::DrawableButton m_volumeButton{"Volume", juce::DrawableButton::ImageFitted};

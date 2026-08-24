@@ -44,6 +44,8 @@ namespace jucyaudio
             bool setTrackAlbum(TrackId trackId, AlbumId albumId) override;
             std::vector<TrackId> getAlbumTracks(AlbumId albumId) const override;
             bool deleteAlbum(AlbumId albumId) override;
+            std::vector<GenreUsage> getGenresWithUsage() const override;
+            bool addGenre(const std::string& name) override;
             std::vector<AlbumInfo> searchAlbums(const std::string& query, size_t limit = 100) const override;
 
         private:

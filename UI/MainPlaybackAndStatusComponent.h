@@ -43,18 +43,49 @@ namespace jucyaudio
             VUMeterComponent& getVUMeterLeft() { return m_vuMeterLeft; }
             VUMeterComponent& getVUMeterRight() { return m_vuMeterRight; }
 
-            // Get fixed height
-            int getPreferredHeight() const { return kBaseHeight; }
+            /// @brief Height this panel wants when laid out at the given width.
+            /// @param availableWidth The width the panel is about to be given. Must be passed in rather
+            ///        than read from getWidth(): the owner asks for the height before assigning bounds,
+            ///        so our own width is still the previous one during a resize.
+            /// @return Preferred height in pixels.
+            int getPreferredHeight(int availableWidth) const
+            {
+                if (!m_genreCloudVisible)
+                {
+                    return kBaseHeight;
+                }
+                // The cloud wraps, so its height depends on the width it gets.
+                return juce::jmax(kBaseHeight, m_player.getRequiredHeightForGenreCloud(availableWidth) + kStatusBarHeight);
+            }
+
+            // Show the genre cloud instead of the (hidden) waveform while editing a mix.
+            void setGenreCloudVisible(bool shouldBeVisible)
+            {
+                if (m_genreCloudVisible != shouldBeVisible)
+                {
+                    m_genreCloudVisible = shouldBeVisible;
+                    m_player.setGenreCloudVisible(shouldBeVisible);
+                }
+            }
+
+            GenreCloudComponent &getGenreCloud()
+            {
+                return m_player.getGenreCloud();
+            }
 
         private:
             MainComponent &m_ownerMainComponent;
             EnhancedPlayerComponent& m_player;
             StatusBarComponent m_statusBar;
 
+            bool m_genreCloudVisible{false};
+
             VUMeterComponent m_vuMeterLeft;
             VUMeterComponent m_vuMeterRight;
 
             static constexpr int kBaseHeight = 120;
+            static constexpr int kStatusBarHeight = 22;
+            static constexpr int kVuMeterAreaWidth = 50;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainPlaybackAndStatusComponent)
         };

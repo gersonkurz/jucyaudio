@@ -1375,6 +1375,9 @@ namespace jucyaudio
                     }
                     
                     const double positionSeconds = m_playbackController->getCurrentPositionSeconds();
+
+                    // Let listeners follow what is actually sounding, not just what was last clicked.
+                    m_timeline.notifyPlayheadTime(positionSeconds);
                     
                     // Calculate playhead position in pixels
                     const double pixelsPerSecond = m_timeline.getPixelsPerSecond();

@@ -16,6 +16,16 @@ namespace jucyaudio
          * @details Provides methods for creating, updating, and querying albums.
          *          Albums are identified by the combination of title and folder_id.
          */
+        /**
+         * @brief A genre from the controlled vocabulary, with how many albums currently carry it.
+         * @note The count drives the colour banding in the genre picker; it is not persisted.
+         */
+        struct GenreUsage final
+        {
+            std::string name;
+            int albumCount{0};
+        };
+
         class IAlbumManager
         {
         public:
@@ -88,6 +98,15 @@ namespace jucyaudio
             /// @param albumId The album to delete
             /// @return true if successful
             virtual bool deleteAlbum(AlbumId albumId) = 0;
+
+            /// @brief Get the genre vocabulary, each entry annotated with how many albums use it
+            /// @return Vocabulary in alphabetical order
+            virtual std::vector<GenreUsage> getGenresWithUsage() const = 0;
+
+            /// @brief Add a name to the genre vocabulary
+            /// @param name The genre name; ignored if it already exists (case-insensitively)
+            /// @return true if the vocabulary now contains the name
+            virtual bool addGenre(const std::string& name) = 0;
 
             /// @brief Search albums by text query
             /// @param query Search text (searches title, artist, genres, tags)

@@ -12,6 +12,9 @@ namespace jucyaudio
             : m_ownerMainComponent{owner},
               m_player{owner.m_enhancedPlayer}
         {
+            // Set before any layout runs: getPreferredHeight() asks the player how tall the genre cloud
+            // needs to be, and that depends on the padding reserved for the VU meters.
+            m_player.setRightHandPadding(kVuMeterAreaWidth);
             addAndMakeVisible(m_player);
             addAndMakeVisible(m_statusBar);
 
@@ -26,15 +29,12 @@ namespace jucyaudio
         void MainPlaybackAndStatusComponent::resized()
         {
             auto bounds = getLocalBounds();
-            m_statusBar.setBounds(bounds.removeFromBottom(22));
+            m_statusBar.setBounds(bounds.removeFromBottom(kStatusBarHeight));
 
-            // Define the space for the VU meters
-            constexpr int vuMeterAreaWidth = 50;
-
-            m_player.setRightHandPadding(vuMeterAreaWidth);
+            m_player.setRightHandPadding(kVuMeterAreaWidth);
             m_player.setBounds(bounds);
 
-            auto vuArea = bounds.removeFromRight(vuMeterAreaWidth);
+            auto vuArea = bounds.removeFromRight(kVuMeterAreaWidth);
             m_vuMeterLeft.setBounds(vuArea.removeFromLeft(20).reduced(0, 2));
             vuArea.removeFromLeft(5);
             m_vuMeterRight.setBounds(vuArea.removeFromLeft(20).reduced(0, 2));

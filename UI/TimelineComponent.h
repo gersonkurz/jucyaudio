@@ -86,6 +86,8 @@ namespace jucyaudio
             std::function<void(int orderInMix, float newGain)> onGainAdjustmentChanged;
             std::function<void(TrackId)> onShowTrackInLibraryRequested;
             std::function<void(TrackId)> onShowTrackDetailsRequested;
+            std::function<void(TrackId)> onSelectedTrackChanged; // drives the genre cloud's context album
+            std::function<void(TrackId)> onPlayingTrackChanged;  // fires when the playhead enters a different track
             std::function<void()> onZoomChanged;
 
 
@@ -109,8 +111,22 @@ namespace jucyaudio
              */
             void releaseMixLoader()
             {
+                clearTrackContext();
                 m_mixLoader = nullptr;
             }
+
+            /**
+             * @brief Drops both the selected and the playing track and tells listeners the context is gone.
+             *
+             * Call whenever the timeline stops representing the mix it was showing (unload, repopulate).
+             * Deliberately separate from the gap handling in notifyPlayheadTime(): a gap between tracks
+             * keeps the last album on screen, but a torn-down mix must not leave one writable.
+             *
+             * @note Fires onPlayingTrackChanged unconditionally. setSelectedTrack() alone is not enough -
+             *       it short-circuits when nothing was selected, which is exactly the case where the
+             *       context came from playback rather than from a click.
+             */
+            void clearTrackContext();
             
             /**
              * @brief Notifies the timeline that the viewport has resized.
@@ -119,6 +135,16 @@ namespace jucyaudio
              * to ensure the timeline adjusts its height to use all available space.
              */
             void viewportResized();
+
+            /**
+             * @brief Reports the playhead position so the timeline can tell listeners which track is sounding.
+             *
+             * Called on every playback tick. onPlayingTrackChanged only fires when the containing track
+             * actually changes, so this is cheap to call at frame rate.
+             *
+             * @param timeInSeconds Playhead position on the mix timeline.
+             */
+            void notifyPlayheadTime(double timeInSeconds);
 
             /**
              * @brief Recalculates the timeline's total width and repositions all child components.
@@ -367,6 +393,9 @@ namespace jucyaudio
 
             /** @brief A non-owning pointer to the currently selected MixTrackComponent. */
             MixTrackComponent *m_selectedTrack = nullptr;
+
+            /** @brief Track the playhead was last inside, so onPlayingTrackChanged only fires on a change. */
+            TrackId m_playingTrackId{-1};
             
             /** @brief Read-only mode flag for exported/locked mixes */
             bool m_isReadOnly = false;

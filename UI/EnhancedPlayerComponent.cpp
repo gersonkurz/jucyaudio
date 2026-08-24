@@ -58,6 +58,7 @@ namespace jucyaudio
             addAndMakeVisible(m_playPauseButton);
             addAndMakeVisible(m_nextButton);
             addAndMakeVisible(m_waveformDisplay);
+            addChildComponent(m_genreCloud);
 
             addAndMakeVisible(m_volumeButton);
             addAndMakeVisible(m_volumeSlider);
@@ -100,6 +101,28 @@ namespace jucyaudio
             m_waveformDisplay.setVisible(shouldBeVisible);
         }
 
+        void EnhancedPlayerComponent::setGenreCloudVisible(bool shouldBeVisible)
+        {
+            if (m_genreCloudVisible != shouldBeVisible)
+            {
+                m_genreCloudVisible = shouldBeVisible;
+                m_genreCloud.setVisible(shouldBeVisible);
+                if (shouldBeVisible)
+                {
+                    // The vocabulary and its usage counts change as albums get labelled, and the library
+                    // is not open yet when this component is constructed - so load on show, not on init.
+                    m_genreCloud.refreshVocabulary();
+                }
+                resized();
+            }
+        }
+
+        int EnhancedPlayerComponent::getRequiredHeightForGenreCloud(int totalWidth) const
+        {
+            const int cloudWidth = juce::jmax(1, totalWidth - m_rightHandPadding - kTransportAreaWidth);
+            return m_genreCloud.getHeightForWidth(cloudWidth) + kBottomRowHeight;
+        }
+
         void EnhancedPlayerComponent::lookAndFeelChanged()
         {
             // Reload icons with new accent color when theme changes
@@ -118,15 +141,17 @@ namespace jucyaudio
             auto bounds = getLocalBounds();
             bounds.removeFromRight(m_rightHandPadding);
 
-            const int topRowHeight = static_cast<int>(bounds.getHeight() * 0.7f);
+            // The bottom control row is a fixed height; the top row takes whatever is left. In normal mode
+            // that reproduces the old 70/30 split exactly, but it also lets the panel grow to fit the genre
+            // cloud without the transport buttons growing with it.
+            auto bottomRow = bounds.removeFromBottom(kBottomRowHeight);
+            auto topRow = bounds;
 
-            auto topRow = bounds.removeFromTop(topRowHeight);
-            auto bottomRow = bounds;
-
-            // --- Top row layout (correct and unchanged) ---
-            const int buttonSize = topRowHeight - 8;
+            // --- Top row layout ---
+            const int buttonSize = kTransportButtonSize;
             const int iconInset = buttonSize / 4;
-            auto transportArea = topRow.removeFromLeft(buttonSize * 4);
+            const int transportBandHeight = juce::jmin(topRow.getHeight(), buttonSize + 8);
+            auto transportArea = topRow.removeFromLeft(buttonSize * 4).withSizeKeepingCentre(buttonSize * 4, transportBandHeight);
             topRow.removeFromLeft(8);
             m_prevButton.setBounds(transportArea.removeFromLeft(buttonSize));
             m_stopButton.setBounds(transportArea.removeFromLeft(buttonSize));
@@ -136,7 +161,16 @@ namespace jucyaudio
             m_stopButton.setEdgeIndent(iconInset);
             m_playPauseButton.setEdgeIndent(iconInset);
             m_nextButton.setEdgeIndent(iconInset);
-            m_waveformDisplay.setBounds(topRow);
+
+            // The waveform and the genre cloud share the same strip - only one is ever visible.
+            if (m_genreCloudVisible)
+            {
+                m_genreCloud.setBounds(topRow);
+            }
+            else
+            {
+                m_waveformDisplay.setBounds(topRow);
+            }
 
             // --- Bottom row layout (New, simple, and robust design) ---
             auto bottomArea = bottomRow.reduced(4, 2);

@@ -261,6 +261,26 @@ namespace jucyaudio
             {
                 showTrackDetailsDialog(trackId);
             });
+            // Point the genre cloud at whichever mix track is selected, so its album can be labelled.
+            m_mixEditorComponent.getTimeline().onSelectedTrackChanged = [this](TrackId trackId)
+            {
+                m_statusPanel.getGenreCloud().setContextTrack(trackId);
+            };
+            // ...and follow playback too: whichever of the two moved last wins, which is what auditioning
+            // through a mix actually looks like.
+            m_mixEditorComponent.getTimeline().onPlayingTrackChanged = [this](TrackId trackId)
+            {
+                m_statusPanel.getGenreCloud().setContextTrack(trackId);
+            };
+            // Adding a genre can change how many rows the cloud needs, which changes the panel height.
+            m_statusPanel.getGenreCloud().onLayoutNeeded = [this]()
+            {
+                resized();
+            };
+            m_statusPanel.getGenreCloud().onError = [this](const juce::String &message)
+            {
+                m_statusPanel.getStatusBar().postMessage(message, true);
+            };
 
             // --- Add and make visible all child components ---
             addAndMakeVisible(m_dynamicToolbar);
@@ -757,6 +777,15 @@ namespace jucyaudio
 #endif
 
             stopTimer();
+
+            // Sever callbacks that cross member lifetimes before any member is destroyed. Members die in
+            // reverse declaration order, so m_statusPanel (declared after m_mixEditorComponent) goes first;
+            // ~MixEditorComponent then unloads the mix, which clears the timeline selection and would fire
+            // onSelectedTrackChanged into the already-destroyed panel.
+            m_mixEditorComponent.getTimeline().onSelectedTrackChanged = nullptr;
+            m_mixEditorComponent.getTimeline().onPlayingTrackChanged = nullptr;
+            m_statusPanel.getGenreCloud().onLayoutNeeded = nullptr;
+            m_statusPanel.getGenreCloud().onError = nullptr;
 
             // Unregister all components from timer multiplexer
             m_timerMultiplexer.unregisterComponent(&m_statusPanel);
@@ -1321,7 +1350,7 @@ namespace jucyaudio
             if (toolbarHeight == 0 && m_dynamicToolbar.isVisible())
                 toolbarHeight = 40; // Default if not yet sized
 
-            int bottomPanelHeight = m_statusPanel.isVisible() ? m_statusPanel.getPreferredHeight() : 0;
+            int bottomPanelHeight = m_statusPanel.isVisible() ? m_statusPanel.getPreferredHeight(bounds.getWidth()) : 0;
 
             m_dynamicToolbar.setBounds(bounds.removeFromTop(toolbarHeight));
             m_statusPanel.setBounds(bounds.removeFromBottom(bottomPanelHeight));
@@ -1623,6 +1652,9 @@ namespace jucyaudio
                         // standalone player last loaded, which is rarely the track being edited or played
                         // back from the mix — confusing rather than informative.
                         m_enhancedPlayer.setWaveformVisible(false);
+                        // The strip the waveform vacated is where the genre cloud goes.
+                        m_statusPanel.setGenreCloudVisible(true);
+                        resized();
                     }
                     else
                     {
@@ -1634,6 +1666,8 @@ namespace jucyaudio
                         // loses tracks after mix export). Row indices would otherwise highlight different songs.
                         m_dataViewComponent.clearSelection();
                         m_enhancedPlayer.setWaveformVisible(true);
+                        m_statusPanel.setGenreCloudVisible(false);
+                        resized();
                     }
                 }
 

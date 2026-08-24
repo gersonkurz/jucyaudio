@@ -622,7 +622,7 @@ namespace jucyaudio
             // Clear selection if we removed the selected component
             if (m_selectedTrack && m_selectedTrack->getOrderInMix() == orderInMixToRemove)
             {
-                m_selectedTrack = nullptr;
+                setSelectedTrack(nullptr);
             }
 
             // Reload and refresh UI
@@ -690,7 +690,7 @@ namespace jucyaudio
             {
                 if (m_selectedTrack == it->component.get())
                 {
-                    m_selectedTrack = nullptr;
+                    setSelectedTrack(nullptr);
                 }
                 m_trackViews.erase(it);
                 spdlog::info("Removed TrackView for orderInMix {}", deletedOrderInMix);
@@ -1304,6 +1304,57 @@ namespace jucyaudio
                 // Repaint new selection
                 if (m_selectedTrack)
                     m_selectedTrack->repaint();
+
+                if (onSelectedTrackChanged)
+                    onSelectedTrackChanged(m_selectedTrack ? m_selectedTrack->getTrackId() : TrackId{-1});
+            }
+        }
+
+        void TimelineComponent::clearTrackContext()
+        {
+            setSelectedTrack(nullptr);
+
+            m_playingTrackId = -1;
+            if (onPlayingTrackChanged)
+            {
+                onPlayingTrackChanged(TrackId{-1});
+            }
+        }
+
+        void TimelineComponent::notifyPlayheadTime(double timeInSeconds)
+        {
+            TrackId playing{-1};
+
+            if (m_pixelsPerSecond > 0.0)
+            {
+                for (const auto &view : m_trackViews)
+                {
+                    if (!view.component)
+                    {
+                        continue;
+                    }
+
+                    const double start{std::chrono::duration<double>(view.componentStartTime).count()};
+                    const double end{start + (view.component->getWidth() / m_pixelsPerSecond)};
+                    if (timeInSeconds >= start && timeInSeconds < end)
+                    {
+                        // Last match wins: during a crossfade two tracks overlap, and the one being mixed
+                        // in is the one worth labelling.
+                        playing = view.component->getTrackId();
+                    }
+                }
+            }
+
+            if (playing == m_playingTrackId)
+            {
+                return;
+            }
+            m_playingTrackId = playing;
+
+            // Gaps between tracks leave the last track in place rather than blanking the listeners.
+            if (playing >= 0 && onPlayingTrackChanged)
+            {
+                onPlayingTrackChanged(playing);
             }
         }
 
@@ -1551,7 +1602,7 @@ namespace jucyaudio
             {
                 m_mixLoader = mixLoader;
             }
-            m_selectedTrack = nullptr;
+            clearTrackContext();
             m_currentTimePosition = -1.0;
             m_trackViews.clear();
             removeAllChildren();

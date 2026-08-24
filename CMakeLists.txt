@@ -525,6 +525,7 @@ target_sources(jucyaudio PRIVATE
     UI/TaskDialog.cpp
     UI/Main.cpp
     UI/MainComponent.cpp
+    UI/GenreCloudComponent.cpp
     UI/MainPlaybackAndStatusComponent.cpp
     UI/TimerMultiplexer.cpp
     UI/NavigationPanelComponent.cpp
@@ -547,6 +548,7 @@ target_sources(jucyaudio PRIVATE
     UI/SingletonDialog.h
     UI/TaskDialog.h
     UI/MainComponent.h
+    UI/GenreCloudComponent.h
     UI/MainPlaybackAndStatusComponent.h
     UI/NavigationPanelComponent.h
     UI/PlaybackController.h

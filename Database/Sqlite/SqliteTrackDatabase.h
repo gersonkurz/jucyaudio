@@ -176,6 +176,7 @@ namespace jucyaudio
             DbResult setDBSchemaVersion(int version);
 
             DbResult runMigrations(); // Calls specific migration steps
+            DbResult seedDefaultGenres(); // INSERT OR IGNORE the default genre vocabulary
         };
 
     } // namespace database
