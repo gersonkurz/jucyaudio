@@ -80,6 +80,17 @@ namespace jucyaudio
             void resized() override;
             bool keyPressed(const juce::KeyPress &key) override;
 
+            /// @brief What removeUndecodableTracks() actually did, so the user can be told accurately.
+            enum class RemovalOutcome
+            {
+                NothingToRemove,   ///< No track was proven undecodable.
+                Removed,           ///< The mix was shortened and persisted.
+                SkippedReadOnly,   ///< The mix is exported; it must not be edited.
+                SkippedWouldEmpty, ///< Every row was decode-rejected; something systemic, not the files.
+                PersistFailed,     ///< The database rejected the change; the mix is unchanged.
+                ReloadFailed       ///< Persisted, but the in-memory mix could not be refreshed.
+            };
+
             void loadMix(database::MixNode* node);
             void unloadMix();
             void forceRefresh();
@@ -137,9 +148,28 @@ namespace jucyaudio
             void handleMarkerClick(MarkerId markerId);
             void handleMarkerAdd(std::chrono::milliseconds position);
             void showMoveBackDialog();
+            /**
+             * @brief Refresh the node's cached track count/duration, then tell the outside world.
+             *
+             * Both halves matter: the node caches the summary the status bar and mix list read, so
+             * firing the outer callback on its own leaves those showing pre-change figures.
+             */
+            void notifyMixSummaryChanged();
 
             // Waveform loading helpers  
             std::vector<std::pair<int, bool>> collectWaveformRequests(audio::MixProjectLoader* loader);
+            /**
+             * @brief Drops tracks whose audio the decoder rejected from the mix.
+             *
+             * Only failures that prove the content is undecodable are eligible - see
+             * WaveformLoadingTask::provesAudioUnusable(). A missing file or a timeout says nothing about
+             * the audio and must never cost the user a track.
+             *
+             * @param loader The mix being opened; reloaded from the database if anything was removed.
+             * @param undecodableTrackIds Tracks the decoder rejected.
+             * @return What happened, for reporting.
+             */
+            RemovalOutcome removeUndecodableTracks(audio::MixProjectLoader &loader, const std::vector<TrackId> &undecodableTrackIds);
             void populateTimeline(audio::MixProjectLoader* loader);
             
             // ScrollBar::Listener callbacks

@@ -35,13 +35,40 @@ namespace jucyaudio
                     std::string trackName; // For progress reporting
                 };
 
+                /**
+                 * @brief Why a waveform could not be produced.
+                 *
+                 * Only some of these say anything about the audio itself. A missing file usually means a
+                 * temporarily offline drive, a timeout means the machine was busy, and a cache write
+                 * failure happens *after* the audio decoded perfectly well. Callers that act on failures -
+                 * by dropping the track from a mix, say - must distinguish these from a real decode
+                 * failure; see provesAudioUnusable().
+                 */
+                enum class FailureKind
+                {
+                    FileMissing,      ///< The path did not resolve.
+                    Timeout,          ///< The decoder did not finish in time.
+                    CacheWriteFailed, ///< Decoded fine; only storing the waveform failed.
+                    EmptyWaveform,    ///< Decoded, but to nothing at all.
+                    DecodeFailed      ///< The decoder rejected the content.
+                };
+
                 struct FailedWaveform
                 {
                     TrackId trackId{0};
                     std::string trackName;
                     std::filesystem::path filePath;
                     std::string reason;
+                    FailureKind kind{FailureKind::DecodeFailed};
                 };
+
+                /// @brief Whether a failure proves the audio itself cannot be decoded.
+                /// @param kind The failure category.
+                /// @return true only for failures caused by the content, not by its surroundings.
+                static bool provesAudioUnusable(FailureKind kind)
+                {
+                    return kind == FailureKind::EmptyWaveform || kind == FailureKind::DecodeFailed;
+                }
 
                 /**
                  * @brief Construct a waveform loading task
@@ -93,8 +120,15 @@ namespace jucyaudio
                  * @param progressCb Progress callback for status updates
                  * @return Empty on success, otherwise a human-readable failure reason
                  */
-                std::optional<std::string> loadWaveformFromFile(const WaveformRequest& request,
-                                                                ProgressCallback progressCb);
+                /// @brief A failure category paired with its human-readable explanation.
+                struct FailureDetail
+                {
+                    FailureKind kind;
+                    std::string reason;
+                };
+
+                std::optional<FailureDetail> loadWaveformFromFile(const WaveformRequest& request,
+                                                                  ProgressCallback progressCb);
 
                 /**
                  * @brief Generate and cache a waveform
@@ -104,9 +138,9 @@ namespace jucyaudio
                  * @param progressCb Progress callback for status updates
                  * @return Empty on success, otherwise a human-readable failure reason
                  */
-                std::optional<std::string> generateAndCacheWaveform(TrackId trackId,
-                                                                    const juce::File& audioFile,
-                                                                    ProgressCallback progressCb);
+                std::optional<FailureDetail> generateAndCacheWaveform(TrackId trackId,
+                                                                      const juce::File& audioFile,
+                                                                      ProgressCallback progressCb);
 
                 std::string buildFinalMessage(int needLoadingCount) const;
                 std::string buildFailureLabel(const FailedWaveform& failure) const;

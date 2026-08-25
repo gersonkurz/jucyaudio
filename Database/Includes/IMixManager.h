@@ -118,6 +118,17 @@ namespace jucyaudio
             // @return True if all specified tracks were successfully removed from the mix, false otherwise.
             virtual bool removeTracksFromMix(MixId mixId, const std::vector<TrackId> &trackIds) const = 0;
 
+            // @brief Refresh a mix's cached track count and total length.
+            // @details The per-track removal calls above deliberately do not touch these columns, so a
+            //          caller that changes the track list must refresh them or the mix list will show
+            //          stale figures. createOrUpdateMix writes them as a side effect of rewriting
+            //          everything; this is the cheap way to correct them on their own.
+            // @param mixId The mix to update.
+            // @param trackCount Number of tracks now in the mix.
+            // @param totalLength Total playing length of the mix, including crossfades.
+            // @return True if the row was updated.
+            virtual bool updateMixSummary(MixId mixId, int64_t trackCount, Duration_t totalLength) const = 0;
+
             // @brief Reorder a concrete track row within a mix by moving it to a new position.
             // @param mixId The ID of the mix containing the track.
             // @param currentOrderInMix The current 0-based row position to move.

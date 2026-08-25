@@ -1,6 +1,8 @@
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Includes/IMixMarkerManager.h>
 #include <Database/BackgroundTasks/WaveformLoadingTask.h>
+#include <UI/SkippedTracksDialog.h>
+#include <unordered_map>
 #include <UI/MainComponent.h>
 #include <UI/MixEditorComponent.h>
 #include <UI/PlaybackController.h>
@@ -11,6 +13,74 @@
 #include <Database/TrackLibrary.h>
 #include <Database/UndoManager.h>
 #include <format>
+
+namespace
+{
+    using jucyaudio::database::background_tasks::WaveformLoadingTask;
+
+    /// @brief Tell the user which tracks failed and, precisely, what was done about each.
+    /// @param failures Every waveform failure from the load.
+    /// @param removedTrackIds The subset that was eligible for removal.
+    /// @param outcome What removeUndecodableTracks() actually managed to do.
+    /// @param parent Component to centre the dialog on.
+    void reportWaveformFailures(const std::vector<WaveformLoadingTask::FailedWaveform> &failures,
+        jucyaudio::ui::MixEditorComponent::RemovalOutcome outcome,
+        juce::Component *parent)
+    {
+        using RemovalOutcome = jucyaudio::ui::MixEditorComponent::RemovalOutcome;
+        using jucyaudio::ui::SkippedTracksDialog;
+
+        if (failures.empty())
+        {
+            return;
+        }
+
+        const bool didRemove = outcome == RemovalOutcome::Removed || outcome == RemovalOutcome::ReloadFailed;
+
+        std::vector<SkippedTracksDialog::Entry> entries;
+        entries.reserve(failures.size());
+        int removedCount = 0;
+        for (const auto &failure : failures)
+        {
+            // Ask the failure itself rather than looking its id up in the removed list: eligibility is a
+            // property of this failure's kind, so a duplicated id with mixed kinds cannot be mis-tagged.
+            const bool wasRemoved = didRemove && WaveformLoadingTask::provesAudioUnusable(failure.kind);
+            removedCount += wasRemoved ? 1 : 0;
+            entries.push_back(SkippedTracksDialog::Entry{failure.trackName, failure.filePath, failure.reason, wasRemoved});
+        }
+
+        const auto total = juce::String{static_cast<int>(entries.size())};
+        juce::String summary{total + " track(s) could not be loaded. "};
+
+        switch (outcome)
+        {
+        case RemovalOutcome::Removed:
+            summary << juce::String{removedCount} << " of them could not be decoded at all and have been removed from the mix;"
+                    << " the rest were left in place, because their failure does not prove the audio is bad.";
+            break;
+        case RemovalOutcome::ReloadFailed:
+            summary << juce::String{removedCount} << " undecodable track(s) were removed, but the mix could not be reloaded."
+                    << " Close and reopen it to see the current state.";
+            break;
+        case RemovalOutcome::NothingToRemove:
+            summary << "Nothing was removed: none of these failures prove the audio itself is unusable"
+                       " (a missing file or a timeout usually means the drive is busy or offline).";
+            break;
+        case RemovalOutcome::SkippedReadOnly:
+            summary << "This mix has been exported and is read-only, so nothing was removed.";
+            break;
+        case RemovalOutcome::SkippedWouldEmpty:
+            summary << "Every track in the mix was rejected by the decoder, which points at something systemic"
+                       " rather than at the files. Nothing was removed.";
+            break;
+        case RemovalOutcome::PersistFailed:
+            summary << "They could not be removed: the database rejected the change. The mix is unchanged.";
+            break;
+        }
+
+        SkippedTracksDialog::show("Tracks That Could Not Be Loaded", summary, entries, parent);
+    }
+} // namespace
 
 namespace jucyaudio
 {
@@ -67,17 +137,7 @@ namespace jucyaudio
 
             m_timeline.onMixSummaryChanged = [this]()
             {
-                // A structural change (track added/removed) updated the persisted mix; refresh
-                // the node's cached summary so the status bar shows the new count/duration.
-                if (m_node)
-                {
-                    auto &loader = m_node->getMixProjectLoader();
-                    m_node->updateSummaryMetadata(
-                        static_cast<int>(loader.getMixTracks().size()),
-                        loader.calculateMixDuration());
-                }
-                if (m_onMixSummaryChanged)
-                    m_onMixSummaryChanged();
+                notifyMixSummaryChanged();
             };
 
             m_timeline.onShowTrackInLibraryRequested = [this](TrackId trackId)
@@ -455,8 +515,10 @@ namespace jucyaudio
                         m_formatManager,
                         m_thumbnailCache);
                     
-                    // Capture loader pointer for completion callback
-                    auto* loaderPtr = &loader;
+                    // Captured by value and re-validated in the callback: the editor may be gone, or
+                    // showing a different mix, by the time waveform loading finishes.
+                    juce::Component::SafePointer<MixEditorComponent> safeThis{this};
+                    const auto expectedMixId = m_node->getMixInfo().mixId;
                     
                     TaskDialog::launch(
                         "Loading Waveforms",
@@ -464,13 +526,68 @@ namespace jucyaudio
                         TaskDialog::AutoCloseMode::Immediate,  // Close immediately on success
                         0,  // No delay needed
                         this,
-                        [this, loaderPtr, task](bool /*success*/) {
-                            // After loading completes (or user cancels)
-                            spdlog::info("[MixEditor] Waveform loading completed. Success: {}, Failed: {}", 
-                                       task->getSuccessCount(), task->getFailedTracks().size());
-                            
+                        [safeThis, expectedMixId, task](bool success) {
+                            // The task outlives nothing here (TaskDialog retains it past this call), but the
+                            // editor might: shutdown, or the user navigating to another mix while waveforms
+                            // load. Re-establish everything from the node instead of trusting captures.
+                            if (safeThis == nullptr)
+                            {
+                                return;
+                            }
+
+                            auto *self = safeThis.getComponent();
+                            if (self->m_node == nullptr || self->m_node->getMixInfo().mixId != expectedMixId)
+                            {
+                                spdlog::info("[MixEditor] Waveform loading finished for a mix that is no longer open; ignoring.");
+                                return;
+                            }
+
+                            auto &currentLoader = self->m_node->getMixProjectLoader();
+                            const auto &failedTracks = task->getFailedTracks();
+                            spdlog::info("[MixEditor] Waveform loading completed. Success: {}, Failed: {}",
+                                       task->getSuccessCount(), failedTracks.size());
+
+                            // Only failures that prove the decoder rejected the content are eligible. A
+                            // missing file, a timeout, or a failed cache write says nothing about the audio,
+                            // and must never cost the user a track.
+                            std::vector<TrackId> undecodableTrackIds;
+                            if (success) // a cancelled run has only examined part of the mix - never mutate on it
+                            {
+                                for (const auto &failure : failedTracks)
+                                {
+                                    if (database::background_tasks::WaveformLoadingTask::provesAudioUnusable(failure.kind))
+                                    {
+                                        undecodableTrackIds.push_back(failure.trackId);
+                                    }
+                                }
+                            }
+
+                            if (!success)
+                            {
+                                // Cancelled: only part of the mix was examined, so the failure list is not a
+                                // verdict on anything. The task dialog already says what happened - reporting
+                                // on top of it would both stack dialogs and overstate what is known.
+                                self->populateTimeline(&currentLoader);
+                                return;
+                            }
+
+                            const auto outcome = self->removeUndecodableTracks(currentLoader, undecodableTrackIds);
+
                             // Now populate the timeline with loaded waveforms
-                            populateTimeline(loaderPtr);
+                            self->populateTimeline(&currentLoader);
+
+                            if (outcome == RemovalOutcome::Removed)
+                            {
+                                // The engine copied the old track list when the mix was loaded; without this
+                                // it would keep playing the schedule the timeline no longer shows.
+                                if (self->m_playbackController)
+                                {
+                                    self->m_playbackController->loadMix(&currentLoader);
+                                }
+                                self->notifyMixSummaryChanged();
+                            }
+
+                            reportWaveformFailures(failedTracks, outcome, self);
                         });
                     
                     task->release(REFCOUNT_DEBUG_ARGS);
@@ -487,6 +604,113 @@ namespace jucyaudio
                 spdlog::info("[MixEditor] Waveform preloading disabled, populating timeline immediately");
                 // Waveform preloading disabled, populate immediately
                 populateTimeline(&loader);
+            }
+        }
+
+        MixEditorComponent::RemovalOutcome MixEditorComponent::removeUndecodableTracks(audio::MixProjectLoader &loader,
+            const std::vector<TrackId> &undecodableTrackIds)
+        {
+            if (undecodableTrackIds.empty())
+            {
+                return RemovalOutcome::NothingToRemove;
+            }
+
+            if (m_isReadOnly)
+            {
+                // An exported mix is a record of what was rendered. Report the bad tracks, change nothing.
+                spdlog::info("[MixEditor] Mix {} is read-only; not removing {} undecodable track(s).",
+                             loader.getMixId(), undecodableTrackIds.size());
+                return RemovalOutcome::SkippedReadOnly;
+            }
+
+            // Mirror how removeTracksFromMix resolves rows: each requested occurrence of a track id
+            // deletes one row, so a track that appears twice in the mix but failed once keeps its second
+            // instance. Counting with a set instead would over-estimate and could wrongly conclude that
+            // the mix is about to be emptied.
+            std::unordered_map<TrackId, int> pending;
+            for (const auto trackId : undecodableTrackIds)
+            {
+                ++pending[trackId];
+            }
+
+            const auto totalRows = loader.getMixTracks().size();
+            std::size_t rowsToRemove = 0;
+            for (const auto &track : loader.getMixTracks())
+            {
+                if (const auto it = pending.find(track.trackId); it != pending.end() && it->second > 0)
+                {
+                    --it->second;
+                    ++rowsToRemove;
+                }
+            }
+
+            if (rowsToRemove == 0)
+            {
+                return RemovalOutcome::NothingToRemove;
+            }
+
+            if (rowsToRemove == totalRows)
+            {
+                // Every track in the mix was rejected by the decoder. A whole mix of genuinely broken files
+                // is far less likely than something systemic - a codec that failed to initialise, say - and
+                // silently emptying the mix would be unrecoverable.
+                spdlog::warn("[MixEditor] All {} tracks in mix {} are undecodable; leaving it untouched.", totalRows, loader.getMixId());
+                return RemovalOutcome::SkippedWouldEmpty;
+            }
+
+            // removeTracksFromMix, not a hand-rolled createOrUpdateMix: it re-enumerates order_in_mix and
+            // recalculates the transitions of the pairs that become adjacent, which rewriting the track
+            // list wholesale does not.
+            if (!database::theTrackLibrary.getMixManager().removeTracksFromMix(loader.getMixId(), undecodableTrackIds))
+            {
+                spdlog::error("[MixEditor] Failed to remove undecodable tracks from mix {}.", loader.getMixId());
+                return RemovalOutcome::PersistFailed;
+            }
+
+            if (!loader.reloadFromDatabase())
+            {
+                spdlog::error("[MixEditor] Removed undecodable tracks from mix {} but could not reload it.", loader.getMixId());
+                return RemovalOutcome::ReloadFailed;
+            }
+
+            // removeTracksFromMix leaves Mixes.track_count/total_length alone, and reloading does not
+            // recompute the duration either - loadMix() just re-reads the stale column. So derive it.
+            // ponytail: removeTracksFromMix records its undo snapshot right after committing, which is
+            // still before this summary update lands - so an undo/redo round trip restores the pre-removal
+            // total_length. Only that cached number is affected; tracks, order, transitions, timeline and
+            // playback all come back correct. Fixing it properly means computing the duration inside the
+            // manager, which today cannot see the crossfade model that MixProjectLoader owns.
+            const auto newTrackCount = static_cast<int64_t>(loader.getMixTracks().size());
+            const auto newDuration = loader.calculateMixDuration();
+
+            if (!database::theTrackLibrary.getMixManager().updateMixSummary(loader.getMixId(), newTrackCount, newDuration))
+            {
+                // Not fatal: the tracks really are gone, only the cached summary is behind.
+                spdlog::warn("[MixEditor] Could not refresh the summary of mix {} after removal.", loader.getMixId());
+            }
+
+            // The loader caches MixInfo from the row it read during the reload, which still held the old
+            // figures. Bring it in step so callers reading getMixInfo() do not see the pre-removal numbers.
+            auto &cachedInfo = loader.getMixInfo();
+            cachedInfo.numberOfTracks = newTrackCount;
+            cachedInfo.totalDuration = newDuration;
+
+            spdlog::info("[MixEditor] Removed {} undecodable track(s) from mix {}.", rowsToRemove, loader.getMixId());
+            return RemovalOutcome::Removed;
+        }
+
+        void MixEditorComponent::notifyMixSummaryChanged()
+        {
+            // A structural change (track added/removed) updated the persisted mix; refresh the node's
+            // cached summary so the status bar shows the new count/duration.
+            if (m_node)
+            {
+                auto &loader = m_node->getMixProjectLoader();
+                m_node->updateSummaryMetadata(static_cast<int>(loader.getMixTracks().size()), loader.calculateMixDuration());
+            }
+            if (m_onMixSummaryChanged)
+            {
+                m_onMixSummaryChanged();
             }
         }
 

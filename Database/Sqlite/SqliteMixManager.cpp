@@ -605,6 +605,21 @@ WHERE m.export_folder IS NULL
             return false;
         }
 
+        bool SqliteMixManager::updateMixSummary(MixId mixId, int64_t trackCount, Duration_t totalLength) const
+        {
+            SqliteStatement stmt{m_db, "UPDATE Mixes SET track_count = ?, total_length = ? WHERE mix_id = ?;"};
+            stmt.addParam(trackCount);
+            stmt.addParam(durationToInt64(totalLength));
+            stmt.addParam(mixId);
+
+            if (!stmt.execute())
+            {
+                spdlog::error("Failed to update summary for mix {}: {}", mixId, m_db.getLastError());
+                return false;
+            }
+            return true;
+        }
+
         bool SqliteMixManager::removeTrackFromMix(MixId mixId, TrackId trackId) const
         {
             if (SqliteTransaction transaction{m_db})

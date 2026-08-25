@@ -95,9 +95,9 @@ namespace jucyaudio
                     progressCb(progressPercent, statusMessage);
                     
                     // Load the waveform
-                    const auto failureReason = loadWaveformFromFile(request, progressCb);
-                    
-                    if (!failureReason.has_value())
+                    const auto failure = loadWaveformFromFile(request, progressCb);
+
+                    if (!failure.has_value())
                     {
                         m_successCount++;
                         spdlog::info("[WaveformLoadingTask] Successfully loaded waveform for track {}", request.trackId);
@@ -108,9 +108,10 @@ namespace jucyaudio
                             request.trackId,
                             request.trackName,
                             request.filePath,
-                            *failureReason});
+                            failure->reason,
+                            failure->kind});
                         spdlog::warn("[WaveformLoadingTask] Failed to load waveform for track {} ({}): {}",
-                                     request.trackId, request.trackName, *failureReason);
+                                     request.trackId, request.trackName, failure->reason);
                     }
                     
                     processed++;
@@ -120,11 +121,14 @@ namespace jucyaudio
                 const auto finalMessage = buildFinalMessage(needLoadingCount);
                 
                 spdlog::info("[WaveformLoadingTask] Completed: {}", finalMessage);
-                completionCb(m_failedTracks.empty(), finalMessage);
+                // The task itself succeeded: it examined every request. Individual failures are reported
+                // through getFailedTracks(), which the caller turns into a readable list. Reporting
+                // failure here would only pin a progress dialog open on a one-line summary.
+                completionCb(true, finalMessage);
             }
 
-            std::optional<std::string> WaveformLoadingTask::loadWaveformFromFile(const WaveformRequest& request,
-                                                                                 ProgressCallback progressCb)
+            std::optional<WaveformLoadingTask::FailureDetail> WaveformLoadingTask::loadWaveformFromFile(const WaveformRequest& request,
+                                                                                                         ProgressCallback progressCb)
             {
                 (void) progressCb;
 
@@ -132,23 +136,23 @@ namespace jucyaudio
                 if (!std::filesystem::exists(request.filePath))
                 {
                     spdlog::error("[WaveformLoadingTask] File not found: {}", request.filePath.string());
-                    return "file not found";
+                    return FailureDetail{FailureKind::FileMissing, "file not found"};
                 }
                 
                 juce::File audioFile{ui::jucePathFromFs(request.filePath)};
                 if (!audioFile.existsAsFile())
                 {
                     spdlog::error("[WaveformLoadingTask] JUCE File not found: {}", audioFile.getFullPathName().toStdString());
-                    return "file not found";
+                    return FailureDetail{FailureKind::FileMissing, "file not found"};
                 }
                 
                 // Try to generate and cache the waveform
                 return generateAndCacheWaveform(request.trackId, audioFile, progressCb);
             }
 
-            std::optional<std::string> WaveformLoadingTask::generateAndCacheWaveform(TrackId trackId,
-                                                                                     const juce::File& audioFile,
-                                                                                     ProgressCallback progressCb)
+            std::optional<WaveformLoadingTask::FailureDetail> WaveformLoadingTask::generateAndCacheWaveform(TrackId trackId,
+                                                                                                             const juce::File& audioFile,
+                                                                                                             ProgressCallback progressCb)
             {
                 (void) progressCb;
 
@@ -169,7 +173,7 @@ namespace jucyaudio
                         if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() > LOAD_TIMEOUT_MS)
                         {
                             spdlog::error("[WaveformLoadingTask] Timeout loading waveform for track {}", trackId);
-                            return std::format("timed out after {} seconds", LOAD_TIMEOUT_MS / 1000);
+                            return FailureDetail{FailureKind::Timeout, std::format("timed out after {} seconds", LOAD_TIMEOUT_MS / 1000)};
                         }
                         
                         // Small sleep to avoid busy waiting
@@ -198,25 +202,26 @@ namespace jucyaudio
                         {
                             spdlog::error("[WaveformLoadingTask] Failed to save waveform to cache for track {}: {}",
                                          trackId, result.errorMessage);
-                            return "failed to save waveform cache";
+                            // The audio decoded; only writing the cache row failed. Not the file's fault.
+                            return FailureDetail{FailureKind::CacheWriteFailed, "failed to save waveform cache"};
                         }
                     }
                     else
                     {
                         spdlog::error("[WaveformLoadingTask] Generated empty waveform for track {}", trackId);
-                        return "generated empty waveform";
+                        return FailureDetail{FailureKind::EmptyWaveform, "generated empty waveform"};
                     }
                 }
                 catch (const std::exception& e)
                 {
                     spdlog::error("[WaveformLoadingTask] Exception generating waveform for track {}: {}", 
                                  trackId, e.what());
-                    return std::format("decoder error: {}", e.what());
+                    return FailureDetail{FailureKind::DecodeFailed, std::format("decoder error: {}", e.what())};
                 }
                 catch (...)
                 {
                     spdlog::error("[WaveformLoadingTask] Unknown exception generating waveform for track {}", trackId);
-                    return "unknown decoder error";
+                    return FailureDetail{FailureKind::DecodeFailed, "unknown decoder error"};
                 }
             }
 

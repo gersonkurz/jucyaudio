@@ -520,6 +520,7 @@ target_sources(jucyaudio PRIVATE
     UI/DividerComponent.cpp
     UI/DynamicToolbarComponent.cpp
     UI/SettingsDialog.cpp
+    UI/SkippedTracksDialog.cpp
     UI/JucyLookAndFeel.cpp
     UI/JucyLookAndFeel.h
     UI/TaskDialog.cpp
@@ -545,6 +546,7 @@ target_sources(jucyaudio PRIVATE
     UI/DividerComponent.h
     UI/DynamicToolbarComponent.h
     UI/SettingsDialog.h
+    UI/SkippedTracksDialog.h
     UI/SingletonDialog.h
     UI/TaskDialog.h
     UI/MainComponent.h
