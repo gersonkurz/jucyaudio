@@ -255,6 +255,45 @@ namespace
         );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_mixtracks_mix_order ON MixTracks(mix_id, order_in_mix);",
         "CREATE INDEX IF NOT EXISTS idx_mixtracks_track ON MixTracks(track_id);",
+
+        // What a mix contained when it was exported, kept so it survives the loss of what it describes.
+        //
+        // Note the deliberate asymmetry against MixTracks above: mix_id carries a cascading foreign key,
+        // track_id carries none at all.
+        //
+        // A track_id foreign key would cascade exactly when a track is deleted, destroying the rows whose
+        // whole purpose is to outlive that deletion - which is how mixes silently lost tracks in the first
+        // place. Here track_id is data, not a reference: a record of which id this used to be. It cannot be
+        // trusted as identity either, because Tracks.track_id is INTEGER PRIMARY KEY without AUTOINCREMENT
+        // and SQLite reuses the highest deleted rowid.
+        //
+        // mix_id is different. Deleting a track leaves the Mixes row alone, so this key cannot fire in the
+        // case being protected against; it fires only when the mix itself is deliberately deleted, which is
+        // what we want, and it closes the same id-reuse hole structurally rather than by convention.
+        R"SQL(
+        CREATE TABLE IF NOT EXISTS MixRecovery(
+            mix_id          INTEGER NOT NULL,
+            order_in_mix    INTEGER NOT NULL,
+            captured_at     INTEGER NOT NULL,
+            mix_name        TEXT NOT NULL,
+            track_id        INTEGER,
+            artist_name     TEXT,
+            album_title     TEXT,
+            title           TEXT,
+            filename        TEXT,
+            folder_path     TEXT,
+            duration        INTEGER,
+            filesize_bytes  INTEGER,
+            bpm             INTEGER,
+            mix_data        TEXT,
+            PRIMARY KEY (mix_id, order_in_mix),
+            FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
+        );)SQL",
+        "CREATE INDEX IF NOT EXISTS idx_mixrecovery_track ON MixRecovery(track_id);",
+        // filename + filesize is the fingerprint for recognising a file that moved: a folder reorganisation
+        // moves folders without renaming files, and internal_content_hash is empty for every track in the
+        // library, so there is no real hash to match on. A candidate key, never proof on its own.
+        "CREATE INDEX IF NOT EXISTS idx_mixrecovery_fileident ON MixRecovery(filename, filesize_bytes);",
         // Note: MixUndoHistory table removed in v22 (was never used - undo is in-memory)
         R"SQL(
         CREATE TABLE IF NOT EXISTS ExportFolders (
@@ -751,7 +790,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 26;
+            const int latestSchemaVersion = 27;
 
             if (currentVersion == 0)
             {
@@ -2556,6 +2595,72 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 26;
+            }
+
+            if (currentVersion < 27)
+            {
+                spdlog::info("Migrating database from version 26 to 27 - adding MixRecovery...");
+                // What a mix contained when it was exported, so it survives the loss of what it
+                // describes. Nothing is backfilled here: capturing the existing 1109 mixes is a
+                // deliberate one-off, not something to do silently inside a migration against a
+                // multi-gigabyte library.
+                //
+                // Table, foreign key and both indexes go in one transaction with the version stamp. A
+                // half-applied migration - the table without its indexes, or without the bump - would be
+                // worse than none, because the next run would believe the work was done.
+                if (SqliteTransaction transaction{m_db})
+                {
+                    const char *const statements[] = {
+                        R"SQL(
+        CREATE TABLE IF NOT EXISTS MixRecovery(
+            mix_id          INTEGER NOT NULL,
+            order_in_mix    INTEGER NOT NULL,
+            captured_at     INTEGER NOT NULL,
+            mix_name        TEXT NOT NULL,
+            track_id        INTEGER,
+            artist_name     TEXT,
+            album_title     TEXT,
+            title           TEXT,
+            filename        TEXT,
+            folder_path     TEXT,
+            duration        INTEGER,
+            filesize_bytes  INTEGER,
+            bpm             INTEGER,
+            mix_data        TEXT,
+            PRIMARY KEY (mix_id, order_in_mix),
+            FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
+        );)SQL",
+                        "CREATE INDEX IF NOT EXISTS idx_mixrecovery_track ON MixRecovery(track_id);",
+                        "CREATE INDEX IF NOT EXISTS idx_mixrecovery_fileident ON MixRecovery(filename, filesize_bytes);",
+                    };
+
+                    for (const auto *const statement : statements)
+                    {
+                        if (!m_db.execute(statement))
+                        {
+                            const auto error{m_db.getLastError()};
+                            transaction.rollback();
+                            return DbResult::failure(DbResultStatus::ErrorDB, "v27 MixRecovery migration failed: " + error);
+                        }
+                    }
+
+                    if (auto result = setDBSchemaVersion(27); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 27.");
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated to version 27 - MixRecovery available.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 27;
             }
 
             return DbResult::success();

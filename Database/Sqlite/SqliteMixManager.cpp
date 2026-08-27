@@ -490,6 +490,55 @@ WHERE m.export_folder IS NULL
             return mixes;
         }
 
+        DbResult SqliteMixManager::getRecoveryData(MixId mixId, std::vector<MixRecoveryEntry> &entries) const
+        {
+            // Filled locally and handed over only once the query has completed. query() returns false on
+            // a prepare, bind or step failure, and a step failure can land part way through - so
+            // assigning as we go would leave the caller holding a truncated snapshot that looks complete.
+            std::vector<MixRecoveryEntry> loaded;
+            SqliteStatement stmt{m_db};
+            const bool queryOk = stmt.query(
+                [&loaded, &stmt]() -> bool
+                {
+                    MixRecoveryEntry entry;
+                    int col = 0;
+                    entry.mixId = stmt.getInt64(col++);
+                    entry.orderInMix = stmt.getInt32(col++);
+                    entry.capturedAt = timestampFromInt64(stmt.getInt64(col++));
+                    entry.mixName = stmt.getText(col++);
+                    entry.trackId = stmt.getInt64(col++);
+                    entry.artistName = stmt.getText(col++);
+                    entry.albumTitle = stmt.getText(col++);
+                    entry.title = stmt.getText(col++);
+                    entry.filename = stmt.getText(col++);
+                    entry.folderPath = stmt.getText(col++);
+                    entry.duration = Duration_t{stmt.getInt64(col++)};
+                    entry.filesizeBytes = stmt.getInt64(col++);
+                    entry.bpm = stmt.getInt64(col++);
+                    entry.mixData = stmt.getText(col++);
+                    loaded.emplace_back(std::move(entry));
+                    return true;
+                },
+                // Columns listed rather than SELECT *, because this reads positionally and a later
+                // migration that adds a column would otherwise silently shift every field along by one.
+                "SELECT mix_id, order_in_mix, captured_at, mix_name, track_id, artist_name, album_title, title, "
+                "filename, folder_path, duration, filesize_bytes, bpm, mix_data "
+                "FROM MixRecovery WHERE mix_id=? ORDER BY order_in_mix ASC",
+                mixId);
+
+            if (!queryOk)
+            {
+                // Deliberately not "no snapshot": the caller must be able to tell a mix that was never
+                // captured from one we simply could not read.
+                return DbResult::failure(DbResultStatus::ErrorDB, "Failed to read recovery data for mix " + std::to_string(mixId) + ": " + m_db.getLastError());
+            }
+
+            // No undo bookkeeping here, unlike getMixTracks below: this is a record of the past, not a
+            // state anyone can edit or would want restored by an undo.
+            entries = std::move(loaded);
+            return DbResult::success();
+        }
+
         std::vector<MixTrack> SqliteMixManager::getMixTracks(MixId mixId) const
         {
             std::vector<MixTrack> mixTracks;

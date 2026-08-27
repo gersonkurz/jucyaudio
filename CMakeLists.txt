@@ -427,6 +427,7 @@ target_sources(jucyaudio PRIVATE
     Database/Includes/ITrackInfoScanner.h
     Database/Includes/IWorkingSetManager.h
     Database/Includes/MixInfo.h
+    Database/Includes/MixRecoveryEntry.h
     Database/Includes/ExportFolderInfo.h
     Database/Includes/TrackInfo.h
     Database/Includes/TrackMarker.h

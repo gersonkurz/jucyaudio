@@ -3,6 +3,7 @@
 #include <Audio/Includes/ActiveExportSettings.h>
 #include <Database/Includes/Constants.h>
 #include <Database/Includes/MixInfo.h>
+#include <Database/Includes/MixRecoveryEntry.h>
 #include <Database/Includes/ExportFolderInfo.h>
 #include <Database/Includes/TrackQueryArgs.h>
 #include <Database/UndoManager.h>
@@ -57,6 +58,26 @@ namespace jucyaudio
             // @param mixId The ID of the mix to retrieve tracks for.
             // @return A vector of MixTrack objects representing the tracks in the specified mix.
             virtual std::vector<MixTrack> getMixTracks(MixId mixId) const = 0;
+
+            /**
+             * @brief What this mix contained when it was last captured, in order.
+             *
+             * Reads the recovery record rather than the live mix. The two are expected to differ: the
+             * record is a snapshot, and its whole value is that it still says what the mix held after
+             * the live rows have gone.
+             *
+             * Returns a status rather than just the vector, because "this mix was never captured" and
+             * "the read failed" are both empty and mean opposite things. The first is ordinary; the
+             * second means the caller cannot conclude anything - and a caller that treats a failed read
+             * as "no snapshot exists" is exactly how a good snapshot gets overwritten or reported lost.
+             *
+             * @param mixId The mix to look up.
+             * @param entries Receives the entries, ordered by position. Assigned only on success, so a
+             *        failure leaves whatever the caller had untouched. Empty with an Ok status means the
+             *        mix has never been captured, which is not an error.
+             * @return Ok on a completed read, whether or not it found anything.
+             */
+            virtual DbResult getRecoveryData(MixId mixId, std::vector<MixRecoveryEntry> &entries) const = 0;
 
             // @brief Get the track count for a specific mix (efficient COUNT query).
             // @param mixId The ID of the mix.
