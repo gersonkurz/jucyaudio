@@ -124,6 +124,17 @@ run config=default_build_type:
     just build {{config}}
     & "build-{{arch}}-{{lowercase(config)}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe"
 
+# Headless scan self test (Windows). Runs against a throwaway config root under the build
+# directory, never the real library. Exit code is the result; details land in selftest-results.txt.
+[windows]
+selftest config=default_build_type:
+    just build {{config}}
+    if (Test-Path "build-{{arch}}-{{lowercase(config)}}/selftest-config") { Remove-Item -Recurse -Force "build-{{arch}}-{{lowercase(config)}}/selftest-config" }
+    New-Item -ItemType Directory -Force -Path "build-{{arch}}-{{lowercase(config)}}/selftest-config" | Out-Null
+    if (Test-Path "build-{{arch}}-{{lowercase(config)}}/selftest-root") { Remove-Item -Recurse -Force "build-{{arch}}-{{lowercase(config)}}/selftest-root" }
+    New-Item -ItemType Directory -Force -Path "build-{{arch}}-{{lowercase(config)}}/selftest-root" | Out-Null
+    $env:JUCYAUDIO_CONFIG = (Resolve-Path "build-{{arch}}-{{lowercase(config)}}/selftest-config").Path; $env:JUCYAUDIO_SELFTEST_ROOT = (Resolve-Path "build-{{arch}}-{{lowercase(config)}}/selftest-root").Path; $p = Start-Process -FilePath "build-{{arch}}-{{lowercase(config)}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe" -ArgumentList "--selftest-scan" -Wait -PassThru; Get-Content "build-{{arch}}-{{lowercase(config)}}/selftest-root/selftest-results.txt"; if ($p.ExitCode -ne 0) { Write-Host "SELF TEST FAILED"; exit $p.ExitCode }; Write-Host "Self test passed."
+
 # ============================================================================
 # macOS-Specific Build Commands
 # ============================================================================
@@ -166,6 +177,22 @@ build-all config="Release":
 run config=default_build_type:
     @just build {{config}}
     ./build-{{arch}}/jucyaudio_artefacts/{{config}}/JucyAudio.app/Contents/MacOS/JucyAudio
+
+# Headless scan self test (macOS). Runs against a throwaway config root under the build
+# directory, never the real library. Exit code is the result; details land in selftest-results.txt.
+[macos]
+selftest config=default_build_type:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just build {{config}}
+    conf="$PWD/build-{{arch}}/selftest-config"
+    root="$PWD/build-{{arch}}/selftest-root"
+    rm -rf "$conf" "$root" && mkdir -p "$conf" "$root"
+    code=0
+    JUCYAUDIO_CONFIG="$conf" JUCYAUDIO_SELFTEST_ROOT="$root"         ./build-{{arch}}/jucyaudio_artefacts/{{config}}/JucyAudio.app/Contents/MacOS/JucyAudio --selftest-scan || code=$?
+    cat "$root/selftest-results.txt"
+    if [ "$code" -ne 0 ]; then echo "SELF TEST FAILED"; exit "$code"; fi
+    echo "Self test passed."
 
 # ============================================================================
 # Package Commands - Windows

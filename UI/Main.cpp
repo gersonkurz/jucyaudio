@@ -18,6 +18,7 @@
 #include <Audio/Plugins/MasterPluginChainPersistence.h>
 #include <UI/Plugins/PluginWindow.h>
 #include <UI/SingletonDialog.h>
+#include <Tests/ScanSelfTest.h>
 #include <filesystem>
 #include <fstream>
 #include <tuple>
@@ -167,6 +168,19 @@ namespace jucyaudio
                 setupLogging();
                 generateSampleConfigIfNeeded();
 
+                // Headless self test: no splash, no main window, no plugin scan. Deferred to the timer
+                // like the normal startup path, because quit() needs a message loop that is running.
+                // Matched as a whole argument: this mode writes to the database and moves files about,
+                // so it must not switch on because some other argument happens to contain the text.
+                if (juce::StringArray::fromTokens(commandLine, true).contains(kSelfTestScanFlag))
+                {
+                    spdlog::info("Command line requested {}; starting headless.", kSelfTestScanFlag);
+                    m_selfTestRequested = true;
+                    m_initPhase = 1;
+                    startTimer(50);
+                    return;
+                }
+
                 spdlog::info("Creating splash screen...");
 
                 // Create splash screen
@@ -194,6 +208,12 @@ namespace jucyaudio
                 spdlog::info("Begin timerCallback");
                 stopTimer();
 
+                if (m_selfTestRequested)
+                {
+                    runSelfTestAndQuit();
+                    return;
+                }
+
                 // Load settings first to get backup configuration
                 config::TomlBackend backend{g_strConfigFilename};
                 config::theSettings.load(backend);
@@ -207,13 +227,13 @@ namespace jucyaudio
                 {
                     // Expand environment variables in configured path
                     dbPath = expandPath(configuredDbFilename);
-                    spdlog::info("Using configured database path: {}", dbPath.string());
+                    spdlog::info("Using configured database path: {}", pathToString(dbPath));
                 }
                 else
                 {
                     // Default database filename in config root
                     dbPath = m_configRoot / "jucyaudio.db";
-                    spdlog::info("Using default database path: {}", dbPath.string());
+                    spdlog::info("Using default database path: {}", pathToString(dbPath));
                 }
 
                 // Perform database backup check before the database is opened
@@ -274,6 +294,42 @@ namespace jucyaudio
             }
         private:
             std::filesystem::path m_configRoot;  // Cached config root path
+            bool m_selfTestRequested = false;
+
+            static constexpr const char *kSelfTestScanFlag = "--selftest-scan";
+
+            /// @brief Opens the database, runs the scan self test, and ends the process with its result.
+            /// Deliberately skips the plugin manager, the backup check and the theme manager: none of
+            /// them is under test, and the backup check in particular has no business running against a
+            /// scratch database that is about to be scribbled on.
+            void runSelfTestAndQuit()
+            {
+                // Settings are already loaded by setupLogging(); nothing here needs them again. Note what
+                // is deliberately absent: the configured database path is never consulted, because it may
+                // name the real library and opening a database is not a read-only act - it can run schema
+                // migrations. The self test decides its own location, and refuses to run without one.
+                std::filesystem::path selfTestRoot;
+                std::filesystem::path databasePath;
+                const auto refusal = tests::prepareSelfTestEnvironment(selfTestRoot, databasePath);
+
+                int result = 1;
+                if (!refusal.empty())
+                {
+                    spdlog::error("[SelfTest] Refusing to run: {}", refusal);
+                }
+                else if (theTrackLibrary.initialise(databasePath))
+                {
+                    result = tests::runScanSelfTest(selfTestRoot);
+                }
+                else
+                {
+                    spdlog::error("[SelfTest] TrackLibrary FAILED to initialise: {}", theTrackLibrary.getLastError());
+                }
+
+                spdlog::info("[SelfTest] Exiting with code {}.", result);
+                setApplicationReturnValue(result);
+                quit();
+            }
 
             void initializeConfigRoot()
             {
