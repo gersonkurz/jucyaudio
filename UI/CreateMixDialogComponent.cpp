@@ -6,16 +6,93 @@
 #include <UI/CreateMixDialogComponent.h>
 #include <UI/Settings.h>
 #include <UI/MainComponent.h>
+#include <UI/SkippedTracksDialog.h>
 #include <UI/TaskDialog.h>
 #include <Utils/AssortedUtils.h> // For pathToString, durationToString if needed for logging
 #include <ctime>
+#include <filesystem>
+#include <format>
 #include <iomanip>
 #include <locale>
+#include <memory>
 #include <spdlog/spdlog.h>
 #include <sstream>
 
 // Forward declare if TrackLibrary provides these directly, or include necessary headers
 // Assuming TrackLibrary provides access to IMixManager and IMixExporter
+
+namespace
+{
+    using jucyaudio::database::TrackInfo;
+    using jucyaudio::pathToString;
+
+    /// @brief How to call a track in a message: "Artist - Title", falling back as fields run out.
+    std::string describeTrack(const TrackInfo &track)
+    {
+        if (!track.artist_name.empty() && !track.title.empty())
+        {
+            return std::format("{} - {}", track.artist_name, track.title);
+        }
+        if (!track.title.empty())
+        {
+            return track.title;
+        }
+        return track.filename;
+    }
+
+    /// @brief Stats a list of files on a background thread and reports which of them are gone.
+    ///
+    /// A task rather than an inline loop because an unavailable drive is exactly the case this check
+    /// exists to catch, and a single std::filesystem::exists() against a disconnected network path can
+    /// block for an OS-level timeout. On the message thread that freezes the window, and takes the
+    /// cancel button with it.
+    ///
+    /// Results are indices into the caller's list, not paths or track ids: the caller erases from its
+    /// own vector, and a mix may legitimately contain the same track id twice.
+    class MissingFileScanTask final : public jucyaudio::database::ILongRunningTask
+    {
+    public:
+        MissingFileScanTask(std::vector<std::filesystem::path> paths, std::shared_ptr<std::vector<size_t>> missingIndices)
+            : ILongRunningTask{"Checking Files", true},
+              m_paths{std::move(paths)},
+              m_missingIndices{std::move(missingIndices)}
+        {
+        }
+
+        void run(jucyaudio::database::ProgressCallback progressCb,
+            jucyaudio::database::CompletionCallback completionCb,
+            std::atomic<bool> &shouldCancel) override
+        {
+            for (size_t i = 0; i < m_paths.size(); ++i)
+            {
+                if (shouldCancel.load())
+                {
+                    completionCb(false, "Cancelled.");
+                    return;
+                }
+
+                // Named, not just counted: if one lookup does hang, the user needs to see on what.
+                // pathToString, not path::string(): the narrow form of a Windows path is not UTF-8 and
+                // throws outright on characters the active code page cannot represent.
+                progressCb(static_cast<int>((i * 100) / m_paths.size()), std::format("Checking {}", pathToString(m_paths[i].filename())));
+
+                // The error_code overload: the throwing one would abort mix creation over a malformed
+                // path, which is precisely the case we are here to report politely.
+                std::error_code ec;
+                if (!std::filesystem::exists(m_paths[i], ec))
+                {
+                    m_missingIndices->push_back(i);
+                }
+            }
+
+            completionCb(true, std::format("Checked {} file(s), {} missing.", m_paths.size(), m_missingIndices->size()));
+        }
+
+    private:
+        std::vector<std::filesystem::path> m_paths;
+        std::shared_ptr<std::vector<size_t>> m_missingIndices;
+    };
+} // namespace
 
 namespace jucyaudio
 {
@@ -183,20 +260,137 @@ namespace jucyaudio
                 return;
             }
 
+            // Validate the name before anything expensive or interactive, so the user is never asked
+            // about missing files and only then told the name is blank.
+            if (m_mixSelectCombo.getSelectedId() == 1 && m_nameEditor.getText().trim().isEmpty())
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Invalid Mix Name", "Please enter a name for the mix.");
+                m_nameEditor.grabKeyboardFocus();
+                return;
+            }
+
+            // Paths are resolved here, on the message thread, because reconstructFullPath() reads the
+            // library's folder cache and is not for a worker to call. The resolution itself is in-memory;
+            // only the stat calls that follow can block, and those are what the task is for.
+            std::vector<std::filesystem::path> paths;
+            paths.reserve(m_tracksForMix.size());
+            for (const auto &track : m_tracksForMix)
+            {
+                paths.push_back(track.reconstructFullPath());
+            }
+
+            auto missingIndices = std::make_shared<std::vector<size_t>>();
+            auto *scanTask = new MissingFileScanTask{std::move(paths), missingIndices};
+
+            juce::Component::SafePointer<CreateMixDialogComponent> safeThis{this};
+            TaskDialog::launch("Checking Files",
+                scanTask,
+                TaskDialog::AutoCloseMode::Immediate,
+                0,
+                this,
+                [safeThis, missingIndices](bool success)
+                {
+                    if (safeThis == nullptr)
+                    {
+                        return;
+                    }
+
+                    auto *self = safeThis.getComponent();
+                    if (!success)
+                    {
+                        // Cancelled part-way, so the list is not a verdict on anything. Creating the mix
+                        // now would be a guess about the files we never got to.
+                        spdlog::info("Mix creation aborted: the missing-file check was cancelled.");
+                        self->closeThisDialog(false);
+                        return;
+                    }
+
+                    self->onMissingFilesKnown(*missingIndices);
+                });
+
+            // Balances the reference ILongRunningTask starts with; TaskDialog took its own in its ctor.
+            scanTask->release(REFCOUNT_DEBUG_ARGS);
+        }
+
+        void CreateMixDialogComponent::onMissingFilesKnown(const std::vector<size_t> &missingIndices)
+        {
+            if (missingIndices.empty())
+            {
+                proceedWithSelectedTarget();
+                return;
+            }
+
+            spdlog::warn("{} of {} track(s) selected for the mix have no file on disk.", missingIndices.size(), m_tracksForMix.size());
+
+            std::vector<SkippedTracksDialog::Entry> entries;
+            entries.reserve(missingIndices.size());
+            for (const auto index : missingIndices)
+            {
+                const auto &track = m_tracksForMix[index];
+                entries.push_back(SkippedTracksDialog::Entry{describeTrack(track), track.reconstructFullPath(), "file not found"});
+            }
+
+            if (missingIndices.size() == m_tracksForMix.size())
+            {
+                // Dropping them all would leave nothing to create, and every file being gone points at an
+                // offline drive rather than at the tracks. Report and leave the selection alone.
+                SkippedTracksDialog::show("Tracks Not Found",
+                    juce::String{static_cast<int>(entries.size())} + " track(s) selected for this mix have no file on disk - that is all of them,"
+                        " which usually means the drive they live on is not available. No mix was created.",
+                    entries,
+                    this);
+                closeThisDialog(false);
+                return;
+            }
+
+            const auto remaining = m_tracksForMix.size() - missingIndices.size();
+            juce::String summary{juce::String{static_cast<int>(entries.size())} + " of " + juce::String{static_cast<int>(m_tracksForMix.size())}
+                + " track(s) have no file on disk. They cannot be mixed or exported."
+                  " Continue with the remaining " + juce::String{static_cast<int>(remaining)} + ", or cancel and put the files back first?"};
+
+            // Nothing has been written yet: cancelling here simply creates no mix, so there is nothing
+            // to roll back and the tracks stay in the working set untouched.
+            juce::Component::SafePointer<CreateMixDialogComponent> safeThis{this};
+            const std::vector<size_t> missingCopy{missingIndices};
+            SkippedTracksDialog::showConfirm("Tracks Not Found",
+                summary,
+                entries,
+                "Continue Without Them",
+                "Cancel",
+                this,
+                [safeThis, missingCopy](bool confirmed)
+                {
+                    if (safeThis == nullptr)
+                    {
+                        return;
+                    }
+
+                    auto *self = safeThis.getComponent();
+                    if (!confirmed)
+                    {
+                        spdlog::info("Mix creation cancelled: the user chose to resolve the missing files first.");
+                        self->closeThisDialog(false);
+                        return;
+                    }
+
+                    // Back to front, so each erase leaves the lower indices valid.
+                    for (auto it = missingCopy.rbegin(); it != missingCopy.rend(); ++it)
+                    {
+                        self->m_tracksForMix.erase(self->m_tracksForMix.begin() + static_cast<std::ptrdiff_t>(*it));
+                    }
+                    spdlog::info("Continuing mix creation with {} track(s) after dropping the missing ones.", self->m_tracksForMix.size());
+                    self->proceedWithSelectedTarget();
+                });
+        }
+
+        void CreateMixDialogComponent::proceedWithSelectedTarget()
+        {
             int selectedId = m_mixSelectCombo.getSelectedId();
 
             if (selectedId == 1)
             {
-                // Create new mix
-                juce::String mixNameJuce = m_nameEditor.getText().trim();
-                if (mixNameJuce.isEmpty())
-                {
-                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Invalid Mix Name", "Please enter a name for the mix.");
-                    m_nameEditor.grabKeyboardFocus();
-                    return;
-                }
-
-                std::string mixNameStd = mixNameJuce.toStdString();
+                // Create new mix. The name was validated in handleCreateMix() before we got here.
+                std::string mixNameStd = m_nameEditor.getText().trim().toStdString();
                 spdlog::info("Attempting to create auto-mix with name: '{}' from {} tracks.", mixNameStd, m_tracksForMix.size());
 
                 const bool useSmartAutomix = config::theSettings.mixEditingSettings.useSmartAutomix.get();

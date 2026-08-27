@@ -49,6 +49,16 @@ namespace jucyaudio
         private:
             void closeThisDialog(bool success);
             void handleCreateMix();
+
+            /// @brief Acts on the result of the background missing-file scan.
+            /// @param missingIndices Indices into m_tracksForMix whose file is not on disk; may be empty.
+            void onMissingFilesKnown(const std::vector<size_t> &missingIndices);
+
+            /// @brief Everything handleCreateMix() does once the track list is settled.
+            /// Split out so the missing-file check can run first and, if the user chooses to go ahead
+            /// without them, re-enter here with those tracks already dropped from m_tracksForMix.
+            void proceedWithSelectedTarget();
+
             void handleCancel();
             void finishMixCreation(const std::string& mixName);
             void finishAppendToMix(const database::MixInfo& targetMix);

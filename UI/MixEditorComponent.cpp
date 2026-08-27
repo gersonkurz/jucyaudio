@@ -46,7 +46,10 @@ namespace
             // property of this failure's kind, so a duplicated id with mixed kinds cannot be mis-tagged.
             const bool wasRemoved = didRemove && WaveformLoadingTask::provesAudioUnusable(failure.kind);
             removedCount += wasRemoved ? 1 : 0;
-            entries.push_back(SkippedTracksDialog::Entry{failure.trackName, failure.filePath, failure.reason, wasRemoved});
+            entries.push_back(SkippedTracksDialog::Entry{failure.trackName,
+                failure.filePath,
+                failure.reason,
+                wasRemoved ? SkippedTracksDialog::Disposition::Removed : SkippedTracksDialog::Disposition::Kept});
         }
 
         const auto total = juce::String{static_cast<int>(entries.size())};

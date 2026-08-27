@@ -26,7 +26,12 @@ namespace jucyaudio
 {
     namespace ui
     {
-        SkippedTracksDialog::SkippedTracksDialog(const juce::String &summary, const std::vector<Entry> &entries)
+        SkippedTracksDialog::SkippedTracksDialog(const juce::String &summary,
+            const std::vector<Entry> &entries,
+            const juce::String &confirmButtonText,
+            const juce::String &cancelButtonText,
+            OnChoice onChoice)
+            : m_onChoice{std::move(onChoice)}
         {
             m_summaryLabel.setText(summary, juce::dontSendNotification);
             m_summaryLabel.setJustificationType(juce::Justification::topLeft);
@@ -40,9 +45,21 @@ namespace jucyaudio
                     text << juce::newLine;
                 }
 
+                switch (entry.disposition)
+                {
+                case Disposition::Removed:
+                    text << "[removed] ";
+                    break;
+                case Disposition::Kept:
+                    text << "[kept]    ";
+                    break;
+                case Disposition::NotApplicable:
+                    break;
+                }
+
                 // jucePathFromFs, not path.string(): the narrow form of a Windows path is not UTF-8, so
                 // non-ASCII paths would display and copy wrongly.
-                text << (entry.removedFromMix ? "[removed] " : "[kept]    ") << juce::String::fromUTF8(entry.name.c_str()) << juce::newLine
+                text << juce::String::fromUTF8(entry.name.c_str()) << juce::newLine
                      << "    " << jucePathFromFs(entry.path) << juce::newLine
                      << "    (" << juce::String::fromUTF8(entry.reason.c_str()) << ")" << juce::newLine;
             }
@@ -56,16 +73,59 @@ namespace jucyaudio
             m_listEditor.setText(text, false);
             addAndMakeVisible(m_listEditor);
 
-            m_closeButton.onClick = [this]()
+            if (confirmButtonText.isNotEmpty())
             {
-                if (auto *window = findParentComponentOfClass<juce::DialogWindow>())
+                m_confirmButton.setButtonText(confirmButtonText);
+                m_confirmButton.onClick = [this]()
                 {
-                    window->closeButtonPressed();
-                }
+                    reportChoice(true);
+                    closeEnclosingWindow();
+                };
+                addAndMakeVisible(m_confirmButton);
+            }
+
+            m_cancelButton.setButtonText(cancelButtonText);
+            m_cancelButton.onClick = [this]()
+            {
+                reportChoice(false);
+                closeEnclosingWindow();
             };
-            addAndMakeVisible(m_closeButton);
+            addAndMakeVisible(m_cancelButton);
 
             setSize(760, 420);
+        }
+
+        SkippedTracksDialog::~SkippedTracksDialog()
+        {
+            // Escape and the title-bar close button destroy the window without going through either
+            // button, so the caller would otherwise wait forever for an answer that never comes.
+            reportChoice(false);
+        }
+
+        void SkippedTracksDialog::reportChoice(bool confirmed)
+        {
+            if (m_choiceReported || !m_onChoice)
+            {
+                return;
+            }
+            m_choiceReported = true;
+
+            // Deferred rather than called here: this also runs from the destructor, and the caller is
+            // free to open another dialog in response, which must not happen while this one is being
+            // torn down.
+            juce::MessageManager::callAsync(
+                [callback = std::move(m_onChoice), confirmed]()
+                {
+                    callback(confirmed);
+                });
+        }
+
+        void SkippedTracksDialog::closeEnclosingWindow()
+        {
+            if (auto *window = findParentComponentOfClass<juce::DialogWindow>())
+            {
+                window->closeButtonPressed();
+            }
         }
 
         void SkippedTracksDialog::resized()
@@ -76,7 +136,12 @@ namespace jucyaudio
             bounds.removeFromTop(kMargin / 2);
 
             auto buttonRow = bounds.removeFromBottom(kButtonHeight);
-            m_closeButton.setBounds(buttonRow.removeFromRight(kButtonWidth));
+            m_cancelButton.setBounds(buttonRow.removeFromRight(juce::jmax(kButtonWidth, m_cancelButton.getBestWidthForHeight(kButtonHeight))));
+            if (m_confirmButton.isVisible())
+            {
+                buttonRow.removeFromRight(kButtonGap);
+                m_confirmButton.setBounds(buttonRow.removeFromRight(juce::jmax(kButtonWidth, m_confirmButton.getBestWidthForHeight(kButtonHeight))));
+            }
             bounds.removeFromBottom(kMargin / 2);
 
             m_listEditor.setBounds(bounds);
@@ -92,14 +157,44 @@ namespace jucyaudio
                 return;
             }
 
+            launch(title, new SkippedTracksDialog{summary, entries, {}, "Close", {}}, parent);
+        }
+
+        void SkippedTracksDialog::showConfirm(const juce::String &title,
+            const juce::String &summary,
+            const std::vector<Entry> &entries,
+            const juce::String &confirmButtonText,
+            const juce::String &cancelButtonText,
+            juce::Component *parent,
+            OnChoice onChoice)
+        {
+            if (entries.empty())
+            {
+                // Nothing to object to, so there is nothing to ask about.
+                if (onChoice)
+                {
+                    onChoice(true);
+                }
+                return;
+            }
+
+            launch(title, new SkippedTracksDialog{summary, entries, confirmButtonText, cancelButtonText, std::move(onChoice)}, parent);
+        }
+
+        void SkippedTracksDialog::launch(const juce::String &title, SkippedTracksDialog *content, juce::Component *parent)
+        {
             juce::DialogWindow::LaunchOptions options;
             options.dialogTitle = title;
-            options.content.setOwned(new SkippedTracksDialog{summary, entries});
+            options.content.setOwned(content);
             options.componentToCentreAround = parent;
             options.escapeKeyTriggersCloseButton = true;
             options.useNativeTitleBar = true;
             options.resizable = true;
 
+            // launchAsync() enters a modal state, so this stacks correctly on top of an already-modal
+            // parent. Topmost handling is JUCE's: DefaultDialogWindow's constructor does
+            // setAlwaysOnTop(areThereAnyAlwaysOnTopWindows()), so this inherits it from a topmost parent
+            // without forcing it over unrelated applications when there is none.
             options.launchAsync();
         }
 
