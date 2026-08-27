@@ -38,7 +38,34 @@ namespace jucyaudio
             void buttonClicked(juce::Button *button) override;
             void timerCallback() override;
 
-            // Enhanced static launcher with clearer API
+            /**
+             * @brief Enhanced static launcher with clearer API.
+             *
+             * Ownership: this does NOT take over the caller's reference. ILongRunningTask starts at a
+             * refcount of 1, and TaskDialog takes a second one of its own, dropped when the dialog is
+             * destroyed. The caller must therefore release its initial reference once it has launched:
+             *
+             * @code
+             *     auto *task = new SomeTask{...};
+             *     TaskDialog::launch("Title", task, ...);
+             *     task->release(REFCOUNT_DEBUG_ARGS);
+             * @endcode
+             *
+             * Without that release the task is never destroyed.
+             *
+             * If the completion callback needs task-specific results, capture the task pointer without
+             * retaining it: TaskDialog keeps the task alive until the callback returns.
+             *
+             * @param windowTitle Dialog title; falls back to the task's own name when empty.
+             * @param taskToRun The task. Must not be null. See the ownership note above.
+             * @param closeMode Whether and how quickly the dialog closes once the task succeeds.
+             * @param delayMs Auto-close delay, used by AutoCloseMode::WithDelay.
+             * @param parentToCenterOn Component to centre on; may be null.
+             * @param onCompletion Runs on the message thread when TaskDialog processes task completion.
+             *        It is NOT called if the dialog is destroyed first - closing the window with its
+             *        title-bar button cancels the task and discards the callback, so a caller that is
+             *        waiting on the answer to decide what to do next will simply never hear back.
+             */
             static void launch(const juce::String &windowTitle,
                 database::ILongRunningTask *taskToRun,
                 AutoCloseMode closeMode = AutoCloseMode::NoAutoClose,

@@ -524,6 +524,8 @@ namespace jucyaudio
             auto *task = new ScanRootsTask{std::move(idsToScan), std::move(rootIdsToScan), force, shouldRemove, onScanCompleteCallback};
 
             TaskDialog::launch("Scanning Library", task, TaskDialog::AutoCloseMode::NoAutoClose, 500, this);
+
+            task->release(REFCOUNT_DEBUG_ARGS);
         }
     } // namespace ui
 } // namespace jucyaudio

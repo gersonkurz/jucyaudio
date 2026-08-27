@@ -413,8 +413,6 @@ namespace jucyaudio
                 {
                     // Run energy analysis task with progress dialog, then create mix
                     auto* analysisTask = new database::background_tasks::EnergyAnalysisTask(m_tracksForMix);
-                    // Retain task so we can check wasSuccessful() in the callback
-                    analysisTask->retain();
 
                     // Capture what we need for the completion callback
                     juce::Component::SafePointer<CreateMixDialogComponent> safeThis = this;
@@ -426,10 +424,9 @@ namespace jucyaudio
                         TaskDialog::AutoCloseMode::Immediate,
                         0,
                         this,
-                        [safeThis, capturedMixName, analysisTask](bool success)
+                        [safeThis, capturedMixName](bool success)
                         {
                             // This runs on the message thread after analysis completes (or is cancelled)
-                            analysisTask->release(); // Balance the retain above
                             if (safeThis && success)
                             {
                                 safeThis->finishMixCreation(capturedMixName);
@@ -440,6 +437,8 @@ namespace jucyaudio
                                 safeThis->closeThisDialog(false);
                             }
                         });
+
+                    analysisTask->release(REFCOUNT_DEBUG_ARGS);
                 }
                 else
                 {
@@ -521,6 +520,8 @@ namespace jucyaudio
                                 safeThis->closeThisDialog(false);
                             }
                         });
+
+                    analysisTask->release(REFCOUNT_DEBUG_ARGS);
                 }
                 else
                 {
