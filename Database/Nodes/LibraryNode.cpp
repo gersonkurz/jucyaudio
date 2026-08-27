@@ -298,27 +298,43 @@ namespace jucyaudio
                             rowIndex, (void*)track, track ? track->trackId : -1);
             }
 
-            RenderState state = RenderState::Normal;
-            if (track != nullptr)
-            {
-                // Check if this is an MP3 track by looking at the filename extension
-                // TODO: codec_name field is empty in database - should be populated during scanning
-                const auto& filename = track->filename;
-                const bool isMp3 = (filename.size() >= 4 &&
-                                   (filename.substr(filename.size() - 4) == ".mp3" ||
-                                    filename.substr(filename.size() - 4) == ".MP3"));
-
-                // MP3 tracks below 320 kbps are shown in subdued (gray) color to make high-quality tracks stand out
-                if (isMp3 && track->bitrate < 320)
-                {
-                    state = RenderState::Subdued;
-                }
-            }
-
             return {
                 .text = getCellText(rowIndex, columnIndex),
-                .state = state
+                .state = renderStateForTrack(track)
             };
+        }
+
+        RenderState LibraryNode::renderStateForTrack(const TrackInfo *track)
+        {
+            if (track == nullptr)
+            {
+                return RenderState::Normal;
+            }
+
+            // Missing is checked first, and outranks everything below it. A missing 128 kbps MP3 is a
+            // problem because it is missing, not because it is 128 kbps, and Subdued would bury exactly
+            // the row the user needs to see. Accent rather than Inactive: Inactive is a hardcoded grey
+            // that is all but indistinguishable from Subdued in a dark theme, so a missing low-bitrate
+            // MP3 would look no different from a present one.
+            if (track->is_missing)
+            {
+                return RenderState::Accent;
+            }
+
+            // Check if this is an MP3 track by looking at the filename extension
+            // TODO: codec_name field is empty in database - should be populated during scanning
+            const auto& filename = track->filename;
+            const bool isMp3 = (filename.size() >= 4 &&
+                               (filename.substr(filename.size() - 4) == ".mp3" ||
+                                filename.substr(filename.size() - 4) == ".MP3"));
+
+            // MP3 tracks below 320 kbps are shown in subdued (gray) color to make high-quality tracks stand out
+            if (isMp3 && track->bitrate < 320)
+            {
+                return RenderState::Subdued;
+            }
+
+            return RenderState::Normal;
         }
 
         std::string LibraryNode::getCellTextForTrack(const TrackInfo* track, ColumnIndex_t index) const

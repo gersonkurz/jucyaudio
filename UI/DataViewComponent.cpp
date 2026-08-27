@@ -279,8 +279,17 @@ namespace jucyaudio
             spdlog::info("DataViewComponent::setCurrentNode took {} ms", duration.count());
         }
 
-        void DataViewComponent::refreshView()
+        void DataViewComponent::refreshView(bool flushNodeCache)
         {
+            if (flushNodeCache && m_currentNode != nullptr)
+            {
+                // updateContent() re-reads the row count and repaints, but the node is still holding the
+                // rows it fetched when it was selected. Anything changed in the database underneath it -
+                // is_missing after a library scan, say - would otherwise stay invisible until the user
+                // navigated away and back. Only the callers that know the data moved ask for this: the
+                // rest refresh on every keystroke of a filter, and re-querying there would be felt.
+                m_currentNode->refreshCache(true);
+            }
             m_tableListBox.updateContent();
         }
 

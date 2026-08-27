@@ -40,6 +40,16 @@ namespace jucyaudio
             // Helper method for derived classes to get cell text for a track without virtual dispatch
             std::string getCellTextForTrack(const TrackInfo* track, ColumnIndex_t index) const;
 
+            /// @brief How a track's row should be drawn, wherever it is being drawn.
+            ///
+            /// Static so a derived node can reach it without virtual dispatch - VirtualFolderNode has to
+            /// adjust the row index itself and cannot route through getCellRenderInfo() for that reason.
+            /// It previously kept its own copy of this logic, which is how the two came to disagree.
+            ///
+            /// @param track The track, or nullptr for a row that has none.
+            /// @return The state the UI should theme the row with.
+            static RenderState renderStateForTrack(const TrackInfo *track);
+
         private:
 
             // INavigationNode interface

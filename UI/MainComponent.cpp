@@ -3736,10 +3736,13 @@ namespace jucyaudio
                     rootNavigationNode->release(REFCOUNT_DEBUG_ARGS); // Release the root node after use
                 }
 
-                // Also refresh the data view of the currently selected node
+                // Also refresh the data view of the currently selected node. The loop above flushes the
+                // root's immediate children, which covers the Library node but not a nested working set
+                // or virtual folder the user happens to be sitting in - and a scan is exactly when
+                // is_missing changes underneath them.
                 if (m_currentMainView == MainViewType::DataView)
                 {
-                    m_dataViewComponent.refreshView();
+                    m_dataViewComponent.refreshView(true);
                 }
             };
 
@@ -3766,10 +3769,11 @@ namespace jucyaudio
                     }
                     rootNavigationNode->release(REFCOUNT_DEBUG_ARGS); // Release the root node after use
                 }
-                // If we are in DataView, we refresh it.
+                // If we are in DataView, we refresh it. Flushing for the same reason as on scan
+                // completion: a scan may have run while the dialog was open.
                 if (m_currentMainView == MainViewType::DataView)
                 {
-                    m_dataViewComponent.refreshView();
+                    m_dataViewComponent.refreshView(true);
                 }
 
                 m_statusPanel.getStatusBar().postMessage("Scan dialog closed.", false);

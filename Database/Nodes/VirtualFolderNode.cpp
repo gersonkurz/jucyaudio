@@ -335,26 +335,12 @@ namespace jucyaudio
                 // Call base class getTrackInfoForRow directly (not via virtual dispatch)
                 const auto track = LibraryNode::getTrackInfoForRow(adjustedIndex);
 
-                RenderState state = RenderState::Normal;
-                if (track != nullptr)
-                {
-                    // Check if this is an MP3 track by looking at the filename extension
-                    const auto& filename = track->filename;
-                    const bool isMp3 = (filename.size() >= 4 &&
-                                       (filename.substr(filename.size() - 4) == ".mp3" ||
-                                        filename.substr(filename.size() - 4) == ".MP3"));
-
-                    // MP3 tracks below 320 kbps are shown in subdued (gray) color
-                    if (isMp3 && track->bitrate < 320)
-                    {
-                        state = RenderState::Subdued;
-                    }
-                }
-
-                // Use getCellTextForTrack to avoid virtual dispatch issues
+                // Both of these avoid virtual dispatch, for the same reason the row index had to be
+                // adjusted by hand above. renderStateForTrack is static and shared with LibraryNode, so
+                // the two cannot drift apart - this used to be a second copy of the same rules.
                 CellRenderInfo result = {
                     .text = LibraryNode::getCellTextForTrack(track, columnIndex),
-                    .state = state
+                    .state = LibraryNode::renderStateForTrack(track)
                 };
 
                 if (columnIndex == 0)

@@ -105,7 +105,11 @@ namespace jucyaudio
             {
                 return m_currentNode;
             }
-            void refreshView();
+            /// @brief Repaint the table.
+            /// @param flushNodeCache Also discard the node's cached rows and re-query them. Needed after
+            ///        something outside the view changed the database - a library scan, say. Defaults to
+            ///        false because most callers are only reacting to a selection or filter change.
+            void refreshView(bool flushNodeCache = false);
 
             // Callback for row actions
             RowActionCallback m_onRowActionRequested;
