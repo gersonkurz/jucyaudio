@@ -50,6 +50,11 @@ namespace jucyaudio
 
         bool SqliteDatabase::execute(std::string_view statement)
         {
+            // The same recursive mutex SqliteStatement takes, so a direct execute cannot slip between
+            // the statements of an immediate transaction that is holding it. Recursive, so a transaction
+            // holding the mutex can still issue its own BEGIN, COMMIT and ROLLBACK through here.
+            const std::lock_guard<std::recursive_mutex> lock{m_mutex};
+
             spdlog::debug("SqliteDatabase executing SQL: {}", statement);
             char *lpszErrorMessage = nullptr;
             int rc = sqlite3_exec(m_db, statement.data(), nullptr, 0, &lpszErrorMessage);

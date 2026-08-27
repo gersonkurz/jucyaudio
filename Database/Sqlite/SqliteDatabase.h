@@ -2,6 +2,7 @@
 
 #include <Database/Sqlite/sqlite3.h>
 #include <spdlog/spdlog.h>
+#include <mutex>
 #include <string>
 #include <string_view>
 
