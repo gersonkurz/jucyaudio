@@ -298,10 +298,14 @@ namespace jucyaudio
                     auto *self = safeThis.getComponent();
                     if (!success)
                     {
-                        // Cancelled part-way, so the list is not a verdict on anything. Creating the mix
-                        // now would be a guess about the files we never got to.
-                        spdlog::info("Mix creation aborted: the missing-file check was cancelled.");
-                        self->closeThisDialog(false);
+                        // Cancelled part-way, so the list is not a verdict on anything and going ahead
+                        // would be a guess about the files we never reached. That is a reason not to
+                        // continue, not a reason to throw away the mix: nothing has been written yet, so
+                        // leaving this dialog open keeps the typed name and the target selection and lets
+                        // the user simply press Create again. Closing the task dialog with its title-bar
+                        // button lands here too - by discarding the callback rather than by running it -
+                        // so both gestures now end in the same place.
+                        spdlog::info("Missing-file check did not complete; returning to Create Mix.");
                         return;
                     }
 
