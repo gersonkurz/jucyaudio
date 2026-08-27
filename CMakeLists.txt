@@ -401,7 +401,9 @@ target_sources(jucyaudio PRIVATE
     Database/BackgroundTasks/TransitionCalculator.cpp
     Database/BackgroundTasks/TransitionCalculator.h
     Database/BackgroundTasks/WaveformLoadingTask.cpp
+    Database/BackgroundTasks/MissingFileCheckTask.cpp
     Database/BackgroundTasks/WaveformLoadingTask.h
+    Database/BackgroundTasks/MissingFileCheckTask.h
     
     # Database includes
     UI/ILongRunningTask.h

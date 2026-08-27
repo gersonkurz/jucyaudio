@@ -21,6 +21,7 @@
 #include <UI/TrackDetailsDialog.h>
 #include <Database/DatabaseBackupManager.h>
 #include <UI/ColumnConfiguratorDialog.h>
+#include <Database/BackgroundTasks/MissingFileCheckTask.h>
 #include <UI/CreateMixDialogComponent.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/EditMixMetaDataDialog.h>
@@ -1907,6 +1908,9 @@ namespace jucyaudio
             case DataAction::RunBpmAnalysis:
                 onRunBpmAnalysisForSelectedRows();
                 break;
+            case DataAction::CheckFilesOnDisk:
+                onCheckFilesForSelectedRows();
+                break;
             case DataAction::ShowDetails:
             {
                 if (!m_currentNode)
@@ -2050,6 +2054,107 @@ namespace jucyaudio
                     m_dataViewComponent.refreshView();
                 });
             task->release(REFCOUNT_DEBUG_ARGS);
+        }
+
+        void MainComponent::onCheckFilesForSelectedRows()
+        {
+            if (!m_currentNode)
+            {
+                return;
+            }
+
+            const auto selectedRows = m_dataViewComponent.getSelectedRowIndices();
+            if (selectedRows.empty())
+            {
+                m_statusPanel.getStatusBar().postMessage("No rows selected to check.", true);
+                return;
+            }
+
+            auto trackResult = m_currentNode->getTrackInfosForOperation(selectedRows);
+            if (trackResult.trackInfos.empty())
+            {
+                m_statusPanel.getStatusBar().postMessage(trackResult.nonApplicableCount > 0 ? "The selected items are not tracks." : "No tracks selected to check.",
+                    true);
+                return;
+            }
+
+            checkFilesForTracks(std::move(trackResult.trackInfos));
+        }
+
+        void MainComponent::checkFilesForTracks(std::vector<TrackInfo> tracks)
+        {
+            // Paths are resolved here, on the message thread: reconstructFullPath() reads the library's
+            // folder cache, which a worker has no business touching. The worker gets plain values and
+            // only stats and updates.
+            std::vector<background_tasks::MissingFileCheckTask::WorkItem> items;
+            items.reserve(tracks.size());
+            for (const auto &track : tracks)
+            {
+                items.push_back({track.trackId, track.reconstructFullPath(), track.filename, track.is_missing});
+            }
+
+            const auto trackCount = items.size();
+
+            // Refreshing is driven by the task rather than by the dialog's completion callback, because
+            // that callback is discarded if the window is closed with its title-bar button - and tracks
+            // are committed one at a time, so an abandoned run still leaves rows corrected in the
+            // database and stale on screen.
+            juce::Component::SafePointer<MainComponent> safeThis{this};
+            auto *task = new background_tasks::MissingFileCheckTask{std::move(items),
+                [safeThis]()
+                {
+                    // Called on the worker thread; the view belongs to the message thread.
+                    juce::MessageManager::callAsync(
+                        [safeThis]()
+                        {
+                            if (safeThis != nullptr)
+                            {
+                                safeThis->m_dataViewComponent.refreshView(true);
+                            }
+                        });
+                }};
+
+            TaskDialog::launch("Checking Files",
+                task,
+                TaskDialog::AutoCloseMode::Immediate,
+                0,
+                this,
+                [this, task](bool success)
+                {
+                    // Only the summary message lives here. The refresh above happens either way; losing
+                    // this line when the user dismisses the dialog is no loss.
+                    if (!success)
+                    {
+                        return;
+                    }
+
+                    const auto recovered = task->getRecoveredCount();
+                    const auto newlyMissing = task->getNewlyMissingCount();
+                    const auto stillMissing = task->getStillMissingCount();
+
+                    if (recovered == 0 && newlyMissing == 0)
+                    {
+                        m_statusPanel.getStatusBar().postMessage(
+                            stillMissing > 0 ? std::format("Nothing changed; {} track(s) are still missing.", stillMissing) : "All files are where they should be.",
+                            stillMissing > 0);
+                        return;
+                    }
+
+                    std::string message;
+                    if (recovered > 0)
+                    {
+                        message = std::format("{} track(s) found again", recovered);
+                    }
+                    if (newlyMissing > 0)
+                    {
+                        message += message.empty() ? "" : ", ";
+                        message += std::format("{} track(s) now missing", newlyMissing);
+                    }
+                    m_statusPanel.getStatusBar().postMessage(message + ".", newlyMissing > 0);
+                });
+
+            task->release(REFCOUNT_DEBUG_ARGS);
+            spdlog::info("Checking {} track(s) for missing files.", trackCount);
         }
 
         void MainComponent::onRunBpmAnalysisForSelectedRows()

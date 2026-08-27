@@ -53,7 +53,8 @@ namespace jucyaudio
             DataAction::ShowDetails,
             DataAction::CopyToClipboard,
             DataAction::DeleteTracksFromLibrary,
-            DataAction::RunBpmAnalysis};
+            DataAction::RunBpmAnalysis,
+            DataAction::CheckFilesOnDisk};
 
         const std::vector<DataColumn> LibraryColumns = {
             DataColumn{(ColumnIndex_t)Column::Title, "title", "Title", 200, ColumnAlignment::Left, ColumnDataTypeHint::String},

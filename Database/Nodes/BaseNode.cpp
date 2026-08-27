@@ -293,6 +293,13 @@ namespace jucyaudio
             // Default implementation: check if this row has a track
             const auto* trackInfo = getTrackInfoForRow(rowIndex);
             if (trackInfo) {
+                // A track we already know is gone cannot be played. Double-clicking it is much more
+                // likely to mean "I put this back, look again" than "play me some silence".
+                if (trackInfo->is_missing) {
+                    return {
+                        .type = RowActivationResultType::CheckTrackFile
+                    };
+                }
                 return {
                     .type = RowActivationResultType::PlayTrack
                 };

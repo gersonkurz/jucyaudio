@@ -44,6 +44,8 @@ namespace jucyaudio
                 return "Remove Tracks";
             case DataAction::RunBpmAnalysis:
                 return "Run BPM Analysis";
+            case DataAction::CheckFilesOnDisk:
+                return "Check Files on Disk";
             case DataAction::ShowMixEditor:
                 return "Show Mix Editor";
             case DataAction::ShowTrackEditor:
@@ -162,6 +164,9 @@ namespace jucyaudio
                 return loadSvg(BinaryData::export_mix_svg, BinaryData::export_mix_svgSize); // Placeholder
             case DataAction::RunBpmAnalysis:
                 return loadSvg(BinaryData::run_bpm_analysis_svg, BinaryData::run_bpm_analysis_svgSize); // Placeholder
+            case DataAction::CheckFilesOnDisk:
+                // No icon of its own yet; the scan glyph is the closest thing in the set.
+                return loadSvg(BinaryData::scan_folders_svg, BinaryData::scan_folders_svgSize);
             case DataAction::ShowMixEditor:
                 return loadSvg(BinaryData::show_mix_editor_svg, BinaryData::show_mix_editor_svgSize); // Placeholder
             case DataAction::ShowTrackEditor:

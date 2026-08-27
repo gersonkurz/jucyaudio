@@ -449,26 +449,12 @@ namespace jucyaudio
             }
             else
             {
-                // Regular track - adjust index and get track directly to avoid virtual dispatch issues
-                int64_t trackOffset = 0;
-                if (hasParent())
-                    trackOffset++;
-                trackOffset += getChildFolderCount();
-                int64_t adjustedIndex = rowIndex - trackOffset;
-
-                spdlog::info("  Track row - rowIndex: {}, adjustedIndex: {}", rowIndex, adjustedIndex);
-
-                // Get track directly from LibraryNode without virtual dispatch
-                const auto* trackInfo = LibraryNode::getTrackInfoForRow(adjustedIndex);
-                if (trackInfo)
-                {
-                    spdlog::info("  Playing track: {} (ID: {})", trackInfo->title, trackInfo->trackId);
-                    return {
-                        .type = RowActivationResultType::PlayTrack
-                    };
-                }
-
-                spdlog::warn("  No track found at adjusted index: {}", adjustedIndex);
+                // Regular track. Delegate with the ORIGINAL row index rather than deciding here: the base
+                // looks the track up through the virtual getTrackInfoForRow(), which is this class's
+                // override and applies the parent/child-folder offset itself - so the adjustment happens
+                // exactly once. Deciding locally is how this branch came to still answer PlayTrack for a
+                // track the base had already learned to treat as missing.
+                return BaseNode::onRowActivated(rowIndex);
             }
 
             return result;

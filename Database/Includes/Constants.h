@@ -227,6 +227,7 @@ namespace jucyaudio
             ShowMasterEffects,      ///< Show/hide the master effects chain editor
             ToggleMasterEffectsBypass, ///< Toggle global bypass for the master effects chain
             UnlockMixForEditing,    ///< Unlock an exported/locked mix for editing
+            CheckFilesOnDisk,       ///< Re-check whether the selected tracks' files are still there
         };
 
         // @brief Collection of data actions available in the application
@@ -273,7 +274,8 @@ namespace jucyaudio
             NoAction,
             NavigateToNode,
             NavigateToFolder,  // Navigate to a folder by ID (e.g., album folder)
-            PlayTrack
+            PlayTrack,
+            CheckTrackFile     // Track is flagged missing: look again rather than trying to play silence
         };
         
         /**

@@ -92,6 +92,11 @@ namespace jucyaudio
             void playAllFromRow(RowIndex_t startRow);  // Play all tracks starting from this row (playlist mode)
             bool navigateToFolder(FolderId folderId);
 
+            /// @brief Re-check these tracks' files and correct is_missing.
+            /// Public alongside the other entry points DataViewComponent calls: activating a row that is
+            /// flagged missing lands here instead of trying to play it.
+            void checkFilesForTracks(std::vector<TrackInfo> tracks);
+
             // Update status bar with track count and statistics
             void updateTrackCountStatus();
 
@@ -147,6 +152,10 @@ namespace jucyaudio
 
             void onRunBpmAnalysis(INavigationNode *node);
             void onRunBpmAnalysisForSelectedRows();
+
+            /// @brief Re-check the selected rows' files and correct is_missing.
+            void onCheckFilesForSelectedRows();
+
             void showBadFilesDialog(const std::vector<TrackInfo> &badFiles);
 
             void onEditWorkingSetMetadata(INavigationNode *node);

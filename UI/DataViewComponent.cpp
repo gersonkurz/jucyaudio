@@ -659,7 +659,21 @@ namespace jucyaudio
                     // Double-click should play the selected track, not the whole view.
                     m_mainComponent.playDataRow(static_cast<RowIndex_t>(rowNumber));
                     break;
-                    
+
+                case RowActivationResultType::CheckTrackFile:
+                    // The node says this track is flagged missing. Look again rather than trying to play
+                    // it - the row is only that one row, not the whole selection, because the double
+                    // click named it specifically.
+                    if (m_currentNode != nullptr)
+                    {
+                        auto trackResult = m_currentNode->getTrackInfosForOperation({static_cast<RowIndex_t>(rowNumber)});
+                        if (!trackResult.trackInfos.empty())
+                        {
+                            m_mainComponent.checkFilesForTracks(std::move(trackResult.trackInfos));
+                        }
+                    }
+                    break;
+
                 case RowActivationResultType::NoAction:
                 default:
                     // Nothing to do
