@@ -24,9 +24,11 @@
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/MixRecoveryEntry.h>
 #include <Database/Includes/TrackQueryArgs.h>
+#include <Database/DatabaseBackupManager.h>
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/TrackLibrary.h>
+#include <UI/Settings.h>
 #include <Utils/AssortedUtils.h>
 
 #include <nlohmann/json.hpp>
@@ -971,6 +973,112 @@ namespace jucyaudio
 
             writeResultsFile(resultsPath, "jucyaudio mix recovery self test", report);
             spdlog::info("[SelfTest] Mix recovery finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
+            return report.failures() == 0 ? 0 : 1;
+        }
+
+        int runBackupSelfTest(const std::filesystem::path &selfTestRoot)
+        {
+            Report report;
+            const auto workRoot = selfTestRoot / "backup";
+            const auto resultsPath = selfTestRoot / "backup-results.txt";
+            const auto dbPath = workRoot / "walcheck.db";
+
+            spdlog::info("[SelfTest] Starting backup self test. Root: {}", pathToString(selfTestRoot));
+
+            std::error_code ec;
+            std::filesystem::remove_all(workRoot, ec);
+            std::filesystem::create_directories(workRoot, ec);
+            if (ec)
+            {
+                report.abort(std::format("Could not create {}: {}", pathToString(workRoot), ec.message()));
+                writeResultsFile(resultsPath, "jucyaudio backup self test", report);
+                return 1;
+            }
+
+            // A row that exists only in the -wal file. The connection stays open across the backup, so
+            // nothing checkpoints it into the main database - which is precisely the state a copy of that
+            // main file would fail to capture, and the state a real library is in most of the time.
+            constexpr const char *kMarker = "only-in-the-wal";
+            {
+                SqliteDatabase db;
+                if (!db.open(pathToString(dbPath)))
+                {
+                    report.abort(std::format("Could not create the scratch database {}", pathToString(dbPath)));
+                    writeResultsFile(resultsPath, "jucyaudio backup self test", report);
+                    return 1;
+                }
+
+                const bool prepared = db.execute("PRAGMA journal_mode=WAL;") && db.execute("CREATE TABLE WalCheck (marker TEXT NOT NULL);") &&
+                                      db.execute("INSERT INTO WalCheck (marker) VALUES ('only-in-the-wal');");
+                report.check(prepared, "a WAL-mode scratch database was created with a committed row");
+                if (!prepared)
+                {
+                    writeResultsFile(resultsPath, "jucyaudio backup self test", report);
+                    return 1;
+                }
+
+                // Appended to the path rather than rebuilt from a string: pathToString hands back UTF-8,
+                // and feeding that to the narrow path constructor puts it straight back through the
+                // active code page - the very conversion this codebase uses pathToString to avoid.
+                auto walPath = dbPath;
+                walPath += "-wal";
+                const auto walSize = std::filesystem::exists(walPath, ec) ? std::filesystem::file_size(walPath, ec) : 0;
+                report.check(walSize > 0, std::format("the committed row is still in the -wal file ({} bytes), not the database", walSize));
+
+                // Backed up while that connection is still open, exactly as it would be with the app
+                // running. Forced, because there are no existing backups to age out and this test is
+                // about the mechanism rather than the schedule.
+                config::RootSettings settings;
+                DatabaseBackupManager manager;
+                const auto outcome = manager.performBackupCheck(settings, dbPath, false, true, true);
+
+                report.check(outcome.attempted, "the backup manager attempted a backup when forced");
+                report.check(outcome.succeeded, std::format("the backup reports success (error: '{}')", outcome.errorMessage));
+                report.check(!outcome.backupFile.empty() && std::filesystem::exists(outcome.backupFile, ec), "the backup file exists");
+
+                // Nothing half-finished left lying around under a name that would later be counted,
+                // pruned against, and one day restored from.
+                // Any .partial at all, not one predicted name: temporaries carry a unique per-attempt
+                // suffix now, so checking a computed path would be checking one that never existed.
+                size_t partials = 0;
+                for (const auto &entry : std::filesystem::directory_iterator{workRoot, ec})
+                {
+                    partials += (entry.path().extension() == ".partial") ? 1 : 0;
+                }
+                report.check(partials == 0, std::format("no .partial file was left behind (found {})", partials));
+                // Distinct from succeeded: a backup can be published correctly and still leave a
+                // temporary behind if something held a handle on it. That is a warning, not a failure,
+                // and the two should not be conflated here either.
+                report.check(outcome.warningMessage.empty(), std::format("the backup reports no housekeeping warning (got: '{}')", outcome.warningMessage));
+
+                if (outcome.succeeded)
+                {
+                    // The check the whole item exists for. A copy_file backup opens, has a WalCheck
+                    // table, and has no rows in it.
+                    SqliteDatabase restored;
+                    if (restored.open(pathToString(outcome.backupFile)))
+                    {
+                        std::string found;
+                        SqliteStatement stmt{restored};
+                        const bool queried = stmt.query(
+                            [&found, &stmt]() -> bool
+                            {
+                                found = stmt.getText(0);
+                                return true;
+                            },
+                            "SELECT marker FROM WalCheck;");
+                        report.check(queried && found == kMarker,
+                            std::format("the backup contains the row that was only in the WAL (found '{}')", found));
+                    }
+                    else
+                    {
+                        report.check(false, "the backup file could be opened as a database");
+                    }
+                }
+            }
+
+            writeResultsFile(resultsPath, "jucyaudio backup self test", report);
+            spdlog::info("[SelfTest] Backup test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
             return report.failures() == 0 ? 0 : 1;
         }
 

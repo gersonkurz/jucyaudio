@@ -324,7 +324,8 @@ namespace jucyaudio
                     // watching that is the report you wanted.
                     const auto scanResult = tests::runScanSelfTest(selfTestRoot);
                     const auto recoveryResult = tests::runMixRecoverySelfTest(selfTestRoot, databasePath);
-                    result = (scanResult != 0 || recoveryResult != 0) ? 1 : 0;
+                    const auto backupResult = tests::runBackupSelfTest(selfTestRoot);
+                    result = (scanResult != 0 || recoveryResult != 0 || backupResult != 0) ? 1 : 0;
                 }
                 else
                 {

@@ -90,5 +90,23 @@ namespace jucyaudio
          */
         int runMixRecoverySelfTest(const std::filesystem::path &selfTestRoot, const std::filesystem::path &databasePath);
 
+        /**
+         * @brief Headless test that a database backup is actually a backup.
+         *
+         * Builds a scratch database, commits data into it **without checkpointing** so those pages live
+         * only in the -wal file, backs it up, and then opens the backup and looks for them.
+         *
+         * That is the whole test, and it is the one that matters: a backup taken by copying the main
+         * database file passes every casual inspection - right size, opens fine, reports success - and
+         * silently omits everything sitting in the WAL. It fails this. An online backup passes.
+         *
+         * Uses its own database, unrelated to the one the other suites share, because it needs to
+         * control checkpointing.
+         *
+         * @param selfTestRoot The root returned by prepareSelfTestEnvironment().
+         * @return 0 if every check passed, 1 otherwise.
+         */
+        int runBackupSelfTest(const std::filesystem::path &selfTestRoot);
+
     } // namespace tests
 } // namespace jucyaudio
