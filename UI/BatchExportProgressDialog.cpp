@@ -148,6 +148,8 @@ namespace jucyaudio
                 {
                     int successCount = 0;
                     int failCount = 0;
+                    // Counted apart from failCount: these mixes exported fine, they just are not recorded.
+                    int recoveryWarningCount = 0;
 
                     auto postProgress = [safeThis](int overallPercent,
                                                    std::string overallMessage,
@@ -265,6 +267,15 @@ namespace jucyaudio
                             database::theTrackLibrary.getMixManager().clearPendingExportSettings(mixInfo.mixId);
                             ++successCount;
                             spdlog::info("Batch export: successfully exported mix '{}'", mixInfo.name);
+
+                            // The audio exists, so this is not a failed export. It does mean the mix is
+                            // not written down anywhere, which is worth counting and saying at the end
+                            // rather than leaving in the log for nobody to read.
+                            if (!exportResult.recoveryWarning.empty())
+                            {
+                                ++recoveryWarningCount;
+                                spdlog::warn("Batch export: mix '{}' - {}", mixInfo.name, exportResult.recoveryWarning);
+                            }
                         }
                         else
                         {
@@ -275,13 +286,17 @@ namespace jucyaudio
                         completedWeight += currentMixWeight;
                     }
 
+                    const auto recoveryNote = recoveryWarningCount > 0
+                        ? std::format(" {} mix(es) exported without a recovery record - see the log.", recoveryWarningCount)
+                        : std::string{};
+
                     if (failCount == 0)
                     {
-                        postCompletion(true, std::format("Successfully exported all {} mixes.", successCount));
+                        postCompletion(true, std::format("Successfully exported all {} mixes.{}", successCount, recoveryNote));
                     }
                     else
                     {
-                        postCompletion(false, std::format("Exported {}/{} mixes ({} failed).", successCount, totalMixes, failCount));
+                        postCompletion(false, std::format("Exported {}/{} mixes ({} failed).{}", successCount, totalMixes, failCount, recoveryNote));
                     }
                 });
         }

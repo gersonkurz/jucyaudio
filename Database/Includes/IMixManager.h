@@ -94,10 +94,24 @@ namespace jucyaudio
              * @param mixId The mix to record.
              * @param result What happened: recorded, with the rows that were written; or skipped, with
              *        the reason. Assigned only when this returns Ok.
+             * @param renderedTracks Optional. The track list a renderer actually used, for callers that
+             *        produced something from this mix and need the record to match it. The live rows are
+             *        compared against it and the mix is refused if they differ.
+             *
+             *        Rendering a two-hour mix takes minutes, and the renderer works from a copy it took
+             *        before starting. Another instance can edit the mix while that runs, and the
+             *        transaction here only covers its own read and write - so without this the mp3 and
+             *        the record of it could describe different mixes.
+             *
+             *        The comparison is over the parsed, audio-relevant fields, not the stored text: a
+             *        MixTrack does not retain the JSON it came from, and two texts differing only in key
+             *        order or whitespace are the same mix. The stored text is still written verbatim.
              * @return Ok if the attempt completed, whether it recorded or refused. A failure means
              *         something went wrong and nothing can be concluded about the mix.
              */
-            virtual DbResult captureRecoveryData(MixId mixId, MixRecoveryCapture &result) const = 0;
+            virtual DbResult captureRecoveryData(MixId mixId,
+                MixRecoveryCapture &result,
+                const std::vector<MixTrack> *renderedTracks = nullptr) const = 0;
 
             // @brief Get the track count for a specific mix (efficient COUNT query).
             // @param mixId The ID of the mix.

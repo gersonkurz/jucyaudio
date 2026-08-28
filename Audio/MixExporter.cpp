@@ -47,15 +47,22 @@ namespace jucyaudio
             spdlog::info("MTE: Initializing export for mix {} -> {}", mixId, pathToString(settings.outputPath));
 
             ExportResult result;
+            // Kept beyond the implementation's scope: this is the track list that was actually rendered,
+            // and the recovery capture below refuses to record the mix if the live rows no longer match
+            // it. The renderer reads the mix once at construction and then renders for minutes, so what
+            // it used and what the database holds afterwards are not the same question.
+            std::vector<MixTrack> renderedTracks;
             if (targetExtension == ".mp3")
             {
                 ExportMp3MixImplementation implementation{mixId, settings, progressCallback};
                 result = implementation.run();
+                renderedTracks = implementation.getMixTracks();
             }
             else if (targetExtension == ".wav")
             {
                 ExportWavMixImplementation implementation{mixId, settings, progressCallback};
                 result = implementation.run();
+                renderedTracks = implementation.getMixTracks();
             }
             else
             {
@@ -63,6 +70,32 @@ namespace jucyaudio
                 if (progressCallback)
                     progressCallback(1.0f, "Error: Unsupported output format.");
                 return ExportResult::Failure("Unsupported output format: " + targetExtension);
+            }
+
+            // Record what this mix contained, now that it has produced something worth identifying later.
+            // Only on success: a record of a mix that failed to render describes nothing that exists.
+            //
+            // Deliberately not reached by the .m3u branch above, which returns early. Asking for a
+            // playlist file is not finalising a mix, and it should neither write a recovery record nor
+            // mark an editable mix exported.
+            if (result.success)
+            {
+                const auto &mixManager = database::theTrackLibrary.getMixManager();
+                database::MixRecoveryCapture capture;
+                if (const auto captureResult = mixManager.captureRecoveryData(mixId, capture, &renderedTracks); !captureResult.isOk())
+                {
+                    result.recoveryWarning = "The mix was exported, but its recovery record could not be written: " + captureResult.errorMessage;
+                    spdlog::error("MTE: {}", result.recoveryWarning);
+                }
+                else if (!capture.captured)
+                {
+                    result.recoveryWarning = "The mix was exported, but no recovery record was written: " + capture.skipReason;
+                    spdlog::warn("MTE: {}", result.recoveryWarning);
+                }
+                else
+                {
+                    spdlog::info("MTE: Recorded recovery data for mix {} ({} tracks).", mixId, capture.entries.size());
+                }
             }
 
             // Mark the mix as exported if successful

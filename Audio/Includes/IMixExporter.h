@@ -24,6 +24,20 @@ namespace jucyaudio
             int warningCount{0};
             std::string message;
 
+            /**
+             * @brief Set when the audio was produced but its recovery record was not.
+             *
+             * Deliberately separate from warningCount, which counts tracks that failed to read while
+             * rendering. Those two mean opposite things to whoever is listening: one says part of your
+             * audio is silent, the other says your audio is fine but nothing is written down about how it
+             * was made. Sharing a field would let a real audio problem hide behind a bookkeeping one.
+             *
+             * Empty when there is nothing to say. Never turns a successful export into a failure - the
+             * mp3 exists and plays, and telling someone their two-hour render failed would only make them
+             * run it again.
+             */
+            std::string recoveryWarning;
+
             // Convenience constructors
             static ExportResult Success(int warnings = 0)
             {

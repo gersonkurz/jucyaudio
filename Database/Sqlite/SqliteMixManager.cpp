@@ -490,7 +490,57 @@ WHERE m.export_folder IS NULL
             return mixes;
         }
 
-        DbResult SqliteMixManager::captureRecoveryData(MixId mixId, MixRecoveryCapture &result) const
+        namespace
+        {
+            /// @brief Do these two describe the same audio?
+            ///
+            /// Compares only what the renderer consumed: identity, position, and the fields that shape
+            /// the sound. Everything a MixTrack holds beyond these is either derived or not part of the
+            /// mix. Exact float comparison on the gain is deliberate - both sides parsed the same stored
+            /// text, so an unchanged mix yields identical values and anything else is a real edit.
+            bool describesSameAudio(const MixTrack &a, const MixTrack &b)
+            {
+                return a.trackId == b.trackId && a.orderInMix == b.orderInMix && a.cueStart == b.cueStart && a.cueEnd == b.cueEnd &&
+                       a.attachFrom == b.attachFrom && a.attachTo == b.attachTo && a.gainAdjustment == b.gainAdjustment &&
+                       a.envelopePoints == b.envelopePoints;
+            }
+
+            /// @brief Parse a MixRecovery row back into the MixTrack the renderer would have seen.
+            ///
+            /// Used only to answer "did this change?" - the text itself is stored untouched. Mirrors what
+            /// mixTrackFromStatement does for the live table, which is why the same from_json runs here.
+            ///
+            /// @return Nothing if the stored text will not parse. Deliberately not a defaulted MixTrack:
+            ///         one of those would carry the ids and default audio fields, and a rendered track
+            ///         with no edits has exactly those - so it could compare equal and wave malformed
+            ///         data through into the record.
+            ///
+            /// An empty mix_data is not a failure. The live table treats it as "defaults apply", and so
+            /// does this.
+            std::optional<MixTrack> parseForComparison(const MixRecoveryEntry &entry)
+            {
+                MixTrack track{};
+                track.trackId = entry.trackId;
+                track.orderInMix = entry.orderInMix;
+                if (!entry.mixData.empty())
+                {
+                    // Caught rather than propagated: a mix that will not parse should refuse the capture,
+                    // not abort the export that is calling us.
+                    try
+                    {
+                        json::parse(entry.mixData).get_to(track);
+                    }
+                    catch (const std::exception &e)
+                    {
+                        spdlog::warn("[MixRecovery] Could not parse mix_data for track {}: {}", entry.trackId, e.what());
+                        return std::nullopt;
+                    }
+                }
+                return track;
+            }
+        } // namespace
+
+        DbResult SqliteMixManager::captureRecoveryData(MixId mixId, MixRecoveryCapture &result, const std::vector<MixTrack> *renderedTracks) const
         {
             // Immediate, not the default deferred mode: this reads, decides something from what it read,
             // and then writes based on that decision. A deferred transaction would let another thread on
@@ -620,6 +670,36 @@ WHERE m.export_folder IS NULL
             if (static_cast<int64_t>(loaded.size()) != expectedTrackCount)
             {
                 return refuse(std::format("expected {} tracks but found {}", expectedTrackCount, loaded.size()));
+            }
+
+            if (renderedTracks != nullptr)
+            {
+                // The caller rendered something from this mix and needs the record to match it. The
+                // renderer read the mix before it started; this reads it now, and minutes of rendering
+                // sit in between with another instance free to edit.
+                if (renderedTracks->size() != loaded.size())
+                {
+                    return refuse(std::format("the mix changed while it was being exported - {} track(s) when the export started, {} now",
+                        renderedTracks->size(),
+                        loaded.size()));
+                }
+
+                for (size_t i = 0; i < loaded.size(); ++i)
+                {
+                    const auto live = parseForComparison(loaded[i]);
+                    if (!live.has_value())
+                    {
+                        // Unreadable, so there is no way to establish it matches what was rendered.
+                        // Recording it would put text we cannot make sense of into the one place meant to
+                        // explain a mix later.
+                        return refuse(std::format("the stored settings for the track at position {} could not be read", i));
+                    }
+
+                    if (!describesSameAudio((*renderedTracks)[i], *live))
+                    {
+                        return refuse(std::format("the mix changed while it was being exported - track at position {} is not the one that was rendered", i));
+                    }
+                }
             }
 
             for (size_t i = 0; i < loaded.size(); ++i)

@@ -3027,6 +3027,16 @@ namespace jucyaudio
                     {
                         successMsg = std::format("Mix '{}' successfully exported to:\n{}", m_mixInfo.name, filename);
                     }
+
+                    // Appended rather than replacing the message above, and kept separate from
+                    // warningCount: that counts tracks that failed to read while rendering, which means
+                    // part of the audio is silent. This means the audio is fine but nothing was written
+                    // down about how it was made. Both can be true at once and they need different fixes.
+                    if (!exportResult.recoveryWarning.empty())
+                    {
+                        successMsg += std::format("\n\n{}", exportResult.recoveryWarning);
+                    }
+
                     completionCb(true, successMsg);
                 }
                 else
