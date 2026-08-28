@@ -61,6 +61,7 @@ namespace jucyaudio
                 sqlite3_clear_bindings(m_statement);
                 m_param_index = 1;
                 m_done = false;
+                m_failed = false;
                 m_copy_of_string_args.clear();
             }
         }
@@ -75,6 +76,7 @@ namespace jucyaudio
             m_statement_text = statement;
             m_param_index = 1;
             m_done = false;
+            m_failed = false;
 
             int rc;
             do
@@ -110,6 +112,7 @@ namespace jucyaudio
                     return true;
 
                 m_done = true;
+                m_failed = true;
                 return m_db.formatError(__LINE__, rc, "SqliteStatement::get_next_result({}) failed", m_statement_text);
             }
         }
@@ -251,6 +254,7 @@ namespace jucyaudio
         bool SqliteStatement::execute()
         {
             m_done = false;
+            m_failed = false;
             for (;;)
             {
                 const int rc = sqlite3_step(m_statement);

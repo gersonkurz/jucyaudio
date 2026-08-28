@@ -122,7 +122,7 @@ namespace jucyaudio
 
         std::string writeMixRecoveryM3U(const std::filesystem::path &targetPath,
             const std::vector<database::MixRecoveryEntry> &entries,
-            Duration_t totalDuration)
+            std::optional<Duration_t> totalDuration)
         {
             if (entries.empty())
             {
@@ -165,7 +165,14 @@ namespace jucyaudio
 
                 out << "#EXTM3U\n";
                 out << "#EXTMIX:" << entries.front().mixName << "\n";
-                out << "#EXTMIXDURATION:" << std::chrono::duration_cast<std::chrono::seconds>(totalDuration).count() << "\n\n";
+                // Left out entirely when the record does not know it. A record written before the length
+                // was stored has no answer, and printing nought would be an answer - a reader would take
+                // a two-hour mix for an empty one.
+                if (totalDuration.has_value())
+                {
+                    out << "#EXTMIXDURATION:" << std::chrono::duration_cast<std::chrono::seconds>(*totalDuration).count() << "\n";
+                }
+                out << "\n";
 
                 for (size_t i = 0; i < entries.size(); ++i)
                 {

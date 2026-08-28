@@ -18,6 +18,7 @@
 #include <Audio/Plugins/MasterPluginChainPersistence.h>
 #include <UI/Plugins/PluginWindow.h>
 #include <UI/SingletonDialog.h>
+#include <Tests/MixRecoveryBackfill.h>
 #include <Tests/SelfTests.h>
 #include <filesystem>
 #include <fstream>
@@ -172,10 +173,22 @@ namespace jucyaudio
                 // like the normal startup path, because quit() needs a message loop that is running.
                 // Matched as a whole argument: this mode writes to the database and moves files about,
                 // so it must not switch on because some other argument happens to contain the text.
-                if (juce::StringArray::fromTokens(commandLine, true).contains(kSelfTestScanFlag))
+                const auto arguments = juce::StringArray::fromTokens(commandLine, true);
+                if (arguments.contains(kSelfTestScanFlag))
                 {
                     spdlog::info("Command line requested {}; starting headless.", kSelfTestScanFlag);
                     m_selfTestRequested = true;
+                    m_initPhase = 1;
+                    startTimer(50);
+                    return;
+                }
+
+                // The backfill runs against the real library, unlike the self tests. Same deferral for
+                // the same reason: quit() needs a message loop.
+                if (arguments.contains(kBackfillFlag))
+                {
+                    spdlog::info("Command line requested {}; starting headless.", kBackfillFlag);
+                    m_backfillRequested = true;
                     m_initPhase = 1;
                     startTimer(50);
                     return;
@@ -214,27 +227,19 @@ namespace jucyaudio
                     return;
                 }
 
+                if (m_backfillRequested)
+                {
+                    runBackfillAndQuit();
+                    return;
+                }
+
                 // Load settings first to get backup configuration
                 config::TomlBackend backend{g_strConfigFilename};
                 config::theSettings.load(backend);
 
                 audio::thePluginManagerService.initialize(m_configRoot);
 
-                // Determine database path using expandPath for ${VAR} expansion
-                const auto& configuredDbFilename = config::theSettings.database.filename.get();
-                std::filesystem::path dbPath;
-                if (!configuredDbFilename.empty())
-                {
-                    // Expand environment variables in configured path
-                    dbPath = expandPath(configuredDbFilename);
-                    spdlog::info("Using configured database path: {}", pathToString(dbPath));
-                }
-                else
-                {
-                    // Default database filename in config root
-                    dbPath = m_configRoot / "jucyaudio.db";
-                    spdlog::info("Using default database path: {}", pathToString(dbPath));
-                }
+                const auto dbPath = resolveDatabasePath();
 
                 // Perform database backup check before the database is opened
                 {
@@ -295,13 +300,89 @@ namespace jucyaudio
         private:
             std::filesystem::path m_configRoot;  // Cached config root path
             bool m_selfTestRequested = false;
+            bool m_backfillRequested = false;
 
             static constexpr const char *kSelfTestScanFlag = "--selftest-scan";
+            static constexpr const char *kBackfillFlag = "--export-mix-recovery";
 
             /// @brief Opens the database, runs the scan self test, and ends the process with its result.
             /// Deliberately skips the plugin manager, the backup check and the theme manager: none of
             /// them is under test, and the backup check in particular has no business running against a
             /// scratch database that is about to be scribbled on.
+            /// @brief Where the database lives: the configured path if there is one, else the default
+            /// name under the config root.
+            ///
+            /// Extracted again. It was inlined when the self test stopped using it and left a helper with
+            /// one caller; the backfill genuinely has to open the same database normal startup does, so
+            /// there are two again - and two copies of this would be two chances to disagree about which
+            /// file is the library.
+            std::filesystem::path resolveDatabasePath() const
+            {
+                const auto &configuredDbFilename = config::theSettings.database.filename.get();
+                if (!configuredDbFilename.empty())
+                {
+                    // Expand environment variables in configured path
+                    const auto dbPath = expandPath(configuredDbFilename);
+                    spdlog::info("Using configured database path: {}", pathToString(dbPath));
+                    return dbPath;
+                }
+
+                // Default database filename in config root
+                const auto dbPath = m_configRoot / "jucyaudio.db";
+                spdlog::info("Using default database path: {}", pathToString(dbPath));
+                return dbPath;
+            }
+
+            /// @brief Records every mix that has no recovery data yet, then ends the process.
+            ///
+            /// Unlike the self test this opens the configured database - the real library, which is the
+            /// whole point. So it takes a backup first and refuses to continue without a confirmed one:
+            /// opening a database is not a read-only act, it can run a schema migration, and doing that
+            /// to a multi-gigabyte library on the strength of a backup nobody checked is not a trade
+            /// worth making quietly.
+            void runBackfillAndQuit()
+            {
+                const auto dbPath = resolveDatabasePath();
+
+                int result = 1;
+
+                // Forced, because the schedule is beside the point here: what matters is that a good copy
+                // exists before this touches anything, not whether one happens to be recent enough.
+                database::DatabaseBackupManager backupManager;
+                // Pruning deliberately off. This backup exists so the state before the backfill can be
+                // examined afterwards if the results are ever questioned - and pruning to the retention
+                // limit could delete exactly the older snapshots that question would need. Housekeeping
+                // is not this command's business.
+                const auto backup = backupManager.performBackupCheck(config::theSettings, dbPath, false, true, true);
+
+                if (!backup.succeeded)
+                {
+                    spdlog::error("[Backfill] Refusing to continue: the backup did not succeed. {}",
+                        backup.errorMessage.empty() ? "No reason was reported." : backup.errorMessage);
+                }
+                else
+                {
+                    spdlog::info("[Backfill] Backed up to {} before opening the library.", pathToString(backup.backupFile));
+                    if (!backup.warningMessage.empty())
+                    {
+                        spdlog::warn("[Backfill] {}", backup.warningMessage);
+                    }
+
+                    if (theTrackLibrary.initialise(dbPath))
+                    {
+                        result = tests::runMixRecoveryBackfill(m_configRoot);
+                    }
+                    else
+                    {
+                        spdlog::error("[Backfill] TrackLibrary FAILED to initialise: {}", theTrackLibrary.getLastError());
+                    }
+                }
+
+                spdlog::info("[Backfill] Exiting with code {}.", result);
+                setApplicationReturnValue(result);
+                quit();
+            }
+
             void runSelfTestAndQuit()
             {
                 // Settings are already loaded by setupLogging(); nothing here needs them again. Note what

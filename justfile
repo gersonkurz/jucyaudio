@@ -135,6 +135,14 @@ selftest config=default_build_type:
     New-Item -ItemType Directory -Force -Path "build-{{arch}}-{{lowercase(config)}}/selftest-root" | Out-Null
     $env:JUCYAUDIO_CONFIG = (Resolve-Path "build-{{arch}}-{{lowercase(config)}}/selftest-config").Path; $env:JUCYAUDIO_SELFTEST_ROOT = (Resolve-Path "build-{{arch}}-{{lowercase(config)}}/selftest-root").Path; $p = Start-Process -FilePath "build-{{arch}}-{{lowercase(config)}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe" -ArgumentList "--selftest-scan" -Wait -PassThru; Get-Content "build-{{arch}}-{{lowercase(config)}}/selftest-root/selftest-results.txt","build-{{arch}}-{{lowercase(config)}}/selftest-root/mixrecovery-results.txt","build-{{arch}}-{{lowercase(config)}}/selftest-root/backup-results.txt"; if ($p.ExitCode -ne 0) { Write-Host "SELF TEST FAILED"; exit $p.ExitCode }; Write-Host "Self test passed."
 
+# Record recovery data for every mix that has none, and write each a playlist (Windows).
+# Runs against the real library. Takes a confirmed backup first and refuses to start without one.
+# Playlists land in %LOCALAPPDATA%\jucyaudio\MixBackups (or under JUCYAUDIO_CONFIG if set).
+[windows]
+backup-mixes config=default_build_type:
+    just build {{config}}
+    $p = Start-Process -FilePath "build-{{arch}}-{{lowercase(config)}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe" -ArgumentList "--export-mix-recovery" -Wait -PassThru; $root = if ($env:JUCYAUDIO_CONFIG) { $env:JUCYAUDIO_CONFIG } else { Join-Path $env:LOCALAPPDATA "jucyaudio" }; Get-Content (Join-Path $root "backfill-results.txt"); if ($p.ExitCode -ne 0) { Write-Host "BACKFILL FAILED"; exit $p.ExitCode }; Write-Host "Backfill complete."
+
 # ============================================================================
 # macOS-Specific Build Commands
 # ============================================================================
@@ -193,6 +201,19 @@ selftest config=default_build_type:
     cat "$root/selftest-results.txt" "$root/mixrecovery-results.txt" "$root/backup-results.txt"
     if [ "$code" -ne 0 ]; then echo "SELF TEST FAILED"; exit "$code"; fi
     echo "Self test passed."
+
+# Record recovery data for every mix that has none, and write each a playlist (macOS).
+[macos]
+backup-mixes config=default_build_type:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just build {{config}}
+    root="${JUCYAUDIO_CONFIG:-$HOME/Library/Application Support/jucyaudio}"
+    code=0
+    ./build-{{arch}}/jucyaudio_artefacts/{{config}}/JucyAudio.app/Contents/MacOS/JucyAudio --export-mix-recovery || code=$?
+    cat "$root/backfill-results.txt"
+    if [ "$code" -ne 0 ]; then echo "BACKFILL FAILED"; exit "$code"; fi
+    echo "Backfill complete."
 
 # ============================================================================
 # Package Commands - Windows

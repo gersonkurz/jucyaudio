@@ -20,6 +20,7 @@
 
 #include <Database/Includes/Constants.h>
 
+#include <optional>
 #include <string>
 
 namespace jucyaudio
@@ -39,6 +40,23 @@ namespace jucyaudio
             int orderInMix{0};
             Timestamp_t capturedAt;
             std::string mixName;
+
+            /**
+             * @brief How long the whole mix was when this was captured.
+             *
+             * Per row, like mixName, because the record is a flat snapshot rather than a normalised
+             * structure - and because anything rendering it needs the header without a second query.
+             *
+             * Stored rather than taken from the live mix when needed. A mix edited after capture has a
+             * different length, and a playlist whose tracks come from the record while its header comes
+             * from the current mix describes two different mixes at once.
+             *
+             * Optional because rows written before this column existed genuinely do not know, and a
+             * length of zero is not the same statement as "no length was recorded". Anything rendering
+             * this must leave the figure out rather than print a confident nought - and must never fill
+             * it in from the live mix, which is the inconsistency the column was added to remove.
+             */
+            std::optional<Duration_t> mixTotalDuration;
 
             /**
              * @brief The track id this entry had when it was captured. Historical only.

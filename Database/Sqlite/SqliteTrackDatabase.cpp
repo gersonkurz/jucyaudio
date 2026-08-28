@@ -276,6 +276,7 @@ namespace
             order_in_mix    INTEGER NOT NULL,
             captured_at     INTEGER NOT NULL,
             mix_name        TEXT NOT NULL,
+            total_duration  INTEGER,
             track_id        INTEGER,
             artist_name     TEXT,
             album_title     TEXT,
@@ -790,7 +791,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 27;
+            const int latestSchemaVersion = 28;
 
             if (currentVersion == 0)
             {
@@ -2661,6 +2662,40 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 27;
+            }
+
+            if (currentVersion < 28)
+            {
+                spdlog::info("Migrating database from version 27 to 28 - MixRecovery remembers the mix length...");
+                // The recovery record described a mix's tracks but not how long the mix was, so anything
+                // rendering it had to ask the live mix - which, for a mix edited since, is a different
+                // mix. Nullable, because rows written under v27 genuinely do not know.
+                if (SqliteTransaction transaction{m_db})
+                {
+                    if (!m_db.execute("ALTER TABLE MixRecovery ADD COLUMN total_duration INTEGER;"))
+                    {
+                        const auto error{m_db.getLastError()};
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "v28 MixRecovery migration failed: " + error);
+                    }
+
+                    if (auto result = setDBSchemaVersion(28); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 28.");
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated to version 28 - MixRecovery remembers the mix length.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 28;
             }
 
             return DbResult::success();

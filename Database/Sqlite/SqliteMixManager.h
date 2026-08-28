@@ -19,6 +19,7 @@ namespace jucyaudio
 
         private:
             std::vector<MixInfo> getMixes(const TrackQueryArgs &args) const override;
+            DbResult getAllMixes(std::vector<MixInfo> &mixes) const override;
             MixInfo getMix(MixId mixId) const override;
             std::vector<MixTrack> getMixTracks(MixId mixId) const override;
             DbResult getRecoveryData(MixId mixId, std::vector<MixRecoveryEntry> &entries) const override;

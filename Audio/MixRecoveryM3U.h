@@ -22,6 +22,7 @@
 #include <Database/Includes/MixRecoveryEntry.h>
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -46,7 +47,7 @@ namespace jucyaudio
          * |-------------------------------------|------------------------------------------|
          * | `#EXTM3U`                           | standard header                          |
          * | `#EXTMIX:<name>`                    | mix name                                 |
-         * | `#EXTMIXDURATION:<seconds>`         | total length, seconds                    |
+         * | `#EXTMIXDURATION:<seconds>`         | total length, seconds; absent if unknown |
          * | `#EXTINF:<seconds>,<artist> - <title>` | standard, seconds, rounded            |
          * | `#JAALBUM:<album>`                  | album                                    |
          * | `#JASTART:<milliseconds>`           | where this track starts within the mix   |
@@ -66,12 +67,15 @@ namespace jucyaudio
          *
          * @param targetPath Where the m3u should end up.
          * @param entries The committed recovery record, in order.
-         * @param totalDuration The mix's total length, for the header.
+         * @param totalDuration The mix's total length. Nothing when the record predates that being
+         *        stored - the header line is then left out entirely rather than written as zero, and is
+         *        never filled in from the live mix, which would describe a different mix from the tracks
+         *        beneath it.
          * @return An empty string on success, otherwise why it failed.
          */
         std::string writeMixRecoveryM3U(const std::filesystem::path &targetPath,
             const std::vector<database::MixRecoveryEntry> &entries,
-            Duration_t totalDuration);
+            std::optional<Duration_t> totalDuration);
 
         /// @brief The companion m3u path for an exported audio file: same name, .m3u extension.
         std::filesystem::path companionM3UPathFor(const std::filesystem::path &audioPath);

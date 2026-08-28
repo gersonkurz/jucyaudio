@@ -157,7 +157,17 @@ namespace jucyaudio
                         return false;
                     }
                 }
-                return true;
+
+                // The loop above ends on both "no more rows" and "the step failed", so reaching here is
+                // not by itself success. Anything that publishes what it accumulated needs to know which
+                // of the two happened.
+                return !hasError();
+            }
+
+            /// @brief Whether iteration ended in an error rather than at the end of the results.
+            bool hasError() const
+            {
+                return m_failed;
             }
         private:
             /// <summary>
@@ -170,6 +180,12 @@ namespace jucyaudio
             int m_param_index;
             std::string m_statement_text;
             bool m_done;
+            /// @brief Set when a step ends in an error rather than in running out of rows.
+            ///
+            /// getNextResult() returns false for both, because both mean "no row to look at". Without
+            /// this, a caller iterating to the end cannot tell whether it saw the whole result set or
+            /// stopped part way through - and would report success either way.
+            bool m_failed{false};
         };
 
     } // namespace database

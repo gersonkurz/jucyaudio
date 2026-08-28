@@ -540,6 +540,34 @@ WHERE m.export_folder IS NULL
             }
         } // namespace
 
+        DbResult SqliteMixManager::getAllMixes(std::vector<MixInfo> &mixes) const
+        {
+            // Accumulated locally and handed over only once the query has finished. query() returns
+            // false on a prepare, bind or step failure, and a step failure lands part way through - so
+            // assigning as we go would give the caller a partial list that looks like the whole library.
+            std::vector<MixInfo> loaded;
+            SqliteStatement stmt{m_db};
+            // No WHERE at all, and no dependency on any UI setting. The column list matches what
+            // mixInfoFromStatement reads, positionally, which is why it is spelled out rather than
+            // being a SELECT *.
+            const bool queryOk = stmt.query(
+                [&loaded, &stmt]() -> bool
+                {
+                    loaded.emplace_back(mixInfoFromStatement(stmt));
+                    return true;
+                },
+                "SELECT mix_id, name, timestamp, track_count, total_length, source_ws_id, status, exported_at, export_folder "
+                "FROM Mixes ORDER BY mix_id ASC");
+
+            if (!queryOk)
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB, "Failed to enumerate mixes: " + m_db.getLastError());
+            }
+
+            mixes = std::move(loaded);
+            return DbResult::success();
+        }
+
         DbResult SqliteMixManager::captureRecoveryData(MixId mixId, MixRecoveryCapture &result, const std::vector<MixTrack> *renderedTracks) const
         {
             // Immediate, not the default deferred mode: this reads, decides something from what it read,
@@ -741,14 +769,16 @@ WHERE m.export_folder IS NULL
                 entry.mixId = mixId;
                 entry.mixName = mixName;
                 entry.capturedAt = capturedAt;
+                entry.mixTotalDuration = totalDuration;
 
-                if (!transaction.execute("INSERT INTO MixRecovery (mix_id, order_in_mix, captured_at, mix_name, track_id, artist_name, "
-                                         "album_title, title, filename, folder_path, duration, filesize_bytes, bpm, mix_data) "
-                                         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                if (!transaction.execute("INSERT INTO MixRecovery (mix_id, order_in_mix, captured_at, mix_name, total_duration, track_id, "
+                                         "artist_name, album_title, title, filename, folder_path, duration, filesize_bytes, bpm, mix_data) "
+                                         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         mixId,
                         entry.orderInMix,
                         capturedAtMillis,
                         mixName,
+                        static_cast<int64_t>(totalDuration.count()),
                         entry.trackId,
                         entry.artistName,
                         entry.albumTitle,
@@ -795,6 +825,13 @@ WHERE m.export_folder IS NULL
                     entry.orderInMix = stmt.getInt32(col++);
                     entry.capturedAt = timestampFromInt64(stmt.getInt64(col++));
                     entry.mixName = stmt.getText(col++);
+                    // Read as nullable, not COALESCEd to zero: a row from before this column existed
+                    // has no answer, and zero would be an answer.
+                    if (!stmt.isNull(col))
+                    {
+                        entry.mixTotalDuration = Duration_t{stmt.getInt64(col)};
+                    }
+                    ++col;
                     entry.trackId = stmt.getInt64(col++);
                     entry.artistName = stmt.getText(col++);
                     entry.albumTitle = stmt.getText(col++);
@@ -810,8 +847,8 @@ WHERE m.export_folder IS NULL
                 },
                 // Columns listed rather than SELECT *, because this reads positionally and a later
                 // migration that adds a column would otherwise silently shift every field along by one.
-                "SELECT mix_id, order_in_mix, captured_at, mix_name, track_id, artist_name, album_title, title, "
-                "filename, folder_path, duration, filesize_bytes, bpm, mix_data "
+                "SELECT mix_id, order_in_mix, captured_at, mix_name, total_duration, track_id, artist_name, "
+                "album_title, title, filename, folder_path, duration, filesize_bytes, bpm, mix_data "
                 "FROM MixRecovery WHERE mix_id=? ORDER BY order_in_mix ASC",
                 mixId);
 

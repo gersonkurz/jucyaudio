@@ -22,7 +22,28 @@ namespace jucyaudio
 
             // @brief Get all mixes in the database. We assume that the total # of mixes is not too large to fit in memory.
             // @return A vector of MixInfo objects representing all mixes.
+            //
+            // Despite the name this is a query for a list the user is looking at: it returns only mixes
+            // that are still editable (export_folder IS NULL), and may additionally hide offline ones
+            // depending on a UI setting. For every mix regardless of state, use getAllMixes().
             virtual std::vector<MixInfo> getMixes(const TrackQueryArgs& args) const = 0;
+
+            /**
+             * @brief Every mix in the database, in id order, filtered by nothing.
+             *
+             * getMixes() and getMixesByLocation(nullopt) both return only mixes with no export folder,
+             * which is what a list of editable mixes wants and the opposite of what an enumeration
+             * wants - in a library where every mix has been exported, both return nothing at all. This
+             * exists for the cases that must genuinely see all of them.
+             *
+             * Status-bearing, because an enumeration that cannot say it failed is worse than none: a
+             * caller acting on every mix would silently act on some of them instead, and report success.
+             *
+             * @param mixes Receives every mix, ordered by mix_id. Assigned only on success, so a failed
+             *        read leaves whatever the caller had rather than looking like an empty library.
+             * @return Ok if the whole enumeration completed.
+             */
+            virtual DbResult getAllMixes(std::vector<MixInfo> &mixes) const = 0;
 
             virtual MixInfo getMix(MixId mixId) const
             {

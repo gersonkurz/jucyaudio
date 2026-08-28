@@ -35,6 +35,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
@@ -229,7 +230,8 @@ namespace jucyaudio
                 for (size_t i = 0; i < a.size(); ++i)
                 {
                     if (a[i].mixId != b[i].mixId || a[i].orderInMix != b[i].orderInMix || a[i].capturedAt != b[i].capturedAt ||
-                        a[i].mixName != b[i].mixName || a[i].trackId != b[i].trackId || a[i].artistName != b[i].artistName ||
+                        a[i].mixName != b[i].mixName || a[i].mixTotalDuration != b[i].mixTotalDuration ||
+                        a[i].trackId != b[i].trackId || a[i].artistName != b[i].artistName ||
                         a[i].albumTitle != b[i].albumTitle || a[i].title != b[i].title || a[i].filename != b[i].filename ||
                         a[i].folderPath != b[i].folderPath || a[i].duration != b[i].duration || a[i].filesizeBytes != b[i].filesizeBytes ||
                         a[i].bpm != b[i].bpm || a[i].mixData != b[i].mixData)
@@ -306,6 +308,23 @@ namespace jucyaudio
                 }
 
                 return doctored;
+            }
+
+            /// @brief Clears total_duration on a mix's recovery rows, as a v27 record would have it.
+            ///
+            /// Staged over the test's own connection for the same reason the unknown JSON field is:
+            /// nothing reachable through the public interfaces can produce a NULL there any more, and the
+            /// case still has to be exercised because the database on disk is full of rows that will.
+            bool setRecoveryDurationToNull(const std::filesystem::path &databasePath, MixId mixId)
+            {
+                SqliteDatabase fixtureDb;
+                if (!fixtureDb.open(pathToString(databasePath)))
+                {
+                    return false;
+                }
+
+                SqliteStatement stmt{fixtureDb, "UPDATE MixRecovery SET total_duration = NULL WHERE mix_id = ?"};
+                return stmt.isValid() && stmt.addParam(mixId) && stmt.execute();
             }
 
             /// @brief Runs one scan to completion. Synchronous - there is no task thread here.
@@ -786,6 +805,17 @@ namespace jucyaudio
                 }
                 report.check(positionsOk, "recovery rows carry contiguous positions and the right mix id");
                 report.check(idsOk, "recovery rows carry the same track ids, in the same order, as the mix");
+
+                // Stored with the record rather than fetched from the live mix when needed. A playlist
+                // whose tracks come from the record and whose length comes from the current mix would be
+                // describing two different mixes at once.
+                const bool durationOk = std::all_of(recorded.begin(),
+                    recorded.end(),
+                    [&mixInfo](const MixRecoveryEntry &entry)
+                    {
+                        return entry.mixTotalDuration == mixInfo.totalDuration;
+                    });
+                report.check(durationOk, "every recovery row remembers how long the whole mix was");
             }
 
             if (recorded.size() == liveMixTracks.size())
@@ -903,6 +933,51 @@ namespace jucyaudio
             report.check(mixManager.getRecoveryData(mixInfo.mixId, recorded).isOk(), "the record re-reads after the replacement export");
             report.check(static_cast<int>(recorded.size()) == kTrackCount,
                 std::format("the record still has {} rows after re-export (found {})", kTrackCount, recorded.size()));
+
+            // --- 3d. A record from before the mix length was stored ---
+
+            {
+                // Rows written under v27 have no total_duration, and the migration correctly leaves them
+                // NULL. Staged here the same way the unknown JSON field was, because nothing reachable
+                // through the public interfaces can produce a NULL any more.
+                //
+                // The failure this guards against is a confident nought: reading NULL as zero and then
+                // printing #EXTMIXDURATION:0 would tell a reader that a two-hour mix is empty.
+                const bool nulled = setRecoveryDurationToNull(databasePath, mixInfo.mixId);
+                report.check(nulled, "a v27-style row with no recorded mix length could be staged");
+
+                if (nulled)
+                {
+                    std::vector<MixRecoveryEntry> legacy;
+                    report.check(mixManager.getRecoveryData(mixInfo.mixId, legacy).isOk(), "a record with no mix length still reads");
+                    report.check(!legacy.empty() && !legacy.front().mixTotalDuration.has_value(),
+                        "an unrecorded mix length reads back as unknown, not as zero");
+
+                    if (!legacy.empty())
+                    {
+                        const auto legacyPath = selfTestRoot / "legacy-duration.m3u";
+                        report.check(audio::writeMixRecoveryM3U(legacyPath, legacy, legacy.front().mixTotalDuration).empty(),
+                            "a playlist can still be written from a record with no mix length");
+
+                        std::string legacyText;
+                        {
+                            std::ifstream in{legacyPath, std::ios::binary};
+                            legacyText.assign(std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{});
+                        }
+                        report.check(legacyText.find("#EXTMIXDURATION") == std::string::npos,
+                            "the playlist omits the duration line rather than claiming zero");
+                        report.check(legacyText.find("#EXTINF:") != std::string::npos, "the playlist is otherwise complete");
+                    }
+                }
+            }
+
+            // Put the mix back the way it was, so the checks below compare against a full record.
+            {
+                const auto reExport = exporter.exportMixToFile(mixInfo.mixId, settings, nullptr);
+                report.check(reExport.success && reExport.recoveryWarning.empty(), "re-exporting restores a record with a known mix length");
+                recorded.clear();
+                std::ignore = mixManager.getRecoveryData(mixInfo.mixId, recorded);
+            }
 
             // --- 4. A capture that does not match what was rendered is refused ---
 
