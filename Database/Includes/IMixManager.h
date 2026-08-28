@@ -79,6 +79,26 @@ namespace jucyaudio
              */
             virtual DbResult getRecoveryData(MixId mixId, std::vector<MixRecoveryEntry> &entries) const = 0;
 
+            /**
+             * @brief Record what this mix currently contains, replacing any previous record of it.
+             *
+             * Refuses to record a mix that is not demonstrably intact. The row count must match
+             * `Mixes.track_count` and the positions must run contiguously from zero, and if either fails
+             * the mix is left exactly as it was - including whatever was recorded for it previously.
+             *
+             * That refusal is the point of the whole function. A mix quietly loses rows when the tracks
+             * behind them are deleted, and the loss is invisible until someone looks. Replacing a good
+             * forty-track record with the thirty-three that survive would destroy the only evidence of
+             * what went missing, at exactly the moment it became worth having.
+             *
+             * @param mixId The mix to record.
+             * @param result What happened: recorded, with the rows that were written; or skipped, with
+             *        the reason. Assigned only when this returns Ok.
+             * @return Ok if the attempt completed, whether it recorded or refused. A failure means
+             *         something went wrong and nothing can be concluded about the mix.
+             */
+            virtual DbResult captureRecoveryData(MixId mixId, MixRecoveryCapture &result) const = 0;
+
             // @brief Get the track count for a specific mix (efficient COUNT query).
             // @param mixId The ID of the mix.
             // @return The number of tracks in the mix.

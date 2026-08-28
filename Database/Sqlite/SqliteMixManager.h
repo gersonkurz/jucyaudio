@@ -22,6 +22,7 @@ namespace jucyaudio
             MixInfo getMix(MixId mixId) const override;
             std::vector<MixTrack> getMixTracks(MixId mixId) const override;
             DbResult getRecoveryData(MixId mixId, std::vector<MixRecoveryEntry> &entries) const override;
+            DbResult captureRecoveryData(MixId mixId, MixRecoveryCapture &result) const override;
             int getTrackCountForMix(MixId mixId) const override;
             bool createOrUpdateMix(MixInfo &mixInfo, std::vector<MixTrack> &tracks) const override;
             bool removeMix(MixId mixId) const override;

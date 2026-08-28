@@ -73,5 +73,30 @@ namespace jucyaudio
             std::string mixData;
         };
 
+        /**
+         * @brief What a capture attempt did.
+         *
+         * Separate from the DbResult a capture returns, because "I refused to capture this mix" and "the
+         * capture failed" are different things and only one of them is a problem. A refusal is the
+         * feature working: the mix was not in a state worth recording, and whatever was recorded before
+         * is still there.
+         */
+        struct MixRecoveryCapture final
+        {
+            /// @brief False means the mix was deliberately left alone; see skipReason.
+            bool captured{false};
+
+            /// @brief Why the mix was skipped, in a form fit to put in a report. Empty when captured.
+            std::string skipReason;
+
+            /**
+             * @brief Exactly the rows that were committed. Empty when skipped.
+             *
+             * Handed back so callers that need to render this snapshot - the m3u, for one - can do so
+             * from what was actually written, rather than reading it back and risking a different answer.
+             */
+            std::vector<MixRecoveryEntry> entries;
+        };
+
     } // namespace database
 } // namespace jucyaudio

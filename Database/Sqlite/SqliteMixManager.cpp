@@ -490,6 +490,206 @@ WHERE m.export_folder IS NULL
             return mixes;
         }
 
+        DbResult SqliteMixManager::captureRecoveryData(MixId mixId, MixRecoveryCapture &result) const
+        {
+            // Immediate, not the default deferred mode: this reads, decides something from what it read,
+            // and then writes based on that decision. A deferred transaction would let another thread on
+            // this connection - or another process - change the mix in between, so the rows written would
+            // not be the rows that were validated.
+            SqliteTransaction transaction{m_db, TransactionMode::Immediate};
+            if (!transaction)
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB,
+                    "Could not begin a transaction to capture recovery data for mix " + std::to_string(mixId));
+            }
+
+            // --- the mix itself ---
+
+            std::string mixName;
+            int64_t expectedTrackCount = -1;
+            {
+                SqliteStatement stmt{m_db};
+                if (!stmt.query(
+                        [&mixName, &expectedTrackCount, &stmt]() -> bool
+                        {
+                            mixName = stmt.getText(0);
+                            expectedTrackCount = stmt.getInt64(1);
+                            return true;
+                        },
+                        "SELECT name, track_count FROM Mixes WHERE mix_id=?",
+                        mixId))
+                {
+                    const auto error{m_db.getLastError()};
+                    transaction.rollback();
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to read mix " + std::to_string(mixId) + ": " + error);
+                }
+            }
+
+            if (expectedTrackCount < 0)
+            {
+                transaction.rollback();
+                return DbResult::failure(DbResultStatus::ErrorNotFound, "No such mix: " + std::to_string(mixId));
+            }
+
+            // --- what it contains, in one query ---
+
+            std::vector<MixRecoveryEntry> loaded;
+            // Beside loaded, not inside the block below: both are read by the validation that follows it.
+            bool sawOrphan = false;
+            {
+                SqliteStatement stmt{m_db};
+                // Folders is joined here rather than asked of SqliteFolderDatabase, and that is not a
+                // stylistic preference: its cache accessors take the cache mutex and then reach for the
+                // database mutex, while findOrCreateFolderByPath takes them in the opposite order.
+                // Calling into it while this transaction holds the database mutex would sit us on one
+                // side of that inversion for the whole transaction. Joining avoids the question, and is
+                // one query rather than a lookup per track.
+                //
+                // LEFT JOIN, plus an explicit orphan flag. The foreign key should make an orphaned
+                // MixTracks row impossible, but if one exists an inner join would silently drop it and
+                // the count check would then report a missing track that is actually present - a
+                // misleading diagnosis for an impossible situation. Keeping the row and flagging it means
+                // the refusal below can say what is really wrong.
+                //
+                // Either way it must not be captured: an orphan contributes to the count and to the
+                // position sequence while carrying no metadata at all, so a snapshot containing one could
+                // pass validation and overwrite a good record with blanks.
+                if (!stmt.query(
+                        [&loaded, &sawOrphan, &stmt]() -> bool
+                        {
+                            MixRecoveryEntry entry;
+                            int col = 0;
+                            sawOrphan = sawOrphan || (stmt.getInt32(col++) != 0);
+                            entry.orderInMix = stmt.getInt32(col++);
+                            entry.trackId = stmt.getInt64(col++);
+                            entry.mixData = stmt.getText(col++);
+                            entry.artistName = stmt.getText(col++);
+                            entry.albumTitle = stmt.getText(col++);
+                            entry.title = stmt.getText(col++);
+                            entry.filename = stmt.getText(col++);
+                            entry.folderPath = stmt.getText(col++);
+                            entry.duration = Duration_t{stmt.getInt64(col++)};
+                            entry.filesizeBytes = stmt.getInt64(col++);
+                            entry.bpm = stmt.getInt64(col++);
+                            loaded.emplace_back(std::move(entry));
+                            return true;
+                        },
+                        "SELECT (t.track_id IS NULL), mt.order_in_mix, mt.track_id, mt.mix_data, "
+                        "COALESCE(t.artist_name,''), COALESCE(t.album_title,''), COALESCE(t.title,''), "
+                        "COALESCE(t.filename,''), COALESCE(f.actual_path, f.root_path, ''), "
+                        "COALESCE(t.duration,0), COALESCE(t.filesize_bytes,0), COALESCE(t.bpm,0) "
+                        "FROM MixTracks mt "
+                        "LEFT JOIN Tracks t ON t.track_id = mt.track_id "
+                        "LEFT JOIN Folders f ON f.folder_id = t.folder_id "
+                        "WHERE mt.mix_id = ? ORDER BY mt.order_in_mix ASC",
+                        mixId))
+                {
+                    const auto error{m_db.getLastError()};
+                    transaction.rollback();
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to read tracks of mix " + std::to_string(mixId) + ": " + error);
+                }
+            }
+
+            // --- is this worth recording? ---
+
+            const auto refuse = [&](std::string reason) -> DbResult
+            {
+                transaction.rollback();
+                spdlog::warn("[MixRecovery] Mix {} ({}) not captured: {}", mixId, mixName, reason);
+                result.captured = false;
+                result.skipReason = std::move(reason);
+                result.entries.clear();
+                return DbResult::success();
+            };
+
+            if (loaded.empty() || expectedTrackCount == 0)
+            {
+                // An exported mix always has tracks, so a mix reporting none has something wrong with it.
+                // Writing nothing over a previous record is the one outcome most worth refusing.
+                return refuse("the mix reports no tracks");
+            }
+
+            if (sawOrphan)
+            {
+                // Should be unreachable while the MixTracks foreign key is enforced. If it is reached,
+                // the mix references a track that no longer exists and no amount of metadata can be
+                // recorded for it - so refuse rather than write blanks over whatever is there.
+                return refuse("the mix references at least one track that no longer exists");
+            }
+
+            if (static_cast<int64_t>(loaded.size()) != expectedTrackCount)
+            {
+                return refuse(std::format("expected {} tracks but found {}", expectedTrackCount, loaded.size()));
+            }
+
+            for (size_t i = 0; i < loaded.size(); ++i)
+            {
+                if (loaded[i].orderInMix != static_cast<int>(i))
+                {
+                    // A gap can only come from a row vanishing underneath the application:
+                    // removeTracksFromMix renumbers, so ordinary editing never leaves one. This is the
+                    // signature of the loss the whole feature exists to survive.
+                    return refuse(std::format("track positions are not contiguous - expected {} at index {}, found {}", i, i, loaded[i].orderInMix));
+                }
+            }
+
+            // --- replace ---
+
+            if (!transaction.execute("DELETE FROM MixRecovery WHERE mix_id=?", mixId))
+            {
+                const auto error{m_db.getLastError()};
+                transaction.rollback();
+                return DbResult::failure(DbResultStatus::ErrorDB,
+                    "Failed to clear previous recovery data for mix " + std::to_string(mixId) + ": " + error);
+            }
+
+            // One timestamp for the whole capture: these rows describe a single moment, and stamping them
+            // individually would suggest they did not.
+            const auto capturedAt = std::chrono::system_clock::now();
+            const auto capturedAtMillis = timestampToInt64(capturedAt);
+
+            for (auto &entry : loaded)
+            {
+                entry.mixId = mixId;
+                entry.mixName = mixName;
+                entry.capturedAt = capturedAt;
+
+                if (!transaction.execute("INSERT INTO MixRecovery (mix_id, order_in_mix, captured_at, mix_name, track_id, artist_name, "
+                                         "album_title, title, filename, folder_path, duration, filesize_bytes, bpm, mix_data) "
+                                         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        mixId,
+                        entry.orderInMix,
+                        capturedAtMillis,
+                        mixName,
+                        entry.trackId,
+                        entry.artistName,
+                        entry.albumTitle,
+                        entry.title,
+                        entry.filename,
+                        entry.folderPath,
+                        static_cast<int64_t>(entry.duration.count()),
+                        entry.filesizeBytes,
+                        entry.bpm,
+                        entry.mixData))
+                {
+                    const auto error{m_db.getLastError()};
+                    transaction.rollback();
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to write recovery data for mix " + std::to_string(mixId) + ": " + error);
+                }
+            }
+
+            if (!transaction.commit())
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit recovery data for mix " + std::to_string(mixId));
+            }
+
+            spdlog::info("[MixRecovery] Captured {} track(s) for mix {} ({}).", loaded.size(), mixId, mixName);
+            result.captured = true;
+            result.skipReason.clear();
+            result.entries = std::move(loaded);
+            return DbResult::success();
+        }
+
         DbResult SqliteMixManager::getRecoveryData(MixId mixId, std::vector<MixRecoveryEntry> &entries) const
         {
             // Filled locally and handed over only once the query has completed. query() returns false on
