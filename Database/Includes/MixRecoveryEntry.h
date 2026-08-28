@@ -96,6 +96,16 @@ namespace jucyaudio
              * from what was actually written, rather than reading it back and risking a different answer.
              */
             std::vector<MixRecoveryEntry> entries;
+
+            /**
+             * @brief The mix's total length, read inside the same transaction as the rows.
+             *
+             * Here rather than left to the caller to look up afterwards. A second query is a second
+             * moment: another instance can edit the mix in between, so the rows would describe one state
+             * and the duration another - or the mix could be gone entirely and the duration come back
+             * zero. Anything rendering this snapshot needs both to have come from the same instant.
+             */
+            Duration_t totalDuration{0};
         };
 
     } // namespace database

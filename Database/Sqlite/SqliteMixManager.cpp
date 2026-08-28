@@ -557,16 +557,20 @@ WHERE m.export_folder IS NULL
 
             std::string mixName;
             int64_t expectedTrackCount = -1;
+            Duration_t totalDuration{0};
             {
                 SqliteStatement stmt{m_db};
+                // total_length is read here, in the same transaction as everything else, and handed back
+                // in the result. A caller looking it up afterwards would be reading a second moment.
                 if (!stmt.query(
-                        [&mixName, &expectedTrackCount, &stmt]() -> bool
+                        [&mixName, &expectedTrackCount, &totalDuration, &stmt]() -> bool
                         {
                             mixName = stmt.getText(0);
                             expectedTrackCount = stmt.getInt64(1);
+                            totalDuration = Duration_t{stmt.getInt64(2)};
                             return true;
                         },
-                        "SELECT name, track_count FROM Mixes WHERE mix_id=?",
+                        "SELECT name, track_count, total_length FROM Mixes WHERE mix_id=?",
                         mixId))
                 {
                     const auto error{m_db.getLastError()};
@@ -649,6 +653,10 @@ WHERE m.export_folder IS NULL
                 result.captured = false;
                 result.skipReason = std::move(reason);
                 result.entries.clear();
+                // Cleared like the rest: a caller reusing one of these across mixes would otherwise get
+                // Ok, captured == false, no entries, and a duration left over from the last mix that
+                // did succeed - the one field that still looks like an answer.
+                result.totalDuration = Duration_t{0};
                 return DbResult::success();
             };
 
@@ -767,6 +775,7 @@ WHERE m.export_folder IS NULL
             result.captured = true;
             result.skipReason.clear();
             result.entries = std::move(loaded);
+            result.totalDuration = totalDuration;
             return DbResult::success();
         }
 

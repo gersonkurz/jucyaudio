@@ -109,8 +109,10 @@ namespace jucyaudio
                 }
                 else
                 {
-                    // Fallback to filename without extension
-                    artistTitle = trackPath.stem().string();
+                    // Fallback to filename without extension.
+                    // pathToString, not path::string(): the narrow form of a Windows path goes through
+                    // the active code page, which mangles or throws on this library's non-ASCII names.
+                    artistTitle = pathToString(trackPath.stem());
                 }
 
                 // Write absolute start time as a comment
@@ -121,7 +123,7 @@ namespace jucyaudio
                 outFile << std::format("#EXTINF:{},{}\n", durationSeconds, artistTitle);
                 
                 // Write custom EXTREM line with original filename
-                outFile << std::format("#EXTREM:{}\n", trackPath.filename().string());
+                outFile << std::format("#EXTREM:{}\n", pathToString(trackPath.filename()));
                 
                 // Write file path (absolute path as stored in database)
                 outFile << pathToString(trackPath) << "\n\n";

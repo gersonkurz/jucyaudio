@@ -20,6 +20,7 @@
 
 #include <Audio/Includes/ActiveExportSettings.h>
 #include <Audio/MixExporter.h>
+#include <Audio/MixRecoveryM3U.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/MixRecoveryEntry.h>
 #include <Database/Includes/TrackQueryArgs.h>
@@ -35,6 +36,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <iterator>
 #include <format>
 #include <map>
 #include <string>
@@ -837,6 +839,68 @@ namespace jucyaudio
             // Re-read: the record now describes the injected state, and later checks compare against it.
             recorded.clear();
             std::ignore = mixManager.getRecoveryData(mixInfo.mixId, recorded);
+
+            // --- 3c. The companion m3u sits beside the audio and says what it should ---
+
+            {
+                const auto companionPath = audio::companionM3UPathFor(exportPath);
+                const auto tempPath = std::filesystem::path{companionPath}.replace_extension(".m3u.tmp");
+
+                report.check(std::filesystem::exists(companionPath, ec), "a companion m3u was written beside the audio file");
+                // A stray temporary next to the real file looks like a half-written recovery artefact,
+                // which is worse than none because someone would trust it.
+                report.check(!std::filesystem::exists(tempPath, ec), "no .m3u.tmp was left behind");
+
+                // Scoped so the handle is closed before the re-export below. Windows ReplaceFile refuses
+                // to replace a file that anyone still has open, so a reader left dangling here makes the
+                // production code look broken when it is behaving correctly.
+                std::string text;
+                {
+                    std::ifstream in{companionPath, std::ios::binary};
+                    text.assign(std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{});
+                }
+
+                report.check(text.starts_with("#EXTM3U\n"), "the companion starts with the standard header");
+                for (const auto *tag : {"#EXTMIX:", "#EXTMIXDURATION:", "#EXTINF:", "#JAALBUM:", "#JASTART:", "#JADURATION:", "#JASIZE:", "#JATRACKID:"})
+                {
+                    report.check(text.find(tag) != std::string::npos, std::format("the companion carries {}", tag));
+                }
+
+                // One #EXTINF per track, so nothing was dropped or duplicated.
+                size_t extinfCount = 0;
+                for (size_t at = text.find("#EXTINF:"); at != std::string::npos; at = text.find("#EXTINF:", at + 1))
+                {
+                    ++extinfCount;
+                }
+                report.check(extinfCount == static_cast<size_t>(kTrackCount),
+                    std::format("the companion lists {} tracks (found {})", kTrackCount, extinfCount));
+
+                // Written binary, so the bytes are the bytes: no CRLF translation on the way out.
+                report.check(text.find("\r\n") == std::string::npos, "the companion has no CRLF - it was written as raw bytes");
+
+                // Re-export replaces it rather than appending to or corrupting it. The result is checked
+                // rather than discarded: a failed export would leave the previous file untouched, so the
+                // size comparison below would pass while proving nothing.
+                const auto sizeBefore = std::filesystem::file_size(companionPath, ec);
+                const auto replaceExport = exporter.exportMixToFile(mixInfo.mixId, settings, nullptr);
+                report.check(replaceExport.success && replaceExport.recoveryWarning.empty(),
+                    std::format("the replacement re-export succeeds and records cleanly (warning: '{}')", replaceExport.recoveryWarning));
+
+                // Only meaningful because the export above was asserted to have succeeded: a failed
+                // replacement leaves the previous file untouched, so this comparison would pass while
+                // proving the opposite of what it claims.
+                const auto sizeAfter = std::filesystem::file_size(companionPath, ec);
+                report.check(sizeBefore == sizeAfter, "re-exporting replaces the companion rather than growing it");
+                report.check(!std::filesystem::exists(tempPath, ec), "re-exporting leaves no .m3u.tmp behind either");
+            }
+
+            // That export captured again, so the rows carry a fresh capturedAt. Everything below compares
+            // against `recorded` to prove nothing changed it, so it has to describe the state as of now -
+            // otherwise those checks would be comparing against a record this test itself superseded.
+            recorded.clear();
+            report.check(mixManager.getRecoveryData(mixInfo.mixId, recorded).isOk(), "the record re-reads after the replacement export");
+            report.check(static_cast<int>(recorded.size()) == kTrackCount,
+                std::format("the record still has {} rows after re-export (found {})", kTrackCount, recorded.size()));
 
             // --- 4. A capture that does not match what was rendered is refused ---
 

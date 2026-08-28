@@ -13,6 +13,7 @@
 #include <Audio/ExportMixToMp3.h>
 #include <Audio/ExportMixToWav.h>
 #include <Audio/MixExporter.h>
+#include <Audio/MixRecoveryM3U.h>
 #include <Database/Includes/Constants.h>
 #include <Database/Includes/IMixManager.h>
 #include <Database/Includes/MixInfo.h>
@@ -95,6 +96,17 @@ namespace jucyaudio
                 else
                 {
                     spdlog::info("MTE: Recorded recovery data for mix {} ({} tracks).", mixId, capture.entries.size());
+
+                    // The companion file, written entirely from what the capture committed - rows and
+                    // total duration both. Looking the duration up again here would be reading a second
+                    // moment: another instance can edit the mix in between, and a deleted one would come
+                    // back as zero.
+                    const auto companionPath = companionM3UPathFor(settings.outputPath);
+                    if (const auto m3uError = writeMixRecoveryM3U(companionPath, capture.entries, capture.totalDuration); !m3uError.empty())
+                    {
+                        result.recoveryWarning = "The mix was exported and recorded, but its companion playlist could not be written: " + m3uError;
+                        spdlog::error("MTE: {}", result.recoveryWarning);
+                    }
                 }
             }
 
