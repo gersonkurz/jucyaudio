@@ -16,12 +16,19 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <Tests/ScanSelfTest.h>
+#include <Tests/SelfTests.h>
 
+#include <Audio/Includes/ActiveExportSettings.h>
+#include <Audio/MixExporter.h>
 #include <Database/Includes/MixInfo.h>
+#include <Database/Includes/MixRecoveryEntry.h>
 #include <Database/Includes/TrackQueryArgs.h>
+#include <Database/Sqlite/SqliteDatabase.h>
+#include <Database/Sqlite/SqliteStatement.h>
 #include <Database/TrackLibrary.h>
 #include <Utils/AssortedUtils.h>
+
+#include <nlohmann/json.hpp>
 
 #include <spdlog/spdlog.h>
 
@@ -38,6 +45,7 @@ namespace jucyaudio
     namespace tests
     {
         using namespace database;
+        using json = nlohmann::json;
 
         namespace
         {
@@ -203,6 +211,99 @@ namespace jucyaudio
                 return ids;
             }
 
+            /// @brief Are these two recovery records identical in every field?
+            ///
+            /// Row counts are not enough: a rewrite that happens to produce the same number of rows would
+            /// pass a size check while having replaced everything. capturedAt is the giveaway - it is
+            /// stamped fresh on every capture, so any rewrite at all changes it.
+            bool sameRecord(const std::vector<MixRecoveryEntry> &a, const std::vector<MixRecoveryEntry> &b)
+            {
+                if (a.size() != b.size())
+                {
+                    return false;
+                }
+                for (size_t i = 0; i < a.size(); ++i)
+                {
+                    if (a[i].mixId != b[i].mixId || a[i].orderInMix != b[i].orderInMix || a[i].capturedAt != b[i].capturedAt ||
+                        a[i].mixName != b[i].mixName || a[i].trackId != b[i].trackId || a[i].artistName != b[i].artistName ||
+                        a[i].albumTitle != b[i].albumTitle || a[i].title != b[i].title || a[i].filename != b[i].filename ||
+                        a[i].folderPath != b[i].folderPath || a[i].duration != b[i].duration || a[i].filesizeBytes != b[i].filesizeBytes ||
+                        a[i].bpm != b[i].bpm || a[i].mixData != b[i].mixData)
+                    {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            /// @brief Writes a JSON field the MixTrack parser knows nothing about into one mix_data row.
+            ///
+            /// The whole point of storing mix_data verbatim is that a field nobody understands today
+            /// still survives. Nothing reachable through the public interfaces can produce such a field -
+            /// mix_data only ever gets written by createOrUpdateMix, which serialises with the same
+            /// to_json a re-serialising implementation would use, so both would emit identical bytes and
+            /// no assertion could tell them apart.
+            ///
+            /// So the fixture is staged over the test's own connection to the scratch database, opened
+            /// and closed here and used for nothing else. This touches no production code, and the
+            /// assertion that follows goes entirely through public interfaces.
+            ///
+            /// @return The exact text written, to compare the recovery row against, or empty on failure.
+            std::string injectUnknownFieldIntoMixData(const std::filesystem::path &databasePath, MixId mixId, int orderInMix)
+            {
+                // Scoped: the destructor closes it, so the fixture connection is gone before anything
+                // else in the test runs.
+                SqliteDatabase fixtureDb;
+                if (!fixtureDb.open(pathToString(databasePath)))
+                {
+                    return {};
+                }
+
+                std::string original;
+                {
+                    SqliteStatement read{fixtureDb};
+                    if (!read.query(
+                            [&original, &read]() -> bool
+                            {
+                                original = read.getText(0);
+                                return true;
+                            },
+                            "SELECT mix_data FROM MixTracks WHERE mix_id=? AND order_in_mix=?",
+                            mixId,
+                            orderInMix))
+                    {
+                        return {};
+                    }
+                }
+
+                if (original.empty())
+                {
+                    return {};
+                }
+
+                std::string doctored;
+                try
+                {
+                    auto parsed = json::parse(original);
+                    parsed["selfTestUnknownField"] = "kept verbatim or not at all";
+                    doctored = parsed.dump();
+                }
+                catch (const std::exception &)
+                {
+                    return {};
+                }
+
+                {
+                    SqliteStatement write{fixtureDb, "UPDATE MixTracks SET mix_data=? WHERE mix_id=? AND order_in_mix=?"};
+                    if (!write.isValid() || !write.addParam(doctored) || !write.addParam(mixId) || !write.addParam(orderInMix) || !write.execute())
+                    {
+                        return {};
+                    }
+                }
+
+                return doctored;
+            }
+
             /// @brief Runs one scan to completion. Synchronous - there is no task thread here.
             bool runScan(std::vector<FolderId> folderIds, bool removeMissingFiles, Report &report, const std::string &label)
             {
@@ -222,7 +323,9 @@ namespace jucyaudio
                 return scanReportedSuccess;
             }
 
-            void writeResultsFile(const std::filesystem::path &path, const Report &report)
+            /// @param title Names the suite. Passed in rather than fixed, because two suites write two
+            /// files and a results file that misnames itself is worse than one with no title at all.
+            void writeResultsFile(const std::filesystem::path &path, const std::string &title, const Report &report)
             {
                 std::ofstream out{path, std::ios::trunc};
                 if (!out)
@@ -231,7 +334,7 @@ namespace jucyaudio
                     return;
                 }
 
-                out << "jucyaudio scan self test\n";
+                out << title << "\n";
                 out << (report.failures() == 0 ? "RESULT: PASS\n" : std::format("RESULT: FAIL ({} failed)\n", report.failures()));
                 out << "\n";
                 for (const auto &line : report.lines())
@@ -378,7 +481,7 @@ namespace jucyaudio
             // parked in awayRoot, and moving it back would then fail on an existing directory.
             if (!cleanUp(workRoot) || !cleanUp(awayRoot) || !makeDirectory(awayRoot) || !makeDirectory(albumPath))
             {
-                writeResultsFile(resultsPath, report);
+                writeResultsFile(resultsPath, "jucyaudio scan self test", report);
                 return 1;
             }
 
@@ -389,7 +492,7 @@ namespace jucyaudio
                 if (!writeSilentWav(file, static_cast<uint32_t>(44100 * kFixtureDurationMs / 1000)))
                 {
                     report.abort(std::format("Could not write the fixture {}", pathToString(file)));
-                    writeResultsFile(resultsPath, report);
+                    writeResultsFile(resultsPath, "jucyaudio scan self test", report);
                     return 1;
                 }
             }
@@ -399,7 +502,7 @@ namespace jucyaudio
             if (!db.getLibraryRootManager().addRoot(pathToString(workRoot)).has_value())
             {
                 report.abort("Could not add the scratch library as a library root.");
-                writeResultsFile(resultsPath, report);
+                writeResultsFile(resultsPath, "jucyaudio scan self test", report);
                 return 1;
             }
 
@@ -407,7 +510,7 @@ namespace jucyaudio
             if (rootFolderId <= 0)
             {
                 report.abort("Could not resolve a FolderId for the scratch library root.");
-                writeResultsFile(resultsPath, report);
+                writeResultsFile(resultsPath, "jucyaudio scan self test", report);
                 return 1;
             }
 
@@ -423,7 +526,7 @@ namespace jucyaudio
             if (static_cast<int>(originalIds.size()) != kTrackCount)
             {
                 report.abort("Discovery did not produce the expected tracks; the rest of the test would prove nothing.");
-                writeResultsFile(resultsPath, report);
+                writeResultsFile(resultsPath, "jucyaudio scan self test", report);
                 return 1;
             }
 
@@ -459,7 +562,7 @@ namespace jucyaudio
             if (!mixCreated || !workingSetCreated)
             {
                 report.abort("Could not create the referencing rows; the recovery checks would prove nothing.");
-                writeResultsFile(resultsPath, report);
+                writeResultsFile(resultsPath, "jucyaudio scan self test", report);
                 return 1;
             }
 
@@ -471,7 +574,7 @@ namespace jucyaudio
                 if (renameEc)
                 {
                     report.abort(std::format("Could not move the album folder aside: {}", renameEc.message()));
-                    writeResultsFile(resultsPath, report);
+                    writeResultsFile(resultsPath, "jucyaudio scan self test", report);
                     return 1;
                 }
             }
@@ -501,7 +604,7 @@ namespace jucyaudio
                 if (renameEc)
                 {
                     report.abort(std::format("Could not move the album folder back: {}", renameEc.message()));
-                    writeResultsFile(resultsPath, report);
+                    writeResultsFile(resultsPath, "jucyaudio scan self test", report);
                     return 1;
                 }
             }
@@ -540,8 +643,270 @@ namespace jucyaudio
             report.check(workingSetMembers(db, workingSetInfo.id) == originalIds,
                 std::format("the working set still holds the same {} tracks", kTrackCount));
 
-            writeResultsFile(resultsPath, report);
+            writeResultsFile(resultsPath, "jucyaudio scan self test", report);
             spdlog::info("[SelfTest] Finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
+            return report.failures() == 0 ? 0 : 1;
+        }
+
+        int runMixRecoverySelfTest(const std::filesystem::path &selfTestRoot, const std::filesystem::path &databasePath)
+        {
+            Report report;
+            // Its own library, separate from the scan suite's: this one deletes tracks and a mix as part
+            // of what it asserts, and the two must not be able to disturb each other.
+            const auto workRoot = selfTestRoot / "recovery-library";
+            const auto exportPath = selfTestRoot / "recovery-export.wav";
+            const auto resultsPath = selfTestRoot / "mixrecovery-results.txt";
+
+            spdlog::info("[SelfTest] Starting mix recovery self test. Root: {}", pathToString(selfTestRoot));
+
+            std::error_code ec;
+            std::filesystem::remove_all(workRoot, ec);
+            if (ec)
+            {
+                report.abort(std::format("Could not clear {}: {}", pathToString(workRoot), ec.message()));
+                writeResultsFile(resultsPath, "jucyaudio mix recovery self test", report);
+                return 1;
+            }
+            std::filesystem::remove(exportPath, ec);
+
+            const auto albumPath = workRoot / kAlbumFolder;
+            std::filesystem::create_directories(albumPath, ec);
+            if (ec)
+            {
+                report.abort(std::format("Could not create {}: {}", pathToString(albumPath), ec.message()));
+                writeResultsFile(resultsPath, "jucyaudio mix recovery self test", report);
+                return 1;
+            }
+
+            for (int i = 1; i <= kTrackCount; ++i)
+            {
+                const auto file = albumPath / std::format("rec{:02}.wav", i);
+                if (!writeSilentWav(file, static_cast<uint32_t>(44100 * kFixtureDurationMs / 1000)))
+                {
+                    report.abort(std::format("Could not write the fixture {}", pathToString(file)));
+                    writeResultsFile(resultsPath, "jucyaudio mix recovery self test", report);
+                    return 1;
+                }
+            }
+
+            auto &db = theTrackLibrary.getTrackDatabase();
+            auto &mixManager = theTrackLibrary.getMixManager();
+
+            if (!db.getLibraryRootManager().addRoot(pathToString(workRoot)).has_value())
+            {
+                report.abort("Could not add the recovery scratch library as a library root.");
+                writeResultsFile(resultsPath, "jucyaudio mix recovery self test", report);
+                return 1;
+            }
+
+            const auto rootFolderId = db.getFolderDatabase().findOrCreateFolderByPath(workRoot);
+            if (rootFolderId <= 0 || !runScan({rootFolderId}, false, report, "recovery fixture discovery"))
+            {
+                report.abort("Could not discover the recovery scratch library.");
+                writeResultsFile(resultsPath, "jucyaudio mix recovery self test", report);
+                return 1;
+            }
+
+            const auto tracks = tracksUnder(db, rootFolderId);
+            if (static_cast<int>(tracks.size()) != kTrackCount)
+            {
+                report.abort(std::format("Expected {} fixture tracks, found {}.", kTrackCount, tracks.size()));
+                writeResultsFile(resultsPath, "jucyaudio mix recovery self test", report);
+                return 1;
+            }
+
+            // --- 1. A mix with settings worth losing ---
+
+            // Non-default cue points and gain, so mix_data is something specific rather than an empty
+            // shell. A verbatim-copy assertion against defaults would pass even if the copy were wrong.
+            std::vector<MixTrack> mixTracks;
+            std::vector<TrackId> orderedTrackIds;
+            for (const auto &entry : tracks)
+            {
+                MixTrack mixTrack{};
+                mixTrack.trackId = entry.second.trackId;
+                mixTrack.orderInMix = static_cast<int>(mixTracks.size());
+                mixTrack.cueStart = Duration_t{10 * (mixTrack.orderInMix + 1)};
+                mixTrack.cueEnd = Duration_t{kFixtureDurationMs};
+                mixTrack.gainAdjustment = 0.5f + (0.1f * static_cast<float>(mixTrack.orderInMix));
+                orderedTrackIds.push_back(mixTrack.trackId);
+                mixTracks.push_back(mixTrack);
+            }
+
+            MixInfo mixInfo{};
+            mixInfo.name = "SelfTest Recovery Mix";
+            mixInfo.totalDuration = Duration_t{kTrackCount * kFixtureDurationMs};
+            if (!mixManager.createOrUpdateMix(mixInfo, mixTracks) || mixInfo.mixId <= 0)
+            {
+                report.abort("Could not create the recovery test mix.");
+                writeResultsFile(resultsPath, "jucyaudio mix recovery self test", report);
+                return 1;
+            }
+            report.note(std::format("created mix {} with {} tracks", mixInfo.mixId, mixTracks.size()));
+
+            const auto liveMixTracks = mixManager.getMixTracks(mixInfo.mixId);
+
+            // --- 2. Export it for real, and check nothing complained ---
+
+            audio::ActiveExportSettings settings{};
+            settings.outputPath = exportPath;
+
+            const audio::MixExporter exporter{};
+            const auto exportResult = exporter.exportMixToFile(mixInfo.mixId, settings, nullptr);
+
+            report.check(exportResult.success, "exporting the mix to WAV succeeds");
+            report.check(exportResult.recoveryWarning.empty(),
+                std::format("the export reports no recovery warning (got: '{}')", exportResult.recoveryWarning));
+            report.check(std::filesystem::exists(exportPath, ec), "the WAV file was written");
+
+            // --- 3. What was recorded matches what was exported ---
+
+            std::vector<MixRecoveryEntry> recorded;
+            report.check(mixManager.getRecoveryData(mixInfo.mixId, recorded).isOk(), "recovery data reads back without error");
+            report.check(static_cast<int>(recorded.size()) == kTrackCount,
+                std::format("{} recovery rows were written (found {})", kTrackCount, recorded.size()));
+
+            // Asserted in its own right rather than used as a silent gate. It is a separate prerequisite,
+            // and letting it skip the position and id checks would turn one failure into no failures.
+            report.check(static_cast<int>(liveMixTracks.size()) == kTrackCount,
+                std::format("the live mix still lists {} tracks (found {})", kTrackCount, liveMixTracks.size()));
+
+            if (static_cast<int>(recorded.size()) == kTrackCount)
+            {
+                bool positionsOk = true;
+                bool idsOk = true;
+                for (size_t i = 0; i < recorded.size(); ++i)
+                {
+                    positionsOk = positionsOk && recorded[i].orderInMix == static_cast<int>(i) && recorded[i].mixId == mixInfo.mixId;
+                    idsOk = idsOk && recorded[i].trackId == orderedTrackIds[i];
+                }
+                report.check(positionsOk, "recovery rows carry contiguous positions and the right mix id");
+                report.check(idsOk, "recovery rows carry the same track ids, in the same order, as the mix");
+            }
+
+            if (recorded.size() == liveMixTracks.size())
+            {
+                bool settingsOk = true;
+                for (size_t i = 0; i < recorded.size(); ++i)
+                {
+                    MixTrack fromRecord{};
+                    if (!recorded[i].mixData.empty())
+                    {
+                        try
+                        {
+                            json::parse(recorded[i].mixData).get_to(fromRecord);
+                        }
+                        catch (const std::exception &e)
+                        {
+                            report.note(std::format("recovery row {} has unparseable mix_data: {}", i, e.what()));
+                            settingsOk = false;
+                            continue;
+                        }
+                    }
+
+                    const auto &live = liveMixTracks[i];
+                    settingsOk = settingsOk && fromRecord.cueStart == live.cueStart && fromRecord.cueEnd == live.cueEnd &&
+                                 fromRecord.attachFrom == live.attachFrom && fromRecord.attachTo == live.attachTo &&
+                                 fromRecord.gainAdjustment == live.gainAdjustment && fromRecord.envelopePoints == live.envelopePoints;
+                }
+                report.check(settingsOk, "recorded mix_data round-trips to the same cue points, attach points, gain and envelope");
+            }
+
+            // --- 3b. mix_data is stored verbatim, not re-serialised ---
+
+            {
+                // An unknown field is staged directly into MixTracks, then the mix is exported again
+                // through the public API. A capture that parsed and re-serialised on the way in would
+                // drop the field, because to_json does not know about it; a verbatim copy keeps it.
+                const auto injected = injectUnknownFieldIntoMixData(databasePath, mixInfo.mixId, 0);
+                report.check(!injected.empty(), "an unknown JSON field could be staged into the live mix_data");
+
+                if (!injected.empty())
+                {
+                    const auto reExport = exporter.exportMixToFile(mixInfo.mixId, settings, nullptr);
+                    report.check(reExport.success && reExport.recoveryWarning.empty(),
+                        std::format("re-exporting after the injection succeeds and records cleanly (warning: '{}')", reExport.recoveryWarning));
+
+                    std::vector<MixRecoveryEntry> afterInjection;
+                    std::ignore = mixManager.getRecoveryData(mixInfo.mixId, afterInjection);
+                    report.check(!afterInjection.empty() && afterInjection.front().mixData == injected,
+                        "mix_data was stored byte for byte, keeping a field the parser does not know");
+                }
+            }
+
+            // Re-read: the record now describes the injected state, and later checks compare against it.
+            recorded.clear();
+            std::ignore = mixManager.getRecoveryData(mixInfo.mixId, recorded);
+
+            // --- 4. A capture that does not match what was rendered is refused ---
+
+            {
+                auto doctored = liveMixTracks;
+                if (!doctored.empty())
+                {
+                    doctored.front().cueStart += Duration_t{500};
+                }
+
+                MixRecoveryCapture capture;
+                const auto captureResult = mixManager.captureRecoveryData(mixInfo.mixId, capture, &doctored);
+                report.check(captureResult.isOk(), "a mismatched capture completes without error");
+                report.check(!capture.captured, "a capture is refused when the mix no longer matches what was rendered");
+                report.note(std::format("refusal said: {}", capture.skipReason));
+
+                std::vector<MixRecoveryEntry> afterRefusal;
+                std::ignore = mixManager.getRecoveryData(mixInfo.mixId, afterRefusal);
+                // Every field, not just the count: a rewrite producing the same number of rows would slip
+                // past a size check. capturedAt alone would catch it, since it is stamped afresh on every
+                // capture, but comparing the lot costs nothing and says what is meant.
+                report.check(sameRecord(recorded, afterRefusal), "a refused capture leaves the previous record identical, field for field");
+            }
+
+            // --- 5. Losing a track: the record survives, and cannot be overwritten by the damage ---
+
+            // Deleting the track cascades its MixTracks row away, which is the exact damage that started
+            // all of this. It leaves a gap in order_in_mix, because nothing renumbers on this path.
+            const auto victimId = orderedTrackIds.front();
+            if (!db.removeTracks({victimId}).isOk())
+            {
+                report.abort(std::format("Could not delete track {} to simulate the damage.", victimId));
+                writeResultsFile(resultsPath, "jucyaudio mix recovery self test", report);
+                return 1;
+            }
+            report.note(std::format("deleted track {} from the library", victimId));
+
+            report.check(mixManager.getMixTracks(mixInfo.mixId).size() == static_cast<size_t>(kTrackCount - 1),
+                "deleting a track cascades its row out of the mix");
+
+            std::vector<MixRecoveryEntry> afterTrackDelete;
+            report.check(mixManager.getRecoveryData(mixInfo.mixId, afterTrackDelete).isOk(), "recovery data still reads after a track was deleted");
+            report.check(sameRecord(recorded, afterTrackDelete),
+                std::format("the recovery record survives the deletion of its tracks unchanged (expected {} rows, found {})",
+                    recorded.size(),
+                    afterTrackDelete.size()));
+
+            {
+                MixRecoveryCapture capture;
+                const auto captureResult = mixManager.captureRecoveryData(mixInfo.mixId, capture);
+                report.check(captureResult.isOk(), "capturing a damaged mix completes without error");
+                report.check(!capture.captured, "a damaged mix is refused rather than captured");
+                report.note(std::format("refusal said: {}", capture.skipReason));
+
+                std::vector<MixRecoveryEntry> afterRefusal;
+                std::ignore = mixManager.getRecoveryData(mixInfo.mixId, afterRefusal);
+                report.check(sameRecord(recorded, afterRefusal),
+                    "the complete record survives the damaged mix unchanged, field for field - this is the whole point");
+            }
+
+            // --- 6. Deleting the mix does take its record with it ---
+
+            report.check(mixManager.removeMix(mixInfo.mixId), "the test mix can be deleted");
+
+            std::vector<MixRecoveryEntry> afterMixDelete;
+            report.check(mixManager.getRecoveryData(mixInfo.mixId, afterMixDelete).isOk(), "recovery data reads without error after the mix was deleted");
+            report.check(afterMixDelete.empty(), "deleting the mix removes its recovery rows");
+
+            writeResultsFile(resultsPath, "jucyaudio mix recovery self test", report);
+            spdlog::info("[SelfTest] Mix recovery finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
             return report.failures() == 0 ? 0 : 1;
         }
 

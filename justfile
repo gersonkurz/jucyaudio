@@ -133,7 +133,7 @@ selftest config=default_build_type:
     New-Item -ItemType Directory -Force -Path "build-{{arch}}-{{lowercase(config)}}/selftest-config" | Out-Null
     if (Test-Path "build-{{arch}}-{{lowercase(config)}}/selftest-root") { Remove-Item -Recurse -Force "build-{{arch}}-{{lowercase(config)}}/selftest-root" }
     New-Item -ItemType Directory -Force -Path "build-{{arch}}-{{lowercase(config)}}/selftest-root" | Out-Null
-    $env:JUCYAUDIO_CONFIG = (Resolve-Path "build-{{arch}}-{{lowercase(config)}}/selftest-config").Path; $env:JUCYAUDIO_SELFTEST_ROOT = (Resolve-Path "build-{{arch}}-{{lowercase(config)}}/selftest-root").Path; $p = Start-Process -FilePath "build-{{arch}}-{{lowercase(config)}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe" -ArgumentList "--selftest-scan" -Wait -PassThru; Get-Content "build-{{arch}}-{{lowercase(config)}}/selftest-root/selftest-results.txt"; if ($p.ExitCode -ne 0) { Write-Host "SELF TEST FAILED"; exit $p.ExitCode }; Write-Host "Self test passed."
+    $env:JUCYAUDIO_CONFIG = (Resolve-Path "build-{{arch}}-{{lowercase(config)}}/selftest-config").Path; $env:JUCYAUDIO_SELFTEST_ROOT = (Resolve-Path "build-{{arch}}-{{lowercase(config)}}/selftest-root").Path; $p = Start-Process -FilePath "build-{{arch}}-{{lowercase(config)}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe" -ArgumentList "--selftest-scan" -Wait -PassThru; Get-Content "build-{{arch}}-{{lowercase(config)}}/selftest-root/selftest-results.txt","build-{{arch}}-{{lowercase(config)}}/selftest-root/mixrecovery-results.txt"; if ($p.ExitCode -ne 0) { Write-Host "SELF TEST FAILED"; exit $p.ExitCode }; Write-Host "Self test passed."
 
 # ============================================================================
 # macOS-Specific Build Commands
@@ -190,7 +190,7 @@ selftest config=default_build_type:
     rm -rf "$conf" "$root" && mkdir -p "$conf" "$root"
     code=0
     JUCYAUDIO_CONFIG="$conf" JUCYAUDIO_SELFTEST_ROOT="$root"         ./build-{{arch}}/jucyaudio_artefacts/{{config}}/JucyAudio.app/Contents/MacOS/JucyAudio --selftest-scan || code=$?
-    cat "$root/selftest-results.txt"
+    cat "$root/selftest-results.txt" "$root/mixrecovery-results.txt"
     if [ "$code" -ne 0 ]; then echo "SELF TEST FAILED"; exit "$code"; fi
     echo "Self test passed."
 

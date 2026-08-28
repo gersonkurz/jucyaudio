@@ -65,5 +65,30 @@ namespace jucyaudio
          */
         int runScanSelfTest(const std::filesystem::path &selfTestRoot);
 
+        /**
+         * @brief Headless end-to-end test of mix recovery data.
+         *
+         * Exports a scratch mix through the real exporter, then checks that what was recorded matches
+         * what was exported, that a mix which has lost rows cannot overwrite its own record, and that
+         * the record outlives the tracks but not the mix.
+         *
+         * That last pair is the point. MixRecovery carries a foreign key on mix_id and deliberately none
+         * on track_id, so deleting a track leaves the record standing while deleting the mix takes it
+         * away. Asserting only one half would pass with the keys the wrong way round, so both are here -
+         * this is the test that should fail if someone ever "fixes" the schema by adding the missing
+         * foreign key.
+         *
+         * Uses its own scratch library, separate from the scan test's, because it deletes tracks and
+         * mixes as part of what it asserts.
+         *
+         * @param selfTestRoot The root returned by prepareSelfTestEnvironment().
+         * @param databasePath The same scratch database, so one check can stage a fixture over its own
+         *        short-lived connection: an unknown JSON field written straight into MixTracks, which
+         *        nothing reachable through the public interfaces can produce. Everything asserted about
+         *        it afterwards goes through those interfaces.
+         * @return 0 if every check passed, 1 otherwise.
+         */
+        int runMixRecoverySelfTest(const std::filesystem::path &selfTestRoot, const std::filesystem::path &databasePath);
+
     } // namespace tests
 } // namespace jucyaudio

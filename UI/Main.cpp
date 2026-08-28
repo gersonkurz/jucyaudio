@@ -18,7 +18,7 @@
 #include <Audio/Plugins/MasterPluginChainPersistence.h>
 #include <UI/Plugins/PluginWindow.h>
 #include <UI/SingletonDialog.h>
-#include <Tests/ScanSelfTest.h>
+#include <Tests/SelfTests.h>
 #include <filesystem>
 #include <fstream>
 #include <tuple>
@@ -319,7 +319,12 @@ namespace jucyaudio
                 }
                 else if (theTrackLibrary.initialise(databasePath))
                 {
-                    result = tests::runScanSelfTest(selfTestRoot);
+                    // Both suites always run, and the exit code is the worse of the two. Stopping after
+                    // the first failure would hide whatever the second had to say, and on a run nobody is
+                    // watching that is the report you wanted.
+                    const auto scanResult = tests::runScanSelfTest(selfTestRoot);
+                    const auto recoveryResult = tests::runMixRecoverySelfTest(selfTestRoot, databasePath);
+                    result = (scanResult != 0 || recoveryResult != 0) ? 1 : 0;
                 }
                 else
                 {

@@ -524,7 +524,7 @@ target_sources(jucyaudio PRIVATE
     UI/DynamicToolbarComponent.cpp
     UI/SettingsDialog.cpp
     UI/SkippedTracksDialog.cpp
-    Tests/ScanSelfTest.cpp
+    Tests/SelfTests.cpp
     UI/JucyLookAndFeel.cpp
     UI/JucyLookAndFeel.h
     UI/TaskDialog.cpp
@@ -551,7 +551,7 @@ target_sources(jucyaudio PRIVATE
     UI/DynamicToolbarComponent.h
     UI/SettingsDialog.h
     UI/SkippedTracksDialog.h
-    Tests/ScanSelfTest.h
+    Tests/SelfTests.h
     UI/SingletonDialog.h
     UI/TaskDialog.h
     UI/MainComponent.h
