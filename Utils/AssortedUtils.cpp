@@ -114,6 +114,22 @@ namespace jucyaudio
         return result;
     }
 
+    // Platform independent, unlike normalizeForCache below: SQLite folds A-Z and nothing else, on
+    // every platform, so mirroring it needs no OS help.
+    std::string noCaseKey(std::string_view input)
+    {
+        std::string key{input};
+        for (auto &c : key)
+        {
+            const auto byte{static_cast<unsigned char>(c)};
+            if (byte >= 'A' && byte <= 'Z')
+            {
+                c = static_cast<char>(byte - 'A' + 'a');
+            }
+        }
+        return key;
+    }
+
 #if defined(_WIN32) || defined(_WIN64)
     // Windows implementation using NormalizeString and LCMapStringEx
     std::string normalizeForCache(std::string_view input)

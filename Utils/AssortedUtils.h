@@ -232,6 +232,25 @@ namespace jucyaudio
     std::string normalizeForCache(std::string_view input);
 
     /**
+     * @brief Case-folds a name the way SQLite's built-in NOCASE collation does, and no further.
+     *
+     * Deliberately not normalizeForCache(). That one is Unicode-aware, which is right for matching
+     * filenames against a filesystem but wrong for deciding whether two rows in a table declared
+     * UNIQUE COLLATE NOCASE are the same row. SQLite folds A-Z only: it will happily hold both
+     * "Electro" and "electro" with an accented first letter as two separate rows, while a
+     * Unicode-aware fold calls them one. Code that treats them as one then edits the wrong row's
+     * data - matching albums to a vocabulary entry that did not own them.
+     *
+     * The result is a key: two names belong to the same NOCASE row exactly when their keys are
+     * equal, so this works both as a comparison and as a map key. Byte length is unchanged, since
+     * only ASCII letters are touched.
+     *
+     * @param input A UTF-8 encoded name.
+     * @return The same bytes with A-Z lowered.
+     */
+    std::string noCaseKey(std::string_view input);
+
+    /**
      * @brief Expands environment variables in a path string and normalizes separators.
      *
      * Recognizes ${VAR} syntax on all platforms.

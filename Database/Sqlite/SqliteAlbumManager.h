@@ -46,6 +46,7 @@ namespace jucyaudio
             bool deleteAlbum(AlbumId albumId) override;
             std::vector<GenreUsage> getGenresWithUsage() const override;
             bool addGenre(const std::string& name) override;
+            bool renameGenre(const std::string& oldName, const std::string& newName, bool* mergedOut = nullptr) override;
             std::vector<AlbumInfo> searchAlbums(const std::string& query, size_t limit = 100) const override;
 
         private:

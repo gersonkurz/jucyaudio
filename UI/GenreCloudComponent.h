@@ -111,6 +111,17 @@ namespace jucyaudio
             void toggleSecondaryGenre(int chipIndex);
             void promoteGenre(int chipIndex);
             void promptForNewGenre();
+            /// @brief Right-click: the actions available for one chip.
+            /// @param chipIndex The chip under the mouse.
+            /// @note Promoting needs an album to write to; renaming does not, because it changes the
+            ///       vocabulary rather than a label. The menu is offered either way and drops the
+            ///       entries that cannot act.
+            void showChipMenu(int chipIndex);
+            /// @brief Index of the chip with this exact name, or -1. Used to re-find a chip after an
+            ///        asynchronous menu, where the index it was built from may no longer mean anything.
+            int chipIndexOf(const juce::String &name) const;
+            /// @brief Asks for a new name for a chip and applies it to the vocabulary and every album.
+            void promptToRenameGenre(int chipIndex);
             /// @brief Writes a genre list to Albums.genres, creating the album row if needed.
             /// @param genres The list to store, headline first.
             /// @return true if it reached the database.

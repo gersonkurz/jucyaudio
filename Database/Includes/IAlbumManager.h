@@ -108,6 +108,37 @@ namespace jucyaudio
             /// @return true if the vocabulary now contains the name
             virtual bool addGenre(const std::string& name) = 0;
 
+            /**
+             * @brief Rename a genre, everywhere it is used.
+             *
+             * The vocabulary entry and every album label carrying the old name change together. They
+             * are two separate stores - Genres holds the vocabulary, Albums.genres holds a JSON array
+             * of names per album - and a rename that touched only one of them would leave albums
+             * labelled with a name the vocabulary no longer offers.
+             *
+             * Genres.name is UNIQUE COLLATE NOCASE, so renaming onto a name already in the vocabulary
+             * cannot produce two rows. Rather than refusing, that case merges: albums holding the old
+             * name end up holding the new one, an album that already held both keeps a single entry,
+             * and the old vocabulary row goes. Refusing would decline exactly the case someone renames
+             * for - collapsing two spellings of the same thing.
+             *
+             * Changing only the capitalisation of a name is a rename, not a merge, even though the two
+             * compare equal under the unique index.
+             *
+             * On a merge the surviving row keeps its own spelling. Renaming "drone" to "Ambient" when
+             * the vocabulary already holds "ambient" labels the albums "ambient", because otherwise they
+             * would carry a spelling the vocabulary does not offer.
+             *
+             * @param oldName The name as it appears in the vocabulary. Matched case-insensitively, and
+             *        it must be there: renaming a name the vocabulary does not hold is refused rather
+             *        than treated as adding the new one.
+             * @param newName The replacement. Trimmed; must not be empty.
+             * @param mergedOut Set to true when the new name already existed and the two were combined.
+             *        Written on success only. Pass nullptr if the distinction does not matter.
+             * @return true if the rename was applied. False leaves everything as it was.
+             */
+            virtual bool renameGenre(const std::string& oldName, const std::string& newName, bool* mergedOut = nullptr) = 0;
+
             /// @brief Search albums by text query
             /// @param query Search text (searches title, artist, genres, tags)
             /// @param limit Maximum results to return

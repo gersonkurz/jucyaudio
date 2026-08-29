@@ -21,6 +21,8 @@
 #include <Audio/Includes/ActiveExportSettings.h>
 #include <Audio/MixExporter.h>
 #include <Audio/MixRecoveryM3U.h>
+#include <Database/Includes/AlbumInfo.h>
+#include <Database/Includes/IAlbumManager.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/MixRecoveryEntry.h>
 #include <Database/Includes/TrackQueryArgs.h>
@@ -708,6 +710,128 @@ namespace jucyaudio
                 std::vector<unsigned char> goodBack;
                 report.check(theTrackLibrary.loadWaveform(victimId, goodBack).isOk() && goodBack == realOne,
                     "a waveform with samples still reads back unchanged");
+            }
+
+            // --- 6. Renaming a genre reaches the vocabulary and every album that uses it. ---
+            //
+            // Three branches worth separating: a rename to a free name, a rename onto a name that
+            // already exists (a merge, because Genres.name is UNIQUE COLLATE NOCASE and refusing
+            // would decline the case people rename for), and a change of capitalisation only, which
+            // is the same row under that index and so cannot be done by insert-then-delete.
+            {
+                auto &albums = theTrackLibrary.getAlbumManager();
+
+                const auto albumOne = albums.findOrCreateAlbum("SelfTest Album One", rootFolderId);
+                const auto albumTwo = albums.findOrCreateAlbum("SelfTest Album Two", rootFolderId);
+                const auto albumBoth = albums.findOrCreateAlbum("SelfTest Album Both", rootFolderId);
+                report.check(albumOne > 0 && albumTwo > 0 && albumBoth > 0, "three scratch albums could be created");
+
+                // Into the vocabulary as well as onto the albums. renameGenre resolves both rows in
+                // Genres, so names that exist only inside album JSON are not renameable at all - and
+                // the merge case below turns on the target already being in the vocabulary.
+                report.check(albums.addGenre("selftest-alpha") && albums.addGenre("selftest-beta"), "two scratch genres could be added to the vocabulary");
+
+                // The third album carries both names, in this order, so the merge below has to drop
+                // one of them and keep the position of the earlier.
+                const std::vector<std::string> moods{"nocturnal"};
+                const std::vector<std::string> tags{"selftest"};
+                albums.updateAlbumMetadata(albumOne, {"selftest-alpha"}, moods, tags);
+                albums.updateAlbumMetadata(albumTwo, {"selftest-beta"}, moods, tags);
+                albums.updateAlbumMetadata(albumBoth, {"selftest-alpha", "selftest-beta"}, moods, tags);
+
+                const auto genresOf = [&albums](AlbumId id)
+                {
+                    const auto info = albums.getAlbumById(id);
+                    return info.has_value() ? info->genres : std::vector<std::string>{};
+                };
+                const auto vocabularyHas = [&albums](const std::string &name)
+                {
+                    const auto vocabulary = albums.getGenresWithUsage();
+                    return std::any_of(vocabulary.begin(),
+                        vocabulary.end(),
+                        [&name](const GenreUsage &entry) { return entry.name == name; });
+                };
+
+                // (a) Rename to a name nothing else uses.
+                bool merged = true;
+                report.check(albums.renameGenre("selftest-alpha", "selftest-gamma", &merged), "a genre can be renamed to a free name");
+                report.check(!merged, "renaming to a free name does not report a merge");
+                report.check(vocabularyHas("selftest-gamma") && !vocabularyHas("selftest-alpha"), "the vocabulary carries the new name and not the old");
+                report.check(genresOf(albumOne) == std::vector<std::string>{"selftest-gamma"}, "the album using it was relabelled");
+
+                // The rename must not disturb the columns it was not given. updateAlbumMetadata
+                // writes genres, moods and tags together, so going through it would blank two of
+                // them - which is why renameGenre writes the genres column on its own.
+                const auto untouched = albums.getAlbumById(albumOne);
+                report.check(untouched.has_value() && untouched->moods == moods && untouched->tags == tags,
+                    "renaming a genre leaves the album's moods and tags alone");
+
+                // (b) Rename onto a name that already exists: a merge.
+                merged = false;
+                report.check(albums.renameGenre("selftest-gamma", "selftest-beta", &merged), "a genre can be renamed onto an existing one");
+                report.check(merged, "renaming onto an existing name reports a merge");
+                report.check(!vocabularyHas("selftest-gamma"), "the merged-away name is gone from the vocabulary");
+                report.check(genresOf(albumOne) == std::vector<std::string>{"selftest-beta"}, "an album holding only the old name now holds the new one");
+                report.check(genresOf(albumTwo) == std::vector<std::string>{"selftest-beta"}, "an album that already held the new name is unchanged");
+
+                // The point of the merge rule: one entry, not two, and in the position the first of
+                // the two occupied - the leading genre is the headline and must stay the headline.
+                report.check(genresOf(albumBoth) == std::vector<std::string>{"selftest-beta"},
+                    std::format("an album that held both ends up with one entry (holds {})", genresOf(albumBoth).size()));
+
+                // (c) Capitalisation only. The two names are the same row under COLLATE NOCASE, so
+                // an insert-then-delete would delete the row it had just matched.
+                merged = true;
+                report.check(albums.renameGenre("selftest-beta", "SelfTest-Beta", &merged), "a genre can be recased");
+                report.check(!merged, "recasing is a rename, not a merge");
+                report.check(vocabularyHas("SelfTest-Beta"), "the vocabulary carries the new capitalisation");
+                report.check(genresOf(albumOne) == std::vector<std::string>{"SelfTest-Beta"}, "albums carry the new capitalisation too");
+
+                // (e) A merge adopts the surviving row's spelling, not the one that was typed.
+                report.check(albums.addGenre("selftest-delta"), "another scratch genre could be added");
+                albums.updateAlbumMetadata(albumTwo, {"selftest-delta"}, moods, tags);
+                report.check(albums.renameGenre("selftest-delta", "SELFTEST-BETA", &merged) && merged, "a genre can be merged using a different capitalisation");
+                report.check(vocabularyHas("SelfTest-Beta"), "the surviving vocabulary row kept its own spelling");
+                report.check(genresOf(albumTwo) == std::vector<std::string>{"SelfTest-Beta"},
+                    "the relabelled album carries the surviving spelling, not the typed one");
+
+                // (f) Refusals leave everything alone.
+                report.check(!albums.renameGenre("SelfTest-Beta", "   "), "a rename to an empty name is refused");
+                report.check(!albums.renameGenre("selftest-not-in-the-vocabulary", "selftest-anything"),
+                    "renaming a name that is not in the vocabulary is refused");
+                report.check(!albums.renameGenre("selftest-not-in-the-vocabulary", "selftest-not-in-the-vocabulary"),
+                    "renaming an absent name to itself is refused too, not waved through as a no-op");
+                report.check(albums.renameGenre("SelfTest-Beta", "SelfTest-Beta"), "renaming a genre to exactly its own name is a no-op, not a failure");
+                report.check(!vocabularyHas("selftest-anything"), "a refused rename did not invent a vocabulary entry");
+                report.check(genresOf(albumOne) == std::vector<std::string>{"SelfTest-Beta"}, "a refused rename changed nothing");
+
+                // (g) An album that lists an unrelated genre twice is not tidied up in passing.
+                report.check(albums.addGenre("selftest-epsilon"), "one more scratch genre could be added");
+                albums.updateAlbumMetadata(albumBoth, {"selftest-epsilon", "selftest-epsilon"}, moods, tags);
+                report.check(albums.renameGenre("SelfTest-Beta", "selftest-zeta"), "an unrelated genre can be renamed");
+                report.check(genresOf(albumBoth) == std::vector<std::string>{"selftest-epsilon", "selftest-epsilon"},
+                    "an album not carrying the renamed genre was left exactly as it was");
+
+                // (h) Two names that differ only by an accented capital are two rows to SQLite, whose
+                // NOCASE collation folds A-Z and nothing else, and they have to stay two throughout.
+                // A Unicode-aware fold calls them one, and everything downstream then acts on
+                // whichever row it happens to find - relabelling albums that belong to the other.
+                //
+                // Written as bytes rather than as literals so the test does not depend on how the
+                // compiler was told to read this file: C3 89 is U+00C9 E-acute, C3 A9 is U+00E9.
+                const std::string accentedUpper{"\xC3\x89" "lectro-selftest"};
+                const std::string accentedLower{"\xC3\xA9" "lectro-selftest"};
+                report.check(albums.addGenre(accentedUpper) && albums.addGenre(accentedLower),
+                    "two genres differing only by an accented capital could both be added");
+                report.check(vocabularyHas(accentedUpper) && vocabularyHas(accentedLower), "the vocabulary keeps them as two separate rows");
+
+                albums.updateAlbumMetadata(albumOne, {accentedUpper}, moods, tags);
+                albums.updateAlbumMetadata(albumTwo, {accentedLower}, moods, tags);
+                report.check(albums.renameGenre(accentedUpper, "selftest-eta"), "one of the two can be renamed to a free name");
+                report.check(genresOf(albumOne) == std::vector<std::string>{"selftest-eta"}, "the album carrying the renamed spelling was relabelled");
+                report.check(genresOf(albumTwo) == std::vector<std::string>{accentedLower},
+                    "the album carrying the other spelling was left alone - this is the whole point");
+                report.check(vocabularyHas(accentedLower), "the other vocabulary row survives the rename");
             }
 
             writeResultsFile(resultsPath, "jucyaudio scan self test", report);
