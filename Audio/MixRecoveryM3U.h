@@ -50,7 +50,7 @@ namespace jucyaudio
          * | `#EXTMIXDURATION:<seconds>`         | total length, seconds; absent if unknown |
          * | `#EXTINF:<seconds>,<artist> - <title>` | standard, seconds, rounded            |
          * | `#JAALBUM:<album>`                  | album                                    |
-         * | `#JASTART:<milliseconds>`           | where this track starts within the mix   |
+         * | `#JASTART:<milliseconds>`           | where this track starts within the mix; may be negative |
          * | `#JADURATION:<milliseconds>`        | exact track length                       |
          * | `#JASIZE:<bytes>`                   | file size                                |
          * | `#JATRACKID:<id>`                   | the track id at the time of capture      |

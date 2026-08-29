@@ -44,3 +44,62 @@ If you are exporting from a Workingset named FOO, and you want to export, defaul
 **Complexity**: This touches the audio decode pipeline, waveform analysis, and mix creation logic. Needs careful handling to avoid false positives on tracks that are legitimately silent at the end.
 
 ---
+
+---
+
+## Deferred: `SqliteFolderDatabase` lock-order inversion
+
+**Symptom**: Two threads can deadlock. The cache accessors (`getFolderById`, `hasChildren`,
+`getParentSet`, `getChildFolders`, `getAllChildFolders`) call `buildCacheIfNeeded()`, which takes
+`m_cacheMutex` (`Database/Sqlite/SqliteFolderDatabase.cpp:22`) and then acquires the database mutex
+through `SqliteStatement`. `findOrCreateFolderByPath` (`:660`) takes the database mutex first and then
+wants `m_cacheMutex`.
+
+**Why it has not bitten yet**: `buildCacheIfNeeded` only reaches for the database mutex when the cache
+is invalid. That happens during scans — which is exactly when `findOrCreateFolderByPath` runs hardest,
+so the window is narrow rather than absent.
+
+**Fix approach**: one consistent order, database mutex before cache mutex, on both paths.
+
+---
+
+## Deferred: deferred transactions are not isolated against the same connection
+
+**Symptom**: `TransactionMode::Immediate` (added for the mix recovery capture) holds
+`SqliteDatabase::getMutex()` for the transaction's lifetime, so nothing else on the connection can
+interleave. `TransactionMode::Deferred` — the default, used everywhere else — does not. Another thread
+on the same connection can write inside someone else's deferred transaction.
+
+**Key files**: `Database/Sqlite/SqliteTransaction.{h,cpp}`, `Database/Sqlite/SqliteDatabase.cpp`.
+
+**Fix approach**: not simply switching the default. Immediate mode serialises the whole connection for
+the transaction's duration, which is correct for a short capture and would be a throughput problem for
+a scan. Each deferred call site needs deciding on its own.
+
+---
+
+## Deferred: force-rescan re-insert collision
+
+**Symptom**: A forced rescan re-inserts a track row that already exists rather than updating the
+columns the scanner owns, so it collides.
+
+**Fix approach**: a targeted "update only scanner-owned columns" operation. The same operation is what
+scanner-driven re-identification (matching a moved file back to its `MixRecovery` entry by filename and
+size) needs, so the two should be done together.
+
+**Key files**: `Database/TrackScanner.cpp`, `Database/Sqlite/SqliteTrackDatabase.cpp`.
+
+---
+
+## Deferred: repair the 98 mixes damaged by the old `MixTracks` cascade
+
+**Symptom**: 98 mixes have fewer `MixTracks` rows than their `track_count`, with gaps in
+`order_in_mix`. Caused by `MixTracks.track_id` having no foreign key while deleting a track removed the
+row anyway; `removeTracksFromMix` renumbers, so a gap is the cascade's signature rather than an edit's.
+
+These are the mixes `--export-mix-recovery` refuses to record, by design — an incomplete mix cannot be
+described honestly. The full list is in `%LOCALAPPDATA%\jucyaudio\backfill-results.txt` after a run.
+
+**Fix approach**: unknown until someone checks whether an older snapshot in
+`%LOCALAPPDATA%\jucyaudio\*.sqlite` (23-2026-08-05 through 27-2026-08-28) still holds the missing
+`MixTracks` rows. One read-only query settles it. Recording them is blocked until they are repaired.

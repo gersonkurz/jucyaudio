@@ -2,6 +2,7 @@
 #include <Database/TrackLibrary.h>
 #include <Utils/AssortedUtils.h>
 #include <fstream>
+#include <locale>
 #include <format>
 #include <unordered_map>
 #include <spdlog/spdlog.h>
@@ -47,6 +48,11 @@ namespace jucyaudio
                 spdlog::error("ExportMixToM3U: Failed to open file for writing: {}", pathToString(targetFilepath));
                 return false;
             }
+
+            // Same reason as MixRecoveryM3U: the application sets a global locale with thousands
+            // separators and operator<< honours it, so the streamed duration below came out as
+            // "20,757" and read back as 20. Machine-readable file, so numbers are digits.
+            outFile.imbue(std::locale::classic());
 
             // Write M3U header
             outFile << "#EXTM3U\n";

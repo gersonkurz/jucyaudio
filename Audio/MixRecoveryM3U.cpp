@@ -28,6 +28,7 @@
 #include <chrono>
 #include <format>
 #include <fstream>
+#include <locale>
 #include <optional>
 
 namespace jucyaudio
@@ -162,6 +163,13 @@ namespace jucyaudio
                 {
                     return std::format("could not open {} for writing", pathToString(tempPath));
                 }
+
+                // The application sets a global locale with thousands separators, and operator<< honours
+                // it - so a streamed 20757 came out as "20,757" and any reader parsing the number would
+                // have got 20. This is a machine-readable file: numbers are digits, always. std::format
+                // is locale-independent by default and was never affected, which is why only the one
+                // streamed value went wrong.
+                out.imbue(std::locale::classic());
 
                 out << "#EXTM3U\n";
                 out << "#EXTMIX:" << entries.front().mixName << "\n";

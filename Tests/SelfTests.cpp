@@ -898,6 +898,40 @@ namespace jucyaudio
                     report.check(text.find(tag) != std::string::npos, std::format("the companion carries {}", tag));
                 }
 
+                // Presence is not enough. The application sets a global locale with thousands
+                // separators, so a value that goes out through operator<< instead of std::format comes
+                // out as "20,757" - present, well-formed to the eye, and parsed as 20 by anything
+                // reading it as a number. Every field below is a bare integer by definition, so the
+                // whole value up to the newline must be digits.
+                for (const auto *tag : {"#EXTMIXDURATION:", "#JASTART:", "#JADURATION:", "#JASIZE:", "#JATRACKID:"})
+                {
+                    const std::string tagText{tag};
+                    bool allNumeric = true;
+                    std::string offender;
+                    for (size_t at = text.find(tagText); at != std::string::npos; at = text.find(tagText, at + 1))
+                    {
+                        const auto valueAt = at + tagText.size();
+                        const auto lineEnd = text.find('\n', valueAt);
+                        auto value = text.substr(valueAt, lineEnd - valueAt);
+
+                        // #JASTART alone may be negative, and one mix in the library is: its first
+                        // track cues 482 ms before the file begins, so its audible content starts
+                        // before the mix does. A sign is part of the number here; a comma is not.
+                        if (tagText == "#JASTART:" && value.starts_with('-'))
+                        {
+                            value.erase(0, 1);
+                        }
+
+                        if (value.empty() || !std::all_of(value.begin(), value.end(), [](unsigned char c) { return c >= '0' && c <= '9'; }))
+                        {
+                            allNumeric = false;
+                            offender = value;
+                            break;
+                        }
+                    }
+                    report.check(allNumeric, std::format("every {} value is digits only (found \"{}\")", tag, offender));
+                }
+
                 // One #EXTINF per track, so nothing was dropped or duplicated.
                 size_t extinfCount = 0;
                 for (size_t at = text.find("#EXTINF:"); at != std::string::npos; at = text.find("#EXTINF:", at + 1))
