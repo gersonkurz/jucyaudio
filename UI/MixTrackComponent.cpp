@@ -410,7 +410,13 @@ namespace jucyaudio
         {
             if (source == &m_thumbnail)
             {
-                if (m_thumbnail.isFullyLoaded() && !m_isLoaded)
+                // getTotalLength(), not isFullyLoaded() alone. JUCE calls a thumbnail fully loaded
+                // when numSamplesFinished >= totalSamples - samplesPerThumbSample, which is true of a
+                // source it could not read at all - so a missing file arrives here looking finished
+                // with nothing in it. Saving that writes a 52-byte empty thumbnail over the cache,
+                // and because it is a structurally valid thumbnail it loads again happily ever after:
+                // the track keeps a blank waveform long after its file comes back.
+                if (m_thumbnail.isFullyLoaded() && !m_isLoaded && m_thumbnail.getTotalLength() > 0.0)
                 {
                     m_isLoaded = true;
                     spdlog::info("Thumbnail fully generated for track {}, saving to cache.", m_trackInfo.trackId);

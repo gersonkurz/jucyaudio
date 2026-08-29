@@ -12,6 +12,7 @@
 #include <algorithm> // For std::reverse
 #include <cassert>   // For assert
 #include <cctype>    // For ::isdigit
+#include <cstring>  // For std::memcmp/std::memcpy
 #include <ranges>
 #include <spdlog/spdlog.h>
 #include <unordered_map>
@@ -20,6 +21,35 @@ namespace
 {
     using namespace jucyaudio;
     using namespace database;
+
+    /// @brief True when a cached waveform blob is a thumbnail that decoded nothing.
+    ///
+    /// juce::AudioThumbnail reports isFullyLoaded() as true for a source it could not read -
+    /// the test is numSamplesFinished >= totalSamples - samplesPerThumbSample, and 0 >= -2048 -
+    /// so an empty thumbnail gets serialised and stored as though it were a real waveform. The
+    /// result is a valid 52-byte header with no samples in it, which every caller then treats as
+    /// a cache hit and never regenerates. That is how a track whose file was missing keeps a
+    /// blank waveform after the file comes back.
+    ///
+    /// Read as bytes rather than through juce::AudioThumbnail: this layer has no JUCE dependency,
+    /// and the header is a fixed little-endian layout - "jatm", samplesPerThumbSample as int32,
+    /// then totalSamples as int64.
+    bool isEmptyWaveformBlob(const std::vector<unsigned char> &blob)
+    {
+        static constexpr size_t headerSize = 16;
+        static constexpr size_t totalSamplesOffset = 8;
+
+        if (blob.size() < headerSize || std::memcmp(blob.data(), "jatm", 4) != 0)
+        {
+            // Not something this function understands. Left to the caller, which has always had to
+            // cope with a blob juce::AudioThumbnail::loadFrom refuses.
+            return false;
+        }
+
+        int64_t totalSamples = 0;
+        std::memcpy(&totalSamples, blob.data() + totalSamplesOffset, sizeof(totalSamples));
+        return totalSamples <= 0;
+    }
 
     // Array of initial SQL statements for schema creation
     const char *maintenanceSqlStatements[] = {
@@ -3701,6 +3731,18 @@ CREATE TABLE MixUndoHistory (
             if (stmt.getNextResult())
             {
                 blob = stmt.getBlob(0);
+
+                // Reported as a miss, not handed back. A stored thumbnail with no samples in it is
+                // a record of a failure, not a waveform, and every caller reads this through here -
+                // the mix editor's per-track component, its preloader, and anything later. Failing
+                // once, here, is what turns those rows back into something that regenerates.
+                if (isEmptyWaveformBlob(blob))
+                {
+                    spdlog::info("[Waveform] Cached waveform for track {} has no samples; treating it as absent.", trackId);
+                    blob.clear();
+                    return DbResult::failure(DbResultStatus::ErrorGeneric, "Cached waveform is empty.");
+                }
+
                 return DbResult::success();
             }
             

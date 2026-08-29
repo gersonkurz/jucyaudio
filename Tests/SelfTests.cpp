@@ -666,6 +666,50 @@ namespace jucyaudio
             report.check(workingSetMembers(db, workingSetInfo.id) == originalIds,
                 std::format("the working set still holds the same {} tracks", kTrackCount));
 
+            // --- 5. An empty waveform in the cache is a miss, not a hit. ---
+            //
+            // Here rather than in a suite of its own because this is the same failure the four
+            // steps above describe, one layer down: a track whose file was missing when the mix
+            // editor drew it had an AudioThumbnail that decoded nothing written to WaveformCache.
+            // JUCE serialises that as a valid 52-byte header, so it read back as a cache hit and
+            // the track kept a blank waveform for good - even after the scan above cleared
+            // is_missing and the file was demonstrably back. 24 tracks in the real library were
+            // in exactly that state.
+            //
+            // The bytes are written by hand: nothing reachable through the interfaces produces
+            // one any more, which is the point of the write guards.
+            {
+                const auto victimId = originalIds.begin()->second;
+
+                // "jatm", samplesPerThumbSample = 2048, then a zero totalSamples - what
+                // MixTrackComponent stored for a source it could not read.
+                std::vector<unsigned char> tombstone(52, 0);
+                tombstone[0] = 'j';
+                tombstone[1] = 'a';
+                tombstone[2] = 't';
+                tombstone[3] = 'm';
+                tombstone[5] = 0x08;
+
+                report.check(theTrackLibrary.saveWaveform(victimId, tombstone).isOk(), "an empty waveform could be staged into the cache");
+
+                std::vector<unsigned char> readBack{0xFF};
+                const auto emptyResult = theTrackLibrary.loadWaveform(victimId, readBack);
+                report.check(!emptyResult.isOk(), "an empty cached waveform reads back as a miss, so the track regenerates");
+                report.check(readBack.empty(), "a rejected waveform hands back nothing rather than the empty blob");
+
+                // The same header carrying samples must still be returned, or the guard would have
+                // turned every waveform in the library into a permanent cache miss.
+                auto realOne = tombstone;
+                realOne[8] = 0x00;
+                realOne[9] = 0xD2;
+                realOne[10] = 0xE4;
+                report.check(theTrackLibrary.saveWaveform(victimId, realOne).isOk(), "a waveform with samples could be staged");
+
+                std::vector<unsigned char> goodBack;
+                report.check(theTrackLibrary.loadWaveform(victimId, goodBack).isOk() && goodBack == realOne,
+                    "a waveform with samples still reads back unchanged");
+            }
+
             writeResultsFile(resultsPath, "jucyaudio scan self test", report);
             spdlog::info("[SelfTest] Finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
             return report.failures() == 0 ? 0 : 1;

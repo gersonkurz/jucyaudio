@@ -47,6 +47,7 @@ namespace jucyaudio
                 enum class FailureKind
                 {
                     FileMissing,      ///< The path did not resolve.
+                    SourceOpenFailed, ///< The file would not open for reading; nothing was decoded.
                     Timeout,          ///< The decoder did not finish in time.
                     CacheWriteFailed, ///< Decoded fine; only storing the waveform failed.
                     EmptyWaveform,    ///< Decoded, but to nothing at all.
@@ -67,6 +68,11 @@ namespace jucyaudio
                 /// @return true only for failures caused by the content, not by its surroundings.
                 static bool provesAudioUnusable(FailureKind kind)
                 {
+                    // SourceOpenFailed is deliberately absent. JUCE reports it for anything that stops
+                    // it establishing a sample rate and length - a permission error, a disconnected
+                    // volume, a file deleted between the existence check and the open - none of which
+                    // is a statement about the audio. Treating it as one would let a transient failure
+                    // drop a track out of the mix.
                     return kind == FailureKind::EmptyWaveform || kind == FailureKind::DecodeFailed;
                 }
 

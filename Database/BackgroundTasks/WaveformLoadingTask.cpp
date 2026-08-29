@@ -161,8 +161,18 @@ namespace jucyaudio
                     // Create a thumbnail for loading
                     juce::AudioThumbnail thumbnail{512, m_formatManager, m_thumbnailCache};
                     
-                    // Set the source file
-                    thumbnail.setSource(new juce::FileInputSource{audioFile});
+                    // The return value matters. JUCE hands back false when it could not establish a
+                    // sample rate and length, and in that state isFullyLoaded() is immediately true -
+                    // the test is numSamplesFinished >= totalSamples - samplesPerThumbSample, which
+                    // reads 0 >= -512. The wait loop below would fall straight through, saveTo would
+                    // write a valid 52-byte header with nothing in it, and that would be cached as a
+                    // waveform. The same mechanism created the blank cached waveforms found in the
+                    // library, though MixTrackComponent was the writer of every one of those.
+                    if (!thumbnail.setSource(new juce::FileInputSource{audioFile}))
+                    {
+                        spdlog::error("[WaveformLoadingTask] Could not open track {} for reading", trackId);
+                        return FailureDetail{FailureKind::SourceOpenFailed, "could not open the file for reading"};
+                    }
                     
                     // Wait for loading to complete (with timeout)
                     auto startTime = std::chrono::steady_clock::now();
