@@ -72,6 +72,18 @@ namespace jucyaudio
 
             void shutdown() override
             {
+                // Before anything is torn down, and before mainWindow goes: asking a destroyed
+                // window where it was is too late.
+                //
+                // Only on a clean exit. A crash or a kill loses the last move, which is the trade
+                // for not rewriting the config file on every drag.
+                if (mainWindow != nullptr)
+                {
+                    config::theSettings.uiSettings.windowState.set(mainWindow->getWindowStateAsString().toStdString());
+                    config::TomlBackend backend{g_strConfigFilename};
+                    config::theSettings.save(backend);
+                }
+
                 SingletonComponentDialog::closeDialog("MasterEffects");
                 PluginWindow::closeAllWindows();
                 audio::theMasterPluginChain.clear();
@@ -271,8 +283,16 @@ namespace jucyaudio
                     commandManager.registerAllCommandsForTarget(mainComp);
                 }
                 
-                // Position window
-                mainWindow->centreWithSize(1200, 800);
+                // Where it was last time, or centred on first run. restoreWindowStateFromString
+                // returns false for a string it cannot use - an empty setting, a truncated one, a
+                // zero-sized rectangle - so a damaged config gives a centred window rather than an
+                // unusable one. A window saved on a monitor that is no longer attached is pulled
+                // back onto a real display by JUCE, not by us.
+                const auto savedWindowState{config::theSettings.uiSettings.windowState.get()};
+                if (savedWindowState.empty() || !mainWindow->restoreWindowStateFromString(savedWindowState))
+                {
+                    mainWindow->centreWithSize(1200, 800);
+                }
 
                 // Now switch windows
                 spdlog::info("Switching from splash to main...");

@@ -166,6 +166,13 @@ namespace jucyaudio
                 TypedValue<bool> showOfflineTracks{this, "ShowOfflineTracks", false};  // Default to hiding offline tracks
                 TypedValue<int> maxTrackDetailsPages{this, "MaxTrackDetailsPages", 50}; // Cap on tracks shown (paged) in the Details dialog
                 TypedValue<int> visualizerPlacement{this, "VisualizerPlacement", 0};  // 0=Bottom, 1=Left, 2=Right
+                /// @brief The main window's position, size and maximised state, in JUCE's own format.
+                ///
+                /// Opaque on purpose: it is whatever ResizableWindow::getWindowStateAsString() produced,
+                /// and only restoreWindowStateFromString() ever reads it. Storing four numbers of our own
+                /// instead would mean reimplementing what that pair already does - the maximised flag,
+                /// and pulling a window back onto a display when the monitor it was on is gone.
+                TypedValue<std::string> windowState{this, "WindowState", ""};
                 TypedValueVector<DataViewColumnSection> libraryViewColumns{this, "LibraryViewColumns"};
                 TypedValueVector<DataViewColumnSection> workingSetsViewColumns{this, "WorkingSetsViewColumns"};
                 TypedValueVector<DataViewColumnSection> mixesViewColumns{this, "MixesViewColumns"};
