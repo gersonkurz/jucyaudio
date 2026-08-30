@@ -8,6 +8,7 @@
 #include <Database/Includes/ExportFolderInfo.h>
 #include <Database/Includes/TrackQueryArgs.h>
 #include <Database/UndoManager.h>
+#include <spdlog/spdlog.h>
 #include <optional>
 #include <string>
 #include <vector>
@@ -60,20 +61,41 @@ namespace jucyaudio
                 }
             }
 
+            /// @brief A mix and its rows, for the undo history.
+            ///
+            /// Reports failure by leaving mixInfo.mixId at zero, because a snapshot that cannot be
+            /// read must not be recorded: an undo restores exactly what was stored, so a mix
+            /// snapshotted as empty is a mix an undo would empty.
             ExtendedMixInfo getExtendedMixInfo(MixId mixId) const
             {
                 ExtendedMixInfo extMixInfo;
                 extMixInfo.mixInfo = getMix(mixId);
                 if (extMixInfo.mixInfo.mixId != 0) // Valid mix found
                 {
-                    extMixInfo.tracks = getMixTracks(mixId);
+                    if (const auto read = readMixTracks(mixId, extMixInfo.tracks); !read.isOk())
+                    {
+                        spdlog::error("Not snapshotting mix {} for undo: {}", mixId, read.errorMessage);
+                        return ExtendedMixInfo{};
+                    }
                 }
                 return extMixInfo;
             }
 
             void recordMixChange(MixId mixId) const
             {
-                theUndoManager.recordMixChange(getExtendedMixInfo(mixId));
+                auto snapshot = getExtendedMixInfo(mixId);
+                if (snapshot.mixInfo.mixId == 0)
+                {
+                    // The change is committed and cannot be snapshotted, so the history no longer
+                    // describes this mix. Simply declining to record would leave the earlier states in
+                    // place and still offer Undo - which would then skip the state just committed and
+                    // restore the one before it, with no way to redo. Dropping the history costs the
+                    // ability to undo; keeping it would silently rewrite the mix to the wrong version.
+                    spdlog::error("Mix {} could not be snapshotted; clearing its undo history.", mixId);
+                    theUndoManager.clearHistory(mixId);
+                    return;
+                }
+                theUndoManager.recordMixChange(std::move(snapshot));
             }
 
             // @brief Get the mix-track information associated with a specific mix ID.

@@ -537,7 +537,20 @@ namespace jucyaudio
         void CreateMixDialogComponent::finishAppendToMix(const database::MixInfo& targetMix)
         {
             auto mixToUpdate = targetMix;
-            auto existingTracks = theTrackLibrary.getMixManager().getMixTracks(targetMix.mixId);
+
+            // readMixTracks, not getMixTracks: what comes back is appended to and then written
+            // back through createOrUpdateMix, which replaces the whole row set. An empty vector
+            // from a failed read would turn an append into a mix containing only the new tracks.
+            std::vector<database::MixTrack> existingTracks;
+            if (const auto read = theTrackLibrary.getMixManager().readMixTracks(targetMix.mixId, existingTracks); !read.isOk())
+            {
+                spdlog::error("Cannot append to mix '{}': {}", targetMix.name, read.errorMessage);
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                    "Append Failed",
+                    "Could not read the existing mix, so nothing was appended. Check the logs for details.");
+                closeThisDialog(false);
+                return;
+            }
             const Duration_t defaultCrossfade{5000};
             int nextOrder = static_cast<int>(existingTracks.size());
             const bool useSmartAutomix = config::theSettings.mixEditingSettings.useSmartAutomix.get();

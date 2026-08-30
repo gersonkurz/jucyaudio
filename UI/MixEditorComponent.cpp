@@ -225,7 +225,13 @@ namespace jucyaudio
                 const auto& mixManager = database::theTrackLibrary.getMixManager();
                 auto mixInfo = mixManager.getMix(m_node->getMixInfo().mixId);
                 bool wasReadOnly = m_isReadOnly;
-                m_isReadOnly = mixInfo.exportFolder.has_value() && !mixInfo.exportFolder->empty();
+
+                // Both reasons, not just the export folder. A mix that could not be read is held
+                // read-only by setNode, and this used to undo that: moving an exported, unreadable
+                // mix back out of its folder made the empty loader writable again without any
+                // attempt to re-read it, and the next save wrote the empty loader down.
+                const bool exported = mixInfo.exportFolder.has_value() && !mixInfo.exportFolder->empty();
+                m_isReadOnly = exported || !m_node->isCacheLoaded();
 
                 // If read-only state changed, update the timeline
                 if (wasReadOnly != m_isReadOnly)
@@ -239,6 +245,36 @@ namespace jucyaudio
             m_timeline.repaint();
             m_viewport.repaint();
             resized(); // Recalculate viewport content
+        }
+
+        void MixEditorComponent::onNodeCacheReloaded(const database::MixNode *node)
+        {
+            if (m_node == nullptr || node != m_node)
+            {
+                return;
+            }
+
+            auto &mixLoader = m_node->getMixProjectLoader();
+
+            // Repopulated, or cleared when there is nothing to populate from. Either way the old
+            // TrackViews go: they hold pointers into the vector the reload has just replaced, and
+            // painting, dragging or copying one of them afterwards reads freed memory. Leaving the
+            // stale timeline up is not a cosmetic problem.
+            if (m_node->isCacheLoaded())
+            {
+                m_timeline.populateFrom(&mixLoader);
+            }
+            else
+            {
+                spdlog::error("[MixEditor] Mix {} could not be reloaded; clearing the timeline.", m_node->getMixInfo().mixId);
+                m_timeline.releaseMixLoader();
+                m_isReadOnly = true;
+                m_timeline.setReadOnly(true);
+            }
+
+            m_timeline.repaint();
+            m_viewport.repaint();
+            resized();
         }
 
         void MixEditorComponent::setPlaybackController(PlaybackController* controller)
@@ -278,6 +314,27 @@ namespace jucyaudio
             if (m_node == nullptr)
                 return false;
 
+            // Undo and redo write the mix through createOrUpdateMix like any other edit, so
+            // read-only has to stop them as well. It did not, which meant an exported mix - or one
+            // held read-only because it could not be read - could still be rewritten from whatever
+            // history happened to be lying around.
+            //
+            // The cache is asked directly as well as the flag. m_isReadOnly is only recalculated
+            // where something thought to look, and a forced reload elsewhere can empty the loader
+            // without any of those places running - leaving a stale "writable" over a mix that is
+            // no longer in memory.
+            if (m_isReadOnly || !m_node->isCacheLoaded())
+            {
+                // All three bindings, including the Ctrl+Shift+Z form of redo further down.
+                if (key == juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0) ||
+                    key == juce::KeyPress('y', juce::ModifierKeys::commandModifier, 0) ||
+                    key == juce::KeyPress('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 0))
+                {
+                    spdlog::info("[MixEditor] Mix {} is read-only or not loaded; ignoring undo/redo.", m_node->getMixInfo().mixId);
+                    return true;
+                }
+            }
+
             // Ctrl+Z for undo
             if (key == juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0))
             {
@@ -298,13 +355,32 @@ namespace jucyaudio
                         m_playbackController->stop();
                     }
                     
-                    if (theUndoManager.undo(mixId))
+                    // A restore that did not happen leaves the mix as it was - including its
+                    // playback, which was stopped above on the assumption this would work.
+                    if (!theUndoManager.undo(mixId))
+                    {
+                        spdlog::error("[MixEditor] Undo of mix {} failed; nothing was changed.", mixId);
+                        if (wasPlaying && m_playbackController)
+                        {
+                            m_playbackController->play();
+                        }
+                        return true;
+                    }
+
                     {
                         // Refresh the mix after undo
                         if (m_node)
                         {
                             spdlog::info("Refreshing mix after undo");
                             m_node->refreshCache(true);  // Force a complete refresh
+                            if (!m_node->isCacheLoaded())
+                            {
+                                // The reload after the undo failed, so what the loader holds no
+                                // longer describes the database. Locked before anything writes it back.
+                                spdlog::error("[MixEditor] Mix {} could not be re-read after undo; locking it.", mixId);
+                                m_isReadOnly = true;
+                                m_timeline.setReadOnly(true);
+                            }
                             
                             // Reload mix - atomic swap handles thread safety
                             if (m_playbackController)
@@ -363,13 +439,30 @@ namespace jucyaudio
                         m_playbackController->stop();
                     }
                     
-                    if (theUndoManager.redo(mixId))
+                    // A restore that did not happen leaves the mix as it was - including its
+                    // playback, which was stopped above on the assumption this would work.
+                    if (!theUndoManager.redo(mixId))
+                    {
+                        spdlog::error("[MixEditor] Redo of mix {} failed; nothing was changed.", mixId);
+                        if (wasPlaying && m_playbackController)
+                        {
+                            m_playbackController->play();
+                        }
+                        return true;
+                    }
+
                     {
                         // Refresh the mix after redo
                         if (m_node)
                         {
                             spdlog::info("Refreshing mix after redo");
                             m_node->refreshCache(true);  // Force a complete refresh
+                            if (!m_node->isCacheLoaded())
+                            {
+                                spdlog::error("[MixEditor] Mix {} could not be re-read after redo; locking it.", mixId);
+                                m_isReadOnly = true;
+                                m_timeline.setReadOnly(true);
+                            }
                             
                             // Reload mix - atomic swap handles thread safety
                             if (m_playbackController)
@@ -445,6 +538,18 @@ namespace jucyaudio
             const auto& mixManager = database::theTrackLibrary.getMixManager();
             auto mixInfo = mixManager.getMix(node->getMixInfo().mixId);
             m_isReadOnly = mixInfo.exportFolder.has_value() && !mixInfo.exportFolder->empty();
+
+            if (!node->isCacheLoaded())
+            {
+                // The mix could not be read, so what the loader holds does not describe it - and
+                // every save path here writes what the loader holds. Read-only is the difference
+                // between a mix nobody can open and a mix overwritten with the wrong contents.
+                spdlog::error("[MixEditor] Mix {} could not be loaded; opening it read-only.", node->getMixInfo().mixId);
+                m_isReadOnly = true;
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                    "Mix Could Not Be Loaded",
+                    "This mix could not be read from the database and has been opened read-only, so it cannot be overwritten. Check the logs for details.");
+            }
 
             if (m_isReadOnly)
             {
@@ -678,6 +783,9 @@ namespace jucyaudio
 
             // Nothing to write here any more. removeTracksFromMix derives and stores the summary inside
             // its own transaction, so the reload above has already brought back the correct figures.
+            // What used to stand here recomputed them from the loader and wrote them afterwards, which
+            // could put a stale number over the authoritative one if the reload was partial or another
+            // instance edited the mix in between.
 
             spdlog::info("[MixEditor] Removed {} undecodable track(s) from mix {}.", rowsToRemove, loader.getMixId());
             return RemovalOutcome::Removed;
@@ -1012,6 +1120,16 @@ namespace jucyaudio
                 return;
             }
             spdlog::info("[SAVE-DB] saveMixChanges called");
+
+            // One of several entry points, not the only one: TimelineComponent writes the mix directly
+            // in four places and never comes through here, and MixProjectLoader::saveMix is a third
+            // route. Each of those carries the same check. The invariant is enforced wherever the
+            // database is written rather than at one gate, because there is no one gate.
+            if (!m_node->isCacheLoaded())
+            {
+                spdlog::error("[SAVE-DB] Refusing to save mix {}: its tracks were never loaded.", m_node->getMixInfo().mixId);
+                return;
+            }
 
             // Get the current mix info and tracks
             auto &mixProjectLoader = m_node->getMixProjectLoader();

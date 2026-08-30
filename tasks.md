@@ -122,3 +122,40 @@ exporter's rule so that a stored length cannot disagree with the audio the expor
 **Fix approach**: one walk, used by all three. The blocker is that the playback engine and the
 exporter each own their own positioning loop for reasons unrelated to this - unpicking those is the
 work, not choosing the rule.
+
+---
+
+## Deferred: the timeline holds raw pointers into a vector that gets replaced
+
+**Symptom**: `TrackView::mixTrackData` points into `MixProjectLoader::m_mixTracks`
+(`UI/TimelineComponent.cpp:1664`). `MixProjectLoader::loadMix` clears and refills that vector, so
+every reload invalidates every TrackView pointer at once. Painting, layout, dragging or copying a
+stale TrackView reads freed memory.
+
+**Why it has not bitten more often**: reloads normally arrive through the editor, which repopulates
+the timeline immediately afterwards. The metadata refresh in `MainComponent` did not, and now calls
+`MixEditorComponent::onNodeCacheReloaded` to do so - but that is one caller being taught the rule,
+not the rule being enforced.
+
+**Fix approach**: the timeline should not retain pointers into replaceable storage. Indices into the
+loader, or a copy it owns, remove the whole class of problem rather than requiring every future
+refresh site to remember. Until then, anything calling `refreshCache(true)` on a node the editor may
+be showing has to notify the editor.
+
+---
+
+## Deferred: the mix editor cannot tell a failed track query from an offline one
+
+**Symptom**: `MixProjectLoader::loadMix` reads its `TrackInfo` list with
+`theTrackLibrary.getTracks(...)`, which returns an empty vector both when the query fails and when it
+legitimately matches nothing. The loader then reports success either way, and the timeline and
+playback see a mix whose tracks do not resolve.
+
+**Why the obvious check is wrong**: an empty result is not evidence of failure. The ordinary track
+query filters out offline folders, so a valid mix whose tracks are all on a disconnected drive
+resolves to nothing - and rejecting that would make those mixes unopenable whenever the volume is
+unplugged. A partial failure does not show up as emptiness either; it comes back as a prefix.
+
+**Fix approach**: a status-bearing read that fetches the TrackInfos for a specific set of track ids,
+without the offline filter, and reports whether the query itself succeeded. Until then an
+unresolvable track is skipped by the ATTACH walk and by the timeline, as it always has been.

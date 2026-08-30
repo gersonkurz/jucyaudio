@@ -103,15 +103,45 @@ namespace jucyaudio
              */
             void setSelectedTrack(MixTrackComponent *track);
 
+            /// @brief Drops any in-progress reorder drag.
+            ///
+            /// m_draggedTrackForReorder is a bare pointer to a MixTrackComponent that populateFrom
+            /// and releaseMixLoader both destroy. Anything that abandons a drag, or is about to
+            /// tear the views down, has to come through here first - otherwise the next paint
+            /// dereferences it, and the drop indicator stays on screen besides.
+            void cancelReorderDrag();
+
+            /// @brief Locks the timeline if its loader no longer describes the database.
+            ///
+            /// Call after every reload attempt. A failed reload leaves the previous tracks in place -
+            /// deliberately, so nothing is left pointing at freed memory - but they are now a picture
+            /// of a mix that has moved on. Editing that picture writes positions taken from it onto
+            /// rows that are somewhere else: dragging the third row on screen reorders whatever the
+            /// third row is now.
+            ///
+            /// @return True if the timeline is still usable.
+            bool lockIfUnloaded();
+
             /**
-             * @brief Releases the MixProjectLoader reference.
+             * @brief Stops showing a mix: drops the loader reference and everything built from it.
              *
-             * This function is called when the timeline component is no longer needed.
-             * It clears the internal mix loader pointer to release resources.
+             * Called when the timeline no longer represents anything - unloading, or a reload that
+             * failed. The views go with the pointer, because each one holds a raw pointer into the
+             * loader's track vector.
              */
             void releaseMixLoader()
             {
                 clearTrackContext();
+                cancelReorderDrag();
+
+                // The views go too, not just the pointer. Each TrackView holds a raw pointer into the
+                // loader's track vector, so leaving them behind means the next paint, layout, drag or
+                // copy reads memory the loader has released. Clearing the loader pointer alone stops
+                // new lookups and leaves the old ones exactly where they were.
+                m_trackViews.clear();
+                removeAllChildren();
+                m_cachedNumLanes = -1;
+
                 m_mixLoader = nullptr;
             }
 

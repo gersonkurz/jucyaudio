@@ -88,6 +88,20 @@ namespace jucyaudio
 
         bool TimelineComponent::deleteSelectedTrack()
         {
+            // Before anything else, including stopping playback. An empty track list after a failed
+            // read is indistinguishable from an empty mix, and createOrUpdateMix replaces the whole
+            // row set - so writing one deletes the mix. The editor holds such a mix read-only, but
+            // this path writes the database directly and a forced reload elsewhere can empty the
+            // loader without that flag ever being recalculated.
+            //
+            // Refusing here rather than further down also means the caller is left as it was found:
+            // a check made after playback has been stopped leaves it stopped.
+            if (m_mixLoader == nullptr || !m_mixLoader->isLoaded())
+            {
+                spdlog::error("[Timeline] Refusing to write the mix: its tracks were never loaded.");
+                return false;
+            }
+
             // 1. Pre-condition checks
             if (!m_selectedTrack)
             {
@@ -234,6 +248,9 @@ namespace jucyaudio
             if (!m_mixLoader->reloadFromDatabase())
             {
                 spdlog::error("Failed to reload MixProjectLoader from database after deletion!");
+                // The database change committed; only the re-read failed. What is on screen now
+                // predates it, so it must not be edited further.
+                lockIfUnloaded();
                 return false;
             }
 
@@ -324,6 +341,20 @@ namespace jucyaudio
 
         void TimelineComponent::pasteFromClipboard(bool insertBefore)
         {
+            // Before anything else, including stopping playback. An empty track list after a failed
+            // read is indistinguishable from an empty mix, and createOrUpdateMix replaces the whole
+            // row set - so writing one deletes the mix. The editor holds such a mix read-only, but
+            // this path writes the database directly and a forced reload elsewhere can empty the
+            // loader without that flag ever being recalculated.
+            //
+            // Refusing here rather than further down also means the caller is left as it was found:
+            // a check made after playback has been stopped leaves it stopped.
+            if (m_mixLoader == nullptr || !m_mixLoader->isLoaded())
+            {
+                spdlog::error("[Timeline] Refusing to write the mix: its tracks were never loaded.");
+                return;
+            }
+
             if (m_isReadOnly)
             {
                 spdlog::info("Cannot paste track - mix is read-only (exported/locked)");
@@ -453,7 +484,12 @@ namespace jucyaudio
                 spdlog::info("Pasted track {} from clipboard at position {}", mixTrackToInsert.trackId, insertIndex);
 
                 // Reload from database to get the updated mix
-                if (m_mixLoader->reloadFromDatabase())
+                // Both, and in this order. Writing it as one && expression skipped the lock exactly
+                // when the reload had failed - which is the only time it is needed. The database
+                // change is already committed at this point; what is on screen is what predates it.
+                const bool reloaded = m_mixLoader->reloadFromDatabase();
+                const bool usable = lockIfUnloaded();
+                if (reloaded && usable)
                 {
                     // Refresh the UI
                     populateFrom();
@@ -481,6 +517,20 @@ namespace jucyaudio
 
         void TimelineComponent::removeAllTracksAfterSelected()
         {
+            // Before anything else, including stopping playback. An empty track list after a failed
+            // read is indistinguishable from an empty mix, and createOrUpdateMix replaces the whole
+            // row set - so writing one deletes the mix. The editor holds such a mix read-only, but
+            // this path writes the database directly and a forced reload elsewhere can empty the
+            // loader without that flag ever being recalculated.
+            //
+            // Refusing here rather than further down also means the caller is left as it was found:
+            // a check made after playback has been stopped leaves it stopped.
+            if (m_mixLoader == nullptr || !m_mixLoader->isLoaded())
+            {
+                spdlog::error("[Timeline] Refusing to write the mix: its tracks were never loaded.");
+                return;
+            }
+
             if (!m_selectedTrack || !m_mixLoader)
             {
                 spdlog::warn("removeAllTracksAfterSelected: No track selected or no mix loaded");
@@ -546,7 +596,12 @@ namespace jucyaudio
             {
                 spdlog::info("Successfully removed tracks from database.");
                 // Reload from database to get the updated mix
-                if (m_mixLoader->reloadFromDatabase())
+                // Both, and in this order. Writing it as one && expression skipped the lock exactly
+                // when the reload had failed - which is the only time it is needed. The database
+                // change is already committed at this point; what is on screen is what predates it.
+                const bool reloaded = m_mixLoader->reloadFromDatabase();
+                const bool usable = lockIfUnloaded();
+                if (reloaded && usable)
                 {
                     // --- FIX: Reload the now-modified mix into the playback engine ---
                     spdlog::debug("TimelineComponent: Reloading mix in playback controller.");
@@ -578,6 +633,20 @@ namespace jucyaudio
 
         bool TimelineComponent::removeTrackFromMixOnly(int orderInMixToRemove)
         {
+            // Before anything else, including stopping playback. An empty track list after a failed
+            // read is indistinguishable from an empty mix, and createOrUpdateMix replaces the whole
+            // row set - so writing one deletes the mix. The editor holds such a mix read-only, but
+            // this path writes the database directly and a forced reload elsewhere can empty the
+            // loader without that flag ever being recalculated.
+            //
+            // Refusing here rather than further down also means the caller is left as it was found:
+            // a check made after playback has been stopped leaves it stopped.
+            if (m_mixLoader == nullptr || !m_mixLoader->isLoaded())
+            {
+                spdlog::error("[Timeline] Refusing to write the mix: its tracks were never loaded.");
+                return false;
+            }
+
             if (!m_mixLoader)
             {
                 spdlog::error("removeTrackFromMixOnly called but m_mixLoader is null.");
@@ -629,6 +698,9 @@ namespace jucyaudio
             if (!m_mixLoader->reloadFromDatabase())
             {
                 spdlog::error("Failed to reload MixProjectLoader from database after removal.");
+                // The database change committed; only the re-read failed. What is on screen now
+                // predates it, so it must not be edited further.
+                lockIfUnloaded();
                 return false;
             }
 
@@ -1195,6 +1267,19 @@ namespace jucyaudio
 
                 if (currentOrder >= 0 && currentOrder != m_dropTargetOrderInMix && m_mixLoader)
                 {
+                    // The orders being sent are positions read off this timeline. If the loader is not
+                    // current, those positions describe a mix that has since changed - and reordering
+                    // "the third row" would move whatever is third now.
+                    if (!m_mixLoader->isLoaded())
+                    {
+                        spdlog::error("[Timeline] Not reordering: the timeline no longer matches the database.");
+                        lockIfUnloaded();
+                        // Through the shared cleanup, not a bare return: the drag still holds a
+                        // pointer to a component the lock above may cause to be destroyed.
+                        cancelReorderDrag();
+                        return;
+                    }
+
                     spdlog::info("[Timeline] Executing reorder from order {} to {}",
                                 currentOrder, m_dropTargetOrderInMix);
 
@@ -1216,6 +1301,7 @@ namespace jucyaudio
                             {
                                 spdlog::info("[Timeline] Reloading mix after reorder");
                                 safeThis->m_mixLoader->reloadFromDatabase();
+                                safeThis->lockIfUnloaded();
                                 safeThis->populateFrom(safeThis->m_mixLoader);
 
                                 // Trigger mix reload for audio engine if playing
@@ -1233,7 +1319,11 @@ namespace jucyaudio
                 }
             }
 
-            // Clear drag state
+            cancelReorderDrag();
+        }
+
+        void TimelineComponent::cancelReorderDrag()
+        {
             m_isDraggingTrackForReorder = false;
             m_draggedTrackForReorder = nullptr;
             m_dropTargetOrderInMix = -1;
@@ -1585,6 +1675,21 @@ namespace jucyaudio
             spdlog::debug("  Total resized() took: {} µs", totalDuration.count());
         }
 
+        bool TimelineComponent::lockIfUnloaded()
+        {
+            if (m_mixLoader != nullptr && m_mixLoader->isLoaded())
+            {
+                return true;
+            }
+
+            if (!m_isReadOnly)
+            {
+                spdlog::error("[Timeline] The mix could not be re-read; locking the timeline so what is on screen cannot be edited.");
+                setReadOnly(true);
+            }
+            return false;
+        }
+
         bool TimelineComponent::populateFrom(audio::MixProjectLoader *mixLoader)
         {
             m_isPopulating = true; // Set flag at the beginning
@@ -1603,6 +1708,8 @@ namespace jucyaudio
                 m_mixLoader = mixLoader;
             }
             clearTrackContext();
+            // Before the components go: the drag holds a pointer to one of them.
+            cancelReorderDrag();
             m_currentTimePosition = -1.0;
             m_trackViews.clear();
             removeAllChildren();
@@ -1672,8 +1779,10 @@ namespace jucyaudio
                             MixTrack updatedTrack = *targetMixTrack;
                             updatedTrack.gainAdjustment = newGain;
 
-                            // Call the new updateMixTrack method on the MixManager
-                            if (m_mixLoader && m_mixLoader->getMixId() > 0) {
+                            // Call the new updateMixTrack method on the MixManager. isLoaded as well as
+                            // the id: updatedTrack carries an orderInMix taken from this timeline, and
+                            // a stale timeline names a row that has since moved.
+                            if (m_mixLoader && m_mixLoader->getMixId() > 0 && m_mixLoader->isLoaded()) {
                                 if (!theTrackLibrary.getMixManager().updateMixTrack(m_mixLoader->getMixId(), updatedTrack)) {
                                     spdlog::error("Failed to update single MixTrack gain for mix {} track {}", m_mixLoader->getMixId(), updatedTrack.trackId);
                                 } else {

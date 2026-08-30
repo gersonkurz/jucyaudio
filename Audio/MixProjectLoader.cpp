@@ -28,28 +28,61 @@ namespace jucyaudio
         bool MixProjectLoader::loadMix(MixId mixId)
         {
             spdlog::debug("MixProjectLoader: Loading mix with ID {}", mixId);
-            m_mixId = mixId;
-            m_mixInfo = theTrackLibrary.getMixManager().getMix(m_mixId);
-            if (m_mixInfo.mixId == 0)
+
+            // Cleared first, so that every early return below leaves this loader marked unloaded
+            // rather than carrying the previous mix's answer.
+            m_loaded = false;
+            m_loadAttempted = true;
+
+            // Everything is read into locals and only published at the end.
+            //
+            // The timeline holds raw pointers into m_mixTracks, so clearing it here and then failing
+            // would leave every TrackView on screen pointing at destroyed objects - and the caller has
+            // no way to repaint its way out of that, because painting is one of the things that reads
+            // them. A failed load now leaves the previous mix intact and merely marked unloaded, which
+            // keeps those pointers valid while m_loaded stops anything writing the stale contents back.
+            const auto mixInfo = theTrackLibrary.getMixManager().getMix(mixId);
+            if (mixInfo.mixId == 0)
             {
-                spdlog::error("MixProjectLoader: No mix found with ID {}", m_mixId);
+                spdlog::error("MixProjectLoader: No mix found with ID {}", mixId);
                 return false; // No mix found
             }
-            m_mixTracks = theTrackLibrary.getMixManager().getMixTracks(m_mixId);
-            spdlog::info("[RELOAD] MixProjectLoader::loadMix - Loaded {} tracks for mix ID {} from database", m_mixTracks.size(), m_mixId);
-            
-            // Log first few tracks for debugging
-            if (!m_mixTracks.empty())
+
+            // readMixTracks, not getMixTracks: this result is saved back, and saveMix rewrites the
+            // whole row set. Accepting a partly-read mix here would delete every track after the one
+            // that could not be read, the first time the user saved.
+            std::vector<MixTrack> loadedTracks;
+            if (const auto read = theTrackLibrary.getMixManager().readMixTracks(mixId, loadedTracks); !read.isOk())
             {
-                spdlog::info("[RELOAD] First few tracks loaded:");
-                for (size_t i = 0; i < std::min(size_t(3), m_mixTracks.size()); ++i)
-                {
-                    const auto& track = m_mixTracks[i];
-                    spdlog::info("[RELOAD]   - Track {} at position {}", track.trackId, track.orderInMix);
-                }
+                spdlog::error("MixProjectLoader: Could not load the tracks of mix {}: {}", mixId, read.errorMessage);
+                return false;
             }
-            m_trackInfos = theTrackLibrary.getTracks(getMixTrackQueryArgs(m_mixId));
-            spdlog::info("MixProjectLoader: Loaded {} track infos for mix ID {}", m_trackInfos.size(), m_mixId);
+
+            // Statusless, and knowingly so. getTracks reports a failed query and an empty result the
+            // same way, but an empty result is not evidence of failure here: the ordinary track query
+            // filters out offline folders, so a perfectly good mix whose tracks are all on a
+            // disconnected drive legitimately resolves to nothing. Rejecting that would make those
+            // mixes unopenable whenever the volume is unplugged, which is a worse failure than the one
+            // being guarded against - and it would not catch a partial failure anyway, which comes
+            // back as a non-empty prefix.
+            //
+            // Recorded in tasks.md: this wants a status-bearing, mix-specific read. Until then a
+            // track that does not resolve is skipped by the walk and by the timeline, as it always
+            // has been.
+            auto loadedInfos = theTrackLibrary.getTracks(getMixTrackQueryArgs(mixId));
+
+            spdlog::info("[RELOAD] MixProjectLoader::loadMix - {} tracks and {} track infos for mix ID {}",
+                loadedTracks.size(),
+                loadedInfos.size(),
+                mixId);
+
+            // Published together, after nothing else can fail. The id included: a failed load
+            // must leave this loader describing the mix it described before, not the new id
+            // with the old mix's tracks still attached to it.
+            m_mixId = mixId;
+            m_mixInfo = mixInfo;
+            m_mixTracks = std::move(loadedTracks);
+            m_trackInfos = std::move(loadedInfos);
 
             rebuildTrackInfoMap();
             //int index = 0;
@@ -59,6 +92,9 @@ namespace jucyaudio
             dumpContext(__FILE__, __LINE__);
             #endif
             spdlog::debug("MixProjectLoader: Indexed {} track infos for mix ID {}", m_trackInfosMap.size(), m_mixId);
+
+            // Last, so that only a run reaching this point counts as loaded.
+            m_loaded = true;
             return true;
         }
 
@@ -105,6 +141,7 @@ namespace jucyaudio
             }
 
             rebuildTrackInfoMap();
+
             return true;
         }
 
@@ -321,6 +358,21 @@ namespace jucyaudio
 
         bool MixProjectLoader::saveMix(const IMixManager &mixManager)
         {
+            // The invariant belongs here, not in each caller. createOrUpdateMix replaces the whole row
+            // set, so writing a track list that did not come out of the database rewrites the mix to
+            // match whatever this object happens to be holding - and after a failed load that is either
+            // nothing or, worse, the previous mix's tracks left in place when getMix failed.
+            //
+            // A loader that has never tried to read is one building a new mix, and has nothing to
+            // have loaded. A loader that tried and failed is a different thing entirely, even though
+            // both can be sitting on a mix id of zero - a first load of an existing mix that fails
+            // leaves the id unpublished, so the id alone cannot tell them apart.
+            if (m_loadAttempted && !m_loaded)
+            {
+                spdlog::error("[SAVE_MIX] Refusing to save mix {}: its tracks were never loaded.", m_mixId);
+                return false;
+            }
+
             spdlog::info("[SAVE_MIX] MixProjectLoader::saveMix() called, m_mixTracks.size() = {}", m_mixTracks.size());
             
             // Log first few tracks in m_mixTracks for debugging
@@ -347,6 +399,11 @@ namespace jucyaudio
             // Save to database - actually, might also create it
             if (mixManager.createOrUpdateMix(m_mixInfo, mixTracksCopy))
             {
+                // What is held in memory is now exactly what the database holds, so it is safe to write
+                // again. Without this a newly created mix could be saved once and never again: the save
+                // gives it an id, and the next save would see a real id with nothing ever loaded.
+                m_loaded = true;
+
                 if (m_mixId == 0)
                 {
                     m_mixId = m_mixInfo.mixId;

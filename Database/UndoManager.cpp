@@ -60,8 +60,17 @@ namespace jucyaudio
             }
             // this is here to prevent recursion as createOrUpdateMix calls back into recordMixChange
             m_undoOperationInProgress = true;
-            theTrackLibrary.getMixManager().createOrUpdateMix(previousState->mixInfo, previousState->tracks);
+            const bool restored = theTrackLibrary.getMixManager().createOrUpdateMix(previousState->mixInfo, previousState->tracks);
             m_undoOperationInProgress = false; //-V519
+
+            if (!restored)
+            {
+                // The stacks stay where they are. Moving them on after a restore that did not
+                // happen would leave the history describing a mix the database never held, and
+                // the next undo would step past the state still on screen.
+                spdlog::error("UndoManager: Could not restore mix {}; leaving the history alone.", mixId);
+                return false;
+            }
 
             // Move current state to redo stack, then remove from undo stack
             mixState.redoOperations.push_back(std::move(mixState.undoOperations.back()));
@@ -148,8 +157,16 @@ namespace jucyaudio
 
             // Restore the redo state
             m_undoOperationInProgress = true;
-            theTrackLibrary.getMixManager().createOrUpdateMix(redoState->mixInfo, redoState->tracks);
+            const bool restored = theTrackLibrary.getMixManager().createOrUpdateMix(redoState->mixInfo, redoState->tracks);
             m_undoOperationInProgress = false; //-V519
+
+            if (!restored)
+            {
+                // As in undo(): a stack advanced past a restore that did not happen describes a
+                // mix the database never held.
+                spdlog::error("UndoManager: Could not restore mix {} on redo; leaving the history alone.", mixId);
+                return false;
+            }
 
             // Move redo state back to undo stack
             mixState.undoOperations.push_back(std::move(mixState.redoOperations.back()));
@@ -163,6 +180,21 @@ namespace jucyaudio
 
         void UndoManager::clearHistory(MixId mixId)
         {
+            // Checked before locking, exactly as recordMixChange does and for the same reason:
+            // undo() and redo() hold undoMutex while they call createOrUpdateMix, which calls back
+            // into the mix manager's recordMixChange - and that now reaches here when a snapshot
+            // cannot be taken. std::mutex is not re-entrant, so locking again would deadlock the
+            // message thread mid-undo.
+            //
+            // Nothing is lost by skipping it. A restore in progress is itself reading from this
+            // history, and whether it succeeded is reported by undo()/redo() through their own
+            // return value.
+            if (m_undoOperationInProgress.load())
+            {
+                spdlog::debug("UndoManager: Ignoring clearHistory during an undo/redo operation");
+                return;
+            }
+
             std::lock_guard<std::mutex> lock{undoMutex};
             auto it = m_perMixStates.find(mixId);
             if (it != m_perMixStates.end())

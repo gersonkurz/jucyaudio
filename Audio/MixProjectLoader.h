@@ -30,6 +30,28 @@ namespace jucyaudio
             bool loadMix(MixId mixId);
             bool reloadFromDatabase();
 
+            /**
+             * @brief Whether what this loader holds agrees with the database.
+             *
+             * True after a successful load, and also after a successful save - a save makes the
+             * in-memory state authoritative, which is what lets a newly created mix be saved more than
+             * once. So this is not "these tracks were read from the database"; it is "these tracks and
+             * the database last agreed".
+             *
+             * False after a failed load. The tracks then still describe whatever was loaded before -
+             * loadMix publishes nothing unless it succeeds, so pointers into them stay valid - but they
+             * no longer describe the database, and writing them back would push a stale ordering over
+             * whatever is really there.
+             *
+             * Kept here rather than in the editor because the loader is what every persistence path
+             * has in its hand - the timeline writes the mix directly in several places without going
+             * anywhere near the editor's save function.
+             */
+            bool isLoaded() const
+            {
+                return m_loaded;
+            }
+
             // --- Public Accessors ---
             auto getMixId() const
             {
@@ -99,6 +121,13 @@ namespace jucyaudio
             MixId m_mixId;
             MixInfo m_mixInfo;
             std::vector<MixTrack> m_mixTracks;
+            /// @brief False until a load or a save succeeds; see isLoaded().
+            bool m_loaded{false};
+            /// @brief True once loadMix has been tried at all, successfully or not.
+            ///
+            /// Separates "this loader is building a new mix" from "this loader tried to read a mix
+            /// and could not". Both have no tracks from the database; only the first may be saved.
+            bool m_loadAttempted{false};
             std::vector<TrackInfo> m_trackInfos;
             std::unordered_map<TrackId, const TrackInfo *> m_trackInfosMap;
             model::EQSettings m_masterEQSettings; // Master EQ settings for this mix

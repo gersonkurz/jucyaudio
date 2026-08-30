@@ -106,7 +106,11 @@ namespace jucyaudio
                 refreshCache(false);
             }
             outCount = static_cast<int64_t>(m_mixProjectLoader.getMixTracks().size());
-            return true;
+
+            // False when the load failed, so a caller holding this interface can tell "this mix has
+            // no tracks" from "nobody knows what this mix has". They read the same otherwise, and
+            // only one of them is safe to act on.
+            return m_mixProjectLoader.isLoaded();
         }
 
         void MixNode::refreshCache(bool flushCache) const
@@ -115,7 +119,17 @@ namespace jucyaudio
             const auto refreshCache = !m_bCacheInitialized || flushCache;
             if (refreshCache)
             {
-                m_mixProjectLoader.loadMix(m_mixInfo.mixId);
+                // The result matters. loadMix publishes nothing unless it succeeds, so a failure leaves
+                // the loader still holding the previous mix - which keeps existing pointers into it
+                // valid, but means what it holds no longer describes the database. Anything that writes
+                // has to know the difference.
+                if (!m_mixProjectLoader.loadMix(m_mixInfo.mixId))
+                {
+                    spdlog::error("[MixNode] Mix {} could not be loaded; its cache holds nothing.", m_mixInfo.mixId);
+                }
+
+                // Marked initialised either way, so callers get one consistent answer rather than a
+                // fresh attempt on every access. isCacheLoaded() is what says whether it worked.
                 m_bCacheInitialized = true;
                 // Clear the cached row count so it gets recalculated
                 m_cachedRowCount = -1;

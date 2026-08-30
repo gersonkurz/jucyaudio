@@ -3118,6 +3118,11 @@ namespace jucyaudio
                     // This ensures the MixProjectLoader has the correct data
                     mixNode->refreshCache(true); // true = flush cache and reload
 
+                    // The reload replaced the loader's track vector, and the timeline holds pointers
+                    // into it. Without this the editor goes on painting and dragging TrackViews that
+                    // point at freed memory.
+                    m_mixEditorComponent.onNodeCacheReloaded(mixNode);
+
                     // Get the refreshed metadata (which now has the correct track count and duration)
                     mixInfo = mixNode->getMixInfo();
 

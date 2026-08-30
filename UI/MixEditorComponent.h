@@ -95,6 +95,18 @@ namespace jucyaudio
             void unloadMix();
             void forceRefresh();
 
+            /**
+             * @brief Rebuilds the timeline after the node's cache has been reloaded from outside.
+             *
+             * MixNode::refreshCache(true) makes MixProjectLoader replace its track vector, and the
+             * timeline holds raw pointers into that vector - so every reload leaves the visible
+             * timeline pointing at destroyed objects, whether the reload succeeded or not. Anything
+             * that refreshes a node the editor is showing has to call this straight afterwards.
+             *
+             * @param node The node that was reloaded; ignored unless it is the one on screen.
+             */
+            void onNodeCacheReloaded(const database::MixNode *node);
+
             // Set the playback controller for unified playback
             void setPlaybackController(PlaybackController* controller);
             PlaybackController* getPlaybackController() { return m_playbackController; }

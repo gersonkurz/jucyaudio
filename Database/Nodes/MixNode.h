@@ -33,6 +33,18 @@ namespace jucyaudio
             const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;
             bool getNumberOfRows(int64_t &outCount) const override;
             void refreshCache(bool flushCache) const override;
+
+            /// @brief Whether the last refreshCache actually got the mix out of the database.
+            ///
+            /// False means the loader holds no tracks because the read failed, not because the mix is
+            /// empty. Anything that might write the mix back has to tell those apart: saving what the
+            /// loader holds after a failed read replaces the mix with nothing.
+            bool isCacheLoaded() const
+            {
+                // Asked of the loader rather than remembered here, so there is one answer rather
+                // than two that can drift apart.
+                return m_mixProjectLoader.isLoaded();
+            }
             void refreshMixInfo();
             void updateSummaryMetadata(int trackCount, Duration_t totalDuration);
             static void createChildren(INavigationNode *parent, std::vector<INavigationNode *> &children);
