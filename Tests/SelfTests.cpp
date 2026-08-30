@@ -312,6 +312,41 @@ namespace jucyaudio
                 return doctored;
             }
 
+            /// @brief Puts unparseable text into one row's mix_data.
+            ///
+            /// The row stays, the mix keeps its shape, and only that one row becomes unreadable - which
+            /// is the shape of real corruption and the one case a partial read turns into data loss.
+            bool corruptMixData(const std::filesystem::path &databasePath, MixId mixId, int orderInMix)
+            {
+                SqliteDatabase fixtureDb;
+                if (!fixtureDb.open(pathToString(databasePath)))
+                {
+                    return false;
+                }
+
+                SqliteStatement stmt{fixtureDb, "UPDATE MixTracks SET mix_data = ? WHERE mix_id = ? AND order_in_mix = ?"};
+                return stmt.isValid() && stmt.addParam(std::string{"{not json at all"}) && stmt.addParam(mixId) && stmt.addParam(orderInMix) &&
+                       stmt.execute();
+            }
+
+            /// @brief Writes deliberately wrong summary columns for one mix.
+            ///
+            /// Over the test's own connection because nothing reachable through the public interfaces
+            /// can do this any more: the columns are derived on every write and there is no setter. That
+            /// is the fix, and it is also why the repair that corrects such a row cannot be exercised
+            /// without reaching past the interfaces to create one.
+            bool setMixSummary(const std::filesystem::path &databasePath, MixId mixId, int64_t trackCount, int64_t totalLength)
+            {
+                SqliteDatabase fixtureDb;
+                if (!fixtureDb.open(pathToString(databasePath)))
+                {
+                    return false;
+                }
+
+                SqliteStatement stmt{fixtureDb, "UPDATE Mixes SET track_count = ?, total_length = ? WHERE mix_id = ?"};
+                return stmt.isValid() && stmt.addParam(trackCount) && stmt.addParam(totalLength) && stmt.addParam(mixId) && stmt.execute();
+            }
+
             /// @brief Clears total_duration on a mix's recovery rows, as a v27 record would have it.
             ///
             /// Staged over the test's own connection for the same reason the unknown JSON field is:
@@ -461,7 +496,7 @@ namespace jucyaudio
             return {};
         }
 
-        int runScanSelfTest(const std::filesystem::path &selfTestRoot)
+        int runScanSelfTest(const std::filesystem::path &selfTestRoot, const std::filesystem::path &databasePath)
         {
             Report report;
             const auto workRoot = selfTestRoot / "library";
@@ -832,6 +867,314 @@ namespace jucyaudio
                 report.check(genresOf(albumTwo) == std::vector<std::string>{accentedLower},
                     "the album carrying the other spelling was left alone - this is the whole point");
                 report.check(vocabularyHas(accentedLower), "the other vocabulary row survives the rename");
+            }
+
+            // --- 7. Mixes.total_length is derived on every write, not carried by the caller. ---
+            //
+            // It used to be whatever the caller put in MixInfo, and six of the eight paths that wrote
+            // a mix passed along the value they were already holding. Appending therefore stored the
+            // length the mix had before the append, again and again: one five-hour mix in the real
+            // library had accumulated a stored length of sixty-six hours.
+            //
+            // Every check below reads the figure back out of the database rather than from the
+            // MixInfo that was passed in. An in-memory check would have passed throughout the entire
+            // period the bug existed, because the editor recomputed for its own display and only the
+            // stored column was wrong - which is why reopening a mix brought the wrong number back.
+            {
+                auto &mixes = theTrackLibrary.getMixManager();
+
+                // Attach points make a mix shorter than the sum of its tracks. Without them every
+                // check here would pass against a plain sum, which is one of the wrong answers.
+                constexpr int64_t kOverlapMs = 20;
+
+                // Read from a scanned fixture rather than assumed from kFixtureDurationMs: what the
+                // decoder reports is what the walk uses, and a rounded value would put every expected
+                // figure below slightly out while looking like a real failure.
+                const auto fixtureDuration = tracks.begin()->second.duration;
+                report.check(fixtureDuration > Duration_t{0}, std::format("the fixtures have a usable duration ({} ms)", fixtureDuration.count()));
+
+                std::vector<TrackId> orderedIds;
+                for (const auto &entry : tracks)
+                {
+                    orderedIds.push_back(entry.second.trackId);
+                }
+
+                const auto buildTracks = [&orderedIds, fixtureDuration](size_t count)
+                {
+                    std::vector<MixTrack> built;
+                    for (size_t i = 0; i < count && i < orderedIds.size(); ++i)
+                    {
+                        MixTrack mixTrack{};
+                        mixTrack.trackId = orderedIds[i];
+                        mixTrack.orderInMix = static_cast<int>(i);
+                        mixTrack.attachFrom = Duration_t{kOverlapMs};
+                        mixTrack.attachTo = fixtureDuration;
+                        built.push_back(mixTrack);
+                    }
+                    return built;
+                };
+
+                // What the walk should produce: the first track in full, then each further track
+                // adding its length less the overlap. Written out here rather than by calling the
+                // production walk, so this asserts a number and not that the code agrees with itself.
+                const auto expectedLength = [fixtureDuration](size_t count) -> Duration_t
+                {
+                    if (count == 0)
+                    {
+                        return Duration_t{0};
+                    }
+                    return fixtureDuration + Duration_t{static_cast<int64_t>(count - 1) * (fixtureDuration.count() - kOverlapMs)};
+                };
+
+                const auto storedLengthOf = [&mixes](MixId mixId)
+                {
+                    return mixes.getMix(mixId).totalDuration;
+                };
+
+                // (a) Creation stores the walk, not the sum, and not what the caller passed.
+                MixInfo durationMix{};
+                durationMix.name = "SelfTest Duration Mix";
+                // Deliberately absurd, and deliberately non-zero so it would have survived the old
+                // assertion. If this value reaches the database, the caller is still being trusted.
+                durationMix.totalDuration = Duration_t{99'999'999};
+
+                auto twoTracks = buildTracks(2);
+                const bool created = mixes.createOrUpdateMix(durationMix, twoTracks);
+                report.check(created && durationMix.mixId > 0, "a mix could be created for the duration checks");
+
+                if (created && durationMix.mixId > 0)
+                {
+                    report.check(storedLengthOf(durationMix.mixId) == expectedLength(2),
+                        std::format("creation stores the walked length ({} ms, expected {} ms)",
+                            storedLengthOf(durationMix.mixId).count(),
+                            expectedLength(2).count()));
+                    report.check(durationMix.totalDuration == expectedLength(2),
+                        "creation hands the derived length back to the caller instead of keeping the one passed in");
+
+                    // (b) Appending replaces the length. This is the one that regressed: the old code
+                    // stored the previous total, so the figure never grew with the mix.
+                    auto fourTracks = buildTracks(4);
+                    report.check(mixes.createOrUpdateMix(durationMix, fourTracks), "tracks could be appended to the mix");
+                    report.check(storedLengthOf(durationMix.mixId) == expectedLength(4),
+                        std::format("appending stores the new length, not the previous one ({} ms, expected {} ms)",
+                            storedLengthOf(durationMix.mixId).count(),
+                            expectedLength(4).count()));
+
+                    // (c) Deleting a track goes through removeTracksFromMix, which writes MixTracks
+                    // directly and never touched Mixes.total_length.
+                    report.check(mixes.removeTracksFromMix(durationMix.mixId, {orderedIds.back()}), "a track could be removed from the mix");
+                    report.check(storedLengthOf(durationMix.mixId) == expectedLength(3),
+                        std::format("removing a track updates the stored length ({} ms, expected {} ms)",
+                            storedLengthOf(durationMix.mixId).count(),
+                            expectedLength(3).count()));
+                    report.check(mixes.getMix(durationMix.mixId).numberOfTracks == 3, "removing a track updates the stored count");
+
+                    // (d) A cue edit changes the length without changing the membership. updateMixTrack
+                    // is another direct MixTracks write.
+                    auto edited = mixes.getMixTracks(durationMix.mixId);
+                    report.check(edited.size() == 3, "the mix reads back with three tracks before the cue edit");
+                    if (edited.size() == 3)
+                    {
+                        // Trims the last track, so only the tail of the mix moves.
+                        edited.back().cueEnd = Duration_t{-10};
+                        report.check(mixes.updateMixTrack(durationMix.mixId, edited.back()), "a cue point could be edited");
+                        report.check(storedLengthOf(durationMix.mixId) == expectedLength(3) - Duration_t{10},
+                            std::format("a cue edit updates the stored length ({} ms, expected {} ms)",
+                                storedLengthOf(durationMix.mixId).count(),
+                                (expectedLength(3) - Duration_t{10}).count()));
+                        edited.back().cueEnd = Duration_t{0};
+                        mixes.updateMixTrack(durationMix.mixId, edited.back());
+                    }
+
+                    // (e) Reordering. With three identical tracks the length cannot change, so a check
+                    // against it would pass whether or not reordering refreshes anything. The first
+                    // track is therefore given a distinct attachTo, which makes the total depend on the
+                    // order: the walk excludes the last track's attachTo and the first track's
+                    // attachFrom, so moving that track from front to back changes the answer.
+                    auto ordered = mixes.getMixTracks(durationMix.mixId);
+                    report.check(ordered.size() == 3, "the mix has three tracks before the reorder");
+                    if (ordered.size() == 3)
+                    {
+                        ordered.front().attachTo = fixtureDuration - Duration_t{40};
+                        report.check(mixes.updateMixTrack(durationMix.mixId, ordered.front()), "the first track could be given a distinct attach point");
+
+                        // [A B C] with A handing over 40 ms earlier: A at 0, B at D-60, C at 2D-80.
+                        const auto beforeReorder = Duration_t{3 * fixtureDuration.count() - 80};
+                        report.check(storedLengthOf(durationMix.mixId) == beforeReorder,
+                            std::format("the distinct attach point shortened the mix ({} ms, expected {} ms)",
+                                storedLengthOf(durationMix.mixId).count(),
+                                beforeReorder.count()));
+
+                        // [B C A]: B at 0, C at D-20, A at 2D-40. A's early handover no longer counts,
+                        // because nothing follows it.
+                        const auto afterReorder = Duration_t{3 * fixtureDuration.count() - 40};
+                        report.check(afterReorder != beforeReorder, "the two orders really do have different lengths, so the next check can fail");
+
+                        report.check(mixes.reorderTrackInMix(durationMix.mixId, 0, 2), "a track could be reordered");
+                        report.check(storedLengthOf(durationMix.mixId) == afterReorder,
+                            std::format("reordering updates the stored length ({} ms, expected {} ms)",
+                                storedLengthOf(durationMix.mixId).count(),
+                                afterReorder.count()));
+
+                        // Back to uniform, so the checks after this one can keep using expectedLength.
+                        auto restored = mixes.getMixTracks(durationMix.mixId);
+                        restored.back().attachTo = fixtureDuration;
+                        report.check(mixes.updateMixTrack(durationMix.mixId, restored.back()), "the attach point could be restored");
+                        report.check(storedLengthOf(durationMix.mixId) == expectedLength(3),
+                            std::format("restoring it returns the mix to its uniform length ({} ms, expected {} ms)",
+                                storedLengthOf(durationMix.mixId).count(),
+                                expectedLength(3).count()));
+                    }
+
+                    // (f) A track deleted from the middle of the mix.
+                    //
+                    // Not the case the review asked to pin down, and it cannot be: MixTracks.track_id
+                    // is a foreign key that cascades, so deleting a track takes its mix row with it.
+                    // A row referring to a track that cannot be resolved therefore cannot exist while
+                    // that key stands - which is why the skip branch in calculateMixDuration, and the
+                    // disagreement between it, the playback engine and the exporter over what to do
+                    // with such a row, are unreachable today. Zero rows in the real library point at a
+                    // missing track. What is reachable, and what this checks, is that a cascade leaves
+                    // the stored length describing what remains.
+                    const auto beforeDeletion = mixes.getMixTracks(durationMix.mixId);
+                    report.check(beforeDeletion.size() == 3, std::format("the mix has three tracks before the deletion (has {})", beforeDeletion.size()));
+                    if (beforeDeletion.size() == 3)
+                    {
+                        report.check(db.removeTracks({beforeDeletion[1].trackId}).isOk(), "the middle track could be deleted from the library");
+
+                        const auto survivors = mixes.getMixTracks(durationMix.mixId);
+                        report.check(survivors.size() == 2, std::format("deleting it cascaded its row out of the mix (left {})", survivors.size()));
+
+                        // Read before anything is recomputed. Repairing first and checking afterwards
+                        // would pass whether or not the deletion refreshed anything, which is exactly
+                        // what production does not do for itself.
+                        report.check(storedLengthOf(durationMix.mixId) == expectedLength(2),
+                            std::format("deleting a track updates the mixes it cascaded out of ({} ms, expected {} ms)",
+                                storedLengthOf(durationMix.mixId).count(),
+                                expectedLength(2).count()));
+                        report.check(mixes.getMix(durationMix.mixId).numberOfTracks == 2, "the cascade updated the stored count too");
+
+                        // And the recomputation finds nothing to do, which is the same statement made
+                        // from the other side: the deletion already left the row correct.
+                        MixDurationCheck check;
+                        report.check(mixes.recomputeMixDuration(durationMix.mixId, check).isOk(), "the mix can be rechecked after the cascade");
+                        report.check(!check.changed, "the recheck finds nothing to correct, because the deletion already did it");
+                    }
+
+                    // (g) Rechecking a mix that is already right must not write. That is what makes a
+                    // second run of the repair a verification of the first rather than a repeat.
+                    MixDurationCheck recheck;
+                    report.check(mixes.recomputeMixDuration(durationMix.mixId, recheck).isOk(), "a correct mix can be rechecked");
+                    report.check(!recheck.changed, "rechecking a mix that is already correct does not write to it");
+                    report.check(recheck.previous.totalLength == recheck.current.totalLength,
+                        "an unchanged recheck reports the same length before and after");
+
+                    // (h) The repair actually repairing something.
+                    //
+                    // Every check above starts from a correct row, so none of them would notice if
+                    // recomputeMixDuration never wrote anything at all. This stages the state the whole
+                    // one-off pass exists for - a stored summary that disagrees with the rows - and
+                    // checks the correction, both reported figures, and what actually landed in the row.
+                    //
+                    // Staged over the test's own connection because nothing reachable through the
+                    // interfaces can write those columns any more. That is the fix; it is also why this
+                    // case has to be built from outside.
+                    const auto correctLength = storedLengthOf(durationMix.mixId);
+                    const auto correctCount = mixes.getMix(durationMix.mixId).numberOfTracks;
+
+                    // Deliberately both wrong, and wrong in the direction the real library was: a length
+                    // far longer than the mix, and a count that does not match its rows either.
+                    constexpr int64_t kWrongLengthMs = 99'999'999;
+                    const bool staged = setMixSummary(databasePath, durationMix.mixId, correctCount + 7, kWrongLengthMs);
+                    report.check(staged, "a wrong summary could be staged onto the mix");
+
+                    if (staged)
+                    {
+                        report.check(storedLengthOf(durationMix.mixId) == Duration_t{kWrongLengthMs}, "the staged summary really is in the row");
+
+                        MixDurationCheck repair;
+                        report.check(mixes.recomputeMixDuration(durationMix.mixId, repair).isOk(), "the mix with a wrong summary can be rechecked");
+                        report.check(repair.changed, "a mix whose summary disagrees with its rows is corrected");
+
+                        report.check(repair.previous.totalLength == Duration_t{kWrongLengthMs} && repair.previous.trackCount == correctCount + 7,
+                            "the report of what was there beforehand matches what was staged");
+                        report.check(repair.current.totalLength == correctLength && repair.current.trackCount == correctCount,
+                            "the report of what it became matches the walk");
+
+                        // The row itself, not just what the call said about it.
+                        report.check(storedLengthOf(durationMix.mixId) == correctLength,
+                            std::format("the corrected length reached the database ({} ms, expected {} ms)",
+                                storedLengthOf(durationMix.mixId).count(),
+                                correctLength.count()));
+                        report.check(mixes.getMix(durationMix.mixId).numberOfTracks == correctCount, "the corrected count reached the database too");
+
+                        // And running it again finds nothing to do, which is what makes a second pass a
+                        // verification of the first.
+                        MixDurationCheck second;
+                        report.check(mixes.recomputeMixDuration(durationMix.mixId, second).isOk(), "the repaired mix can be rechecked");
+                        report.check(!second.changed, "a second pass over a repaired mix changes nothing");
+                    }
+
+                    // (i) A middle row that cannot be decoded.
+                    //
+                    // The failure this pins down is not the parse itself - it is what the readers do
+                    // with it. Returning the rows that came before the bad one hands back a shorter
+                    // mix, and the next save rewrites the row set to match: every track after the
+                    // corrupt one, permanently gone. So the rule is all rows or none, and every caller
+                    // that might write the mix back has to be able to tell those apart from an empty
+                    // mix.
+                    //
+                    // Three rows first. The cascade above left two, and corrupting the last of two
+                    // proves less: with a valid row on each side of the bad one, a reader that
+                    // published what it had managed to read would hand back exactly one row - a number
+                    // that is neither the empty answer nor the right one, so the checks below can tell
+                    // all three outcomes apart.
+                    auto survivors = mixes.getMixTracks(durationMix.mixId);
+                    report.check(survivors.size() == 2, "two rows survived the cascade, to be built back up to three");
+                    if (survivors.size() == 2)
+                    {
+                        // The same track twice is fine - a mix may list one more than once - and it
+                        // avoids depending on a fourth track that earlier steps may have deleted.
+                        auto three = survivors;
+                        three.push_back(survivors.front());
+                        three.back().orderInMix = 2;
+                        report.check(mixes.createOrUpdateMix(durationMix, three), "the mix could be built back up to three rows");
+                    }
+
+                    const auto beforeCorruption = mixes.getMix(durationMix.mixId);
+                    report.check(beforeCorruption.numberOfTracks == 3, std::format("three rows are in place before the corruption (found {})", beforeCorruption.numberOfTracks));
+
+                    // Order 1 of 0, 1, 2: a valid row before it and a valid row after it.
+                    const bool corrupted = corruptMixData(databasePath, durationMix.mixId, 1);
+                    report.check(corrupted, "the middle row's mix_data could be corrupted");
+
+                    if (corrupted)
+                    {
+                        std::vector<MixTrack> readBack;
+                        const auto readResult = mixes.readMixTracks(durationMix.mixId, readBack);
+                        report.check(!readResult.isOk(), "reading a mix with an undecodable row fails rather than succeeding partly");
+                        report.check(readBack.empty(),
+                            std::format("a failed read hands back nothing, not the row before the bad one (got {})", readBack.size()));
+                        report.check(readResult.errorMessage.find("mix_data") != std::string::npos,
+                            std::format("the reason names what went wrong (said: '{}')", readResult.errorMessage));
+
+                        // The statusless wrapper is what display-only callers use. It must return an
+                        // empty mix, which is obviously wrong, rather than a prefix, which is not.
+                        report.check(mixes.getMixTracks(durationMix.mixId).empty(), "the statusless reader returns nothing rather than a prefix");
+
+                        // And the summary is not rewritten from what could be parsed.
+                        MixDurationCheck afterCorruption;
+                        report.check(!mixes.recomputeMixDuration(durationMix.mixId, afterCorruption).isOk(),
+                            "recomputing refuses a mix it cannot fully read");
+                        report.check(!afterCorruption.changed, "a refused recomputation writes nothing");
+
+                        const auto afterMix = mixes.getMix(durationMix.mixId);
+                        report.check(afterMix.totalDuration == beforeCorruption.totalDuration && afterMix.numberOfTracks == beforeCorruption.numberOfTracks,
+                            "the stored summary is left exactly as it was");
+                    }
+
+                    mixes.removeMix(durationMix.mixId);
+                }
             }
 
             writeResultsFile(resultsPath, "jucyaudio scan self test", report);

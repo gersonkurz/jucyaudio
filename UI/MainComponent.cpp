@@ -100,24 +100,18 @@ namespace jucyaudio
                 formatDuration(stats.totalDurationMs));
         }
 
-        std::string formatMixProgressStatus(const database::MixInfo& mixInfo, std::optional<int64_t> remainingTracks)
+        /// @brief What the status bar says about the mix being edited.
+        ///
+        /// The mix, and nothing else. This used to add the source working set's size to the mix's
+        /// track count and present the sum as a total to work through - "112/20455 tracks mixed,
+        /// 20343 remaining". A working set is a library of candidates, not a queue: those 20343
+        /// tracks were never going into this mix, so the total and the remainder were both numbers
+        /// that had never meant anything.
+        std::string formatMixProgressStatus(const database::MixInfo& mixInfo)
         {
-            const auto mixedTracks = mixInfo.numberOfTracks;
-            const auto totalTracks = mixedTracks + remainingTracks.value_or(0);
-            const auto durationText = durationToString(mixInfo.totalDuration);
-
-            if (remainingTracks.has_value())
-            {
-                return std::format("{:L}/{:L} tracks mixed, {:L} remaining, {} total mix length",
-                    mixedTracks,
-                    totalTracks,
-                    *remainingTracks,
-                    durationText);
-            }
-
             return std::format("{:L} tracks in mix, {} total mix length",
-                mixedTracks,
-                durationText);
+                mixInfo.numberOfTracks,
+                durationToString(mixInfo.totalDuration));
         }
 
         juce::String formatTrackDetails(const database::TrackInfo& trackInfo)
@@ -4456,24 +4450,7 @@ namespace jucyaudio
             {
                 if (const auto* mixNode = dynamic_cast<const database::MixNode*>(m_currentNode))
                 {
-                    const auto& mixInfo = mixNode->getMixInfo();
-                    std::optional<int64_t> remainingTracks;
-
-                    if (mixInfo.source_ws_id > 0)
-                    {
-                        const auto workingSets = theTrackLibrary.getWorkingSetManager().getWorkingSets({});
-                        const auto it = std::find_if(workingSets.begin(), workingSets.end(),
-                            [&mixInfo](const database::WorkingSetInfo& ws)
-                            {
-                                return ws.id == mixInfo.source_ws_id;
-                            });
-                        if (it != workingSets.end())
-                        {
-                            remainingTracks = it->numberOfTracks;
-                        }
-                    }
-
-                    m_statusPanel.getStatusBar().setInfoMessage(formatMixProgressStatus(mixInfo, remainingTracks));
+                    m_statusPanel.getStatusBar().setInfoMessage(formatMixProgressStatus(mixNode->getMixInfo()));
                     return;
                 }
             }

@@ -3,6 +3,7 @@
 #include <Audio/Includes/ActiveExportSettings.h>
 #include <Database/Includes/Constants.h>
 #include <Database/Includes/MixInfo.h>
+#include <Database/Includes/MixSummary.h>
 #include <Database/Includes/MixRecoveryEntry.h>
 #include <Database/Includes/ExportFolderInfo.h>
 #include <Database/Includes/TrackQueryArgs.h>
@@ -79,6 +80,17 @@ namespace jucyaudio
             // @param mixId The ID of the mix to retrieve tracks for.
             // @return A vector of MixTrack objects representing the tracks in the specified mix.
             virtual std::vector<MixTrack> getMixTracks(MixId mixId) const = 0;
+
+            /**
+             * @brief The rows of a mix, with a reason when they cannot all be read.
+             *
+             * Prefer this to getMixTracks anywhere the result is going to be saved back. That one has
+             * nowhere to report a failure, so it returns an empty vector - and a caller that cannot
+             * tell an empty mix from an unreadable one will eventually write the wrong one down.
+             *
+             * Nothing is written to @p tracksOut unless every row was read and decoded.
+             */
+            virtual DbResult readMixTracks(MixId mixId, std::vector<MixTrack> &tracksOut) const = 0;
 
             /**
              * @brief What this mix contained when it was last captured, in order.
@@ -194,16 +206,34 @@ namespace jucyaudio
             // @return True if all specified tracks were successfully removed from the mix, false otherwise.
             virtual bool removeTracksFromMix(MixId mixId, const std::vector<TrackId> &trackIds) const = 0;
 
-            // @brief Refresh a mix's cached track count and total length.
-            // @details The per-track removal calls above deliberately do not touch these columns, so a
-            //          caller that changes the track list must refresh them or the mix list will show
-            //          stale figures. createOrUpdateMix writes them as a side effect of rewriting
-            //          everything; this is the cheap way to correct them on their own.
-            // @param mixId The mix to update.
-            // @param trackCount Number of tracks now in the mix.
-            // @param totalLength Total playing length of the mix, including crossfades.
-            // @return True if the row was updated.
-            virtual bool updateMixSummary(MixId mixId, int64_t trackCount, Duration_t totalLength) const = 0;
+            /**
+             * @brief Recomputes one mix's stored track count and length from its rows, if they differ.
+             *
+             * Both columns together, never one alone: they describe the same set of rows, and a count
+             * belonging to a different moment from the length is worse than neither.
+             *
+             * There is deliberately no way to *set* those figures. They used to be whatever a caller
+             * passed in, six of the eight callers passed the value they were already holding, and a
+             * five-hour mix ended up stored as sixty-six hours. Every operation that changes a mix now
+             * derives them itself, so the only thing left to offer is this: recompute, and say whether
+             * anything was wrong.
+             *
+             * The whole decision - read the rows, read the durations, compare, write - happens inside a
+             * single immediate transaction. It has to: another instance of the application may be
+             * editing the same mix, and a comparison made outside the transaction that writes could
+             * commit a length describing a mix that no longer exists in that form. The before and after
+             * figures are read inside it too, so a report quoting both describes one moment.
+             *
+             * A mix whose stored figures already agree is not written at all. That keeps its row
+             * untouched, and makes running this twice a way to verify the first run rather than repeat
+             * it. An empty mix is likewise left alone: it is already damaged, and its stored length is
+             * the last description of what it held.
+             *
+             * @param mixId The mix to check.
+             * @param result What was found, and what if anything was written.
+             * @return Success if the mix was checked, whether or not it needed changing.
+             */
+            virtual DbResult recomputeMixDuration(MixId mixId, MixDurationCheck &result) const = 0;
 
             // @brief Reorder a concrete track row within a mix by moving it to a new position.
             // @param mixId The ID of the mix containing the track.

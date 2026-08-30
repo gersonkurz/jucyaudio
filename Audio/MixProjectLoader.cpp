@@ -183,53 +183,22 @@ namespace jucyaudio
 
         Duration_t MixProjectLoader::calculateMixDuration() const
         {
-            // Calculate and display the timeline positions using ATTACH formula
-            spdlog::info("Timeline calculation (ATTACH-based):");
-            Duration_t previousTrackStart{0};
-            Duration_t mixEndPosition{0};
-
-            for (size_t i = 0; i < m_mixTracks.size(); ++i)
-            {
-                const auto &track = m_mixTracks[i];
-                const auto it = m_trackInfosMap.find(track.trackId);
-                if (it == m_trackInfosMap.end())
-                    continue;
-
-                const auto &trackInfo = *it->second;
-                Duration_t trackStart{0};
-
-                const Duration_t effectiveDuration = track.getEffectiveDuration(trackInfo.duration);
-
-                if (i == 0)
+            // The walk itself lives in MixInfo.h, so that the mix manager computes the same number
+            // when it writes total_length. It used to live only here, which meant every save path
+            // that did not go through this class stored whatever total it happened to be carrying.
+            const auto duration = database::calculateMixDuration(m_mixTracks,
+                [this](TrackId trackId) -> std::optional<Duration_t>
                 {
-                    trackStart = Duration_t{0};
-                    spdlog::info("  Track {} starts at 0, ends at {}", i, durationToString(effectiveDuration));
-                }
-                else
-                {
-                    const auto &prevTrack = m_mixTracks[i - 1];
-                    // ATTACH formula: Next track start = Previous track start + Previous track's attachTo - Current track's attachFrom
-                    trackStart = previousTrackStart + prevTrack.attachTo - track.attachFrom;
-                    Duration_t trackEnd = trackStart + effectiveDuration;
-                    spdlog::info("  Track {} starts at {} (={}+{}-{}), ends at {}",
-                        i,
-                        durationToString(trackStart),
-                        durationToString(previousTrackStart),
-                        durationToString(prevTrack.attachTo),
-                        durationToString(track.attachFrom),
-                        durationToString(trackEnd));
-                }
+                    const auto it = m_trackInfosMap.find(trackId);
+                    if (it == m_trackInfosMap.end())
+                    {
+                        return std::nullopt;
+                    }
+                    return it->second->duration;
+                });
 
-                Duration_t trackEnd = trackStart + effectiveDuration;
-                if (trackEnd > mixEndPosition)
-                {
-                    mixEndPosition = trackEnd;
-                }
-
-                previousTrackStart = trackStart;
-            }
-            spdlog::info("  Total mix duration: {}", durationToString(mixEndPosition));
-            return mixEndPosition;
+            spdlog::info("Total mix duration: {} ({} tracks)", durationToString(duration), m_mixTracks.size());
+            return duration;
         }
 
         bool MixProjectLoader::reorderSingleTrack(TrackId trackId, int newPosition)

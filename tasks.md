@@ -103,3 +103,22 @@ described honestly. The full list is in `%LOCALAPPDATA%\jucyaudio\backfill-resul
 **Fix approach**: unknown until someone checks whether an older snapshot in
 `%LOCALAPPDATA%\jucyaudio\*.sqlite` (23-2026-08-05 through 27-2026-08-28) still holds the missing
 `MixTracks` rows. One read-only query settles it. Recording them is blocked until they are repaired.
+
+---
+
+## Deferred: three different ATTACH walks disagree about an unresolvable track
+
+**Symptom**: `calculateMixDuration` (`Database/Includes/MixInfo.h`), `MixPlaybackEngine` and
+`ExportMixImplementation` each handle a mix row whose track cannot be resolved differently. The walk
+and the exporter skip the row but still use its `attachTo` to position the next track; the playback
+engine advances through every row. With such a row present, the three would place tracks at different
+positions and report different totals.
+
+**Why it has not bitten**: it cannot happen today. `MixTracks.track_id` is a foreign key with
+`ON DELETE CASCADE`, so deleting a track removes its mix row rather than leaving it dangling, and zero
+rows in the library point at a missing track. `calculateMixDuration` deliberately copies the
+exporter's rule so that a stored length cannot disagree with the audio the exporter renders.
+
+**Fix approach**: one walk, used by all three. The blocker is that the playback engine and the
+exporter each own their own positioning loop for reasons unrelated to this - unpicking those is the
+work, not choosing the rule.

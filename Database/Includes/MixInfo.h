@@ -4,6 +4,7 @@
 #include <Database/Includes/Constants.h>
 #include <chrono>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -281,6 +282,62 @@ namespace jucyaudio
             std::vector<MixTrack> tracks; // Detailed track info for the mix
         };
 
+
+        /**
+         * @brief How long a mix is, walked from its tracks.
+         *
+         * The ATTACH model, and the only implementation of it: each track starts where the previous
+         * one's attachTo meets this one's attachFrom, and the mix ends where the last audible sample
+         * does. Crossfades overlap, so the answer is always shorter than the sum of the durations.
+         *
+         * Here, in the model header, rather than in whichever component happened to need it. Six of
+         * the eight paths that wrote a mix used to pass along whatever total they were holding, and
+         * appending to a mix added the new tracks to the previous total instead of replacing it -
+         * which is how a five-hour mix came to be stored as sixty-six hours. A second copy of this
+         * walk would let the same thing happen again.
+         *
+         * @param tracks The mix, in order.
+         * @param durationOf The natural length of a track, or nothing if the track cannot be resolved
+         *        at all. Nothing is skipped - which is not the same as a track that resolves to a
+         *        length of zero. Those exist, they are tracks whose length was never determined, and
+         *        they still occupy their place because their attach points still position what follows.
+         * @return The length of the finished mix; zero for an empty one.
+         *
+         * @note A skipped track still supplies the attach point for the track after it, because the
+         *       predecessor is the previous element of the list rather than the last one successfully
+         *       placed. That is not the more coherent of the two rules, but it is the one
+         *       ExportMixImplementation already uses, and a length that disagreed with the audio the
+         *       exporter produces would be worse than an odd rule consistently applied. MixPlaybackEngine
+         *       is a third variation again; unifying all three is recorded in tasks.md and is not this
+         *       change. Today no mix row in the library points at a track that cannot be resolved, so
+         *       the three agree in practice.
+         */
+        template <typename DurationLookup> Duration_t calculateMixDuration(const std::vector<MixTrack> &tracks, DurationLookup durationOf)
+        {
+            Duration_t previousTrackStart{0};
+            Duration_t mixEnd{0};
+
+            for (size_t i = 0; i < tracks.size(); ++i)
+            {
+                const auto &track = tracks[i];
+                const auto trackDuration = durationOf(track.trackId);
+                if (!trackDuration.has_value())
+                {
+                    continue;
+                }
+
+                const auto trackStart{i == 0 ? Duration_t{0} : previousTrackStart + tracks[i - 1].attachTo - track.attachFrom};
+                const auto trackEnd{trackStart + track.getEffectiveDuration(*trackDuration)};
+                if (trackEnd > mixEnd)
+                {
+                    mixEnd = trackEnd;
+                }
+
+                previousTrackStart = trackStart;
+            }
+
+            return mixEnd;
+        }
 
     } // namespace database
 } // namespace jucyaudio

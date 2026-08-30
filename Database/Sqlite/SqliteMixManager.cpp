@@ -2,6 +2,8 @@
 #include <Database/Includes/MixTrackUtils.h>
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteMixManager.h>
+#include <Database/Sqlite/SqliteMixSummary.h>
+#include <Database/Sqlite/SqliteMixTrackCodec.h>
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/BackgroundTasks/EnergyAnalyzer.h>
@@ -15,8 +17,11 @@
 #include <chrono>
 #include <algorithm>
 #include <map>
+#include <format>
+#include <optional>
 #include <set>
 #include <unordered_map>
+#include <unordered_set>
 #include <Database/UndoManager.h>
 
 using json = nlohmann::json;
@@ -123,60 +128,15 @@ namespace
         return info;
     }
 
-    MixTrack mixTrackFromStatement(const SqliteStatement &stmt)
+    /// @brief What a mix held before it is changed, or a reason why that is not known.
+    ///
+    /// Callers compare this against the mix afterwards to work out which transitions to
+    /// recalculate. An empty vector is a legitimate answer for an empty mix, so a failed read must
+    /// not look like one: "no old tracks" makes the comparison conclude nothing changed and skip
+    /// the recalculation entirely, on a mix that was then modified anyway.
+    DbResult loadMixTracksForMix(database::SqliteDatabase &db, MixId mixId, std::vector<MixTrack> &tracksOut)
     {
-        using namespace jucyaudio;
-
-        MixTrack info{};
-        int col = 0;
-        info.mixId = stmt.getInt64(col++);
-        info.trackId = stmt.getInt64(col++);
-        info.orderInMix = stmt.getInt32(col++);
-        
-        // Deserialize the JSON data
-        const std::string jsonData = stmt.getText(col++);
-        if (!jsonData.empty())
-        {
-            json j = json::parse(jsonData);
-            // This uses the from_json deserializer from MixInfo.h
-            // It only updates the fields stored in JSON (cue, attach, envelope)
-            j.get_to(info);
-        }
-        
-        return info;
-    }
-
-    bool bindMixTrackToStatement(SqliteStatement &stmt, const MixTrack &info)
-    {
-        bool ok = true;
-        ok &= stmt.addParam(info.mixId);
-        ok &= stmt.addParam(info.trackId);
-        ok &= stmt.addParam(info.orderInMix);
-        
-        // Serialize the entire MixTrack data to JSON
-        json mixDataJson = info; // This uses the to_json serializer from MixInfo.h
-        ok &= stmt.addParam(mixDataJson.dump());
-
-        if (!ok)
-        {
-            spdlog::error("Failed to bind one or more parameters for MixInfo: {}, {}", info.mixId, info.trackId);
-        }
-        return ok;
-    }
-
-    std::vector<MixTrack> loadMixTracksForMix(database::SqliteDatabase &db, MixId mixId)
-    {
-        std::vector<MixTrack> mixTracks;
-        SqliteStatement stmt{db};
-        stmt.query(
-            [&mixTracks, &stmt]() -> bool
-            {
-                mixTracks.emplace_back(mixTrackFromStatement(stmt));
-                return true;
-            },
-            "SELECT * FROM MixTracks WHERE mix_id=? ORDER BY order_in_mix ASC",
-            mixId);
-        return mixTracks;
+        return database::readMixTracksChecked(db, mixId, tracksOut);
     }
 
     bool recalculateNewAdjacenciesAfterTrackRemoval(database::SqliteDatabase &db, MixId mixId, const std::vector<MixTrack> &oldTracks)
@@ -188,7 +148,15 @@ namespace
             return true;
         }
 
-        auto newTracks = loadMixTracksForMix(db, mixId);
+        std::vector<MixTrack> newTracks;
+        if (const auto read = loadMixTracksForMix(db, mixId, newTracks); !read.isOk())
+        {
+            // Not "nothing to do". Returning true here would let the caller commit a mix whose
+            // transitions were never recalculated, with nothing to say so.
+            spdlog::error("Could not re-read mix {} to recalculate transitions: {}", mixId, read.errorMessage);
+            return false;
+        }
+
         if (newTracks.size() < 2 || oldTracks.empty())
         {
             return true;
@@ -865,26 +833,38 @@ WHERE m.export_folder IS NULL
             return DbResult::success();
         }
 
-        std::vector<MixTrack> SqliteMixManager::getMixTracks(MixId mixId) const
+        DbResult SqliteMixManager::readMixTracks(MixId mixId, std::vector<MixTrack> &tracksOut) const
         {
             std::vector<MixTrack> mixTracks;
-            SqliteStatement stmt{m_db};
-            stmt.query(
-                [&mixTracks, &stmt]() -> bool
-                {
-                    mixTracks.emplace_back(mixTrackFromStatement(stmt));
-                    return true;
-                },
-                "SELECT * FROM MixTracks WHERE mix_id=? ORDER BY order_in_mix ASC",
-                mixId);
+            if (const auto read = database::readMixTracksChecked(m_db, mixId, mixTracks); !read.isOk())
+            {
+                return read;
+            }
 
-            // special case: record first ever mix
+            // The first sight of a mix becomes its undo baseline. Only ever from a complete read: a
+            // prefix recorded here would be the state an undo restores the mix to.
             if (!theUndoManager.isMixKnown(mixId) && !mixTracks.empty())
             {
                 ExtendedMixInfo extMixInfo;
                 extMixInfo.mixInfo = getMix(mixId);
                 extMixInfo.tracks = mixTracks;
                 theUndoManager.recordMixChange(std::move(extMixInfo));
+            }
+
+            tracksOut = std::move(mixTracks);
+            return DbResult::success();
+        }
+
+        std::vector<MixTrack> SqliteMixManager::getMixTracks(MixId mixId) const
+        {
+            std::vector<MixTrack> mixTracks;
+            if (const auto read = readMixTracks(mixId, mixTracks); !read.isOk())
+            {
+                // Empty, never a prefix. Callers of this signature have nowhere to put a reason, and
+                // an empty mix is at least obviously wrong to anyone looking at it - where a mix
+                // missing its last forty tracks is not, until it has been saved that way.
+                spdlog::error("Could not read the rows of mix {}: {}", mixId, read.errorMessage);
+                return {};
             }
             return mixTracks;
         }
@@ -908,7 +888,14 @@ WHERE m.export_folder IS NULL
         {
             if (SqliteTransaction transaction{m_db})
             {
-                const auto oldTracks = loadMixTracksForMix(m_db, mixId);
+                // Read before anything is touched, and a failure stops the operation. Continuing
+                // with an empty "before" would skip the transition recalculation and commit anyway.
+                std::vector<MixTrack> oldTracks;
+                if (const auto read = loadMixTracksForMix(m_db, mixId, oldTracks); !read.isOk())
+                {
+                    spdlog::error("Refusing to change mix {}: {}", mixId, read.errorMessage);
+                    return transaction.rollback();
+                }
 
                 // Resolve concrete row instances (order_in_mix) from the pre-delete snapshot.
                 // This is critical when the same track_id appears multiple times in one mix.
@@ -970,6 +957,14 @@ WHERE m.export_folder IS NULL
                     return transaction.rollback();
                 }
                 
+                // Derived from the rows that are about to be committed, inside this transaction.
+                // Without it the stored length describes the mix as it was before this change, and
+                // reopening the mix reinstates that number over whatever the UI had recalculated.
+                if (!refreshMixSummary(m_db, transaction, mixId).isOk())
+                {
+                    return transaction.rollback();
+                }
+
                 if (transaction.commit())
                 {
                     recordMixChange(mixId);
@@ -980,26 +975,89 @@ WHERE m.export_folder IS NULL
             return false;
         }
 
-        bool SqliteMixManager::updateMixSummary(MixId mixId, int64_t trackCount, Duration_t totalLength) const
+        DbResult SqliteMixManager::recomputeMixDuration(MixId mixId, MixDurationCheck &result) const
         {
-            SqliteStatement stmt{m_db, "UPDATE Mixes SET track_count = ?, total_length = ? WHERE mix_id = ?;"};
-            stmt.addParam(trackCount);
-            stmt.addParam(durationToInt64(totalLength));
-            stmt.addParam(mixId);
+            result = MixDurationCheck{};
 
-            if (!stmt.execute())
+            // Immediate, and covering the reads as well as the write. The comparison that decides
+            // whether to write is only meaningful if nothing can change the mix between making it and
+            // acting on it - and another instance of the application may be editing this very mix.
+            // Both reported figures are read inside it too, so the before and after in a report
+            // describe one moment rather than three.
+            SqliteTransaction transaction{m_db, TransactionMode::Immediate};
+            if (!transaction)
             {
-                spdlog::error("Failed to update summary for mix {}: {}", mixId, m_db.getLastError());
-                return false;
+                return DbResult::failure(DbResultStatus::ErrorDB, std::format("could not begin a transaction for mix {}", mixId));
             }
-            return true;
+
+            {
+                SqliteStatement stmt{m_db, "SELECT track_count, total_length FROM Mixes WHERE mix_id = ?;"};
+                if (!stmt.isValid() || !stmt.addParam(mixId))
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, std::format("could not read mix {}", mixId));
+                }
+                if (!stmt.getNextResult())
+                {
+                    return DbResult::failure(stmt.hasError() ? DbResultStatus::ErrorDB : DbResultStatus::ErrorNotFound,
+                        std::format("mix {} could not be read", mixId));
+                }
+                result.previous.trackCount = stmt.getInt64(0);
+                result.previous.totalLength = durationFromInt64(stmt.getInt64(1));
+            }
+
+            MixSummary computed;
+            if (const auto walked = computeMixSummary(m_db, mixId, computed); !walked.isOk())
+            {
+                // Forwarded rather than replaced by getLastError(): a malformed mix_data is a JSON
+                // parse failure, which SQLite has never heard of and would report as an empty string -
+                // in the one file that is the audit record of this run.
+                return walked;
+            }
+            result.current = result.previous;
+
+            if (computed.trackCount == 0)
+            {
+                // Nothing to walk. Left exactly as it is rather than forced to zero: a mix with no
+                // rows is already damaged, and its stored length is the last description of what it
+                // held.
+                return DbResult::success();
+            }
+
+            if (computed.totalLength == result.previous.totalLength && computed.trackCount == result.previous.trackCount)
+            {
+                return DbResult::success();
+            }
+
+            if (!transaction.execute("UPDATE Mixes SET track_count = ?, total_length = ? WHERE mix_id = ?;",
+                    computed.trackCount,
+                    durationToInt64(computed.totalLength),
+                    mixId))
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB, std::format("could not update mix {}: {}", mixId, m_db.getLastError()));
+            }
+
+            if (!transaction.commit())
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB, std::format("could not commit the update of mix {}", mixId));
+            }
+
+            result.current = computed;
+            result.changed = true;
+            return DbResult::success();
         }
 
         bool SqliteMixManager::removeTrackFromMix(MixId mixId, TrackId trackId) const
         {
             if (SqliteTransaction transaction{m_db})
             {
-                const auto oldTracks = loadMixTracksForMix(m_db, mixId);
+                // Read before anything is touched, and a failure stops the operation. Continuing
+                // with an empty "before" would skip the transition recalculation and commit anyway.
+                std::vector<MixTrack> oldTracks;
+                if (const auto read = loadMixTracksForMix(m_db, mixId, oldTracks); !read.isOk())
+                {
+                    spdlog::error("Refusing to change mix {}: {}", mixId, read.errorMessage);
+                    return transaction.rollback();
+                }
 
                 // Pick one concrete instance (lowest order) when duplicates exist.
                 SqliteStatement getOrderStmt{m_db, "SELECT order_in_mix FROM MixTracks WHERE mix_id = ? AND track_id = ? ORDER BY order_in_mix LIMIT 1"};
@@ -1047,6 +1105,14 @@ WHERE m.export_folder IS NULL
                     return transaction.rollback();
                 }
                 
+                // Derived from the rows that are about to be committed, inside this transaction.
+                // Without it the stored length describes the mix as it was before this change, and
+                // reopening the mix reinstates that number over whatever the UI had recalculated.
+                if (!refreshMixSummary(m_db, transaction, mixId).isOk())
+                {
+                    return transaction.rollback();
+                }
+
                 if (transaction.commit())
                 {
                     recordMixChange(mixId);
@@ -1061,7 +1127,14 @@ WHERE m.export_folder IS NULL
         {
             if (SqliteTransaction transaction{m_db})
             {
-                const auto oldTracks = loadMixTracksForMix(m_db, mixId);
+                // Read before anything is touched, and a failure stops the operation. Continuing
+                // with an empty "before" would skip the transition recalculation and commit anyway.
+                std::vector<MixTrack> oldTracks;
+                if (const auto read = loadMixTracksForMix(m_db, mixId, oldTracks); !read.isOk())
+                {
+                    spdlog::error("Refusing to change mix {}: {}", mixId, read.errorMessage);
+                    return transaction.rollback();
+                }
 
                 const auto trackIt = std::find_if(
                     oldTracks.begin(),
@@ -1097,6 +1170,14 @@ WHERE m.export_folder IS NULL
                 if (!recalculateNewAdjacenciesAfterTrackRemoval(m_db, mixId, oldTracks))
                 {
                     spdlog::error("Failed to recalculate transitions after track deletion");
+                    return transaction.rollback();
+                }
+
+                // Derived from the rows that are about to be committed, inside this transaction.
+                // Without it the stored length describes the mix as it was before this change, and
+                // reopening the mix reinstates that number over whatever the UI had recalculated.
+                if (!refreshMixSummary(m_db, transaction, mixId).isOk())
+                {
                     return transaction.rollback();
                 }
 
@@ -1209,6 +1290,14 @@ WHERE m.export_folder IS NULL
 
                 spdlog::info("Reordered mix {} row from position {} to {}", mixId, currentOrderInMix, newOrderInMix);
 
+                // Derived from the rows that are about to be committed, inside this transaction.
+                // Without it the stored length describes the mix as it was before this change, and
+                // reopening the mix reinstates that number over whatever the UI had recalculated.
+                if (!refreshMixSummary(m_db, transaction, mixId).isOk())
+                {
+                    return transaction.rollback();
+                }
+
                 if (transaction.commit())
                 {
                     recordMixChange(mixId);
@@ -1225,7 +1314,15 @@ WHERE m.export_folder IS NULL
             {
                 mixInfo.timestamp = std::chrono::system_clock::now();
                 mixInfo.numberOfTracks = static_cast<int64_t>(tracks.size());
-                assert(mixInfo.totalDuration.count() != 0 || tracks.empty() && "Mix total duration must be set by caller");
+
+                // The length is not taken from the caller. It is derived below, once the rows are in,
+                // by the same refreshMixSummary every other mutation uses.
+                //
+                // Only two of the eight callers ever computed it. The rest passed the mix's previous
+                // total along unchanged, so appending tracks to a mix stored the old length rather
+                // than the new one, over and over: one five-hour mix in this library had accumulated
+                // a stored length of sixty-six hours. The assertion that used to stand here checked
+                // only that the number was non-zero, which every one of those wrong values was.
 
                 // if mixId is not 0, the mix already exists, so we update it - by first removing all existing data
                 if (mixInfo.mixId)
@@ -1280,6 +1377,22 @@ WHERE m.export_folder IS NULL
                         return transaction.rollback();
                     }
                 }
+
+                // After the rows, never before: the summary describes what was actually written.
+                // The figures come back from the same call that stored them - reading them again
+                // afterwards would be a second chance to fail, and a failure there would leave
+                // mixInfo holding the caller's wrong number while the database held the right one.
+                MixSummary summary;
+                if (!refreshMixSummary(m_db, transaction, mixInfo.mixId, &summary).isOk())
+                {
+                    return transaction.rollback();
+                }
+
+                // Handed back because callers display these straight afterwards, and would otherwise
+                // show the value they passed in - which is the number that was wrong.
+                mixInfo.totalDuration = summary.totalLength;
+                mixInfo.numberOfTracks = summary.trackCount;
+
                 if (transaction.commit())
                 {
                     recordMixChange(mixInfo.mixId);
@@ -1373,6 +1486,14 @@ WHERE m.export_folder IS NULL
                     return transaction.rollback();
                 }
                 spdlog::info("Successfully updated MixTrack for mix {} track {}", mixId, updatedTrack.trackId);
+                // Derived from the rows that are about to be committed, inside this transaction.
+                // Without it the stored length describes the mix as it was before this change, and
+                // reopening the mix reinstates that number over whatever the UI had recalculated.
+                if (!refreshMixSummary(m_db, transaction, mixId).isOk())
+                {
+                    return transaction.rollback();
+                }
+
                 if (transaction.commit())
                 {
                     recordMixChange(mixId);

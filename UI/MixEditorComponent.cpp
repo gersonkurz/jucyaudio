@@ -676,27 +676,8 @@ namespace jucyaudio
                 return RemovalOutcome::ReloadFailed;
             }
 
-            // removeTracksFromMix leaves Mixes.track_count/total_length alone, and reloading does not
-            // recompute the duration either - loadMix() just re-reads the stale column. So derive it.
-            // ponytail: removeTracksFromMix records its undo snapshot right after committing, which is
-            // still before this summary update lands - so an undo/redo round trip restores the pre-removal
-            // total_length. Only that cached number is affected; tracks, order, transitions, timeline and
-            // playback all come back correct. Fixing it properly means computing the duration inside the
-            // manager, which today cannot see the crossfade model that MixProjectLoader owns.
-            const auto newTrackCount = static_cast<int64_t>(loader.getMixTracks().size());
-            const auto newDuration = loader.calculateMixDuration();
-
-            if (!database::theTrackLibrary.getMixManager().updateMixSummary(loader.getMixId(), newTrackCount, newDuration))
-            {
-                // Not fatal: the tracks really are gone, only the cached summary is behind.
-                spdlog::warn("[MixEditor] Could not refresh the summary of mix {} after removal.", loader.getMixId());
-            }
-
-            // The loader caches MixInfo from the row it read during the reload, which still held the old
-            // figures. Bring it in step so callers reading getMixInfo() do not see the pre-removal numbers.
-            auto &cachedInfo = loader.getMixInfo();
-            cachedInfo.numberOfTracks = newTrackCount;
-            cachedInfo.totalDuration = newDuration;
+            // Nothing to write here any more. removeTracksFromMix derives and stores the summary inside
+            // its own transaction, so the reload above has already brought back the correct figures.
 
             spdlog::info("[MixEditor] Removed {} undecodable track(s) from mix {}.", rowsToRemove, loader.getMixId());
             return RemovalOutcome::Removed;

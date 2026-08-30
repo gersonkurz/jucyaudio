@@ -5,6 +5,7 @@
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteStatementConstruction.h>
 #include <Database/Sqlite/SqliteTrackDatabase.h>
+#include <Database/Sqlite/SqliteMixSummary.h>
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/Sqlite/SqliteAlbumManager.h>
 #include <Utils/AssortedUtils.h>
@@ -3173,8 +3174,23 @@ CREATE TABLE MixUndoHistory (
                 return DbResult::success();
             }
 
-            if (SqliteTransaction transaction{m_db})
+            // Immediate: this reads which mixes are affected, then writes based on that answer. A
+            // deferred transaction takes its write lock at the first write, so another writer can get
+            // in between the two and turn the upgrade into a failure - or, on this connection, join the
+            // transaction outright.
+            if (SqliteTransaction transaction{m_db, TransactionMode::Immediate})
             {
+                // Which mixes are about to change, captured before the rows go. MixTracks.track_id
+                // cascades, so once the tracks are deleted there is nothing left to say which mixes
+                // were affected - and their stored length would go on describing tracks they no longer
+                // contain. Deleting a track is a mix mutation, even though nothing here mentions mixes.
+                std::vector<MixId> affectedMixes;
+                if (!findMixesContainingTracks(m_db, trackIds, affectedMixes).isOk())
+                {
+                    transaction.rollback();
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to find the mixes affected by the deletion.");
+                }
+
                 SqliteStatement stmt{m_db, "DELETE FROM Tracks WHERE track_id = ?"};
 
                 for (const auto &trackId : trackIds)
@@ -3186,6 +3202,15 @@ CREATE TABLE MixUndoHistory (
                         return DbResult::failure(DbResultStatus::ErrorDB, std::format("Failed to delete track with ID: {}", trackId));
                     }
                     stmt.reset();
+                }
+
+                for (const auto mixId : affectedMixes)
+                {
+                    if (!refreshMixSummary(m_db, transaction, mixId).isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, std::format("Failed to refresh the summary of mix {} after deletion.", mixId));
+                    }
                 }
 
                 if (!transaction.commit())
@@ -3207,8 +3232,20 @@ CREATE TABLE MixUndoHistory (
                 return DbResult::success();
             }
 
-            if (SqliteTransaction transaction{m_db})
+            // Immediate, for the same reason as removeTracks above: a read that decides what to write.
+            if (SqliteTransaction transaction{m_db, TransactionMode::Immediate})
             {
+                // Which mixes are about to change, captured before the rows go. MixTracks.track_id
+                // cascades, so once the tracks are deleted there is nothing left to say which mixes
+                // were affected - and their stored length would go on describing tracks they no longer
+                // contain. Deleting a track is a mix mutation, even though nothing here mentions mixes.
+                std::vector<MixId> affectedMixes;
+                if (!findMixesContainingTracks(m_db, trackIds, affectedMixes).isOk())
+                {
+                    transaction.rollback();
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to find the mixes affected by the deletion.");
+                }
+
                 // Step 1: Delete from MixTracks table
                 SqliteStatement stmtMixTracks{m_db, "DELETE FROM MixTracks WHERE track_id = ?"};
                 for (const auto &trackId : trackIds)
@@ -3246,6 +3283,15 @@ CREATE TABLE MixUndoHistory (
                         return DbResult::failure(DbResultStatus::ErrorDB, std::format("Failed to delete track {} from Tracks", trackId));
                     }
                     stmtTracks.reset();
+                }
+
+                for (const auto mixId : affectedMixes)
+                {
+                    if (!refreshMixSummary(m_db, transaction, mixId).isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, std::format("Failed to refresh the summary of mix {} after deletion.", mixId));
+                    }
                 }
 
                 if (!transaction.commit())

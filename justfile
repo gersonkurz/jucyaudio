@@ -136,6 +136,14 @@ selftest config=default_build_type:
     $env:JUCYAUDIO_CONFIG = (Resolve-Path "build-{{arch}}-{{lowercase(config)}}/selftest-config").Path; $env:JUCYAUDIO_SELFTEST_ROOT = (Resolve-Path "build-{{arch}}-{{lowercase(config)}}/selftest-root").Path; $p = Start-Process -FilePath "build-{{arch}}-{{lowercase(config)}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe" -ArgumentList "--selftest-scan" -Wait -PassThru; Get-Content "build-{{arch}}-{{lowercase(config)}}/selftest-root/selftest-results.txt","build-{{arch}}-{{lowercase(config)}}/selftest-root/mixrecovery-results.txt","build-{{arch}}-{{lowercase(config)}}/selftest-root/backup-results.txt"; if ($p.ExitCode -ne 0) { Write-Host "SELF TEST FAILED"; exit $p.ExitCode }; Write-Host "Self test passed."
 
 # Record recovery data for every mix that has none, and write each a playlist (Windows).
+# One-off: recomputes every mix's stored total_length. Mixes that are already correct are left
+# untouched, so a second run reports nothing to do and is how you verify the first.
+# Runs against the real library, and takes a confirmed backup first like backup-mixes.
+[windows]
+repair-mix-durations config=default_build_type:
+    just build {{config}}
+    $p = Start-Process -FilePath "build-{{arch}}-{{lowercase(config)}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe" -ArgumentList "--repair-mix-durations" -Wait -PassThru; $root = if ($env:JUCYAUDIO_CONFIG) { $env:JUCYAUDIO_CONFIG } else { Join-Path $env:LOCALAPPDATA "jucyaudio" }; Get-Content (Join-Path $root "mix-duration-repair.txt"); if ($p.ExitCode -ne 0) { Write-Host "REPAIR FAILED"; exit $p.ExitCode }; Write-Host "Repair complete."
+
 # Runs against the real library. Takes a confirmed backup first and refuses to start without one.
 # Playlists land in %LOCALAPPDATA%\jucyaudio\MixBackups (or under JUCYAUDIO_CONFIG if set).
 [windows]

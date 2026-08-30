@@ -18,6 +18,7 @@
 #include <Audio/Plugins/MasterPluginChainPersistence.h>
 #include <UI/Plugins/PluginWindow.h>
 #include <UI/SingletonDialog.h>
+#include <Tests/MixDurationRepair.h>
 #include <Tests/MixRecoveryBackfill.h>
 #include <Tests/SelfTests.h>
 #include <filesystem>
@@ -206,6 +207,16 @@ namespace jucyaudio
                     return;
                 }
 
+                // Also against the real library, and for the same reasons handled the same way.
+                if (arguments.contains(kDurationRepairFlag))
+                {
+                    spdlog::info("Command line requested {}; starting headless.", kDurationRepairFlag);
+                    m_durationRepairRequested = true;
+                    m_initPhase = 1;
+                    startTimer(50);
+                    return;
+                }
+
                 spdlog::info("Creating splash screen...");
 
                 // Create splash screen
@@ -242,6 +253,12 @@ namespace jucyaudio
                 if (m_backfillRequested)
                 {
                     runBackfillAndQuit();
+                    return;
+                }
+
+                if (m_durationRepairRequested)
+                {
+                    runDurationRepairAndQuit();
                     return;
                 }
 
@@ -321,9 +338,11 @@ namespace jucyaudio
             std::filesystem::path m_configRoot;  // Cached config root path
             bool m_selfTestRequested = false;
             bool m_backfillRequested = false;
+            bool m_durationRepairRequested = false;
 
             static constexpr const char *kSelfTestScanFlag = "--selftest-scan";
             static constexpr const char *kBackfillFlag = "--export-mix-recovery";
+            static constexpr const char *kDurationRepairFlag = "--repair-mix-durations";
 
             /// @brief Opens the database, runs the scan self test, and ends the process with its result.
             /// Deliberately skips the plugin manager, the backup check and the theme manager: none of
@@ -403,6 +422,50 @@ namespace jucyaudio
                 quit();
             }
 
+            /// @brief Recomputes every mix's stored length, then ends the process.
+            ///
+            /// Same shape as runBackfillAndQuit, and for the same reason: this opens the real
+            /// library and writes to it, so it takes a forced backup first and refuses to continue
+            /// without a confirmed one. Pruning stays off - the point of the backup is that the
+            /// state before the repair can still be examined afterwards, and pruning could delete
+            /// exactly the snapshot that would be needed.
+            void runDurationRepairAndQuit()
+            {
+                const auto dbPath = resolveDatabasePath();
+
+                int result = 1;
+
+                database::DatabaseBackupManager backupManager;
+                const auto backup = backupManager.performBackupCheck(config::theSettings, dbPath, false, true, true);
+
+                if (!backup.succeeded)
+                {
+                    spdlog::error("[DurationRepair] Refusing to continue: the backup did not succeed. {}",
+                        backup.errorMessage.empty() ? "No reason was reported." : backup.errorMessage);
+                }
+                else
+                {
+                    spdlog::info("[DurationRepair] Backed up to {} before opening the library.", pathToString(backup.backupFile));
+                    if (!backup.warningMessage.empty())
+                    {
+                        spdlog::warn("[DurationRepair] {}", backup.warningMessage);
+                    }
+
+                    if (theTrackLibrary.initialise(dbPath))
+                    {
+                        result = tests::runMixDurationRepair(m_configRoot);
+                    }
+                    else
+                    {
+                        spdlog::error("[DurationRepair] TrackLibrary FAILED to initialise: {}", theTrackLibrary.getLastError());
+                    }
+                }
+
+                spdlog::info("[DurationRepair] Exiting with code {}.", result);
+                setApplicationReturnValue(result);
+                quit();
+            }
+
             void runSelfTestAndQuit()
             {
                 // Settings are already loaded by setupLogging(); nothing here needs them again. Note what
@@ -423,7 +486,7 @@ namespace jucyaudio
                     // Both suites always run, and the exit code is the worse of the two. Stopping after
                     // the first failure would hide whatever the second had to say, and on a run nobody is
                     // watching that is the report you wanted.
-                    const auto scanResult = tests::runScanSelfTest(selfTestRoot);
+                    const auto scanResult = tests::runScanSelfTest(selfTestRoot, databasePath);
                     const auto recoveryResult = tests::runMixRecoverySelfTest(selfTestRoot, databasePath);
                     const auto backupResult = tests::runBackupSelfTest(selfTestRoot);
                     result = (scanResult != 0 || recoveryResult != 0 || backupResult != 0) ? 1 : 0;

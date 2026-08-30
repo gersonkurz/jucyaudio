@@ -63,7 +63,11 @@ namespace jucyaudio
          *        the results file are created underneath it.
          * @return 0 if every check passed, 1 otherwise. Suitable as a process exit code.
          */
-        int runScanSelfTest(const std::filesystem::path &selfTestRoot);
+        /// @param databasePath The same scratch database, so one check can stage a state the public
+        ///        interfaces deliberately cannot produce: a mix whose stored summary disagrees with its
+        ///        rows. Nothing can write those columns directly any more, which is the fix - and also
+        ///        the reason the repair that corrects them has to be exercised from outside.
+        int runScanSelfTest(const std::filesystem::path &selfTestRoot, const std::filesystem::path &databasePath);
 
         /**
          * @brief Headless end-to-end test of mix recovery data.

@@ -526,6 +526,9 @@ target_sources(jucyaudio PRIVATE
     UI/DynamicToolbarComponent.cpp
     UI/SettingsDialog.cpp
     UI/SkippedTracksDialog.cpp
+    Database/Sqlite/SqliteMixSummary.cpp
+    Database/Sqlite/SqliteMixTrackCodec.cpp
+    Tests/MixDurationRepair.cpp
     Tests/MixRecoveryBackfill.cpp
     Tests/SelfTests.cpp
     UI/JucyLookAndFeel.cpp
@@ -554,6 +557,10 @@ target_sources(jucyaudio PRIVATE
     UI/DynamicToolbarComponent.h
     UI/SettingsDialog.h
     UI/SkippedTracksDialog.h
+    Database/Includes/MixSummary.h
+    Database/Sqlite/SqliteMixSummary.h
+    Database/Sqlite/SqliteMixTrackCodec.h
+    Tests/MixDurationRepair.h
     Tests/MixRecoveryBackfill.h
     Tests/SelfTests.h
     UI/SingletonDialog.h
