@@ -1716,6 +1716,7 @@ namespace jucyaudio
             dialog->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
             dialog->addButton("Delete", 2);
             dialog->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+            focusTextEditorOnOpen(*dialog, "comment");
             
             dialog->enterModalState(true, juce::ModalCallbackFunction::create(
                 [this, dialog, markerId](int result)
@@ -1759,6 +1760,7 @@ namespace jucyaudio
             dialog->addTextEditor("comment", "", "Comment:");
             dialog->addButton("Add", 1, juce::KeyPress(juce::KeyPress::returnKey));
             dialog->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+            focusTextEditorOnOpen(*dialog, "comment");
             
             dialog->enterModalState(true, juce::ModalCallbackFunction::create(
                 [this, dialog, position](int result)

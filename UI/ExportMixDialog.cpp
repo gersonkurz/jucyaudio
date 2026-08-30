@@ -3,6 +3,7 @@
 #include <UI/ThemeManager.h>
 #include <Database/TrackLibrary.h>
 #include <Database/Includes/IMixManager.h>
+#include <Utils/UiUtils.h>
 #include <format>
 #include <spdlog/spdlog.h>
 
@@ -428,6 +429,7 @@ namespace jucyaudio
             dialog.addTextEditor("name", "", "Folder Name:");
             dialog.addButton("Create", 1, juce::KeyPress(juce::KeyPress::returnKey));
             dialog.addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+            focusTextEditorOnOpen(dialog, "name");
 
             if (dialog.runModalLoop() == 1)
             {

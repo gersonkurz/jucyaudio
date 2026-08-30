@@ -225,6 +225,16 @@ namespace jucyaudio
 #endif
         }
 
+        void focusTextEditorOnOpen(juce::AlertWindow &window, const juce::String &editorName)
+        {
+            if (auto *editor = window.getTextEditor(editorName))
+            {
+                // Matching the order AlertWindow::addButton gives its buttons, so the tie falls
+                // through to the y coordinate. See the header for why this is not grabKeyboardFocus.
+                editor->setExplicitFocusOrder(1);
+            }
+        }
+
         juce::String jucePathFromFs(const std::filesystem::path &path)
         {
 #if defined(_WIN32)

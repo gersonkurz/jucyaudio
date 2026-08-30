@@ -130,5 +130,26 @@ namespace jucyaudio
         // @see jucePathToFs for the reverse conversion
         juce::String jucePathFromFs(const std::filesystem::path &path);
 
+        /**
+         * @brief Makes an AlertWindow open with the keyboard in one of its text editors.
+         *
+         * Without this an AlertWindow opens with a button focused, so the first thing typed goes
+         * nowhere. The cause is in JUCE: AlertWindow::addButton calls setExplicitFocusOrder(1) on
+         * every button while addTextEditor sets no order at all, and the focus traverser sorts on
+         * (order, alwaysOnTop, y, x) with an unset order counting as INT_MAX. Buttons therefore come
+         * first, and entering the modal state hands the focus to one of them.
+         *
+         * Giving the editor the same order as the buttons leaves y to decide, and an AlertWindow
+         * always lays its editors out above its button row.
+         *
+         * Done this way rather than by calling grabKeyboardFocus() after the window opens, because
+         * this works before the window is shown - which is the only option for a dialog run through
+         * runModalLoop(), where nothing of ours executes between opening and closing it.
+         *
+         * @param window The alert window, before it is made modal.
+         * @param editorName The name passed to addTextEditor. Ignored if there is no such editor.
+         */
+        void focusTextEditorOnOpen(juce::AlertWindow &window, const juce::String &editorName);
+
     } // namespace ui
 } // namespace jucyaudio

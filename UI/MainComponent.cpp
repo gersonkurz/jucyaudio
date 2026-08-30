@@ -3248,6 +3248,7 @@ namespace jucyaudio
             alertWindow->addTextEditor("cloneName", defaultCloneName, "Mix Name:");
             alertWindow->addButton("Create Clone", 1, juce::KeyPress(juce::KeyPress::returnKey));
             alertWindow->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+            focusTextEditorOnOpen(*alertWindow, "cloneName");
 
             // Select all text in the editor for easy replacement
             if (auto* editor = alertWindow->getTextEditor("cloneName"))

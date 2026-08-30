@@ -21,6 +21,7 @@
 #include <Database/TrackLibrary.h>
 #include <UI/CustomColourIds.h>
 #include <Utils/AssortedUtils.h>
+#include <Utils/UiUtils.h>
 #include <algorithm>
 #include <numeric>
 #include <spdlog/spdlog.h>
@@ -535,6 +536,7 @@ namespace jucyaudio
             window->addTextEditor("genre", oldName, "Genre:");
             window->addButton("Rename", 1, juce::KeyPress(juce::KeyPress::returnKey));
             window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+            focusTextEditorOnOpen(*window, "genre");
 
             // The modal outlives the click, so the component must not be captured raw.
             juce::Component::SafePointer<GenreCloudComponent> safeThis{this};
@@ -599,6 +601,7 @@ namespace jucyaudio
             window->addTextEditor("genre", "", "Genre:");
             window->addButton("Add", 1, juce::KeyPress(juce::KeyPress::returnKey));
             window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+            focusTextEditorOnOpen(*window, "genre");
 
             // The modal outlives the click, so the component must not be captured raw.
             juce::Component::SafePointer<GenreCloudComponent> safeThis{this};
