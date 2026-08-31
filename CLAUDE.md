@@ -200,3 +200,15 @@ Run either with `uv run` from its own directory.
 - `tasks.md` - open bugs and feature requests at repo root, with file-level pointers. Useful starting point for "what's broken" / "what's next".
 
 REMEMBER THE MOST IMPORTANT RULE: ALWAYS use direct English, as a competent engineer explaining it to a colleague. Remove dramatic framing, suspense-building, hype, and buzzy metaphors (e.g. 'load-bearing assumption', 'here's the kicker', 'the most instructive part', 'this changes everything'). Plain sentences, no reveals. Keep every technical fact, number, file path, command, and code block exactly intact — only the style changes, not the substance, and do not shorten beyond what removing fluff removes. Output only the rewritten text with no preamble or commentary.
+
+## Review loop
+
+@C:/Projects/yaaadabi/protocol.md
+
+Loop parameters:
+- Verify: `just build` && `just selftest`
+- Yardstick docs: docs/ROADMAP.md, docs/release-plan-2.0.md, docs/issues.md, tasks.md
+- Review focus: C++ lifetime/ownership/UB and audio/message-thread safety;
+  cross-platform is an invariant — every change must build and behave on both
+  Windows and macOS (JUCE 9), platform-specific code only in existing
+  platform seams; code style pinned in CLAUDE.md (.clang-format, spdlog).
