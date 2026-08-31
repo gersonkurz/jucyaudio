@@ -131,5 +131,32 @@ namespace jucyaudio
          */
         int runMigrationSelfTest(const std::filesystem::path &selfTestRoot);
 
+        /**
+         * @brief Headless test that the mix editor timeline survives a reload it was not told about.
+         *
+         * Builds a scratch mix, populates a real TimelineComponent from a real MixProjectLoader, and
+         * then reloads the loader behind the timeline - which is what any other view of the same mix
+         * does when it calls refreshCache(true). The timeline used to hold raw pointers into the two
+         * vectors that reload replaces, so its next layout pass, paint or drag read freed memory.
+         *
+         * Two things are asserted, because the fix has two halves. The views own their data, so the
+         * layout pass after such a reload completes - no test can prove the absence of a
+         * use-after-free, but this is the walk that used to commit one. And an edit made from views
+         * the loader has replaced is refused rather than written: the positions on screen name rows
+         * that now belong to other tracks, and isLoaded() cannot say so because the reload succeeded.
+         * The same edit is then repeated on a repopulated timeline and must go through, so that a
+         * guard which simply refuses everything fails this too.
+         *
+         * Constructs UI components, which is why it is the only suite here that does. It creates no
+         * window and pumps no messages - a JUCE component needs only the GUI machinery the
+         * application has already initialised by this point.
+         *
+         * Uses its own scratch library, because it writes to the mix it builds.
+         *
+         * @param selfTestRoot The root returned by prepareSelfTestEnvironment().
+         * @return 0 if every check passed, 1 otherwise.
+         */
+        int runTimelineSelfTest(const std::filesystem::path &selfTestRoot);
+
     } // namespace tests
 } // namespace jucyaudio

@@ -31,6 +31,7 @@
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/TrackLibrary.h>
 #include <UI/Settings.h>
+#include <UI/TimelineComponent.h>
 #include <Utils/AssortedUtils.h>
 
 #include <nlohmann/json.hpp>
@@ -2817,6 +2818,215 @@ namespace jucyaudio
 
             writeResultsFile(resultsPath, "jucyaudio backup self test", report);
             spdlog::info("[SelfTest] Backup test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
+            return report.failures() == 0 ? 0 : 1;
+        }
+
+        int runTimelineSelfTest(const std::filesystem::path &selfTestRoot)
+        {
+            Report report;
+            // Its own library again: this suite writes to the mix it builds, and the checks are about
+            // what a second writer does to a timeline that is already showing it.
+            const auto workRoot = selfTestRoot / "timeline-library";
+            const auto resultsPath = selfTestRoot / "timeline-results.txt";
+
+            spdlog::info("[SelfTest] Starting timeline self test. Root: {}", pathToString(selfTestRoot));
+
+            const auto stop = [&report, &resultsPath](const std::string &why)
+            {
+                report.abort(why);
+                writeResultsFile(resultsPath, "jucyaudio timeline self test", report);
+                return 1;
+            };
+
+            std::error_code ec;
+            std::filesystem::remove_all(workRoot, ec);
+            if (ec)
+            {
+                return stop(std::format("Could not clear {}: {}", pathToString(workRoot), ec.message()));
+            }
+
+            const auto albumPath = workRoot / kAlbumFolder;
+            std::filesystem::create_directories(albumPath, ec);
+            if (ec)
+            {
+                return stop(std::format("Could not create {}: {}", pathToString(albumPath), ec.message()));
+            }
+
+            for (int i = 1; i <= kTrackCount; ++i)
+            {
+                const auto file = albumPath / std::format("tl{:02}.wav", i);
+                if (!writeSilentWav(file, static_cast<uint32_t>(44100 * kFixtureDurationMs / 1000)))
+                {
+                    return stop(std::format("Could not write the fixture {}", pathToString(file)));
+                }
+            }
+
+            auto &db = theTrackLibrary.getTrackDatabase();
+            auto &mixManager = theTrackLibrary.getMixManager();
+
+            if (!db.getLibraryRootManager().addRoot(pathToString(workRoot)).has_value())
+            {
+                return stop("Could not add the timeline scratch library as a library root.");
+            }
+
+            const auto rootFolderId = db.getFolderDatabase().findOrCreateFolderByPath(workRoot);
+            if (rootFolderId <= 0 || !runScan({rootFolderId}, false, report, "timeline fixture discovery"))
+            {
+                return stop("Could not discover the timeline scratch library.");
+            }
+
+            const auto tracks = tracksUnder(db, rootFolderId);
+            if (static_cast<int>(tracks.size()) != kTrackCount)
+            {
+                return stop(std::format("Expected {} fixture tracks, found {}.", kTrackCount, tracks.size()));
+            }
+
+            std::vector<MixTrack> mixTracks;
+            for (const auto &entry : tracks)
+            {
+                MixTrack mixTrack{};
+                mixTrack.trackId = entry.second.trackId;
+                mixTrack.orderInMix = static_cast<int>(mixTracks.size());
+                mixTrack.cueStart = Duration_t{10 * (mixTrack.orderInMix + 1)};
+                mixTrack.cueEnd = Duration_t{kFixtureDurationMs};
+                mixTracks.push_back(mixTrack);
+            }
+
+            MixInfo mixInfo{};
+            mixInfo.name = "SelfTest Timeline Mix";
+            mixInfo.totalDuration = Duration_t{kTrackCount * kFixtureDurationMs};
+            if (!mixManager.createOrUpdateMix(mixInfo, mixTracks) || mixInfo.mixId <= 0)
+            {
+                return stop("Could not create the timeline fixture mix.");
+            }
+            const auto mixId = mixInfo.mixId;
+            report.note(std::format("built a {}-track mix (id {}) over its own scratch library", kTrackCount, mixId));
+
+            // --- 1. The loader says when its rows changed ---
+            //
+            // This is what the timeline's protection is built on, so it is checked on its own first: a
+            // guard comparing a number that never moves is not a guard.
+            audio::MixProjectLoader loader;
+            if (!loader.loadMix(mixId))
+            {
+                return stop("Could not load the fixture mix into a MixProjectLoader.");
+            }
+
+            const auto afterFirstLoad = loader.getContentsGeneration();
+            if (!loader.reloadFromDatabase())
+            {
+                return stop("Could not reload the fixture mix.");
+            }
+            const auto afterReload = loader.getContentsGeneration();
+            report.check(afterReload != afterFirstLoad,
+                std::format("a reload changes the contents generation ({} -> {})", afterFirstLoad, afterReload));
+
+            // Through reorderTracks, the public way in: a single move is handed straight to
+            // reorderSingleTrack, which is where the rows are moved and the generation is bumped.
+            const auto firstTrackId = loader.getMixTracks().front().trackId;
+            report.check(loader.reorderTracks({{firstTrackId, 0}}), "a reorder to the position a track already holds succeeds");
+            report.check(loader.getContentsGeneration() == afterReload, "that no-op reorder leaves the generation alone");
+
+            report.check(loader.reorderTracks({{firstTrackId, 2}}), "a reorder that actually moves a track succeeds");
+            const auto afterReorder = loader.getContentsGeneration();
+            report.check(afterReorder != afterReload,
+                std::format("an in-place reorder changes the generation ({} -> {})", afterReload, afterReorder));
+
+            // The third way the rows change, and the third bump: removeTrackAtOrder drops a row and
+            // renumbers the rest in memory, without a load and without touching the database.
+            const auto rowsBeforeRemoval = loader.getMixTracks().size();
+            report.check(loader.removeTrackAtOrder(0), "removing a row from the loaded mix in place succeeds");
+            report.check(loader.getMixTracks().size() + 1 == rowsBeforeRemoval,
+                std::format("that removal took one row out ({} -> {})", rowsBeforeRemoval, loader.getMixTracks().size()));
+            const auto afterRemoval = loader.getContentsGeneration();
+            report.check(afterRemoval != afterReorder,
+                std::format("an in-place removal changes the generation ({} -> {})", afterReorder, afterRemoval));
+
+            // Back to what the database holds, so the checks below start from a loader that agrees
+            // with it - the removal above was in memory only, and the reorder was never saved.
+            if (!loader.reloadFromDatabase())
+            {
+                return stop("Could not reload the fixture mix after the reorder checks.");
+            }
+
+            // --- 2. The views survive a reload nobody told the timeline about ---
+            //
+            // The layout pass reads both halves of every TrackView. While those were pointers into the
+            // loader's vectors, the reload below freed everything they addressed and this walk read it.
+            juce::AudioFormatManager formats;
+            formats.registerBasicFormats();
+            juce::AudioThumbnailCache thumbnails{16};
+            ui::TimelineComponent timeline{formats, thumbnails};
+            timeline.setSize(4000, 600);
+
+            if (!timeline.populateFrom(&loader))
+            {
+                return stop("The timeline could not be populated from the fixture mix.");
+            }
+            report.check(timeline.getNumChildComponents() == kTrackCount,
+                std::format("the timeline built {} track components (found {})", kTrackCount, timeline.getNumChildComponents()));
+
+            const auto generationBeforeTheReload = loader.getContentsGeneration();
+            if (!loader.reloadFromDatabase())
+            {
+                return stop("Could not reload the mix behind the back of the timeline.");
+            }
+            report.check(loader.getContentsGeneration() != generationBeforeTheReload,
+                "that reload is visible in the generation, which is what the timeline compares against");
+
+            // No repopulation in between, deliberately. Nothing here can assert the absence of a
+            // use-after-free - a released allocation often still reads back fine - so what is asserted
+            // is that the walk completes and the views are still there afterwards.
+            // Through setSize, because resized() is private: a new width runs the same layout pass,
+            // which is the walk over every view that used to read the freed vectors.
+            timeline.setSize(4200, 600);
+            report.check(timeline.getNumChildComponents() == kTrackCount, "the layout pass after that reload leaves the track components intact");
+
+            // --- 3. An edit whose positions came from stale views is refused ---
+
+            // Repopulated first, so the clipboard copy is taken from a timeline that agrees with the
+            // loader: what is being tested below is the paste, not the copy.
+            if (!timeline.populateFrom(&loader))
+            {
+                return stop("The timeline could not be repopulated before the clipboard check.");
+            }
+
+            auto *const firstComponent = dynamic_cast<ui::MixTrackComponent *>(timeline.getChildComponent(0));
+            if (firstComponent == nullptr)
+            {
+                return stop("The first child of the timeline is not a track component.");
+            }
+            timeline.setSelectedTrack(firstComponent);
+            timeline.copySelectedTrackToClipboard();
+
+            const auto rowsBefore = mixManager.getMixTracks(mixId).size();
+            if (!loader.reloadFromDatabase())
+            {
+                return stop("Could not reload the mix before the stale-paste check.");
+            }
+
+            timeline.pasteFromClipboard(false);
+            const auto rowsAfterStalePaste = mixManager.getMixTracks(mixId).size();
+            report.check(rowsAfterStalePaste == rowsBefore,
+                std::format("a paste from views the loader has replaced is refused (rows {} -> {})", rowsBefore, rowsAfterStalePaste));
+
+            // The other half of the same guard: it has to let a current timeline through, or it would
+            // pass the check above by refusing everything.
+            if (!timeline.populateFrom(&loader))
+            {
+                return stop("The timeline could not be repopulated after the refused paste.");
+            }
+            timeline.pasteFromClipboard(false);
+            const auto rowsAfterFreshPaste = mixManager.getMixTracks(mixId).size();
+            report.check(rowsAfterFreshPaste == rowsBefore + 1,
+                std::format("the same paste goes through once the views are current again (rows {} -> {})", rowsBefore, rowsAfterFreshPaste));
+
+            // The timeline is a local and takes its components with it; this drops the loader pointer
+            // first so nothing outlives the loader either.
+            timeline.releaseMixLoader();
+
+            writeResultsFile(resultsPath, "jucyaudio timeline self test", report);
+            spdlog::info("[SelfTest] Timeline test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
             return report.failures() == 0 ? 0 : 1;
         }
 
