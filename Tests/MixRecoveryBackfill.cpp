@@ -72,7 +72,7 @@ namespace jucyaudio
             }
         } // namespace
 
-        int runMixRecoveryBackfill(const std::filesystem::path &configRoot)
+        int runMixRecoveryBackfill(const std::filesystem::path &configRoot, RecoveryCaptureMode mode)
         {
             const auto outputDir = configRoot / "MixBackups";
             const auto resultsPath = configRoot / "backfill-results.txt";
@@ -118,6 +118,7 @@ namespace jucyaudio
 
             int alreadyRecorded = 0;
             int playlistsRepaired = 0;
+            int partial = 0;
 
             for (const auto &mix : mixes)
             {
@@ -182,7 +183,7 @@ namespace jucyaudio
                 // No rendered snapshot to compare against - nothing was rendered. The completeness rule
                 // still applies, which is what matters here.
                 MixRecoveryCapture capture;
-                const auto captureResult = mixManager.captureRecoveryData(mix.mixId, capture);
+                const auto captureResult = mixManager.captureRecoveryData(mix.mixId, capture, nullptr, mode);
 
                 if (!captureResult.isOk())
                 {
@@ -200,6 +201,7 @@ namespace jucyaudio
                 }
 
                 ++captured;
+                partial += capture.incomplete ? 1 : 0;
                 rowsWritten += static_cast<int64_t>(capture.entries.size());
 
                 // Written from the rows just committed, like the companion beside an exported mix. Same
@@ -226,14 +228,17 @@ namespace jucyaudio
                 }
             }
 
-            const auto summary = std::format("{} mixes: {} recorded ({} rows), {} already had a record ({} missing playlists rewritten), {} skipped, {} failed.",
-                mixes.size(),
-                captured,
-                rowsWritten,
-                alreadyRecorded,
-                playlistsRepaired,
-                skipped,
-                failed);
+            const auto summary =
+                std::format("{} mixes: {} recorded ({} of them partial, {} rows), {} already had a record ({} missing playlists rewritten), "
+                            "{} skipped, {} failed.",
+                    mixes.size(),
+                    captured,
+                    partial,
+                    rowsWritten,
+                    alreadyRecorded,
+                    playlistsRepaired,
+                    skipped,
+                    failed);
             spdlog::info("[Backfill] {}", summary);
 
             {
@@ -287,8 +292,8 @@ namespace jucyaudio
                 }
             }
 
-            // Skips are not failures. A mix that has already lost rows cannot be recorded honestly, and
-            // saying so is this command working rather than breaking.
+            // Skips are not failures. Under the default mode a mix that has already lost rows cannot be
+            // recorded honestly, and saying so is this command working rather than breaking.
             return failed == 0 ? 0 : 1;
         }
 

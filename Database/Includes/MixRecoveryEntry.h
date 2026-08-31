@@ -89,6 +89,34 @@ namespace jucyaudio
              * about, and this is what makes the record a backup of the mix rather than of a tracklist.
              */
             std::string mixData;
+
+            /**
+             * @brief False when this record describes only what survived of a damaged mix.
+             *
+             * A complete record is a promise: these are the tracks, in this order, and there were
+             * no others. That promise is what makes the record worth having, so it must never be
+             * made about a mix that had already lost rows. Such mixes used to be refused outright,
+             * which left the ones most at risk with no record at all - this flag is what lets them
+             * be described honestly instead.
+             *
+             * Every row is complete unless it says otherwise, including every row written before
+             * the flag existed: the old rule refused anything else.
+             */
+            bool isComplete{true};
+        };
+
+        /// @brief What a capture will accept.
+        enum class RecoveryCaptureMode
+        {
+            /// @brief Record only a mix that is whole. Anything else is refused and left alone.
+            IntactOnly,
+
+            /// @brief Also record a mix that has lost rows, marking what survives as partial.
+            ///
+            /// For the one-off pass over mixes that were damaged before any of this existed. Never
+            /// for an export: an export must record what it actually rendered, and "some of it"
+            /// is not that.
+            AllowIncomplete
         };
 
         /**
@@ -96,13 +124,20 @@ namespace jucyaudio
          *
          * Separate from the DbResult a capture returns, because "I refused to capture this mix" and "the
          * capture failed" are different things and only one of them is a problem. A refusal is the
-         * feature working: the mix was not in a state worth recording, and whatever was recorded before
-         * is still there.
+         * feature working: the mix was not in a state worth recording under the mode it was asked for,
+         * and whatever was recorded before is still there.
          */
         struct MixRecoveryCapture final
         {
             /// @brief False means the mix was deliberately left alone; see skipReason.
             bool captured{false};
+
+            /// @brief True when what was recorded is only part of the mix.
+            ///
+            /// Only ever set under RecoveryCaptureMode::AllowIncomplete. Callers that render the
+            /// record - the companion playlist above all - have to say so, or the artefact meant
+            /// to explain a mix later quietly misrepresents it as the whole thing.
+            bool incomplete{false};
 
             /// @brief Why the mix was skipped, in a form fit to put in a report. Empty when captured.
             std::string skipReason;

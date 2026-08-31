@@ -137,14 +137,20 @@ namespace jucyaudio
             /**
              * @brief Record what this mix currently contains, replacing any previous record of it.
              *
-             * Refuses to record a mix that is not demonstrably intact. The row count must match
-             * `Mixes.track_count` and the positions must run contiguously from zero, and if either fails
-             * the mix is left exactly as it was - including whatever was recorded for it previously.
+             * By default, refuses to record a mix that is not demonstrably intact: the row count must
+             * match `Mixes.track_count` and the positions must run contiguously from zero, and if
+             * either fails the mix is left exactly as it was - including whatever was recorded for it
+             * previously.
              *
              * That refusal is the point of the whole function. A mix quietly loses rows when the tracks
              * behind them are deleted, and the loss is invisible until someone looks. Replacing a good
              * forty-track record with the thirty-three that survive would destroy the only evidence of
              * what went missing, at exactly the moment it became worth having.
+             *
+             * RecoveryCaptureMode::AllowIncomplete records what survives instead, marking every row
+             * partial - for mixes that lost rows before any of this existed and can never satisfy the
+             * rule. It does not weaken the paragraph above: a partial record is refused outright if the
+             * mix already has any record, and is never written beside a rendered export.
              *
              * @param mixId The mix to record.
              * @param result What happened: recorded, with the rows that were written; or skipped, with
@@ -164,9 +170,14 @@ namespace jucyaudio
              * @return Ok if the attempt completed, whether it recorded or refused. A failure means
              *         something went wrong and nothing can be concluded about the mix.
              */
+            /// @param mode Whether a mix that has already lost rows may be recorded as partial. Passing
+            ///        AllowIncomplete alongside renderedTracks is not an error and is not honoured: the
+            ///        capture still refuses anything that is not intact, because a record written beside
+            ///        a rendered file claims to list what is in that file.
             virtual DbResult captureRecoveryData(MixId mixId,
                 MixRecoveryCapture &result,
-                const std::vector<MixTrack> *renderedTracks = nullptr) const = 0;
+                const std::vector<MixTrack> *renderedTracks = nullptr,
+                RecoveryCaptureMode mode = RecoveryCaptureMode::IntactOnly) const = 0;
 
             // @brief Get the track count for a specific mix (efficient COUNT query).
             // @param mixId The ID of the mix.

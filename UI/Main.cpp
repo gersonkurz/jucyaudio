@@ -198,9 +198,15 @@ namespace jucyaudio
 
                 // The backfill runs against the real library, unlike the self tests. Same deferral for
                 // the same reason: quit() needs a message loop.
-                if (arguments.contains(kBackfillFlag))
+                if (arguments.contains(kBackfillFlag) || arguments.contains(kBackfillPartialFlag))
                 {
-                    spdlog::info("Command line requested {}; starting headless.", kBackfillFlag);
+                    // The partial form records what survives of a mix that has already lost rows.
+                    // Its own flag rather than an option on the first, because it writes records
+                    // that promise less than every other record in the table, and asking for that
+                    // should look different from asking for the ordinary run.
+                    m_backfillAllowsPartial = arguments.contains(kBackfillPartialFlag);
+                    spdlog::info("Command line requested {}; starting headless.",
+                        m_backfillAllowsPartial ? kBackfillPartialFlag : kBackfillFlag);
                     m_backfillRequested = true;
                     m_initPhase = 1;
                     startTimer(50);
@@ -338,10 +344,12 @@ namespace jucyaudio
             std::filesystem::path m_configRoot;  // Cached config root path
             bool m_selfTestRequested = false;
             bool m_backfillRequested = false;
+            bool m_backfillAllowsPartial = false;
             bool m_durationRepairRequested = false;
 
             static constexpr const char *kSelfTestScanFlag = "--selftest-scan";
             static constexpr const char *kBackfillFlag = "--export-mix-recovery";
+            static constexpr const char *kBackfillPartialFlag = "--export-mix-recovery-partial";
             static constexpr const char *kDurationRepairFlag = "--repair-mix-durations";
 
             /// @brief Opens the database, runs the scan self test, and ends the process with its result.
@@ -409,7 +417,9 @@ namespace jucyaudio
 
                     if (theTrackLibrary.initialise(dbPath))
                     {
-                        result = tests::runMixRecoveryBackfill(m_configRoot);
+                        result = tests::runMixRecoveryBackfill(m_configRoot,
+                            m_backfillAllowsPartial ? database::RecoveryCaptureMode::AllowIncomplete
+                                                    : database::RecoveryCaptureMode::IntactOnly);
                     }
                     else
                     {

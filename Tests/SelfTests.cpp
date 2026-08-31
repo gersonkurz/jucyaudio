@@ -58,7 +58,10 @@ namespace jucyaudio
         {
             constexpr const char *kAlbumFolder = "AlbumOne";
             constexpr int kTrackCount = 4;
-            constexpr int kFixtureDurationMs = 100;
+            // Whole seconds, and at least one. TagLib reports length through lengthInSeconds(), so
+            // anything under a second scans as a duration of zero - which is what every fixture used
+            // to be. Nothing noticed until a test needed the scanned value rather than this constant.
+            constexpr int kFixtureDurationMs = 2000;
             constexpr const char *kMixName = "SelfTest Mix";
             constexpr const char *kRootEnvVar = "JUCYAUDIO_SELFTEST_ROOT";
             constexpr const char *kSentinelFile = ".jucyaudio-selftest";
@@ -236,7 +239,7 @@ namespace jucyaudio
                         a[i].trackId != b[i].trackId || a[i].artistName != b[i].artistName ||
                         a[i].albumTitle != b[i].albumTitle || a[i].title != b[i].title || a[i].filename != b[i].filename ||
                         a[i].folderPath != b[i].folderPath || a[i].duration != b[i].duration || a[i].filesizeBytes != b[i].filesizeBytes ||
-                        a[i].bpm != b[i].bpm || a[i].mixData != b[i].mixData)
+                        a[i].bpm != b[i].bpm || a[i].mixData != b[i].mixData || a[i].isComplete != b[i].isComplete)
                     {
                         return false;
                     }
@@ -325,8 +328,32 @@ namespace jucyaudio
                 }
 
                 SqliteStatement stmt{fixtureDb, "UPDATE MixTracks SET mix_data = ? WHERE mix_id = ? AND order_in_mix = ?"};
-                return stmt.isValid() && stmt.addParam(std::string{"{not json at all"}) && stmt.addParam(mixId) && stmt.addParam(orderInMix) &&
-                       stmt.execute();
+                if (!stmt.isValid() || !stmt.addParam(std::string{"{not json at all"}) || !stmt.addParam(mixId) || !stmt.addParam(orderInMix) ||
+                    !stmt.execute())
+                {
+                    return false;
+                }
+
+                // execute() succeeds whether or not any row matched, and a fixture that quietly
+                // changes nothing is worse than one that fails: every check built on it then passes
+                // by describing a mix that was never corrupted. This one did exactly that.
+                return fixtureDb.getChangesCount() == 1;
+            }
+
+            /// @brief Removes a mix's recovery record, so the mix looks like one that never had one.
+            ///
+            /// Over the test's own connection: nothing in the interface deletes a record on its own,
+            /// which is deliberate - a record is meant to outlive the mix data it describes.
+            bool clearRecoveryData(const std::filesystem::path &databasePath, MixId mixId)
+            {
+                SqliteDatabase fixtureDb;
+                if (!fixtureDb.open(pathToString(databasePath)))
+                {
+                    return false;
+                }
+
+                SqliteStatement stmt{fixtureDb, "DELETE FROM MixRecovery WHERE mix_id = ?"};
+                return stmt.isValid() && stmt.addParam(mixId) && stmt.execute();
             }
 
             /// @brief Writes deliberately wrong summary columns for one mix.
@@ -1137,8 +1164,25 @@ namespace jucyaudio
                         // avoids depending on a fourth track that earlier steps may have deleted.
                         auto three = survivors;
                         three.push_back(survivors.front());
-                        three.back().orderInMix = 2;
+
+                        // Renumbered from zero, rather than kept as they came back. A cascade does not
+                        // renumber, so these two carry orders 0 and 2 - and MixTracks has only an
+                        // index on (mix_id, order_in_mix), not a unique constraint, so appending a
+                        // third at position 2 is accepted and leaves the mix with no row at position
+                        // 1 at all. The corruption below then matches nothing.
+                        for (size_t i = 0; i < three.size(); ++i)
+                        {
+                            three[i].orderInMix = static_cast<int>(i);
+                        }
                         report.check(mixes.createOrUpdateMix(durationMix, three), "the mix could be built back up to three rows");
+
+                        const auto rebuilt = mixes.getMixTracks(durationMix.mixId);
+                        bool contiguous = rebuilt.size() == 3;
+                        for (size_t i = 0; contiguous && i < rebuilt.size(); ++i)
+                        {
+                            contiguous = rebuilt[i].orderInMix == static_cast<int>(i);
+                        }
+                        report.check(contiguous, "the rebuilt rows sit at positions 0, 1 and 2, so there is a middle one to corrupt");
                     }
 
                     const auto beforeCorruption = mixes.getMix(durationMix.mixId);
@@ -1581,6 +1625,70 @@ namespace jucyaudio
                 std::ignore = mixManager.getRecoveryData(mixInfo.mixId, afterRefusal);
                 report.check(sameRecord(recorded, afterRefusal),
                     "the complete record survives the damaged mix unchanged, field for field - this is the whole point");
+            }
+
+            // --- 5b. A damaged mix may be recorded as partial, but never over a good record ---
+            //
+            // The mixes this exists for lost rows before recovery data existed, and their missing
+            // tracks are in no surviving backup. Refusing them forever left the mixes most at risk
+            // as the only ones with nothing written down at all.
+            //
+            // The order of these two checks is the point. Allowing a partial capture must not weaken
+            // the rule it sits next to: a mix that has already lost tracks must not be able to
+            // overwrite a complete description of itself with a shorter one.
+            {
+                MixRecoveryCapture overwrite;
+                const auto blocked = mixManager.captureRecoveryData(mixInfo.mixId, overwrite, nullptr, RecoveryCaptureMode::AllowIncomplete);
+                report.check(blocked.isOk(), "a partial capture over an existing record completes without error");
+                report.check(!overwrite.captured, "a partial capture is refused when a complete record already exists");
+                report.note(std::format("refusal said: {}", overwrite.skipReason));
+
+                std::vector<MixRecoveryEntry> stillThere;
+                std::ignore = mixManager.getRecoveryData(mixInfo.mixId, stillThere);
+                report.check(sameRecord(recorded, stillThere), "the complete record is untouched by the refused partial capture");
+
+                // With no record in the way, the same mix records what survives.
+                report.check(clearRecoveryData(databasePath, mixInfo.mixId), "the record could be cleared to leave the mix unprotected");
+
+                MixRecoveryCapture partial;
+                const auto partialResult = mixManager.captureRecoveryData(mixInfo.mixId, partial, nullptr, RecoveryCaptureMode::AllowIncomplete);
+                report.check(partialResult.isOk() && partial.captured, "a damaged mix with no record is captured when partial records are allowed");
+                report.check(partial.incomplete, "the capture reports itself as partial");
+                report.check(partial.entries.size() == static_cast<size_t>(kTrackCount - 1),
+                    std::format("it records the {} rows that survived (recorded {})", kTrackCount - 1, partial.entries.size()));
+
+                std::vector<MixRecoveryEntry> partialRead;
+                report.check(mixManager.getRecoveryData(mixInfo.mixId, partialRead).isOk(), "the partial record reads back");
+                report.check(!partialRead.empty() && std::none_of(partialRead.begin(),
+                                                        partialRead.end(),
+                                                        [](const MixRecoveryEntry &entry) { return entry.isComplete; }),
+                    "every row of it is marked incomplete, so nothing reading it can mistake it for the whole mix");
+
+                // And the artefact meant to be read by a person says so too.
+                //
+                // Guarded, because front() on an empty vector is undefined behaviour and a test that
+                // crashes is worse than one that fails: the run dies here and every check after this
+                // point goes unreported, including the export refusal below.
+                if (!partialRead.empty())
+                {
+                    const auto partialPath = selfTestRoot / "partial-record.m3u";
+                    report.check(audio::writeMixRecoveryM3U(partialPath, partialRead, partialRead.front().mixTotalDuration).empty(),
+                        "a playlist can be written from a partial record");
+
+                    std::ifstream in{partialPath, std::ios::binary};
+                    const std::string text{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+                    report.check(text.find("#EXTMIXINCOMPLETE:1") != std::string::npos, "the playlist declares itself incomplete");
+                    report.check(text.find("WARNING") != std::string::npos, "and says so in words, for whoever opens it in an editor");
+                }
+
+                // An export must never carry a partial record, whatever mode is asked for: the audio
+                // file is finished, and a record beside it claims to list what is in it.
+                const auto rendered = mixManager.getMixTracks(mixInfo.mixId);
+                MixRecoveryCapture exportAttempt;
+                const auto exportResult =
+                    mixManager.captureRecoveryData(mixInfo.mixId, exportAttempt, &rendered, RecoveryCaptureMode::AllowIncomplete);
+                report.check(exportResult.isOk(), "an export-time partial capture completes without error");
+                report.check(!exportAttempt.captured, "a partial record is refused against a rendered export even when partials are allowed");
             }
 
             // --- 6. Deleting the mix does take its record with it ---

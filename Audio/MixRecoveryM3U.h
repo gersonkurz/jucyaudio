@@ -48,6 +48,7 @@ namespace jucyaudio
          * | `#EXTM3U`                           | standard header                          |
          * | `#EXTMIX:<name>`                    | mix name                                 |
          * | `#EXTMIXDURATION:<seconds>`         | total length, seconds; absent if unknown |
+         * | `#EXTMIXINCOMPLETE:1`               | only when tracks are known to be missing |
          * | `#EXTINF:<seconds>,<artist> - <title>` | standard, seconds, rounded            |
          * | `#JAALBUM:<album>`                  | album                                    |
          * | `#JASTART:<milliseconds>`           | where this track starts within the mix; may be negative |

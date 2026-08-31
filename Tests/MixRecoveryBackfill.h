@@ -18,6 +18,8 @@
 
 #pragma once
 
+#include <Database/Includes/MixRecoveryEntry.h>
+
 #include <filesystem>
 
 namespace jucyaudio
@@ -32,9 +34,11 @@ namespace jucyaudio
          * still there to capture, and writes each one a companion playlist. After it, every existing mix
          * is protected and every new one is protected at export.
          *
-         * A mix that is not intact is skipped and named, never captured - the same rule that governs an
-         * ordinary capture, for the same reason. Those are precisely the mixes whose records would be
-         * worth having, so writing a damaged one over nothing would be the last chance to notice.
+         * Under the default mode a mix that is not intact is skipped and named, never captured - the
+         * same rule that governs an ordinary capture. Under AllowIncomplete it is recorded as partial
+         * instead, which is for the mixes that lost rows long ago and whose missing tracks are in no
+         * surviving backup: refusing those forever leaves the mixes most at risk as the only ones with
+         * nothing written down. A partial record still never replaces one that is whole.
          *
          * Skips are not failures. The exit code reports whether the run itself worked, not whether every
          * mix was in a fit state to record.
@@ -47,7 +51,12 @@ namespace jucyaudio
          * @param configRoot The resolved config root. Playlists are written to MixBackups underneath it.
          * @return 0 if the run completed, 1 if it could not. Skipped mixes do not make it fail.
          */
-        int runMixRecoveryBackfill(const std::filesystem::path &configRoot);
+        /// @param mode IntactOnly leaves damaged mixes alone and names them in the report, which is
+        ///        the ordinary run. AllowIncomplete records what survives of them instead, marked
+        ///        as partial - for the mixes that lost rows before any of this existed, and whose
+        ///        missing tracks are not in any surviving backup.
+        int runMixRecoveryBackfill(const std::filesystem::path &configRoot,
+            database::RecoveryCaptureMode mode = database::RecoveryCaptureMode::IntactOnly);
 
     } // namespace tests
 } // namespace jucyaudio

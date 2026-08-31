@@ -180,6 +180,16 @@ namespace jucyaudio
                 {
                     out << "#EXTMIXDURATION:" << std::chrono::duration_cast<std::chrono::seconds>(*totalDuration).count() << "\n";
                 }
+
+                // Said plainly, and before the tracks. This file exists to be read by someone piecing
+                // a mix back together, and a partial tracklist that does not admit to being partial is
+                // worse than none - they would take it for the whole thing and stop looking.
+                if (!entries.front().isComplete)
+                {
+                    out << "#EXTMIXINCOMPLETE:1\n";
+                    out << "# WARNING: this mix had already lost tracks when this record was made.\n";
+                    out << "# What follows is what survived, in the order it survived in.\n";
+                }
                 out << "\n";
 
                 for (size_t i = 0; i < entries.size(); ++i)

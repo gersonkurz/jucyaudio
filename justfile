@@ -144,6 +144,15 @@ repair-mix-durations config=default_build_type:
     just build {{config}}
     $p = Start-Process -FilePath "build-{{arch}}-{{lowercase(config)}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe" -ArgumentList "--repair-mix-durations" -Wait -PassThru; $root = if ($env:JUCYAUDIO_CONFIG) { $env:JUCYAUDIO_CONFIG } else { Join-Path $env:LOCALAPPDATA "jucyaudio" }; Get-Content (Join-Path $root "mix-duration-repair.txt"); if ($p.ExitCode -ne 0) { Write-Host "REPAIR FAILED"; exit $p.ExitCode }; Write-Host "Repair complete."
 
+# One-off: records what survives of the mixes that lost rows before recovery data existed, marked
+# as partial. Those mixes are refused by backup-mixes, by design - so they are the only mixes with
+# no record at all, and their missing tracks are in no surviving backup. A partial record never
+# replaces a whole one.
+[windows]
+backup-damaged-mixes config=default_build_type:
+    just build {{config}}
+    $p = Start-Process -FilePath "build-{{arch}}-{{lowercase(config)}}/jucyaudio_artefacts/{{config}}/JucyAudio.exe" -ArgumentList "--export-mix-recovery-partial" -Wait -PassThru; $root = if ($env:JUCYAUDIO_CONFIG) { $env:JUCYAUDIO_CONFIG } else { Join-Path $env:LOCALAPPDATA "jucyaudio" }; Get-Content (Join-Path $root "backfill-results.txt"); if ($p.ExitCode -ne 0) { Write-Host "BACKFILL FAILED"; exit $p.ExitCode }; Write-Host "Backfill complete."
+
 # Runs against the real library. Takes a confirmed backup first and refuses to start without one.
 # Playlists land in %LOCALAPPDATA%\jucyaudio\MixBackups (or under JUCYAUDIO_CONFIG if set).
 [windows]

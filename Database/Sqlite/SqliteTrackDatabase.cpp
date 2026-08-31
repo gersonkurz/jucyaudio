@@ -318,6 +318,11 @@ namespace
             filesize_bytes  INTEGER,
             bpm             INTEGER,
             mix_data        TEXT,
+            -- 0 when the mix was already missing rows when this was captured, so the record
+            -- describes what survived rather than the whole mix. Defaults to 1: every row
+            -- written before this column existed came from a capture that refused anything
+            -- incomplete, so they are all whole by construction.
+            is_complete     INTEGER NOT NULL DEFAULT 1,
             PRIMARY KEY (mix_id, order_in_mix),
             FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
         );)SQL",
@@ -822,7 +827,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 28;
+            const int latestSchemaVersion = 29;
 
             if (currentVersion == 0)
             {
@@ -2727,6 +2732,44 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 28;
+            }
+
+            if (currentVersion < 29)
+            {
+                spdlog::info("Migrating database from version 28 to 29 - MixRecovery can describe a damaged mix...");
+                // Until now a mix that had already lost rows was refused rather than recorded, so
+                // the mixes most in need of a record were the ones without one. They can now be
+                // recorded as partial, which needs a way to say so.
+                //
+                // NOT NULL DEFAULT 1 rather than nullable: every existing row came from a capture
+                // that refused anything incomplete, so "whole" is not a guess about them, it is
+                // what the old rule guaranteed.
+                if (SqliteTransaction transaction{m_db})
+                {
+                    if (!m_db.execute("ALTER TABLE MixRecovery ADD COLUMN is_complete INTEGER NOT NULL DEFAULT 1;"))
+                    {
+                        const auto error{m_db.getLastError()};
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "v29 MixRecovery migration failed: " + error);
+                    }
+
+                    if (auto result = setDBSchemaVersion(29); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 29.");
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated to version 29 - MixRecovery can describe a damaged mix.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 29;
             }
 
             return DbResult::success();

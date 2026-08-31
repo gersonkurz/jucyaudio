@@ -1,49 +1,10 @@
 # JucyAudio - Open Tasks
 
-If you are exporting from a Workingset named FOO, and you want to export, default to a folder named FOO, not "the first one in the list".
-
----
-
-## Bug: Drag-and-drop reordering of tracks in mix editor doesn't work
-
-**Symptom**: You can pick up a track and see it visually moving as you drag, but there's no way to actually drop it into a new position before/after another track. The drop never registers — the track just snaps back to its original position.
-
-**Likely cause**: The drop target / hit detection logic isn't recognizing valid drop zones between tracks, or the `itemDropped` / `isInterestedInDragSource` callbacks aren't wired up correctly on the receiving end.
-
-**Key files to investigate**:
-- `UI/TimelineComponent.cpp` — drag-and-drop handling
-- `UI/MixTrackComponent.cpp` — drag source setup
-- `UI/MixEditorComponent.cpp` — any drop zone logic
-
----
-
 ## Bug: Mix editor loses scroll/viewport position when navigating away and back
 
 **Symptom**: When you leave the mix editor (e.g. to browse the library) and return, the horizontal scroll position resets to the beginning. You lose your place and have to manually scroll back to where you were editing.
 
 **Fix approach**: Save the viewport's scroll position (and ideally the zoom level) when navigating away from a mix, and restore it when returning. This could be stored on the MixNode or in the MixEditorComponent as transient state — no need to persist to DB.
-
----
-
-## Visual: Mix editor horizontal scrollbar thumb is too small
-
-**Symptom**: The horizontal scrollbar at the bottom of the mix editor has a very small drag thumb, making it hard to grab — especially for long mixes where the thumb shrinks further.
-
-**Fix approach**: Override the scrollbar's minimum thumb size in the LookAndFeel or set a minimum thumb width so it remains easily grabbable regardless of mix length. JUCE's `LookAndFeel::getMinimumScrollbarThumbSize()` or custom scrollbar styling should handle this.
-
----
-
-## Low priority: Handle corrupted/truncated audio tracks gracefully
-
-**Symptom**: Some tracks render as a flat line (no waveform) or start rendering normally then cut off to silence — indicating the audio file is corrupted or truncated.
-
-**Fix approach (two parts)**:
-- a) **Prune to valid data**: Detect the actual valid audio length during waveform analysis or mix creation. Set the track's effective duration to match only the valid portion so attach points and envelope don't extend into dead data.
-- b) **Exclude fully broken tracks**: If a track has zero valid audio data, it should not be added to the mix at all (or flagged/auto-removed with a warning). The existing `TrackStatus::BadFormat` mechanism could be leveraged here.
-
-**Complexity**: This touches the audio decode pipeline, waveform analysis, and mix creation logic. Needs careful handling to avoid false positives on tracks that are legitimately silent at the end.
-
----
 
 ---
 
@@ -91,18 +52,23 @@ size) needs, so the two should be done together.
 
 ---
 
-## Deferred: repair the 98 mixes damaged by the old `MixTracks` cascade
+## Deferred: 95 mixes lost tracks, and those tracks are gone
 
-**Symptom**: 98 mixes have fewer `MixTracks` rows than their `track_count`, with gaps in
-`order_in_mix`. Caused by `MixTracks.track_id` having no foreign key while deleting a track removed the
-row anyway; `removeTracksFromMix` renumbers, so a gap is the cascade's signature rather than an edit's.
+**What happened**: `MixTracks.track_id` used to have no foreign key while deleting a track removed
+the row anyway, leaving gaps in `order_in_mix`. 95 mixes are affected.
 
-These are the mixes `--export-mix-recovery` refuses to record, by design — an incomplete mix cannot be
-described honestly. The full list is in `%LOCALAPPDATA%\jucyaudio\backfill-results.txt` after a run.
+**What was checked**: every surviving snapshot in `%LOCALAPPDATA%\jucyaudio\*.sqlite` was compared
+against the live library on 2026-08-30. None of them holds a single one of the missing rows - the
+damage predates 2026-08-15, and the two older snapshots have since been pruned. The tracks are not
+recoverable.
 
-**Fix approach**: unknown until someone checks whether an older snapshot in
-`%LOCALAPPDATA%\jucyaudio\*.sqlite` (23-2026-08-05 through 27-2026-08-28) still holds the missing
-`MixTracks` rows. One read-only query settles it. Recording them is blocked until they are repaired.
+**What was done instead**: `just backup-damaged-mixes` records what survived of them, marked partial,
+so they stop being the only mixes in the library with nothing written down. A partial record never
+replaces a whole one, and is never written beside a rendered export.
+
+**Note on detection**: the duration repair set `track_count` to the number of surviving rows, so
+"expected 74, found 72" no longer identifies these. Gaps in `order_in_mix`, and `is_complete = 0` in
+`MixRecovery`, are what remain.
 
 ---
 

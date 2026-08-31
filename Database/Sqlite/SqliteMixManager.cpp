@@ -536,7 +536,10 @@ WHERE m.export_folder IS NULL
             return DbResult::success();
         }
 
-        DbResult SqliteMixManager::captureRecoveryData(MixId mixId, MixRecoveryCapture &result, const std::vector<MixTrack> *renderedTracks) const
+        DbResult SqliteMixManager::captureRecoveryData(MixId mixId,
+            MixRecoveryCapture &result,
+            const std::vector<MixTrack> *renderedTracks,
+            RecoveryCaptureMode mode) const
         {
             // Immediate, not the default deferred mode: this reads, decides something from what it read,
             // and then writes based on that decision. A deferred transaction would let another thread on
@@ -649,10 +652,12 @@ WHERE m.export_folder IS NULL
                 result.captured = false;
                 result.skipReason = std::move(reason);
                 result.entries.clear();
-                // Cleared like the rest: a caller reusing one of these across mixes would otherwise get
-                // Ok, captured == false, no entries, and a duration left over from the last mix that
-                // did succeed - the one field that still looks like an answer.
+                // Everything a success would have set is cleared, not just the obvious fields: a caller
+                // reusing one of these across mixes would otherwise get Ok, captured == false, and a
+                // duration or a partial flag left over from the last mix that did succeed - the fields
+                // that still look like answers.
                 result.totalDuration = Duration_t{0};
+                result.incomplete = false;
                 return DbResult::success();
             };
 
@@ -671,9 +676,62 @@ WHERE m.export_folder IS NULL
                 return refuse("the mix references at least one track that no longer exists");
             }
 
+            // Whether this mix is whole, decided once and used twice: to refuse, or to stamp the
+            // rows as partial.
+            std::string damage;
             if (static_cast<int64_t>(loaded.size()) != expectedTrackCount)
             {
-                return refuse(std::format("expected {} tracks but found {}", expectedTrackCount, loaded.size()));
+                damage = std::format("expected {} tracks but found {}", expectedTrackCount, loaded.size());
+            }
+            for (size_t i = 0; damage.empty() && i < loaded.size(); ++i)
+            {
+                // A gap can only come from a row vanishing underneath the application:
+                // removeTracksFromMix renumbers, so ordinary editing never leaves one. This is the
+                // signature of the loss the whole feature exists to survive.
+                //
+                // Since the duration repair, the count above no longer catches these on its own:
+                // recomputing the summary set track_count to the number of rows that survived, so a
+                // damaged mix now agrees with itself about how few tracks it has. The gap is what is
+                // left of the evidence.
+                if (loaded[i].orderInMix != static_cast<int>(i))
+                {
+                    damage = std::format("track positions are not contiguous - expected {} at index {}, found {}", i, i, loaded[i].orderInMix);
+                }
+            }
+            const bool intact = damage.empty();
+
+            if (!intact && mode == RecoveryCaptureMode::IntactOnly)
+            {
+                return refuse(damage);
+            }
+
+            if (!intact && renderedTracks != nullptr)
+            {
+                // Never, whatever the mode says. An export records what it rendered; a partial
+                // record beside a finished audio file would claim that file contains these tracks
+                // and no others, which is the one thing it must not say.
+                return refuse("a mix that is not intact cannot be recorded against a rendered export");
+            }
+
+            if (!intact)
+            {
+                // A partial record must never land on top of a whole one. The whole point of this
+                // table is that a damaged mix cannot overwrite a good description of itself, and
+                // relaxing the completeness rule must not relax that. Only a mix with no record at
+                // all can be described partially.
+                SqliteStatement existing{m_db, "SELECT COUNT(*) FROM MixRecovery WHERE mix_id = ?"};
+                if (!existing.isValid() || !existing.addParam(mixId) || !existing.getNextResult())
+                {
+                    const auto error{m_db.getLastError()};
+                    transaction.rollback();
+                    return DbResult::failure(DbResultStatus::ErrorDB,
+                        "Failed to check for an existing record of mix " + std::to_string(mixId) + ": " + error);
+                }
+
+                if (existing.getInt64(0) > 0)
+                {
+                    return refuse("the mix is not intact and already has a record, which must not be replaced by a partial one");
+                }
             }
 
             if (renderedTracks != nullptr)
@@ -706,17 +764,6 @@ WHERE m.export_folder IS NULL
                 }
             }
 
-            for (size_t i = 0; i < loaded.size(); ++i)
-            {
-                if (loaded[i].orderInMix != static_cast<int>(i))
-                {
-                    // A gap can only come from a row vanishing underneath the application:
-                    // removeTracksFromMix renumbers, so ordinary editing never leaves one. This is the
-                    // signature of the loss the whole feature exists to survive.
-                    return refuse(std::format("track positions are not contiguous - expected {} at index {}, found {}", i, i, loaded[i].orderInMix));
-                }
-            }
-
             // --- replace ---
 
             if (!transaction.execute("DELETE FROM MixRecovery WHERE mix_id=?", mixId))
@@ -738,10 +785,12 @@ WHERE m.export_folder IS NULL
                 entry.mixName = mixName;
                 entry.capturedAt = capturedAt;
                 entry.mixTotalDuration = totalDuration;
+                entry.isComplete = intact;
 
                 if (!transaction.execute("INSERT INTO MixRecovery (mix_id, order_in_mix, captured_at, mix_name, total_duration, track_id, "
-                                         "artist_name, album_title, title, filename, folder_path, duration, filesize_bytes, bpm, mix_data) "
-                                         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                         "artist_name, album_title, title, filename, folder_path, duration, filesize_bytes, bpm, mix_data, "
+                                         "is_complete) "
+                                         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         mixId,
                         entry.orderInMix,
                         capturedAtMillis,
@@ -756,7 +805,8 @@ WHERE m.export_folder IS NULL
                         static_cast<int64_t>(entry.duration.count()),
                         entry.filesizeBytes,
                         entry.bpm,
-                        entry.mixData))
+                        entry.mixData,
+                        static_cast<int64_t>(intact ? 1 : 0)))
                 {
                     const auto error{m_db.getLastError()};
                     transaction.rollback();
@@ -771,6 +821,7 @@ WHERE m.export_folder IS NULL
 
             spdlog::info("[MixRecovery] Captured {} track(s) for mix {} ({}).", loaded.size(), mixId, mixName);
             result.captured = true;
+            result.incomplete = !intact;
             result.skipReason.clear();
             result.entries = std::move(loaded);
             result.totalDuration = totalDuration;
@@ -810,13 +861,14 @@ WHERE m.export_folder IS NULL
                     entry.filesizeBytes = stmt.getInt64(col++);
                     entry.bpm = stmt.getInt64(col++);
                     entry.mixData = stmt.getText(col++);
+                    entry.isComplete = stmt.getInt64(col++) != 0;
                     loaded.emplace_back(std::move(entry));
                     return true;
                 },
                 // Columns listed rather than SELECT *, because this reads positionally and a later
                 // migration that adds a column would otherwise silently shift every field along by one.
                 "SELECT mix_id, order_in_mix, captured_at, mix_name, total_duration, track_id, artist_name, "
-                "album_title, title, filename, folder_path, duration, filesize_bytes, bpm, mix_data "
+                "album_title, title, filename, folder_path, duration, filesize_bytes, bpm, mix_data, is_complete "
                 "FROM MixRecovery WHERE mix_id=? ORDER BY order_in_mix ASC",
                 mixId);
 
