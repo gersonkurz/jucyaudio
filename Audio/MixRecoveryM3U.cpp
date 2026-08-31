@@ -25,11 +25,15 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <chrono>
 #include <format>
 #include <fstream>
 #include <locale>
 #include <optional>
+#include <random>
+#include <string>
+#include <string_view>
 
 namespace jucyaudio
 {
@@ -114,6 +118,55 @@ namespace jucyaudio
             }
         } // namespace
 
+        M3UTargetState mixRecoveryM3UTargetState(const std::filesystem::path &path)
+        {
+            // symlink_status first, because it answers for the name itself. exists() follows the
+            // link, so a dangling one reads as nothing there - and the name is very much taken.
+            //
+            // The returned type is what decides, not the error code. An absent file is reported through
+            // both - not_found in the status, and on this platform an errno in the code as well - so
+            // treating any error as trouble classifies every free name as blocked, which is how this
+            // first shipped and why nothing could be written at all.
+            std::error_code nameEc;
+            const auto nameStatus = std::filesystem::symlink_status(path, nameEc);
+            if (nameStatus.type() == std::filesystem::file_type::not_found)
+            {
+                return M3UTargetState::Free;
+            }
+
+            if (nameEc || nameStatus.type() == std::filesystem::file_type::none)
+            {
+                // Something is there, or the question could not be answered. Either way it is not free,
+                // and not knowing is never a licence to write.
+                return M3UTargetState::Blocked;
+            }
+
+            // Taken. Following the link now decides whether what is there is a file - a symlink to a
+            // real playlist counts, a symlink to nothing does not, and neither does a directory that
+            // happens to have the name. A not_found here means the link points at nothing, which is
+            // blocked rather than free: the name is still occupied by the link itself.
+            std::error_code targetEc;
+            const auto targetStatus = std::filesystem::status(path, targetEc);
+            if (!std::filesystem::is_regular_file(targetStatus))
+            {
+                return M3UTargetState::Blocked;
+            }
+
+            // And then it is opened, because being a regular file is not the same as being a readable
+            // one. Permissions can deny it, and on Windows another process can hold it with sharing
+            // that excludes readers. Reporting "there is already a playlist here" about a file nobody
+            // can open would leave the mix with no usable record and the run saying it was fine.
+            //
+            // Opened and closed, nothing read: the question is whether it can be, not what it says.
+            std::ifstream probe{path, std::ios::binary};
+            if (!probe)
+            {
+                return M3UTargetState::Blocked;
+            }
+
+            return M3UTargetState::HoldsFile;
+        }
+
         std::filesystem::path companionM3UPathFor(const std::filesystem::path &audioPath)
         {
             auto companion = audioPath;
@@ -123,16 +176,67 @@ namespace jucyaudio
 
         std::string writeMixRecoveryM3U(const std::filesystem::path &targetPath,
             const std::vector<database::MixRecoveryEntry> &entries,
-            std::optional<Duration_t> totalDuration)
+            std::optional<Duration_t> totalDuration,
+            M3UWriteMode mode,
+            bool *targetExistedOut)
         {
+            if (targetExistedOut != nullptr)
+            {
+                *targetExistedOut = false;
+            }
+
             if (entries.empty())
             {
                 return "there is nothing to write - the recovery record is empty";
             }
 
+            if (mode == M3UWriteMode::NeverReplace)
+            {
+                // A look before doing any work, and nothing rests on it.
+                //
+                // In the steady state every playlist is already there, so without this the maintenance
+                // pass renders a full temporary for each one and deletes it again on discovering it had
+                // nothing to do - and can fail for want of space, or on a temporary name too long for
+                // the filesystem, while genuinely having nothing to do.
+                //
+                // Blocked and occupied are different answers. A directory or a dangling symlink under
+                // this name means no playlist can be written for the mix at all, which a run must not
+                // report as "already there, nothing to do".
+                const auto occupant = mixRecoveryM3UTargetState(targetPath);
+                if (occupant == M3UTargetState::HoldsFile)
+                {
+                    if (targetExistedOut != nullptr)
+                    {
+                        *targetExistedOut = true;
+                    }
+                    spdlog::info("[MixRecoveryM3U] {} is already there; left as it was.", pathToString(targetPath));
+                    return {};
+                }
+
+                if (occupant == M3UTargetState::Blocked)
+                {
+                    return std::format("{} is taken by something that is not a usable file, so no playlist could be written there",
+                        pathToString(targetPath));
+                }
+            }
+
             // Alongside the target, not in a system temp directory: a replace across volumes is not
             // atomic, and the destination directory is the one place guaranteed to be on the same one.
-            const auto tempPath = std::filesystem::path{targetPath}.replace_extension(".m3u.tmp");
+            //
+            // The name is unique per attempt, because the application permits multiple instances and
+            // two of them backfilling at once would otherwise pick the same one. Sharing it is worse
+            // than it sounds: one instance can truncate the temporary while the other is linking it
+            // into place, publishing half a file - and after the link the temporary is a second name
+            // for the published file, so anything reopening it truncates what was just published.
+            //
+            // A clock reading plus a random token rather than a process id: there is no portable way
+            // to ask for one, and this is at least as unlikely to collide without platform branches.
+            // The same reasoning, and the same shape of name, as DatabaseBackupManager uses.
+            const auto uniqueSuffix = std::format("{}-{:08x}",
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),
+                std::random_device{}());
+            auto tempPath = targetPath;
+            tempPath += std::filesystem::path{std::format(".{}.m3utmp", uniqueSuffix)};
 
             // Every failure below returns early, and each one would otherwise leave the temporary behind
             // next to the real file, where it looks like a half-written recovery artefact. Disarmed only
@@ -172,6 +276,7 @@ namespace jucyaudio
                 out.imbue(std::locale::classic());
 
                 out << "#EXTM3U\n";
+                out << std::format("#JAFORMAT:{}\n", kMixRecoveryM3UFormat);
                 out << "#EXTMIX:" << entries.front().mixName << "\n";
                 // Left out entirely when the record does not know it. A record written before the length
                 // was stored has no answer, and printing nought would be an answer - a reader would take
@@ -192,9 +297,36 @@ namespace jucyaudio
                 }
                 out << "\n";
 
+                // Where tracks went missing, said in the file rather than left implicit in a column
+                // nobody will query. This is the whole reason the mix's own positions are kept:
+                // "three tracks are gone" is much less use than "three are gone from between these
+                // two", and this file is the one a person actually opens.
+                const auto noteGap = [&out](int firstMissing, int lastMissing)
+                {
+                    out << std::format("# --- {} track(s) missing here, at position(s) {}..{} of the original mix ---\n",
+                        lastMissing - firstMissing + 1,
+                        firstMissing,
+                        lastMissing);
+                };
+
+                // A hole before the first survivor is a hole like any other, and is invisible to a
+                // comparison between neighbours - there is nothing to the left of the first entry to
+                // compare it with. Losing the opening tracks of a mix is not the rarest way to lose
+                // tracks, so it would be an odd one to leave out.
+                if (entries.front().sourceOrderInMix.value_or(0) > 0)
+                {
+                    noteGap(0, *entries.front().sourceOrderInMix - 1);
+                }
+
                 for (size_t i = 0; i < entries.size(); ++i)
                 {
                     const auto &entry = entries[i];
+
+                    if (i > 0 && entry.sourceOrderInMix.has_value() && entries[i - 1].sourceOrderInMix.has_value() &&
+                        *entry.sourceOrderInMix > *entries[i - 1].sourceOrderInMix + 1)
+                    {
+                        noteGap(*entries[i - 1].sourceOrderInMix + 1, *entry.sourceOrderInMix - 1);
+                    }
 
                     // Rounded, not truncated: #EXTINF is what a player shows, and a 3.9 second track
                     // reading as 3 is worse than reading as 4. The exact value is on the #JADURATION
@@ -218,10 +350,72 @@ namespace jucyaudio
                     out << pathToString(fullPath) << "\n\n";
                 }
 
-                if (!out.good())
+                // Closed here and then inspected, rather than left to the destructor.
+                //
+                // good() with the stream still open says nothing about the write that has not happened
+                // yet: the last buffer is flushed by close, and a disk that fills up does it there. The
+                // destructor would swallow that, and the file - short by one buffer and looking
+                // complete - would then be published.
+                out.flush();
+                out.close();
+                if (!out)
                 {
                     return std::format("writing {} failed part way through", pathToString(tempPath));
                 }
+            }
+
+            if (mode == M3UWriteMode::NeverReplace)
+            {
+                // The name is claimed, not checked. exists() followed by a write is a race, and it
+                // reports on whatever a symlink points at rather than on the name - so a dangling
+                // one looks free and the write destroys it. create_hard_link fails when the name is
+                // taken, atomically, whatever is under it. The same reasoning, and the same call,
+                // as DatabaseBackupManager uses to reserve a backup filename.
+                std::error_code linkEc;
+                std::filesystem::create_hard_link(tempPath, targetPath, linkEc);
+                if (linkEc)
+                {
+                    if (targetExistedOut != nullptr)
+                    {
+                        *targetExistedOut = true;
+                    }
+
+                    // Reported rather than assumed: every other reason the link could fail is a
+                    // genuine failure, and saying "it was already there" about a full disk would be
+                    // the wrong answer entirely. The same three-way answer as the check above, since
+                    // another instance can have put anything there in the meantime.
+                    if (mixRecoveryM3UTargetState(targetPath) != M3UTargetState::HoldsFile)
+                    {
+                        if (targetExistedOut != nullptr)
+                        {
+                            *targetExistedOut = false;
+                        }
+                        return std::format("could not put {} in place: {}", pathToString(targetPath), linkEc.message());
+                    }
+
+                    // Left exactly as it was found. The temporary goes with the guard.
+                    spdlog::info("[MixRecoveryM3U] {} is already there; left as it was.", pathToString(targetPath));
+                    return {};
+                }
+
+                // The link is the file now, and it is complete. The temporary is a second name for
+                // the same bytes, and leaving it behind is not untidiness: anything that opens that
+                // name for writing truncates the published playlist through it. So it is removed
+                // here and a failure to remove it is reported, rather than swallowed by the guard.
+                tempGuard.armed = false;
+
+                std::error_code unlinkEc;
+                std::filesystem::remove(tempPath, unlinkEc);
+                if (unlinkEc)
+                {
+                    return std::format("wrote {} but could not remove the temporary {}, which is now a second name for it: {}",
+                        pathToString(targetPath),
+                        pathToString(tempPath),
+                        unlinkEc.message());
+                }
+
+                spdlog::info("[MixRecoveryM3U] Wrote {} ({} tracks).", pathToString(targetPath), entries.size());
+                return {};
             }
 
             // JUCE rather than std::filesystem::rename: rename does not reliably replace an existing

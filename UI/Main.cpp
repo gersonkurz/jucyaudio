@@ -499,7 +499,8 @@ namespace jucyaudio
                     const auto scanResult = tests::runScanSelfTest(selfTestRoot, databasePath);
                     const auto recoveryResult = tests::runMixRecoverySelfTest(selfTestRoot, databasePath);
                     const auto backupResult = tests::runBackupSelfTest(selfTestRoot);
-                    result = (scanResult != 0 || recoveryResult != 0 || backupResult != 0) ? 1 : 0;
+                    const auto migrationResult = tests::runMigrationSelfTest(selfTestRoot);
+                    result = (scanResult != 0 || recoveryResult != 0 || backupResult != 0 || migrationResult != 0) ? 1 : 0;
                 }
                 else
                 {

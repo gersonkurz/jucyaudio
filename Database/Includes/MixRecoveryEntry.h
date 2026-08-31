@@ -37,7 +37,33 @@ namespace jucyaudio
         struct MixRecoveryEntry final
         {
             MixId mixId{0};
+
+            /// @brief Where this row sits in the record: 0, 1, 2 and so on, without gaps.
+            ///
+            /// The position within the record rather than the position the mix stored. For an intact
+            /// mix they are the same. For a damaged one they are not, and they cannot be: this is half
+            /// the primary key, and a mix that has lost rows may hold two at the same position - two in
+            /// this library do. See sourceOrderInMix for what the mix actually said.
+            ///
+            /// True of every row, not only of rows written from here on: the v30 migration renumbers the
+            /// partial records that predate it, having first copied their positions into
+            /// sourceOrderInMix. So this is an invariant rather than a convention with exceptions.
             int orderInMix{0};
+
+            /**
+             * @brief Where the mix said this track was, if that is known.
+             *
+             * Equal to orderInMix for an intact mix. For a damaged one it is the evidence of the loss:
+             * the jumps in this sequence say how many tracks went missing and whereabouts between the
+             * survivors they sat. That is worth keeping - it is the difference between "three tracks
+             * are gone" and "three tracks are gone from between these two" - and it cannot be
+             * recovered later, because the mix itself is what is being described.
+             *
+             * Never nothing in practice: the v30 migration filled it in for every row that predated it,
+             * from the positions those rows were already storing. Optional all the same, so that a row
+             * that somehow lacks one reads as unknown rather than as "this was the first track".
+             */
+            std::optional<int> sourceOrderInMix;
             Timestamp_t capturedAt;
             std::string mixName;
 

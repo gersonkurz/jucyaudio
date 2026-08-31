@@ -323,6 +323,11 @@ namespace
             -- written before this column existed came from a capture that refused anything
             -- incomplete, so they are all whole by construction.
             is_complete     INTEGER NOT NULL DEFAULT 1,
+            -- Where the mix said the track was, as opposed to where it sits in this record. The
+            -- two differ only for a damaged mix, where the jumps are the evidence of what was
+            -- lost. Nullable: rows written before this column existed do not know, though the
+            -- v30 migration fills it in for them, since order_in_mix was the source value then.
+            source_order_in_mix INTEGER,
             PRIMARY KEY (mix_id, order_in_mix),
             FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
         );)SQL",
@@ -827,7 +832,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 29;
+            const int latestSchemaVersion = 30;
 
             if (currentVersion == 0)
             {
@@ -2770,6 +2775,60 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 29;
+            }
+
+            if (currentVersion < 30)
+            {
+                spdlog::info("Migrating database from version 29 to 30 - MixRecovery remembers where a track was in the mix...");
+                // order_in_mix is half the primary key, so it has to be the position within the
+                // record. For a damaged mix that is not the position the mix stored, and the
+                // difference between them is the only surviving evidence of where rows were lost.
+                //
+                // Filled in from order_in_mix for every existing row, which is correct for all of
+                // them: an intact record has the two equal by the rule that let it be written, and
+                // the partial records that exist so far were written with the mix's own positions
+                // copied straight across.
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Then the record positions are normalised, so that order_in_mix means the same
+                    // thing in every row that exists rather than only in rows written from here on.
+                    // The partial records written under v29 kept the mix's own positions, gaps and
+                    // all, and those are now preserved in the new column instead.
+                    //
+                    // Two passes, because order_in_mix is half the primary key and renumbering in
+                    // place can collide with a row that has not moved yet. The first pass maps every
+                    // value to -1-value: still unique within a mix, and disjoint from the range the
+                    // second pass writes. The second sets each row to its rank among the mix's source
+                    // positions, which are unique per mix because they were the primary key a moment
+                    // ago.
+                    if (!m_db.execute("ALTER TABLE MixRecovery ADD COLUMN source_order_in_mix INTEGER;") ||
+                        !m_db.execute("UPDATE MixRecovery SET source_order_in_mix = order_in_mix;") ||
+                        !m_db.execute("UPDATE MixRecovery SET order_in_mix = -1 - order_in_mix;") ||
+                        !m_db.execute("UPDATE MixRecovery SET order_in_mix = (SELECT COUNT(*) FROM MixRecovery r2 "
+                                      "WHERE r2.mix_id = MixRecovery.mix_id AND r2.source_order_in_mix < MixRecovery.source_order_in_mix);"))
+                    {
+                        const auto error{m_db.getLastError()};
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "v30 MixRecovery migration failed: " + error);
+                    }
+
+                    if (auto result = setDBSchemaVersion(30); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 30.");
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated to version 30 - MixRecovery remembers where a track was in the mix.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 30;
             }
 
             return DbResult::success();

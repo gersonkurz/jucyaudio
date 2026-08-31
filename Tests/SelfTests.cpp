@@ -221,6 +221,46 @@ namespace jucyaudio
                 return ids;
             }
 
+            /// @brief "0, 2, 3" - so a failing position check says what it actually found.
+            std::string idsToText(const std::vector<int> &values)
+            {
+                std::string text;
+                for (const auto value : values)
+                {
+                    text += (text.empty() ? "" : ", ") + std::to_string(value);
+                }
+                return text;
+            }
+
+            /// @brief How many playlist temporaries are lying about in a directory.
+            ///
+            /// The temporary is named uniquely per attempt, so no single path can be tested for. A
+            /// leftover is worse than untidy: after the link it is a second name for the published
+            /// playlist, and opening it for writing truncates what was published.
+            int strayTempCount(const std::filesystem::path &directory)
+            {
+                // Advanced by hand for the same reason the backfill does it: a range-for calls the
+                // throwing operator++, and a construction error would otherwise report zero strays -
+                // a clean answer from a check that never ran.
+                int strays = 0;
+                std::error_code listEc;
+                std::filesystem::directory_iterator entry{directory, listEc};
+                const std::filesystem::directory_iterator end;
+
+                while (!listEc && entry != end)
+                {
+                    if (entry->path().extension() == ".m3utmp")
+                    {
+                        ++strays;
+                    }
+                    entry.increment(listEc);
+                }
+
+                // A failure to look is not the same as nothing being there, and this feeds an assertion
+                // that something is absent. Reported as one stray so that check fails rather than passes.
+                return listEc ? strays + 1 : strays;
+            }
+
             /// @brief Are these two recovery records identical in every field?
             ///
             /// Row counts are not enough: a rewrite that happens to produce the same number of rows would
@@ -239,7 +279,8 @@ namespace jucyaudio
                         a[i].trackId != b[i].trackId || a[i].artistName != b[i].artistName ||
                         a[i].albumTitle != b[i].albumTitle || a[i].title != b[i].title || a[i].filename != b[i].filename ||
                         a[i].folderPath != b[i].folderPath || a[i].duration != b[i].duration || a[i].filesizeBytes != b[i].filesizeBytes ||
-                        a[i].bpm != b[i].bpm || a[i].mixData != b[i].mixData || a[i].isComplete != b[i].isComplete)
+                        a[i].bpm != b[i].bpm || a[i].mixData != b[i].mixData || a[i].isComplete != b[i].isComplete ||
+                        a[i].sourceOrderInMix != b[i].sourceOrderInMix)
                     {
                         return false;
                     }
@@ -337,6 +378,29 @@ namespace jucyaudio
                 // execute() succeeds whether or not any row matched, and a fixture that quietly
                 // changes nothing is worse than one that fails: every check built on it then passes
                 // by describing a mix that was never corrupted. This one did exactly that.
+                return fixtureDb.getChangesCount() == 1;
+            }
+
+            /// @brief Moves one mix row on top of another, so two share a position.
+            ///
+            /// MixTracks has only an index on (mix_id, order_in_mix), not a unique constraint, so this
+            /// is a state the table genuinely allows and two mixes in the real library are in. Nothing
+            /// reachable through the interfaces produces it - removeTracksFromMix renumbers - which is
+            /// why it went unnoticed until a capture tried to copy those positions into MixRecovery,
+            /// where they are the primary key.
+            bool duplicateOrderInMix(const std::filesystem::path &databasePath, MixId mixId, int fromOrder, int toOrder)
+            {
+                SqliteDatabase fixtureDb;
+                if (!fixtureDb.open(pathToString(databasePath)))
+                {
+                    return false;
+                }
+
+                SqliteStatement stmt{fixtureDb, "UPDATE MixTracks SET order_in_mix = ? WHERE mix_id = ? AND order_in_mix = ?"};
+                if (!stmt.isValid() || !stmt.addParam(toOrder) || !stmt.addParam(mixId) || !stmt.addParam(fromOrder) || !stmt.execute())
+                {
+                    return false;
+                }
                 return fixtureDb.getChangesCount() == 1;
             }
 
@@ -1431,12 +1495,11 @@ namespace jucyaudio
 
             {
                 const auto companionPath = audio::companionM3UPathFor(exportPath);
-                const auto tempPath = std::filesystem::path{companionPath}.replace_extension(".m3u.tmp");
 
                 report.check(std::filesystem::exists(companionPath, ec), "a companion m3u was written beside the audio file");
                 // A stray temporary next to the real file looks like a half-written recovery artefact,
                 // which is worse than none because someone would trust it.
-                report.check(!std::filesystem::exists(tempPath, ec), "no .m3u.tmp was left behind");
+                report.check(strayTempCount(companionPath.parent_path()) == 0, "no temporary was left behind");
 
                 // Scoped so the handle is closed before the re-export below. Windows ReplaceFile refuses
                 // to replace a file that anyone still has open, so a reader left dangling here makes the
@@ -1512,7 +1575,7 @@ namespace jucyaudio
                 // proving the opposite of what it claims.
                 const auto sizeAfter = std::filesystem::file_size(companionPath, ec);
                 report.check(sizeBefore == sizeAfter, "re-exporting replaces the companion rather than growing it");
-                report.check(!std::filesystem::exists(tempPath, ec), "re-exporting leaves no .m3u.tmp behind either");
+                report.check(strayTempCount(companionPath.parent_path()) == 0, "re-exporting leaves no temporary behind either");
             }
 
             // That export captured again, so the rows carry a fresh capturedAt. Everything below compares
@@ -1650,12 +1713,19 @@ namespace jucyaudio
                 // With no record in the way, the same mix records what survives.
                 report.check(clearRecoveryData(databasePath, mixInfo.mixId), "the record could be cleared to leave the mix unprotected");
 
+                // A second deletion, from the middle of what is left. The first victim was the track
+                // at position 0, so the survivors run 1, 2, 3 - a gap at the front only, which never
+                // falls between two recorded tracks. Removing the one at position 2 leaves 1 and 3,
+                // and a hole between two rows that are both in the record is what the playlist note
+                // below has to describe.
+                report.check(db.removeTracks({orderedTrackIds[2]}).isOk(), "a second track could be deleted, from the middle");
+
                 MixRecoveryCapture partial;
                 const auto partialResult = mixManager.captureRecoveryData(mixInfo.mixId, partial, nullptr, RecoveryCaptureMode::AllowIncomplete);
                 report.check(partialResult.isOk() && partial.captured, "a damaged mix with no record is captured when partial records are allowed");
                 report.check(partial.incomplete, "the capture reports itself as partial");
-                report.check(partial.entries.size() == static_cast<size_t>(kTrackCount - 1),
-                    std::format("it records the {} rows that survived (recorded {})", kTrackCount - 1, partial.entries.size()));
+                report.check(partial.entries.size() == static_cast<size_t>(kTrackCount - 2),
+                    std::format("it records the {} rows that survived (recorded {})", kTrackCount - 2, partial.entries.size()));
 
                 std::vector<MixRecoveryEntry> partialRead;
                 report.check(mixManager.getRecoveryData(mixInfo.mixId, partialRead).isOk(), "the partial record reads back");
@@ -1663,6 +1733,28 @@ namespace jucyaudio
                                                         partialRead.end(),
                                                         [](const MixRecoveryEntry &entry) { return entry.isComplete; }),
                     "every row of it is marked incomplete, so nothing reading it can mistake it for the whole mix");
+
+                // Both positions, because they are different things and only one of them can be
+                // reconstructed later. The record position is where the row sits here; the source
+                // position is where the mix said the track was, and the jumps in it are the only
+                // surviving evidence of what went missing and whereabouts.
+                bool recordPositionsRun = !partialRead.empty();
+                for (size_t i = 0; recordPositionsRun && i < partialRead.size(); ++i)
+                {
+                    recordPositionsRun = partialRead[i].orderInMix == static_cast<int>(i);
+                }
+                report.check(recordPositionsRun, "the record positions run 0..N-1");
+
+                // Positions 0 and 2 were deleted, so the survivors sat at 1 and 3 in the mix. Both
+                // gaps have to still be visible in the record: one before the first survivor, one
+                // between the two.
+                std::vector<int> sourcePositions;
+                for (const auto &entry : partialRead)
+                {
+                    sourcePositions.push_back(entry.sourceOrderInMix.value_or(-1));
+                }
+                report.check(sourcePositions == std::vector<int>{1, 3},
+                    std::format("the mix's own positions are kept, gaps and all (found {})", idsToText(sourcePositions)));
 
                 // And the artefact meant to be read by a person says so too.
                 //
@@ -1679,6 +1771,15 @@ namespace jucyaudio
                     const std::string text{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
                     report.check(text.find("#EXTMIXINCOMPLETE:1") != std::string::npos, "the playlist declares itself incomplete");
                     report.check(text.find("WARNING") != std::string::npos, "and says so in words, for whoever opens it in an editor");
+
+                    // The point of keeping the source positions: not "a track is missing" but where.
+                    // Both holes, and by exact range - a substring that only proves some annotation
+                    // exists would pass with one of the two missing, and the leading one is precisely
+                    // the one a neighbour comparison cannot see.
+                    report.check(text.find("1 track(s) missing here, at position(s) 0..0") != std::string::npos,
+                        "the playlist names the hole before the first surviving track");
+                    report.check(text.find("1 track(s) missing here, at position(s) 2..2") != std::string::npos,
+                        "and the hole between the two surviving tracks");
                 }
 
                 // An export must never carry a partial record, whatever mode is asked for: the audio
@@ -1691,6 +1792,59 @@ namespace jucyaudio
                 report.check(!exportAttempt.captured, "a partial record is refused against a rendered export even when partials are allowed");
             }
 
+            // --- 5c. A damaged mix can also hold two rows at the same position ---
+            //
+            // MixRecovery keys on (mix_id, order_in_mix); MixTracks does not, so a mix that lost rows
+            // may also have repeats. Copying those positions across fails on the primary key, which
+            // is exactly what happened to two mixes on the first real run of this. The record
+            // renumbers instead: order_in_mix is the position within the record, which for an intact
+            // mix it always was.
+            {
+                report.check(clearRecoveryData(databasePath, mixInfo.mixId), "the record could be cleared again");
+
+                const auto before = mixManager.getMixTracks(mixInfo.mixId);
+                report.check(before.size() >= 2, "the damaged mix still has rows to duplicate a position with");
+                if (before.size() >= 2)
+                {
+                    report.check(duplicateOrderInMix(databasePath, mixInfo.mixId, before.back().orderInMix, before.front().orderInMix),
+                        "two rows could be put at the same position");
+
+                    MixRecoveryCapture repeated;
+                    const auto repeatedResult =
+                        mixManager.captureRecoveryData(mixInfo.mixId, repeated, nullptr, RecoveryCaptureMode::AllowIncomplete);
+                    report.check(repeatedResult.isOk(), std::format("capturing a mix with a repeated position succeeds (said: '{}')", repeatedResult.errorMessage));
+                    report.check(repeated.captured, "and it is captured rather than refused");
+                    report.check(repeated.entries.size() == before.size(),
+                        std::format("every surviving row is recorded ({} of {})", repeated.entries.size(), before.size()));
+
+                    std::vector<MixRecoveryEntry> repeatedRead;
+                    report.check(mixManager.getRecoveryData(mixInfo.mixId, repeatedRead).isOk(), "the record reads back");
+                    bool numbered = repeatedRead.size() == before.size();
+                    for (size_t i = 0; numbered && i < repeatedRead.size(); ++i)
+                    {
+                        numbered = repeatedRead[i].orderInMix == static_cast<int>(i);
+                    }
+                    report.check(numbered, "the recorded positions run 0..N-1, whatever the mix had stored");
+
+                    // And the positions the mix held - including the repeat - are still there.
+                    std::vector<int> heldPositions;
+                    for (const auto &entry : repeatedRead)
+                    {
+                        heldPositions.push_back(entry.sourceOrderInMix.value_or(-1));
+                    }
+                    std::vector<int> expectedHeld;
+                    for (const auto &row : before)
+                    {
+                        expectedHeld.push_back(row.orderInMix);
+                    }
+                    expectedHeld.back() = before.front().orderInMix; // the row that was moved on top
+                    std::sort(expectedHeld.begin(), expectedHeld.end());
+                    std::sort(heldPositions.begin(), heldPositions.end());
+                    report.check(heldPositions == expectedHeld,
+                        std::format("the duplicated source positions survive the renumbering (found {})", idsToText(heldPositions)));
+                }
+            }
+
             // --- 6. Deleting the mix does take its record with it ---
 
             report.check(mixManager.removeMix(mixInfo.mixId), "the test mix can be deleted");
@@ -1699,8 +1853,344 @@ namespace jucyaudio
             report.check(mixManager.getRecoveryData(mixInfo.mixId, afterMixDelete).isOk(), "recovery data reads without error after the mix was deleted");
             report.check(afterMixDelete.empty(), "deleting the mix removes its recovery rows");
 
+            // --- 7. What the writer is allowed to overwrite ---
+            //
+            // Export-time writing replaces: the audio has just been rendered and the playlist beside
+            // it has to describe that render. The maintenance pass must not, because the file it would
+            // replace may be one somebody has been writing notes on while rebuilding a mix.
+            {
+                const auto occupied = selfTestRoot / "occupied.m3u";
+
+                const std::string staged{"notes I made while putting this mix back together\nsecond line\n"};
+                {
+                    std::ofstream existing{occupied, std::ios::binary | std::ios::trunc};
+                    existing << staged;
+                }
+
+                std::vector<MixRecoveryEntry> rows;
+                std::ignore = mixManager.getRecoveryData(mixInfo.mixId, rows);
+                if (rows.empty())
+                {
+                    // The mix was deleted just above, so build the one row this needs by hand.
+                    MixRecoveryEntry entry;
+                    entry.mixName = "a mix";
+                    entry.filename = "track.mp3";
+                    entry.folderPath = "D:\\music";
+                    entry.duration = Duration_t{1000};
+                    rows.push_back(entry);
+                }
+
+                bool existed = false;
+                const auto refused = audio::writeMixRecoveryM3U(occupied, rows, std::nullopt, audio::M3UWriteMode::NeverReplace, &existed);
+                // Every check below carries this, rather than relying on the ones above it. report.check
+                // records a result; it does not stop the run, so a later line saying "and ..." is not
+                // conditional on the earlier ones having held. Without it, each of them is separately true
+                // of a writer that did nothing at all.
+                const bool refusedCorrectly{refused.empty() && existed};
+                report.check(refused.empty(), std::format("NeverReplace over an existing file is not an error (said: '{}')", refused));
+                report.check(existed, "and it reports that the name was taken");
+
+                {
+                    std::ifstream in{occupied, std::ios::binary};
+                    const std::string text{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+                    // The whole file, byte for byte. A prefix check passes for a writer that appended
+                    // to it, or replaced everything after the first line - which is not "untouched".
+                    report.check(refusedCorrectly && text == staged, "the file that was there is untouched, byte for byte - this is the whole point");
+                }
+
+                // No leftovers: a temporary beside it is a second name for whatever was published,
+                // and the next thing to open that name truncates the file it points at.
+                report.check(refusedCorrectly && strayTempCount(selfTestRoot) == 0, "and no temporary was left beside it");
+
+                // A free name is claimed normally.
+                const auto freeName = selfTestRoot / "unoccupied.m3u";
+                existed = true;
+                const auto written = audio::writeMixRecoveryM3U(freeName, rows, std::nullopt, audio::M3UWriteMode::NeverReplace, &existed);
+                const bool published{written.empty() && !existed && std::filesystem::exists(freeName, ec)};
+                report.check(written.empty() && !existed, "NeverReplace writes when the name is free");
+                report.check(std::filesystem::exists(freeName, ec), "and the file is there afterwards");
+
+                // This is the branch that publishes by hard link, so the temporary is a second name for
+                // the file that was just published and has to be gone.
+                //
+                // !existed belongs in the gate as much as the rest: the already-there fast path also
+                // returns no error, leaves the file in place and creates no temporary, so without it this
+                // is green for a writer that took the branch this check is not about.
+                report.check(published && strayTempCount(selfTestRoot) == 0, "and the temporary that became its second name is unlinked");
+
+                // A name that is taken by something other than a usable file is a different answer from
+                // "there is already a playlist here": no playlist can be written for that mix at all, so
+                // it must be a failure rather than a quiet nothing-to-do.
+                const auto blocked = selfTestRoot / "blocked.m3u";
+                std::filesystem::create_directories(blocked, ec);
+                report.check(std::filesystem::is_directory(blocked, ec), "a directory could be put where a playlist would go");
+                report.check(audio::mixRecoveryM3UTargetState(blocked) == audio::M3UTargetState::Blocked,
+                    "a directory under a playlist name reads as blocked, not as a playlist");
+
+                existed = true;
+                const auto refusedBlocked = audio::writeMixRecoveryM3U(blocked, rows, std::nullopt, audio::M3UWriteMode::NeverReplace, &existed);
+                report.check(!refusedBlocked.empty(), "writing to a blocked name is an error, not a silent success");
+                report.check(!existed, "and it is not reported as an ordinary already-there");
+
+                report.check(audio::mixRecoveryM3UTargetState(freeName) == audio::M3UTargetState::HoldsFile,
+                    "the playlist just written reads as a usable file");
+                report.check(audio::mixRecoveryM3UTargetState(selfTestRoot / "never-written.m3u") == audio::M3UTargetState::Free,
+                    "and a name nothing occupies reads as free");
+
+                // Replace mode still replaces, which is what an export needs.
+                const auto replaced = audio::writeMixRecoveryM3U(occupied, rows, std::nullopt, audio::M3UWriteMode::ReplaceExisting);
+                report.check(replaced.empty(), "ReplaceExisting still replaces");
+                {
+                    std::ifstream in{occupied, std::ios::binary};
+                    const std::string text{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+                    report.check(text.starts_with("#EXTM3U"), "and the replacement really is the playlist");
+                }
+            }
+
             writeResultsFile(resultsPath, "jucyaudio mix recovery self test", report);
             spdlog::info("[SelfTest] Mix recovery finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
+            return report.failures() == 0 ? 0 : 1;
+        }
+
+        int runMigrationSelfTest(const std::filesystem::path &selfTestRoot)
+        {
+            Report report;
+            const auto workRoot = selfTestRoot / "migration";
+            const auto resultsPath = selfTestRoot / "migration-results.txt";
+            const auto dbPath = workRoot / "v29.db";
+
+            spdlog::info("[SelfTest] Starting migration self test. Root: {}", pathToString(selfTestRoot));
+
+            std::error_code ec;
+            std::filesystem::remove_all(workRoot, ec);
+            std::filesystem::create_directories(workRoot, ec);
+            if (ec)
+            {
+                report.abort(std::format("Could not create {}: {}", pathToString(workRoot), ec.message()));
+                writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                return 1;
+            }
+
+            // A database shaped the way v29 left one.
+            //
+            // Built by letting the application create a complete current schema and then putting one
+            // table back the way it was, rather than hand-writing the two tables the migration reads.
+            // A database containing only those two is not a database this code can open: connect()
+            // initialises the folder cache afterwards, which queries Folders and fails - quietly, since
+            // connect() does not look at the result. The test would then have reported a successful
+            // migration of a database that could not really be opened at all.
+            //
+            // This is the one migration in the project that rewrites primary keys, and it does so to
+            // records that cannot be regenerated - the mixes they describe have already lost the rows
+            // in question. It gets a test of its own for that reason.
+            {
+                SqliteTrackDatabase fresh;
+                const auto created = fresh.connect(dbPath);
+                report.check(created.isOk(), std::format("a complete scratch schema could be created (said: '{}')", created.errorMessage));
+                if (!created.isOk())
+                {
+                    writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                    return 1;
+                }
+            }
+
+            {
+                SqliteDatabase seed;
+                if (!seed.open(pathToString(dbPath)))
+                {
+                    report.abort("Could not reopen the scratch database to age it.");
+                    writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                    return 1;
+                }
+
+                // Only MixRecovery goes back: it is the only table the v30 rung touches. Dropping it
+                // takes its indexes with it, which the migration neither reads nor recreates.
+                //
+                // The foreign key on mix_id is kept, so the fixture is the shape v29 really had, and
+                // the two mixes it points at are created first. Enforcement is switched on
+                // explicitly: SqliteDatabase::open does not set PRAGMA foreign_keys, so without this
+                // the key would be recorded and ignored, and a seeding mistake that invented mixes
+                // would go through unnoticed.
+                const bool built =
+                    seed.execute("PRAGMA foreign_keys = ON;") &&
+                    seed.execute("INSERT INTO Mixes (mix_id, name) VALUES (1, 'Seed One'), (2, 'Seed Two');") &&
+                    seed.execute("DROP TABLE MixRecovery;") &&
+                    seed.execute("CREATE TABLE MixRecovery(mix_id INTEGER NOT NULL, order_in_mix INTEGER NOT NULL, "
+                                 "captured_at INTEGER NOT NULL, mix_name TEXT NOT NULL, total_duration INTEGER, track_id INTEGER, "
+                                 "artist_name TEXT, album_title TEXT, title TEXT, filename TEXT, folder_path TEXT, duration INTEGER, "
+                                 "filesize_bytes INTEGER, bpm INTEGER, mix_data TEXT, is_complete INTEGER NOT NULL DEFAULT 1, "
+                                 "PRIMARY KEY (mix_id, order_in_mix), "
+                                 "FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE);") &&
+                    // The indexes go back too. Dropping the table took them with it, and a fixture
+                    // without them cannot show that the migration leaves them standing - which is
+                    // worth showing, because renumbering a primary key is exactly the kind of work
+                    // that gets done by rebuilding a table and losing whatever hung off it.
+                    seed.execute("CREATE INDEX idx_mixrecovery_track ON MixRecovery(track_id);") &&
+                    seed.execute("CREATE INDEX idx_mixrecovery_fileident ON MixRecovery(filename, filesize_bytes);") &&
+                    seed.execute("UPDATE SchemaInfo SET value = '29' WHERE key = 'schema_version';");
+                report.check(built, "the scratch database could be put back into its v29 shape");
+                if (!built)
+                {
+                    writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                    return 1;
+                }
+
+                // Mix 1 is intact: positions 0, 1, 2, and must come through completely unchanged.
+                // Mix 2 is one of the damaged ones: positions 0, 3, 7 with is_complete = 0, exactly as
+                // v29 wrote them. Its record positions have to become 0, 1, 2 while 0, 3, 7 survive as
+                // the source positions - that is the whole point of the migration.
+                const char *insert = "INSERT INTO MixRecovery (mix_id, order_in_mix, captured_at, mix_name, total_duration, track_id, "
+                                     "artist_name, album_title, title, filename, folder_path, duration, filesize_bytes, bpm, mix_data, "
+                                     "is_complete) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+                // Every value is distinct per row and derived from the mix and position it belongs to.
+                // Identical payloads would let a field move from one row to another unnoticed, which is
+                // exactly the mistake a renumbering migration is capable of making.
+                const auto seedRow = [&seed, insert](int64_t mixId, int order, int complete)
+                {
+                    const auto tag = [mixId, order](std::string_view field)
+                    {
+                        return std::format("{}-{}-{}", field, mixId, order);
+                    };
+                    const auto number = [mixId, order](int64_t base)
+                    {
+                        return base + mixId * 1000 + order;
+                    };
+
+                    SqliteStatement stmt{seed, insert};
+                    return stmt.isValid() && stmt.addParam(mixId) && stmt.addParam(order) && stmt.addParam(number(700000)) &&
+                           stmt.addParam(tag("mix")) && stmt.addParam(number(400000)) && stmt.addParam(number(100)) &&
+                           stmt.addParam(tag("artist")) && stmt.addParam(tag("album")) && stmt.addParam(tag("title")) &&
+                           stmt.addParam(tag("file")) && stmt.addParam(tag("folder")) && stmt.addParam(number(1000)) &&
+                           stmt.addParam(number(2000)) && stmt.addParam(number(120)) && stmt.addParam(tag("data")) &&
+                           stmt.addParam(int64_t{complete}) && stmt.execute();
+                };
+
+                bool seeded = true;
+                for (const auto order : {0, 1, 2})
+                {
+                    seeded = seeded && seedRow(1, order, 1);
+                }
+                for (const auto order : {0, 3, 7})
+                {
+                    seeded = seeded && seedRow(2, order, 0);
+                }
+                report.check(seeded, "an intact record and a gapped partial one could be seeded");
+            }
+
+            // Opening it runs the ladder. Nothing else in this test asks the database for anything, so
+            // whatever comes back afterwards is the migration's doing.
+            {
+                SqliteTrackDatabase migrated;
+                const auto connected = migrated.connect(dbPath);
+                report.check(connected.isOk(), std::format("the v29 database migrates on open (said: '{}')", connected.errorMessage));
+            }
+
+            SqliteDatabase check;
+            if (!check.open(pathToString(dbPath)))
+            {
+                report.abort("Could not reopen the migrated database.");
+                writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                return 1;
+            }
+
+            {
+                SqliteStatement stmt{check, "SELECT value FROM SchemaInfo WHERE key = 'schema_version';"};
+                report.check(stmt.getNextResult() && stmt.getText(0) == "30", "the schema is stamped at version 30");
+            }
+
+            // Read back whole rows, compared as text with NULL spelled out.
+            //
+            // Not a SELECT COUNT(*) ... WHERE field <> 'expected': in SQL, NULL <> anything is unknown
+            // rather than true, so the WHERE discards it and a migration that had blanked every title
+            // in the table would have been reported as leaving them all alone.
+            const auto rowsOf = [&check](MixId mixId)
+            {
+                std::vector<std::string> rows;
+                SqliteStatement stmt{check,
+                    "SELECT order_in_mix, source_order_in_mix, captured_at, mix_name, total_duration, track_id, artist_name, "
+                    "album_title, title, filename, folder_path, duration, filesize_bytes, bpm, mix_data, is_complete "
+                    "FROM MixRecovery WHERE mix_id = ? ORDER BY order_in_mix"};
+                if (!stmt.isValid() || !stmt.addParam(mixId))
+                {
+                    return rows;
+                }
+
+                while (stmt.getNextResult())
+                {
+                    std::string row;
+                    for (int col = 0; col < 16; ++col)
+                    {
+                        // "<null>" rather than an empty string, so a field that was blanked cannot
+                        // read as a field that was always empty.
+                        row += (col == 0 ? "" : "|") + (stmt.isNull(col) ? std::string{"<null>"} : stmt.getText(col));
+                    }
+                    rows.push_back(std::move(row));
+                }
+                return rows;
+            };
+
+            const auto expectedRow = [](int64_t mixId, int recordOrder, int sourceOrder, int complete)
+            {
+                const auto tag = [mixId, sourceOrder](std::string_view field)
+                {
+                    return std::format("{}-{}-{}", field, mixId, sourceOrder);
+                };
+                const auto number = [mixId, sourceOrder](int64_t base)
+                {
+                    return base + mixId * 1000 + sourceOrder;
+                };
+
+                return std::format("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+                    recordOrder,
+                    sourceOrder,
+                    number(700000),
+                    tag("mix"),
+                    number(400000),
+                    number(100),
+                    tag("artist"),
+                    tag("album"),
+                    tag("title"),
+                    tag("file"),
+                    tag("folder"),
+                    number(1000),
+                    number(2000),
+                    number(120),
+                    tag("data"),
+                    complete);
+            };
+
+            // The intact record: positions unchanged, because rank and stored position already agreed,
+            // and every field still attached to the row it was seeded on.
+            const std::vector<std::string> expectedIntact{expectedRow(1, 0, 0, 1), expectedRow(1, 1, 1, 1), expectedRow(1, 2, 2, 1)};
+            report.check(rowsOf(1) == expectedIntact, "an intact record comes through the migration unchanged, field for field");
+
+            // The damaged one: renumbered to 0, 1, 2 while 0, 3, 7 survive beside it - and each row's
+            // payload still names the position it originally held, so nothing was shuffled.
+            const std::vector<std::string> expectedGapped{expectedRow(2, 0, 0, 0), expectedRow(2, 1, 3, 0), expectedRow(2, 2, 7, 0)};
+            report.check(rowsOf(2) == expectedGapped, "a gapped record is renumbered 0..N-1 with its source positions and payload intact");
+
+            if (rowsOf(2) != expectedGapped)
+            {
+                for (const auto &row : rowsOf(2))
+                {
+                    report.note("gapped row: " + row);
+                }
+            }
+
+            {
+                SqliteStatement stmt{check, "SELECT COUNT(*) FROM MixRecovery"};
+                report.check(stmt.getNextResult() && stmt.getInt64(0) == 6, "no row was lost or duplicated");
+            }
+
+            {
+                SqliteStatement stmt{check,
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND tbl_name = 'MixRecovery' "
+                    "AND name IN ('idx_mixrecovery_track', 'idx_mixrecovery_fileident')"};
+                report.check(stmt.getNextResult() && stmt.getInt64(0) == 2, "both MixRecovery indexes are still there afterwards");
+            }
+
+            writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+            spdlog::info("[SelfTest] Migration finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
             return report.failures() == 0 ? 0 : 1;
         }
 

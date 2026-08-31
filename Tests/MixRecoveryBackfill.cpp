@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <format>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -122,8 +123,9 @@ namespace jucyaudio
 
             for (const auto &mix : mixes)
             {
-                // Mixes that already have a record are left completely alone, which is what "every mix
-                // that has none" means and what this did not previously do.
+                // Mixes that already have a record keep it, untouched - which is what "every mix that
+                // has none" means and what this did not previously do. Only the playlist beside it may
+                // be written, and only when there is no file there at all.
                 //
                 // The danger is specific. An export-time record was checked against the audio that was
                 // actually rendered; this command has no rendered baseline to check against, because
@@ -160,23 +162,70 @@ namespace jucyaudio
                     // find nothing, write a duplicate, and give it a filename disagreeing with the
                     // #EXTMIX line inside it.
                     const auto playlistPath = outputDir / pathFromString(backupFilename(mix.mixId, existing.front().mixName));
-                    if (!std::filesystem::exists(playlistPath, ec))
+
+                    // NeverReplace, and the writer decides - not an exists() check followed by a write.
+                    // An existing playlist is never replaced, whatever it contains: these are disaster
+                    // recovery notes, and someone piecing a mix back together may well have written in
+                    // the margins of one. Regenerating over that would destroy the very work the file
+                    // exists to support.
+                    //
+                    // Which means a playlist written before the missing-track annotations existed keeps
+                    // its old contents. Upgrading it is a deliberate act: move the file aside, or delete
+                    // it, and run this again. That is a worse workflow than doing it automatically and a
+                    // much better one than a rule that decides on its own when your file is stale.
+                    bool playlistExisted = false;
+                    if (const auto m3uError = audio::writeMixRecoveryM3U(playlistPath,
+                            existing,
+                            existing.front().mixTotalDuration,
+                            audio::M3UWriteMode::NeverReplace,
+                            &playlistExisted);
+                        !m3uError.empty())
                     {
-                        if (const auto m3uError = audio::writeMixRecoveryM3U(playlistPath, existing, existing.front().mixTotalDuration); !m3uError.empty())
-                        {
-                            ++failed;
-                            failedLines.push_back(std::format("mix {} ({}): recorded already, but its playlist is missing and could not be written: {}",
-                                mix.mixId,
-                                mix.name,
-                                m3uError));
-                            spdlog::error("[Backfill] Mix {}: {}", mix.mixId, m3uError);
-                        }
-                        else
-                        {
-                            ++playlistsRepaired;
-                            spdlog::info("[Backfill] Mix {} was already recorded; wrote its missing playlist.", mix.mixId);
-                        }
+                        ++failed;
+                        failedLines.push_back(std::format("mix {} ({}): recorded already, but publishing its playlist did not finish cleanly: {}",
+                            mix.mixId,
+                            mix.name,
+                            m3uError));
+                        spdlog::error("[Backfill] Mix {}: {}", mix.mixId, m3uError);
                     }
+                    else if (!playlistExisted)
+                    {
+                        ++playlistsRepaired;
+                        spdlog::info("[Backfill] Mix {} was already recorded; wrote its missing playlist.", mix.mixId);
+                    }
+                    continue;
+                }
+
+                // Is the name free, before anything is committed?
+                //
+                // The rows go in first and the playlist is written after, so a name already taken by
+                // something unrelated would leave the mix recorded with a stranger's file beside it.
+                // That is reported once - and then never again, because the next run sees a record and
+                // takes the other branch, where an occupied name is the normal case. The mismatch would
+                // sit there permanently under a RESULT: OK.
+                //
+                // So it is refused here instead. Nothing is committed, the mix stays unrecorded, and
+                // every subsequent run reports it again until someone moves the file.
+                //
+                // The record has not been made yet, so the filename comes from the mix's current name;
+                // for a capture happening now, that is exactly what the record will carry.
+                const auto prospectivePath = outputDir / pathFromString(backupFilename(mix.mixId, mix.name));
+
+                // Not exists(): that follows symlinks, so a dangling one reads as free, the record
+                // commits, and the write then finds the name taken after all. Free means free.
+                if (const auto occupant = audio::mixRecoveryM3UTargetState(prospectivePath); occupant != audio::M3UTargetState::Free)
+                {
+                    ++failed;
+                    failedLines.push_back(occupant == audio::M3UTargetState::HoldsFile
+                            ? std::format("mix {} ({}): a file already occupies {}, so it was not recorded",
+                                  mix.mixId,
+                                  mix.name,
+                                  pathToString(prospectivePath))
+                            : std::format("mix {} ({}): {} is blocked by something that is not a usable file, so it was not recorded",
+                                  mix.mixId,
+                                  mix.name,
+                                  pathToString(prospectivePath)));
+                    spdlog::error("[Backfill] Mix {} not recorded: {} is not free.", mix.mixId, pathToString(prospectivePath));
                     continue;
                 }
 
@@ -213,13 +262,41 @@ namespace jucyaudio
                 // pathFromString, not the raw std::string: appending UTF-8 to a path sends it through
                 // the active code page on Windows, undoing the very preservation backupFilename does.
                 const auto playlistPath = outputDir / pathFromString(backupFilename(mix.mixId, capture.entries.front().mixName));
-                if (const auto m3uError = audio::writeMixRecoveryM3U(playlistPath, capture.entries, capture.totalDuration); !m3uError.empty())
+
+                // NeverReplace here too. A mix having no record does not mean the folder has no file:
+                // a stale one under the same name, or something put there by hand, would otherwise be
+                // destroyed by a capture that had nothing to do with it.
+                bool capturedPlaylistExisted = false;
+                if (const auto m3uError = audio::writeMixRecoveryM3U(playlistPath,
+                        capture.entries,
+                        capture.totalDuration,
+                        audio::M3UWriteMode::NeverReplace,
+                        &capturedPlaylistExisted);
+                    !m3uError.empty())
                 {
                     // The record is committed and safe; only its readable twin is missing. Counted as a
                     // failure because for this command the artefacts are the whole deliverable.
                     ++failed;
-                    failedLines.push_back(std::format("mix {} ({}): recorded, but no playlist: {}", mix.mixId, mix.name, m3uError));
-                    spdlog::error("[Backfill] Mix {} recorded but its playlist failed: {}", mix.mixId, m3uError);
+                    // Neutral about which half went wrong, because the writer reports both kinds: no
+                    // file at all, and a file that was published but whose temporary is still beside
+                    // it. Saying "no playlist" about the second would send someone looking for a
+                    // missing file that is sitting right there.
+                    failedLines.push_back(
+                        std::format("mix {} ({}): recorded, but publishing its playlist did not finish cleanly: {}", mix.mixId, mix.name, m3uError));
+                    spdlog::error("[Backfill] Mix {} recorded but its playlist did not publish cleanly: {}", mix.mixId, m3uError);
+                }
+                else if (capturedPlaylistExisted)
+                {
+                    // The name was free a moment ago and is not now, so another instance took it while
+                    // this one was capturing. Rare, and still reported: the mix is recorded with a file
+                    // beside it that describes something else, which is worse than no file because it
+                    // will be read. The check above is what stops this being the ordinary case.
+                    ++failed;
+                    failedLines.push_back(std::format("mix {} ({}): recorded, but a file is already at {} and was left alone",
+                        mix.mixId,
+                        mix.name,
+                        pathToString(playlistPath)));
+                    spdlog::error("[Backfill] Mix {} recorded but something already occupies {}", mix.mixId, pathToString(playlistPath));
                 }
 
                 if (captured % 100 == 0)
@@ -228,8 +305,43 @@ namespace jucyaudio
                 }
             }
 
+            // Any temporary still lying about, from this run or an earlier one.
+            //
+            // A failed unlink is reported by the writer when it happens and then never again: the next
+            // run finds the playlist in place and says so. But the leftover is a second name for that
+            // published playlist, and the next thing to open it for writing truncates the file it
+            // points at. That is not a one-off notice, it is a standing hazard, so it is looked for
+            // every time until it is gone.
+            {
+                // Advanced by hand, because a range-for calls the throwing operator++ and only the
+                // constructor was given an error code. An enumeration that failed part way would have
+                // left this command by exception, before it wrote the report saying what it had done.
+                std::error_code listEc;
+                std::filesystem::directory_iterator entry{outputDir, listEc};
+                const std::filesystem::directory_iterator end;
+
+                while (!listEc && entry != end)
+                {
+                    if (entry->path().extension() == ".m3utmp")
+                    {
+                        ++failed;
+                        failedLines.push_back(std::format("a leftover temporary is still there and is a second name for a playlist beside it: {}",
+                            pathToString(entry->path())));
+                        spdlog::error("[Backfill] Leftover temporary: {}", pathToString(entry->path()));
+                    }
+
+                    entry.increment(listEc);
+                }
+
+                if (listEc)
+                {
+                    ++failed;
+                    failedLines.push_back(std::format("could not check {} for leftover temporaries: {}", pathToString(outputDir), listEc.message()));
+                }
+            }
+
             const auto summary =
-                std::format("{} mixes: {} recorded ({} of them partial, {} rows), {} already had a record ({} missing playlists rewritten), "
+                std::format("{} mixes: {} recorded ({} of them partial, {} rows), {} already had a record ({} playlists written), "
                             "{} skipped, {} failed.",
                     mixes.size(),
                     captured,

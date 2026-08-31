@@ -613,7 +613,12 @@ WHERE m.export_folder IS NULL
                             MixRecoveryEntry entry;
                             int col = 0;
                             sawOrphan = sawOrphan || (stmt.getInt32(col++) != 0);
-                            entry.orderInMix = stmt.getInt32(col++);
+                            // Into both. sourceOrderInMix is what the mix says and is kept; orderInMix
+                            // is overwritten with the record position when the rows are written, but
+                            // until then the export comparison below reads it as the mix position.
+                            entry.orderInMix = stmt.getInt32(col);
+                            entry.sourceOrderInMix = stmt.getInt32(col);
+                            ++col;
                             entry.trackId = stmt.getInt64(col++);
                             entry.mixData = stmt.getText(col++);
                             entry.artistName = stmt.getText(col++);
@@ -634,7 +639,11 @@ WHERE m.export_folder IS NULL
                         "FROM MixTracks mt "
                         "LEFT JOIN Tracks t ON t.track_id = mt.track_id "
                         "LEFT JOIN Folders f ON f.folder_id = t.folder_id "
-                        "WHERE mt.mix_id = ? ORDER BY mt.order_in_mix ASC",
+                        // rowid breaks the tie. A damaged mix can hold two rows at the same position,
+                        // and SQL does not define the order of ties - harmless while this was only
+                        // read, but the index within this result is now the record position and has to
+                        // be the same on every run.
+                        "WHERE mt.mix_id = ? ORDER BY mt.order_in_mix ASC, mt.rowid ASC",
                         mixId))
                 {
                     const auto error{m_db.getLastError()};
@@ -779,18 +788,29 @@ WHERE m.export_folder IS NULL
             const auto capturedAt = std::chrono::system_clock::now();
             const auto capturedAtMillis = timestampToInt64(capturedAt);
 
-            for (auto &entry : loaded)
+            for (size_t i = 0; i < loaded.size(); ++i)
             {
+                auto &entry = loaded[i];
                 entry.mixId = mixId;
                 entry.mixName = mixName;
                 entry.capturedAt = capturedAt;
                 entry.mixTotalDuration = totalDuration;
                 entry.isComplete = intact;
 
+                // Position within the record, not the position the mix stored. For an intact mix these
+                // are the same thing - the contiguity check above has established it. For a damaged mix
+                // they are not, and cannot be: this is half the primary key, and MixTracks has only an
+                // index on (mix_id, order_in_mix) rather than a unique constraint, so a mix that lost
+                // rows may hold two at the same position. Two in this library do.
+                //
+                // What the mix said is kept in sourceOrderInMix rather than discarded: the jumps in that
+                // sequence are the only surviving record of where the losses fell.
+                entry.orderInMix = static_cast<int>(i);
+
                 if (!transaction.execute("INSERT INTO MixRecovery (mix_id, order_in_mix, captured_at, mix_name, total_duration, track_id, "
                                          "artist_name, album_title, title, filename, folder_path, duration, filesize_bytes, bpm, mix_data, "
-                                         "is_complete) "
-                                         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                         "is_complete, source_order_in_mix) "
+                                         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         mixId,
                         entry.orderInMix,
                         capturedAtMillis,
@@ -806,7 +826,8 @@ WHERE m.export_folder IS NULL
                         entry.filesizeBytes,
                         entry.bpm,
                         entry.mixData,
-                        static_cast<int64_t>(intact ? 1 : 0)))
+                        static_cast<int64_t>(intact ? 1 : 0),
+                        entry.sourceOrderInMix.value_or(static_cast<int>(i))))
                 {
                     const auto error{m_db.getLastError()};
                     transaction.rollback();
@@ -862,13 +883,22 @@ WHERE m.export_folder IS NULL
                     entry.bpm = stmt.getInt64(col++);
                     entry.mixData = stmt.getText(col++);
                     entry.isComplete = stmt.getInt64(col++) != 0;
+                    // Nullable in the schema, though the v30 migration left no row without a value. Read
+                    // as optional rather than coalesced, because a zero would read as "this was the
+                    // first track" - a claim, not an absence.
+                    if (!stmt.isNull(col))
+                    {
+                        entry.sourceOrderInMix = stmt.getInt32(col);
+                    }
+                    ++col;
                     loaded.emplace_back(std::move(entry));
                     return true;
                 },
                 // Columns listed rather than SELECT *, because this reads positionally and a later
                 // migration that adds a column would otherwise silently shift every field along by one.
                 "SELECT mix_id, order_in_mix, captured_at, mix_name, total_duration, track_id, artist_name, "
-                "album_title, title, filename, folder_path, duration, filesize_bytes, bpm, mix_data, is_complete "
+                "album_title, title, filename, folder_path, duration, filesize_bytes, bpm, mix_data, is_complete, "
+                "source_order_in_mix "
                 "FROM MixRecovery WHERE mix_id=? ORDER BY order_in_mix ASC",
                 mixId);
 

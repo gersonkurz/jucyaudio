@@ -112,5 +112,24 @@ namespace jucyaudio
          */
         int runBackupSelfTest(const std::filesystem::path &selfTestRoot);
 
+        /**
+         * @brief Headless test of the v29 to v30 MixRecovery migration.
+         *
+         * Builds a database shaped the way v29 left one - by hand, because nothing produces that shape
+         * any more - seeds it with an intact record and a gapped partial one, opens it so the ladder
+         * runs, and checks what came out.
+         *
+         * That migration gets a suite to itself because it is the only one in the project that rewrites
+         * primary keys, and it does so to records that cannot be recaptured: the mixes they describe
+         * have already lost the rows in question, and no backup holds them. Getting the renumbering
+         * wrong would not fail loudly - it would quietly reorder somebody's last description of a mix.
+         *
+         * Uses its own database, unrelated to the one the other suites share.
+         *
+         * @param selfTestRoot The root returned by prepareSelfTestEnvironment().
+         * @return 0 if every check passed, 1 otherwise.
+         */
+        int runMigrationSelfTest(const std::filesystem::path &selfTestRoot);
+
     } // namespace tests
 } // namespace jucyaudio
