@@ -31,6 +31,7 @@ namespace jucyaudio
             float bpm = 0.0f;
         };
 
+
         class ITrackDatabase
         {
         public:
@@ -56,6 +57,30 @@ namespace jucyaudio
             // The method should update trackInfo.trackId with the assigned ID on successful insert.
             // If trackInfo.trackId is valid, it's an UPDATE.
             virtual DbResult saveTrackInfo(TrackInfo &trackInfo) = 0;
+
+            /**
+             * @brief Writes back only what a scan knows, over a row that already exists.
+             *
+             * saveTrackInfo's UPDATE writes every column from the TrackInfo it is handed. A scanner
+             * builds that TrackInfo from the file, so every column the file cannot answer for is a
+             * default - and saving it flattens the BPM and beat analysis, the key, the date the track
+             * was added, the album it was sorted into, and the status the format check left. This writes
+             * the columns a scan is entitled to write and leaves the rest of the row alone.
+             *
+             * Genres are added, never removed. A rescan is entitled to notice a genre the file gained;
+             * it is not entitled to drop one the user typed into the tag cloud, and the file having no
+             * genre frame is not evidence that they did not mean it.
+             *
+             * @param trackInfo Identifies the row by trackId. Every other field is read as the scan's
+             *        answer, so it must have come from a scan - not from a partly-filled struct.
+             * @param fields Exactly what the scanners established, from processTrack. Whatever is not
+             *        named is left as it is in the database: a field the read did not produce holds a
+             *        default, and writing that default erases what the library knew. The location
+             *        columns are written regardless - see ScannedFields.
+             * @return Failure if no row of that id exists. Not finding the row is the caller having the
+             *         wrong id, which is worth hearing about rather than silently doing nothing.
+             */
+            virtual DbResult updateScannedTrackData(const TrackInfo &trackInfo, ScannedFields fields) = 0;
 
             // --- Path Reconstruction (NEW) ---
             /**

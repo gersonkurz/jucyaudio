@@ -57,6 +57,7 @@ namespace jucyaudio
 
             // Track CRUD
             DbResult saveTrackInfo(TrackInfo &trackInfo) override;
+            DbResult updateScannedTrackData(const TrackInfo &trackInfo, ScannedFields fields) override;
             std::optional<TrackInfo> getTrackById(TrackId trackId) const override;
 
             std::vector<TrackInfo> getTracks(const TrackQueryArgs &args) const override;

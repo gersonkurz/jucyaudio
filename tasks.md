@@ -39,14 +39,21 @@ a scan. Each deferred call site needs deciding on its own.
 
 ---
 
-## Deferred: force-rescan re-insert collision
+## Deferred: re-identify a returned file against `MixRecovery`
 
-**Symptom**: A forced rescan re-inserts a track row that already exists rather than updating the
-columns the scanner owns, so it collides.
+**What is done**: `ITrackDatabase::updateScannedTrackData` writes only the columns a scan owns, and the
+scanner uses it for both cases that needed it — a forced rescan now refreshes a row instead of colliding
+with `UNIQUE(folder_id, filename)`, and a file that moved between folders in scope is matched back to its
+existing row by filename and size, keeping its `track_id` and every mix that uses it.
 
-**Fix approach**: a targeted "update only scanner-owned columns" operation. The same operation is what
-scanner-driven re-identification (matching a moved file back to its `MixRecovery` entry by filename and
-size) needs, so the two should be done together.
+**What is left**: the same match against `MixRecovery` rather than against `Tracks`. A file whose track
+row is gone entirely — the 95 damaged mixes below — could be recognised on a scan and re-attached to the
+mix it was captured from, using the `filename`, `folderPath` and `filesizeBytes` the record holds.
+
+**Why it was not done with the rest**: re-attaching to a mix is a different decision from re-identifying
+a row. It writes to `MixTracks` at a stored `source_order_in_mix` that may now collide with a surviving
+row, and it needs a rule for what to do when only some of a mix's lost tracks come back. Neither
+question arises for the `Tracks` case.
 
 **Key files**: `Database/TrackScanner.cpp`, `Database/Sqlite/SqliteTrackDatabase.cpp`.
 

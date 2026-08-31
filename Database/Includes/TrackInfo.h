@@ -27,6 +27,48 @@ namespace jucyaudio
          * @brief A comprehensive data structure representing a single audio track in the library.
          * This struct holds all metadata, from filesystem attributes to audio analysis results and user data.
          */
+        /**
+         * @brief Which parts of a track a scan actually established.
+         *
+         * A bitmask rather than a yes-or-no, because a read can half succeed and the two halves come
+         * from different places. TagLib will hand back a tag object for a file whose audio properties it
+         * cannot work out, and the reverse happens too. A single "did it work" answer forces a choice
+         * between discarding tags that were read and writing a zero duration over a real one.
+         *
+         * What is *not* in here: the location columns - folder, filename, size, modification time. The
+         * scanner reads those from the directory entry rather than from the file, so they are known
+         * whenever there is a file to talk about at all, and updateScannedTrackData always writes them.
+         */
+        enum class ScannedFields : unsigned
+        {
+            None = 0,
+
+            /// @brief title, artist_name, album_title, track_number, year, and the genre list.
+            Tags = 1u << 0,
+
+            /// @brief duration, samplerate, channels, bitrate.
+            AudioProperties = 1u << 1,
+
+            Everything = Tags | AudioProperties
+        };
+
+        constexpr ScannedFields operator|(ScannedFields a, ScannedFields b)
+        {
+            return static_cast<ScannedFields>(static_cast<unsigned>(a) | static_cast<unsigned>(b));
+        }
+
+        constexpr ScannedFields &operator|=(ScannedFields &a, ScannedFields b)
+        {
+            a = a | b;
+            return a;
+        }
+
+        /// @brief Does this set include everything in @p what?
+        constexpr bool includes(ScannedFields set, ScannedFields what)
+        {
+            return (static_cast<unsigned>(set) & static_cast<unsigned>(what)) == static_cast<unsigned>(what);
+        }
+
         struct TrackInfo
         {
             /// @brief The unique identifier for this track in the database. Primary Key.

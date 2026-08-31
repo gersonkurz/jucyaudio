@@ -187,6 +187,30 @@ namespace jucyaudio
                 return byName;
             }
 
+            /// @brief Every track row under a folder, unkeyed.
+            ///
+            /// tracksUnder keys by filename, which is right for comparing identity across a scan and
+            /// wrong for counting: two files of the same name in different folders collapse into one
+            /// entry, so a check that a duplicate row was inserted would read as though it had not been.
+            std::vector<TrackInfo> trackRowsUnder(ITrackDatabase &db, FolderId folderId)
+            {
+                TrackQueryArgs args{};
+                args.folderIds = {folderId};
+                args.recursive = true;
+                args.usePaging = false;
+                return db.getTracks(args);
+            }
+
+            int countMissing(const std::vector<TrackInfo> &tracks)
+            {
+                int n = 0;
+                for (const auto &track : tracks)
+                {
+                    n += track.is_missing ? 1 : 0;
+                }
+                return n;
+            }
+
             int countMissing(const std::map<std::string, TrackInfo> &tracks)
             {
                 int n = 0;
@@ -456,13 +480,17 @@ namespace jucyaudio
             }
 
             /// @brief Runs one scan to completion. Synchronous - there is no task thread here.
-            bool runScan(std::vector<FolderId> folderIds, bool removeMissingFiles, Report &report, const std::string &label)
+            bool runScan(std::vector<FolderId> folderIds,
+                bool removeMissingFiles,
+                Report &report,
+                const std::string &label,
+                bool forceRescanAllFiles = false)
             {
                 report.note(std::format("scan: {}", label));
                 bool scanReportedSuccess = false;
                 theTrackLibrary.scanLibrary(
                     folderIds,
-                    false, // forceRescanAllFiles - see X1; the forced path has its own defect and is not under test
+                    forceRescanAllFiles,
                     removeMissingFiles,
                     nullptr, // no progress reporting; nothing is watching
                     [&scanReportedSuccess](bool success, const std::string &message)
@@ -1282,6 +1310,498 @@ namespace jucyaudio
                     }
 
                     mixes.removeMix(durationMix.mixId);
+                }
+            }
+
+            // --- 8. A forced rescan refreshes rows instead of colliding with them. ---
+            //
+            // The forced path used to build a TrackInfo from the file, leave its track id unset, and
+            // hand it to saveTrackInfo - which decides insert or update on that id. So every file it
+            // was asked to refresh took the INSERT branch and hit UNIQUE(folder_id, filename). A forced
+            // rescan did nothing at all, once per file, and reported success.
+            //
+            // Setting the id would have been the smaller fix and the wrong one: saveTrackInfo's UPDATE
+            // writes every column, and a TrackInfo built from a file carries defaults for everything
+            // the file cannot answer for. The checks below are as much about what a rescan must not
+            // touch as about what it must.
+            {
+                // A baseline of its own, taken now rather than reusing step 1's.
+                //
+                // Section 7 deleted a track from the library whose file is still sitting in the tree, so
+                // the next scan legitimately inserts it again under a new id. Comparing against the ids
+                // step 1 recorded would fail on that alone and say nothing about the forced path. One
+                // plain scan settles the library against the tree first; everything below is measured
+                // from what that leaves.
+                report.check(runScan({rootFolderId}, false, report, "settle before the forced rescan"), "the settling scan reports success");
+
+                const auto baselineCount = static_cast<int>(trackRowsUnder(db, rootFolderId).size());
+                const auto baselineIds = idsOf(tracksUnder(db, rootFolderId));
+                report.check(baselineCount > 0 && static_cast<int>(baselineIds.size()) == baselineCount,
+                    std::format("the library and the tree agree before the forced rescan ({} tracks)", baselineCount));
+
+                const auto victimId = baselineIds.begin()->second;
+
+                // Analysis and library history, staged so a rescan has something to flatten. Neither is
+                // derivable from the file, which is what makes them the test.
+                report.check(db.updateTrackBpm(victimId, AudioMetadata{128.0f}).isOk(), "a BPM could be staged onto a track");
+
+                const auto before = db.getTrackById(victimId);
+                report.check(before.has_value() && before->bpm.has_value() && before->bpm.value() > 0, "the staged BPM really is in the row");
+
+                // Compared against itself afterwards rather than against a literal: the column is
+                // normalised on the way in, and this is a test of what a rescan preserves, not of the
+                // normalisation constant.
+                const auto bpmBefore = (before.has_value() && before->bpm.has_value()) ? before->bpm.value() : 0;
+                const auto dateAddedBefore = before.has_value() ? before->date_added : Timestamp_t{};
+
+                // A title to lose, staged before the rescan. The fixtures carry no tags at all, so
+                // without this every check about tags below would be comparing empty to empty.
+                const auto stageTitle = [&db, victimId](const std::string &title)
+                {
+                    const auto row = db.getTrackById(victimId);
+                    if (!row.has_value())
+                    {
+                        return false;
+                    }
+
+                    auto staged = row.value();
+                    staged.title = title;
+                    return db.updateScannedTrackData(staged, ScannedFields::Tags).isOk();
+                };
+
+                report.check(stageTitle("SelfTest Title Before Rescan"), "a title could be staged onto the track");
+
+                report.check(runScan({rootFolderId}, false, report, "forced rescan", true), "a forced rescan reports success");
+
+                const auto rescanRows = trackRowsUnder(db, rootFolderId);
+                report.check(static_cast<int>(rescanRows.size()) == baselineCount,
+                    std::format("a forced rescan inserted nothing - still {} rows (found {})", baselineCount, rescanRows.size()));
+                report.check(idsOf(tracksUnder(db, rootFolderId)) == baselineIds, "and every track kept its id through the forced rescan");
+
+                const auto after = db.getTrackById(victimId);
+                report.check(after.has_value(), "the rescanned track can still be read back");
+                if (after.has_value())
+                {
+                    report.check(after->bpm.has_value() && after->bpm.value() == bpmBefore,
+                        "a forced rescan leaves the BPM alone - the file cannot answer for it");
+                    report.check(after->date_added == dateAddedBefore,
+                        "and leaves date_added alone - that is the library's history, not the file's");
+                    report.check(after->duration > Duration_t{0}, "while the columns a scan does own are filled in");
+                    report.check(!after->is_missing, "and the track is not missing");
+
+                    // The other half of the rule. This file reads perfectly well and genuinely has no
+                    // tags, so its empty tag is an answer and the staged title has to go. Without this,
+                    // "never write an empty tag" would be indistinguishable from the correct rule, and
+                    // clearing a title in a tag editor would stop working.
+                    report.check(after->title.empty(),
+                        std::format("a readable file with no tags clears the title - an empty tag is an answer (title is now '{}')", after->title));
+                }
+
+                // A file that cannot be read is not a file that says everything is blank.
+                //
+                // Id3TagScanner returns false for a file it cannot open, having filled in nothing - so
+                // the TrackInfo carries a zero duration, an empty title and no audio properties. Writing
+                // those over an existing row erases what the library knew because one read failed. The
+                // file is truncated rather than deleted so that the scan still finds it: this is the
+                // unreadable case, not the missing case, and the two take different paths.
+                const auto durationBefore = after.has_value() ? after->duration : Duration_t{0};
+                const auto victimPath = albumPath / (after.has_value() ? after->filename : std::string{});
+                report.check(durationBefore > Duration_t{0}, "the track about to be truncated has a duration to lose");
+
+                // And a title to lose as well. TagLib returns a non-null, empty tag object for a
+                // malformed file exactly as it does for a real file with no tags, so without a
+                // non-empty title staged here the erasure would look identical to a correct no-op.
+                const std::string titleBefore{"SelfTest Title Before Truncation"};
+                report.check(stageTitle(titleBefore), "a title could be staged before the file is truncated");
+
+                {
+                    std::ofstream truncate{victimPath, std::ios::binary | std::ios::trunc};
+                    report.check(truncate.good(), std::format("{} could be truncated to nothing", pathToString(victimPath)));
+                }
+
+                report.check(runScan({rootFolderId}, false, report, "forced rescan over an unreadable file", true),
+                    "a forced rescan over an unreadable file reports success");
+
+                const auto afterTruncation = db.getTrackById(victimId);
+                report.check(afterTruncation.has_value(), "the unreadable track still has its row");
+                if (afterTruncation.has_value())
+                {
+                    report.check(afterTruncation->duration == durationBefore, "an unreadable file does not blank the duration the library already had");
+                    report.check(afterTruncation->bpm.has_value() && afterTruncation->bpm.value() == bpmBefore, "nor the BPM");
+                    report.check(afterTruncation->title == titleBefore,
+                        std::format("nor the title - an empty tag object from a file that would not decode is not an answer (title is now '{}')",
+                            afterTruncation->title));
+                    report.check(afterTruncation->filesize_bytes == 0, "while the size the filesystem reports is written, because that much was read");
+                }
+            }
+
+            // --- 9. A file that moved keeps its track id, and the mixes that use it. ---
+            //
+            // Moving a file used to be an insert and a flagging: a new row for the file in its new
+            // folder, the old row marked missing. Every mix, working set and album entry stayed pointing
+            // at the row that was now missing, so reorganising a folder outside the app broke every mix
+            // that used anything in it - with the files sitting right there on disk.
+            //
+            // The decision cannot be made during the walk, because "the old file is gone" is not known
+            // until every folder has been visited. What that buys is the second half of this section: a
+            // file that was copied rather than moved must not take the original's identity.
+            {
+                const auto movedRoot = workRoot / "moved";
+                const auto copyRoot = workRoot / "copied";
+                if (makeDirectory(movedRoot) && makeDirectory(copyRoot))
+                {
+                    // Again its own baseline, and its own choice of victim: which of the fixture files
+                    // still has a row depends on what the sections above deleted, so the file to move is
+                    // picked from what is actually in the library now.
+                    const auto beforeMove = tracksUnder(db, rootFolderId);
+                    const auto baselineCount = static_cast<int>(trackRowsUnder(db, rootFolderId).size());
+                    const auto baselineIds = idsOf(beforeMove);
+
+                    // What the mix lists now, not what it was built with - section 7's cascade took a
+                    // row out of it, and the point here is that the move takes none.
+                    const auto mixTracksBeforeMove = theTrackLibrary.getMixManager().getMixTracks(mixInfo.mixId);
+                    const auto mixBeforeMove = mixTracksBeforeMove.size();
+
+                    // A track the mix actually uses, or the mix check below would hold however badly the
+                    // move went. Not just any surviving row: the settling scan above re-inserted the file
+                    // section 7 deleted, and that new row is in no mix at all.
+                    std::string movedName;
+                    TrackId movedTrackId{-1};
+                    FolderId albumFolderId{-1};
+                    for (const auto &entry : beforeMove)
+                    {
+                        const auto inTheMix = std::any_of(mixTracksBeforeMove.begin(),
+                            mixTracksBeforeMove.end(),
+                            [&entry](const MixTrack &mixTrack)
+                            {
+                                return mixTrack.trackId == entry.second.trackId;
+                            });
+                        if (inTheMix && entry.second.folderId == db.getFolderDatabase().findOrCreateFolderByPath(albumPath))
+                        {
+                            movedName = entry.second.filename;
+                            movedTrackId = entry.second.trackId;
+                            albumFolderId = entry.second.folderId;
+                            break;
+                        }
+                    }
+                    const auto movedTo = movedRoot / movedName;
+
+                    report.check(movedTrackId > 0, std::format("the track about to be moved ('{}') is in the library and in the mix", movedName));
+
+                    std::error_code moveEc;
+                    if (movedTrackId > 0)
+                    {
+                        std::filesystem::rename(albumPath / movedName, movedTo, moveEc);
+                        report.check(!moveEc, std::format("the file could be moved into {}", pathToString(movedRoot)));
+                    }
+
+                    if (!moveEc && movedTrackId > 0)
+                    {
+                        report.check(runScan({rootFolderId}, false, report, "after a file moved"), "the scan after the move reports success");
+
+                        // Rows for the count, because a duplicate insert would put the same filename in
+                        // a second folder - which is precisely what a map keyed by filename hides. The
+                        // keyed view is still what the id comparison needs.
+                        const auto moveRows = trackRowsUnder(db, rootFolderId);
+                        report.check(static_cast<int>(moveRows.size()) == baselineCount,
+                            std::format("no duplicate row was inserted for the moved file - still {} (found {})", baselineCount, moveRows.size()));
+                        report.check(countMissing(moveRows) == 0, "and nothing is flagged missing, because nothing is");
+                        report.check(idsOf(tracksUnder(db, rootFolderId)) == baselineIds, "every track id survived the move, the moved one included");
+
+                        // The mix is the reason any of this matters. Matching ids are not enough on
+                        // their own: MixTracks cascades on track deletion, so a delete-and-reinsert
+                        // would leave the mix short while the id set still looked plausible.
+                        const auto mixAfterMove = theTrackLibrary.getMixManager().getMixTracks(mixInfo.mixId).size();
+                        report.check(mixAfterMove == mixBeforeMove,
+                            std::format("the mix still lists the same {} tracks after the move (lists {})", mixBeforeMove, mixAfterMove));
+
+                        const auto moved = db.getTrackById(movedTrackId);
+                        report.check(moved.has_value() && moved->folderId != albumFolderId,
+                            "the moved track's row now names the folder the file is actually in");
+                    }
+
+                    // A copy is not a move. Same name, same size, but the original never went anywhere,
+                    // so the match must be refused and a new row inserted. Getting this wrong hands the
+                    // original's mix references to the copy and leaves the original looking new.
+                    std::error_code copyEc;
+                    if (!moveEc && movedTrackId > 0)
+                    {
+                        std::filesystem::copy_file(movedTo, copyRoot / movedName, copyEc);
+                        report.check(!copyEc, "a second file with the same name and size could be made");
+                    }
+
+                    if (!copyEc && !moveEc && movedTrackId > 0)
+                    {
+                        report.check(runScan({rootFolderId}, false, report, "after a file was copied"), "the scan after the copy reports success");
+
+                        // Unkeyed, because the copy and the original share a filename and a keyed map
+                        // would show one entry whether the insert happened or not.
+                        const auto afterCopy = trackRowsUnder(db, rootFolderId);
+                        report.check(static_cast<int>(afterCopy.size()) == baselineCount + 1,
+                            std::format("the copy was inserted as its own track ({} rows, expected {})", afterCopy.size(), baselineCount + 1));
+
+                        const auto stillThere = db.getTrackById(movedTrackId);
+                        report.check(stillThere.has_value() && stillThere->folderId == db.getFolderDatabase().findOrCreateFolderByPath(movedRoot),
+                            "and the original kept its own row rather than being re-identified as the copy");
+                        report.check(countMissing(afterCopy) == 0, "with nothing flagged missing on either side of it");
+                    }
+                }
+            }
+
+            // --- 10. Two shapes that look like a move and are not. ---
+            //
+            // The rule is one file, one row, and that row's file is gone. Each half below breaks one of
+            // those and must be refused: guessing here attaches a track's history and every mix that
+            // uses it to an arbitrary file, and nothing afterwards says it happened.
+            {
+                const auto ambiguousRoot = workRoot / "ambiguous";
+                const auto twinRootA = ambiguousRoot / "a";
+                const auto twinRootB = ambiguousRoot / "b";
+                const auto copyRoot = workRoot / "copied"; // section 9's, named again rather than shared
+
+                if (makeDirectory(twinRootA) && makeDirectory(twinRootB))
+                {
+                    // (a) A row that vanished, and another row of the same name and size that did not.
+                    //
+                    // Section 9 left two rows sharing a name and size: the moved file and the copy. Move
+                    // the copy on, and its old row is gone while the other is still on disk - so the
+                    // name and size identify nothing, and the fact that one of them vanished does not
+                    // make the survivor's twin this file.
+                    const auto rowsBefore = static_cast<int>(trackRowsUnder(db, rootFolderId).size());
+                    const auto copyFolderId = db.getFolderDatabase().findOrCreateFolderByPath(copyRoot);
+
+                    TrackId copyTrackId{-1};
+                    std::string twinName;
+                    for (const auto &track : trackRowsUnder(db, rootFolderId))
+                    {
+                        if (track.folderId == copyFolderId)
+                        {
+                            copyTrackId = track.trackId;
+                            twinName = track.filename;
+                        }
+                    }
+                    report.check(copyTrackId > 0, "section 9's copy has a row of its own to move");
+
+                    std::error_code twinEc;
+                    if (copyTrackId > 0)
+                    {
+                        std::filesystem::rename(copyRoot / twinName, twinRootA / twinName, twinEc);
+                        report.check(!twinEc, "the copy could be moved on again");
+                    }
+
+                    if (copyTrackId > 0 && !twinEc)
+                    {
+                        report.check(runScan({rootFolderId}, false, report, "a vanished row with a live twin"),
+                            "the scan reports success with an ambiguous match on offer");
+
+                        const auto rowsAfter = trackRowsUnder(db, rootFolderId);
+                        report.check(static_cast<int>(rowsAfter.size()) == rowsBefore + 1,
+                            std::format("the file was inserted as a new track rather than matched ({} rows, expected {})",
+                                rowsAfter.size(),
+                                rowsBefore + 1));
+
+                        const auto orphan = db.getTrackById(copyTrackId);
+                        report.check(orphan.has_value() && orphan->is_missing,
+                            "and the row whose file went away is flagged missing, not quietly handed to the new file");
+                        report.check(orphan.has_value() && orphan->folderId == copyFolderId,
+                            "the flagged row still names the folder it was in");
+                    }
+
+                    // (b) One vanished row, two new files that both match it.
+                    //
+                    // Whichever the directory walk returned first would otherwise take the identity,
+                    // which is an accident rather than a decision.
+                    const auto rowsBeforeTwins = static_cast<int>(trackRowsUnder(db, rootFolderId).size());
+                    const auto albumFolderId = db.getFolderDatabase().findOrCreateFolderByPath(albumPath);
+
+                    TrackId twinSourceId{-1};
+                    std::string twinSourceName;
+                    for (const auto &track : trackRowsUnder(db, rootFolderId))
+                    {
+                        if (track.folderId == albumFolderId && !track.is_missing && track.filesize_bytes > 0)
+                        {
+                            twinSourceId = track.trackId;
+                            twinSourceName = track.filename;
+                        }
+                    }
+                    report.check(twinSourceId > 0, "a readable track is still in the album folder to make twins of");
+
+                    if (twinSourceId > 0)
+                    {
+                        std::error_code copyEcA;
+                        std::error_code copyEcB;
+                        std::error_code removeEc;
+                        std::filesystem::copy_file(albumPath / twinSourceName, twinRootA / twinSourceName, copyEcA);
+                        std::filesystem::copy_file(albumPath / twinSourceName, twinRootB / twinSourceName, copyEcB);
+                        std::filesystem::remove(albumPath / twinSourceName, removeEc);
+                        report.check(!copyEcA && !copyEcB && !removeEc, "one file could be turned into two identical files elsewhere");
+
+                        if (!copyEcA && !copyEcB && !removeEc)
+                        {
+                            report.check(runScan({rootFolderId}, false, report, "two new files matching one vanished row"),
+                                "the scan reports success with two files competing for one row");
+
+                            const auto rowsAfterTwins = trackRowsUnder(db, rootFolderId);
+                            report.check(static_cast<int>(rowsAfterTwins.size()) == rowsBeforeTwins + 2,
+                                std::format("both files were inserted as new tracks ({} rows, expected {})",
+                                    rowsAfterTwins.size(),
+                                    rowsBeforeTwins + 2));
+
+                            const auto contested = db.getTrackById(twinSourceId);
+                            report.check(contested.has_value() && contested->is_missing,
+                                "and the row they were competing for is flagged missing rather than given to one of them");
+                            report.check(contested.has_value() && contested->folderId == albumFolderId,
+                                "it did not follow either file out of the album folder");
+                        }
+                    }
+                }
+            }
+
+            // --- 11. The write mask, one field group at a time. ---
+            //
+            // A read can half succeed: TagLib hands back a tag object for plenty of files whose audio
+            // properties it cannot work out, and the reverse happens too. A single "did the read work"
+            // answer forces a choice between throwing away tags that were read and writing a zero
+            // duration over a real one, and the second is what a coarse flag would have done.
+            //
+            // Tested here rather than through a crafted file, because a file that gives up its tags and
+            // defeats the property reader is not something a test can reliably construct - while the
+            // write mask is exactly where the damage would be done.
+            {
+                const auto subject = trackRowsUnder(db, rootFolderId);
+                report.check(!subject.empty(), "there is a track to write masked updates over");
+
+                if (!subject.empty())
+                {
+                    const auto original = subject.front();
+
+                    // Everything a scan establishes, deliberately different from what is stored, so
+                    // either half writing when it should not is visible.
+                    TrackInfo scanned{};
+                    scanned.trackId = original.trackId;
+                    scanned.folderId = original.folderId;
+                    scanned.filename = original.filename;
+                    scanned.filesize_bytes = original.filesize_bytes;
+                    scanned.last_scanned = std::chrono::system_clock::now();
+                    scanned.title = "SelfTest Masked Title";
+                    scanned.artist_name = "SelfTest Masked Artist";
+                    scanned.duration = Duration_t{1234};
+                    scanned.samplerate = 12345;
+
+                    report.check(original.duration != scanned.duration && original.title != scanned.title,
+                        "the stored row and the scanned one disagree about both halves, so either can be told apart");
+
+                    // (a) Tags only: the titles move, the audio properties do not.
+                    report.check(db.updateScannedTrackData(scanned, ScannedFields::Tags).isOk(), "a tags-only update is accepted");
+
+                    const auto afterTags = db.getTrackById(original.trackId);
+                    report.check(afterTags.has_value() && afterTags->title == scanned.title, "a tags-only update writes the title");
+                    report.check(afterTags.has_value() && afterTags->duration == original.duration,
+                        "and leaves the duration alone - the property read is what failed, and it says nothing");
+                    report.check(afterTags.has_value() && afterTags->samplerate == original.samplerate, "nor does it touch the samplerate");
+
+                    // (b) Audio properties only: the reverse.
+                    TrackInfo propertiesOnly{scanned};
+                    propertiesOnly.title.clear();
+                    propertiesOnly.artist_name.clear();
+                    report.check(db.updateScannedTrackData(propertiesOnly, ScannedFields::AudioProperties).isOk(),
+                        "an audio-properties-only update is accepted");
+
+                    const auto afterProperties = db.getTrackById(original.trackId);
+                    report.check(afterProperties.has_value() && afterProperties->duration == scanned.duration,
+                        "an audio-properties-only update writes the duration");
+                    report.check(afterProperties.has_value() && afterProperties->samplerate == scanned.samplerate, "and the samplerate");
+                    report.check(afterProperties.has_value() && afterProperties->title == scanned.title,
+                        "and leaves the title that was read earlier alone, rather than blanking it");
+
+                    // (c) Nothing at all still moves the row to where the file is.
+                    TrackInfo locationOnly{propertiesOnly};
+                    locationOnly.duration = Duration_t{0};
+                    locationOnly.samplerate = 0;
+                    locationOnly.filesize_bytes = original.filesize_bytes + 1;
+                    report.check(db.updateScannedTrackData(locationOnly, ScannedFields::None).isOk(), "an update establishing nothing is still accepted");
+
+                    const auto afterNothing = db.getTrackById(original.trackId);
+                    report.check(afterNothing.has_value() && afterNothing->filesize_bytes == original.filesize_bytes + 1,
+                        "it writes what the filesystem said, because that much was never in doubt");
+                    report.check(afterNothing.has_value() && afterNothing->duration == scanned.duration && afterNothing->title == scanned.title,
+                        "and writes none of the metadata it did not read");
+                }
+            }
+
+            // --- 12. A root nobody could look at is not evidence that its files are gone. ---
+            //
+            // A leftover only means "the walk did not find it", and the walk finds nothing under a root
+            // it could not resolve or could not reach. An unplugged drive therefore produces a library
+            // full of rows that look exactly like deleted files - and if a copy of one of them turns up
+            // under a root that *was* walked, matching on that would hand the track, and every mix that
+            // uses it, to the copy while the original sits there on a disk that is merely unplugged.
+            //
+            // A deleted *folder* under a healthy root is a different thing entirely, and is the ordinary
+            // case section 9 covers. This is about the root.
+            {
+                const auto secondRoot = selfTestRoot / "second-root";
+                const auto strandedName = std::string{"stranded.wav"};
+
+                std::error_code secondEc;
+                std::filesystem::remove_all(secondRoot, secondEc);
+                if (makeDirectory(secondRoot) && writeSilentWav(secondRoot / strandedName, static_cast<uint32_t>(44100 * kFixtureDurationMs / 1000)))
+                {
+                    const auto addedRoot = db.getLibraryRootManager().addRoot(pathToString(secondRoot));
+                    const auto secondRootFolderId = db.getFolderDatabase().findOrCreateFolderByPath(secondRoot);
+                    report.check(addedRoot.has_value() && secondRootFolderId > 0, "a second library root could be added");
+
+                    if (addedRoot.has_value() && secondRootFolderId > 0)
+                    {
+                        report.check(runScan({rootFolderId, secondRootFolderId}, false, report, "two roots, both present"),
+                            "the scan across both roots reports success");
+
+                        TrackId strandedId{-1};
+                        for (const auto &track : trackRowsUnder(db, secondRootFolderId))
+                        {
+                            if (track.filename == strandedName)
+                            {
+                                strandedId = track.trackId;
+                            }
+                        }
+                        report.check(strandedId > 0, "the file under the second root has a row of its own");
+
+                        // The root goes away entirely - the disconnected-drive shape - and an identical
+                        // file turns up under the root that is still there.
+                        const auto arrivedRoot = workRoot / "arrived";
+                        std::error_code setupEc;
+                        if (makeDirectory(arrivedRoot))
+                        {
+                            std::filesystem::copy_file(secondRoot / strandedName, arrivedRoot / strandedName, setupEc);
+                        }
+                        std::error_code removeEc;
+                        std::filesystem::remove_all(secondRoot, removeEc);
+                        report.check(!setupEc && !removeEc, "the second root could be taken away with a copy of its file left elsewhere");
+
+                        if (strandedId > 0 && !setupEc && !removeEc)
+                        {
+                            const auto rowsBefore = static_cast<int>(trackRowsUnder(db, rootFolderId).size());
+
+                            report.check(runScan({rootFolderId, secondRootFolderId}, false, report, "one root gone, its file apparently elsewhere"),
+                                "the scan reports success with a root it could not look at");
+
+                            const auto rowsAfter = trackRowsUnder(db, rootFolderId);
+                            report.check(static_cast<int>(rowsAfter.size()) == rowsBefore + 1,
+                                std::format("the file under the healthy root was inserted as a new track ({} rows, expected {})",
+                                    rowsAfter.size(),
+                                    rowsBefore + 1));
+
+                            const auto stranded = db.getTrackById(strandedId);
+                            report.check(stranded.has_value(), "the row under the unreachable root still exists");
+                            report.check(stranded.has_value() && stranded->folderId == secondRootFolderId,
+                                "and still names the folder it was in - it was not handed to the copy");
+                        }
+                    }
+
+                    if (addedRoot.has_value())
+                    {
+                        db.getLibraryRootManager().removeRoot(addedRoot->id);
+                    }
                 }
             }
 

@@ -2919,6 +2919,123 @@ CREATE TABLE MixUndoHistory (
             }
         }
 
+        DbResult SqliteTrackDatabase::updateScannedTrackData(const TrackInfo &trackInfo, ScannedFields fields)
+        {
+            if (!isOpen())
+            {
+                return DbResult::failure(DbResultStatus::ErrorConnection, "DB not open for updateScannedTrackData.");
+            }
+            m_lastErrorMessage.clear();
+
+            if (trackInfo.trackId <= 0)
+            {
+                return DbResult::failure(DbResultStatus::ErrorGeneric, "updateScannedTrackData needs an existing track id.");
+            }
+
+            if (trackInfo.filename.empty() || trackInfo.folderId <= 0)
+            {
+                // Both are half of the unique index, so writing a default over either would move the row
+                // to a name no file has.
+                return DbResult::failure(DbResultStatus::ErrorGeneric, "updateScannedTrackData needs a folder and a filename.");
+            }
+
+            // Immediate, because the row is read back through getChangesCount below and the tag insert
+            // depends on the update having landed.
+            SqliteTransaction transaction{m_db, TransactionMode::Immediate};
+            if (!transaction)
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin transaction: " + m_db.getLastError());
+            }
+
+            // The columns a scan owns, and no others.
+            //
+            // Absent by intent, not by oversight: date_added (the library's history, not the file's),
+            // bpm, intro_end, outro_start, key_string, beat_locations_json (analysis, which costs minutes
+            // per track and no scanner produces), album_id, status, internal_content_hash, and
+            // album_artist_name, disc_number and codec_name, which no scanner currently fills in - so
+            // writing them would mean writing an empty string over whatever is there.
+            //
+            // Built from the mask rather than picked from a set of ready-made statements, because the
+            // two halves of the metadata fail independently: tags without audio properties is a real
+            // outcome, and so is the reverse. The assignments and the binds below are two halves of one
+            // list and have to stay in step.
+            const bool withTags{includes(fields, ScannedFields::Tags)};
+            const bool withAudioProperties{includes(fields, ScannedFields::AudioProperties)};
+
+            // Always written. The scanner reads these from the directory entry, not from the file, so
+            // they are known whenever there is a file at all - including one nothing could open.
+            std::string assignments{"folder_id=?, filename=?, last_modified_fs=?, filesize_bytes=?, last_scanned=?, is_missing=?"};
+            if (withTags)
+            {
+                assignments += ", title=?, artist_name=?, album_title=?, track_number=?, year=?";
+            }
+            if (withAudioProperties)
+            {
+                assignments += ", duration=?, samplerate=?, channels=?, bitrate=?";
+            }
+
+            SqliteStatement stmt{m_db, std::format("UPDATE Tracks SET {} WHERE track_id = ?;", assignments)};
+            bool ok = stmt.isValid();
+            ok = ok && stmt.addParam(trackInfo.folderId);
+            ok = ok && stmt.addParam(trackInfo.filename);
+            ok = ok && stmt.addParam(timestampToInt64(trackInfo.last_modified_fs));
+            ok = ok && stmt.addParam(static_cast<int64_t>(trackInfo.filesize_bytes));
+            ok = ok && stmt.addParam(timestampToInt64(trackInfo.last_scanned));
+            ok = ok && stmt.addParam(trackInfo.is_missing ? 1 : 0);
+            if (withTags)
+            {
+                ok = ok && stmt.addParam(trackInfo.title);
+                ok = ok && stmt.addParam(trackInfo.artist_name);
+                ok = ok && stmt.addParam(trackInfo.album_title);
+                ok = ok && stmt.addParam(trackInfo.track_number);
+                ok = ok && stmt.addParam(trackInfo.year);
+            }
+            if (withAudioProperties)
+            {
+                ok = ok && stmt.addParam(durationToInt64(trackInfo.duration));
+                ok = ok && stmt.addParam(trackInfo.samplerate);
+                ok = ok && stmt.addParam(trackInfo.channels);
+                ok = ok && stmt.addParam(trackInfo.bitrate);
+            }
+            ok = ok && stmt.addParam(trackInfo.trackId);
+            if (!ok || !stmt.execute())
+            {
+                m_lastErrorMessage = "updateScannedTrackData failed: " + m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+            }
+
+            if (m_db.getChangesCount() != 1)
+            {
+                m_lastErrorMessage = std::format("no track {} to update", trackInfo.trackId);
+                return DbResult::failure(DbResultStatus::ErrorNotFound, m_lastErrorMessage);
+            }
+
+            // Added, not replaced. See the interface for why: a rescan may learn a genre, and may not
+            // unlearn one the user assigned. INSERT OR IGNORE against the (track_id, tag_id) primary key
+            // is the union, without reading the existing set first.
+            //
+            // Skipped when the tags were not read: the genre list is then empty because the read failed,
+            // not because the file has no genres.
+            const std::vector<TagId> genresToAdd{withTags ? trackInfo.tag_ids : std::vector<TagId>{}};
+            for (const auto tagId : genresToAdd)
+            {
+                SqliteStatement tagStmt{m_db, "INSERT OR IGNORE INTO TrackTags (track_id, tag_id) VALUES (?,?);"};
+                if (!tagStmt.isValid() || !tagStmt.addParam(trackInfo.trackId) || !tagStmt.addParam(tagId) || !tagStmt.execute())
+                {
+                    m_lastErrorMessage = "updateScannedTrackData could not add a genre: " + m_db.getLastError();
+                    return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                }
+            }
+
+            if (!transaction.commit())
+            {
+                m_lastErrorMessage = "Failed to commit transaction: " + m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+            }
+
+            return DbResult::success();
+        }
+
         std::optional<TrackInfo> SqliteTrackDatabase::getTrackById(TrackId trackId) const
         {
             if (!isOpen())

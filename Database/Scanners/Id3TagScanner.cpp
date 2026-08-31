@@ -14,7 +14,7 @@ namespace jucyaudio
         namespace scanners
         {
 
-            bool Id3TagScanner::processTrack(TrackInfo &trackInfo, const std::filesystem::path &trackPath)
+            ScannedFields Id3TagScanner::processTrack(TrackInfo &trackInfo, const std::filesystem::path &trackPath)
             {
                 // TagLib uses C-style strings for paths, and often expects system native encoding.
                 // On macOS/Linux, filePath.string() (UTF-8 if locale is UTF-8) is usually fine.
@@ -29,9 +29,10 @@ namespace jucyaudio
                 if (f.isNull() || !f.tag())
                 {
                     spdlog::warn("TagLib: Could not read tags for: {}", pathToString(trackPath));
-                    return false;
+                    return ScannedFields::None;
                 }
 
+                auto established = ScannedFields::Tags;
                 const auto tag = f.tag();
                 trackInfo.title = tag->title().to8Bit(true); // to8Bit(true) for UTF-8
                 trackInfo.artist_name = tag->artist().to8Bit(true);
@@ -98,17 +99,54 @@ namespace jucyaudio
                 //}
 
                 // Audio Properties (TagLib can also provide these)
+                // Separately reported, because it separately fails. A file can carry perfectly good
+                // tags and still defeat the property reader - and the duration, samplerate, channels and
+                // bitrate are then zeroes that say nothing about the file.
+                //
+                // A property object that reports no sample rate does not count as having read them.
+                // TagLib hands one back for a file it could not decode at all - a truncated one, say -
+                // with every field left at zero, and those zeroes are indistinguishable from an answer.
+                // Claiming them overwrites a real duration, samplerate, channel count and bitrate with
+                // nothing, which is the erasure this return value exists to prevent.
+                //
+                // The sample rate is the test rather than the length, because lengthInSeconds() truncates:
+                // a genuine file shorter than a second reports zero, and that is not a failure to read.
                 const auto properties = f.audioProperties();
-                if (properties)
+                if (properties != nullptr && properties->sampleRate() > 0)
                 {
                     trackInfo.duration = durationFromIntSeconds(properties->lengthInSeconds());
                     trackInfo.bitrate = properties->bitrate();
                     trackInfo.samplerate = properties->sampleRate();
                     trackInfo.channels = properties->channels();
+                    established |= ScannedFields::AudioProperties;
+                }
+                else
+                {
+                    spdlog::warn("TagLib: read the tags of {} but not its audio properties; leaving those as they are.", pathToString(trackPath));
+                }
+
+                // Nothing at all, then - and the tag object was never evidence of a successful parse.
+                //
+                // TagLib hands back a non-null, empty tag for a malformed file as readily as for a real
+                // one with no tags, so a tag pointer alone cannot tell those apart. What can: whether
+                // anything about the audio was decodable. A file that yields no sample rate *and* an
+                // empty tag was not read, and claiming Tags for it writes an empty title, artist, album,
+                // year and track number over whatever the library had.
+                //
+                // The two halves that stay authoritative:
+                //  - tags that actually say something are kept even when the properties failed, which is
+                //    the whole reason these are reported separately;
+                //  - an empty tag on a file whose audio decoded fine is a real answer - the file has no
+                //    tags - and someone who deliberately cleared a title expects that to stick.
+                if (!includes(established, ScannedFields::AudioProperties) && tag->isEmpty())
+                {
+                    spdlog::warn("TagLib: {} yielded neither audio properties nor any tag; treating it as unread rather than as blank.",
+                        pathToString(trackPath));
+                    return ScannedFields::None;
                 }
 
                 spdlog::debug("TagLib: Extracted tags for: {}", pathToString(trackPath));
-                return true;
+                return established;
             }
 
         } // namespace scanners
