@@ -113,23 +113,6 @@ a scan. Each deferred call site needs deciding on its own.
 
 ---
 
-## P2: mix editor loses scroll/viewport position when navigating away and back
-
-**Symptom**: When you leave the mix editor (e.g. to browse the library) and return, the horizontal scroll position resets to the beginning. You lose your place and have to manually scroll back to where you were editing.
-
-**What is known**: nothing throws the position away deliberately.
-`MixEditorComponent::populateTimeline` resets the viewport only when the mix id actually changes
-(`UI/MixEditorComponent.cpp:1964`), the zoom level lives on the persistent `TimelineComponent`, and
-`TimelineComponent::populateFrom` clears the track views without resizing (`:1714`) and recalculates
-the size only at the end (`:1882`). Where the position actually goes is **not traced** - viewport
-clamping during the repopulate is a hypothesis, not an established cause.
-
-**Fix approach**: reproduce it first and find out where the position is lost; a save-and-restore
-around the repopulate is the likely shape but should not be written blind. Transient state on the
-MixEditorComponent — no need to persist to DB.
-
----
-
 ## P3: re-identify a returned file against `MixRecovery`
 
 **What is left**: a scan matches a returned file back to its existing `Tracks` row already (by
