@@ -102,6 +102,13 @@ namespace jucyaudio
                 return false;
             }
 
+            // The position the deletion is aimed at is read off what is on screen, so it only names
+            // the intended row while these views still describe the loader's rows.
+            if (refuseIfViewsAreStale("a track deletion"))
+            {
+                return false;
+            }
+
             // 1. Pre-condition checks
             if (!m_selectedTrack)
             {
@@ -292,17 +299,21 @@ namespace jucyaudio
                 return;
             }
 
+            // Gain and envelope edits are written into the loader's row and nowhere else, so the copy
+            // this view was built with can be behind by exactly the edit the user just made.
+            syncTrackViewsFromLoader();
+
             // Find the track data in our views
             for (const auto &view : m_trackViews)
             {
-                if (view.mixTrackData && view.trackInfoData && view.component.get() == m_selectedTrack)
+                if (view.component.get() == m_selectedTrack)
                 {
                     // Copy the data to clipboard
-                    m_clipboard.mixTrack = *view.mixTrackData;
-                    m_clipboard.trackInfo = *view.trackInfoData;
+                    m_clipboard.mixTrack = view.mixTrackData;
+                    m_clipboard.trackInfo = view.trackInfoData;
                     m_clipboard.isValid = true;
 
-                    spdlog::info("Copied track {} (order {}) to clipboard", view.mixTrackData->trackId, view.mixTrackData->orderInMix);
+                    spdlog::info("Copied track {} (order {}) to clipboard", view.mixTrackData.trackId, view.mixTrackData.orderInMix);
                     return;
                 }
             }
@@ -352,6 +363,13 @@ namespace jucyaudio
             if (m_mixLoader == nullptr || !m_mixLoader->isLoaded())
             {
                 spdlog::error("[Timeline] Refusing to write the mix: its tracks were never loaded.");
+                return;
+            }
+
+            // The insert position below is read off what is on screen, so it only means anything while
+            // these views still describe the loader's rows.
+            if (refuseIfViewsAreStale("a paste"))
+            {
                 return;
             }
 
@@ -531,6 +549,13 @@ namespace jucyaudio
                 return;
             }
 
+            // Which tracks come "after" is read off what is on screen, so it only means anything while
+            // these views still describe the loader's rows.
+            if (refuseIfViewsAreStale("a truncation"))
+            {
+                return;
+            }
+
             if (!m_selectedTrack || !m_mixLoader)
             {
                 spdlog::warn("removeAllTracksAfterSelected: No track selected or no mix loaded");
@@ -644,6 +669,13 @@ namespace jucyaudio
             if (m_mixLoader == nullptr || !m_mixLoader->isLoaded())
             {
                 spdlog::error("[Timeline] Refusing to write the mix: its tracks were never loaded.");
+                return false;
+            }
+
+            // orderInMixToRemove was read off what is on screen, so it only names the intended row
+            // while these views still describe the loader's rows.
+            if (refuseIfViewsAreStale("a removal from the mix"))
+            {
                 return false;
             }
 
@@ -774,7 +806,7 @@ namespace jucyaudio
                 return;
             }
 
-            // Step 2: Update data pointers using the old order indices so duplicate track IDs remain stable.
+            // Step 2: Re-copy each view's data using the old order indices so duplicate track IDs remain stable.
             const auto &newMixTracks = m_mixLoader->getMixTracks();
 
             for (auto &view : m_trackViews)
@@ -783,14 +815,15 @@ namespace jucyaudio
                 const auto newOrder = oldOrder > deletedOrderInMix ? oldOrder - 1 : oldOrder;
                 if (newOrder >= 0 && newOrder < static_cast<int>(newMixTracks.size()))
                 {
-                    view.mixTrackData = const_cast<database::MixTrack *>(&newMixTracks[static_cast<size_t>(newOrder)]);
-                    view.trackInfoData = m_mixLoader->getTrackInfoForId(view.mixTrackData->trackId);
-                    if (!view.trackInfoData)
+                    view.mixTrackData = newMixTracks[static_cast<size_t>(newOrder)];
+                    const auto *const trackInfo = m_mixLoader->getTrackInfoForId(view.mixTrackData.trackId);
+                    if (!trackInfo)
                     {
-                        spdlog::error("Missing TrackInfo in refreshAfterDeletion for track {}. Falling back to full populate.", view.mixTrackData->trackId);
+                        spdlog::error("Missing TrackInfo in refreshAfterDeletion for track {}. Falling back to full populate.", view.mixTrackData.trackId);
                         populateFrom();
                         return;
                     }
+                    view.trackInfoData = *trackInfo;
                 }
                 else
                 {
@@ -805,10 +838,14 @@ namespace jucyaudio
                 m_trackViews.end(),
                 [](const TrackView &a, const TrackView &b)
                 {
-                    return a.mixTrackData->orderInMix < b.mixTrackData->orderInMix;
+                    return a.mixTrackData.orderInMix < b.mixTrackData.orderInMix;
                 });
 
-            spdlog::info("Successfully updated data pointers and re-sorted {} remaining tracks.", m_trackViews.size());
+            // The views were just rebuilt from the loader's current rows, deliberately and in full, so
+            // they match it again - the removal that got here bumped the generation.
+            m_populatedGeneration = m_mixLoader->getContentsGeneration();
+
+            spdlog::info("Successfully refreshed the views and re-sorted {} remaining tracks.", m_trackViews.size());
 
             // Step 3: Recalculate all positions and refresh the layout
             recalculateTrackPositions();
@@ -933,7 +970,7 @@ namespace jucyaudio
                     // Find and highlight the target track
                     for (const auto &view : m_trackViews)
                     {
-                        if (view.mixTrackData->orderInMix == m_dropTargetOrderInMix)
+                        if (view.mixTrackData.orderInMix == m_dropTargetOrderInMix)
                         {
                             auto targetBounds = view.component->getBounds();
 
@@ -967,7 +1004,7 @@ namespace jucyaudio
                 const double startTime = std::chrono::duration<double>(view.componentStartTime).count();
 
                 // The duration is dynamic.
-                const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
+                const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData.getEffectiveDuration(view.trackInfoData.duration)).count();
 
                 const double endTime = startTime + effectiveDuration;
                 maxTimeSecs = std::max(maxTimeSecs, endTime);
@@ -987,19 +1024,23 @@ namespace jucyaudio
         {
             spdlog::debug("[REPOSITION] repositionTrack called for TrackId={}", trackId);
 
+            // The cue or attach point that prompted this was written into the loader's row, not into
+            // the view's copy of it.
+            syncTrackViewsFromLoader();
+
             // Find which track index this is
             int trackIndex = -1;
             for (size_t i = 0; i < m_trackViews.size(); ++i)
             {
-                if (m_trackViews[i].mixTrackData && m_trackViews[i].mixTrackData->trackId == trackId)
+                if (m_trackViews[i].mixTrackData.trackId == trackId)
                 {
                     trackIndex = static_cast<int>(i);
-                    spdlog::debug("[REPOSITION]   Found track at index {}, OrderInMix={}", i, m_trackViews[i].mixTrackData->orderInMix);
+                    spdlog::debug("[REPOSITION]   Found track at index {}, OrderInMix={}", i, m_trackViews[i].mixTrackData.orderInMix);
                     spdlog::debug("[REPOSITION]   Current values: CueStart={}ms, CueEnd={}ms, AttachFrom={}ms, AttachTo={}ms",
-                                m_trackViews[i].mixTrackData->cueStart.count(),
-                                m_trackViews[i].mixTrackData->cueEnd.count(),
-                                m_trackViews[i].mixTrackData->attachFrom.count(),
-                                m_trackViews[i].mixTrackData->attachTo.count());
+                                m_trackViews[i].mixTrackData.cueStart.count(),
+                                m_trackViews[i].mixTrackData.cueEnd.count(),
+                                m_trackViews[i].mixTrackData.attachFrom.count(),
+                                m_trackViews[i].mixTrackData.attachTo.count());
                     break;
                 }
             }
@@ -1033,13 +1074,88 @@ namespace jucyaudio
             {
                 // For the last track with only cueStart/cueEnd changes, just update that track
                 auto &view = m_trackViews[trackIndex];
-                view.componentStartTime = view.audioStartTime + view.mixTrackData->cueStart;
+                view.componentStartTime = view.audioStartTime + view.mixTrackData.cueStart;
 
                 spdlog::debug("[REPOSITION] Updated last track only - componentStartTime={}ms", view.componentStartTime.count());
 
                 // Trigger a layout update to reposition the component
                 resized();
                 repaint();
+            }
+        }
+
+        bool TimelineComponent::refuseIfViewsAreStale(const char *action)
+        {
+            if (!m_mixLoader)
+            {
+                spdlog::error("[Timeline] Not doing {}: there is no mix loaded.", action);
+                return true;
+            }
+
+            if (m_populatedGeneration == m_mixLoader->getContentsGeneration())
+            {
+                return false;
+            }
+
+            spdlog::error("[Timeline] Not doing {}: the mix has been reloaded since these rows were laid out, "
+                          "so their positions name other tracks. Repopulating.",
+                action);
+            scheduleRepopulate();
+            return true;
+        }
+
+        void TimelineComponent::scheduleRepopulate()
+        {
+            juce::Component::SafePointer<TimelineComponent> safeThis{this};
+            juce::MessageManager::callAsync(
+                [safeThis]()
+                {
+                    if (safeThis && safeThis->m_mixLoader)
+                    {
+                        safeThis->populateFrom(safeThis->m_mixLoader);
+                        safeThis->repaint();
+                    }
+                });
+        }
+
+        void TimelineComponent::syncTrackViewsFromLoader()
+        {
+            if (!m_mixLoader)
+            {
+                return;
+            }
+
+            const auto &mixTracks = m_mixLoader->getMixTracks();
+            for (auto &view : m_trackViews)
+            {
+                // By identity, not by index: populateFrom skips a mix row whose TrackInfo does not
+                // resolve - an offline track, most often - so the views are a subsequence of the
+                // rows rather than a parallel array. Both halves of the key are needed because a
+                // damaged mix can hold two rows at the same orderInMix.
+                const auto row = std::find_if(mixTracks.begin(),
+                    mixTracks.end(),
+                    [&view](const database::MixTrack &candidate)
+                    {
+                        return candidate.trackId == view.mixTrackData.trackId &&
+                               candidate.orderInMix == view.mixTrackData.orderInMix;
+                    });
+                if (row == mixTracks.end())
+                {
+                    // A reload happened without the timeline being repopulated. Keeping the values
+                    // this view already has is what the timeline laid out in that case before, and
+                    // the fix for it is the repopulation the caller owes, not a rebuild from here.
+                    spdlog::error("[Timeline] Track {} (order {}) is no longer in the loaded mix; "
+                                  "laying it out from the values the view still holds.",
+                        view.mixTrackData.trackId,
+                        view.mixTrackData.orderInMix);
+                    continue;
+                }
+
+                view.mixTrackData = *row;
+                if (const auto *const trackInfo = m_mixLoader->getTrackInfoForId(view.mixTrackData.trackId))
+                {
+                    view.trackInfoData = *trackInfo;
+                }
             }
         }
 
@@ -1051,13 +1167,17 @@ namespace jucyaudio
                 return;
             }
 
+            // Every position below comes out of the mix rows, so this pass is where the views'
+            // copies of them have to be current.
+            syncTrackViewsFromLoader();
+
             spdlog::debug("[RECALC] recalculateTrackPositions - Processing {} tracks", m_trackViews.size());
 
             // Calculate the global offset from the first track's cueStart
             Duration_t globalOffset{0};
-            if (m_trackViews[0].mixTrackData && m_trackViews[0].mixTrackData->cueStart < Duration_t{0})
+            if (m_trackViews[0].mixTrackData.cueStart < Duration_t{0})
             {
-                globalOffset = -m_trackViews[0].mixTrackData->cueStart;
+                globalOffset = -m_trackViews[0].mixTrackData.cueStart;
                 spdlog::debug("[RECALC]   First track has negative cueStart, globalOffset={}ms", globalOffset.count());
             }
 
@@ -1067,8 +1187,6 @@ namespace jucyaudio
             for (size_t i = 0; i < m_trackViews.size(); ++i)
             {
                 auto &view = m_trackViews[i];
-                if (!view.mixTrackData)
-                    continue;
 
                 // Calculate audio start time according to Mix Flow algorithm
                 if (i == 0)
@@ -1077,18 +1195,18 @@ namespace jucyaudio
                 }
                 else
                 {
-                    const auto &prevTrack = *m_trackViews[i - 1].mixTrackData;
-                    view.audioStartTime = previousAudioStartTime + prevTrack.attachTo - view.mixTrackData->attachFrom;
+                    const auto &prevTrack = m_trackViews[i - 1].mixTrackData;
+                    view.audioStartTime = previousAudioStartTime + prevTrack.attachTo - view.mixTrackData.attachFrom;
                 }
 
                 // Update component start time
-                view.componentStartTime = view.audioStartTime + view.mixTrackData->cueStart;
+                view.componentStartTime = view.audioStartTime + view.mixTrackData.cueStart;
 
                 spdlog::debug("[RECALC]   Track {} (OrderInMix={}): CueStart={}ms, AttachFrom={}ms, AttachTo={}ms, audioStartTime={}ms, componentStartTime={}ms",
-                            view.mixTrackData->trackId, view.mixTrackData->orderInMix,
-                            view.mixTrackData->cueStart.count(),
-                            view.mixTrackData->attachFrom.count(),
-                            view.mixTrackData->attachTo.count(),
+                            view.mixTrackData.trackId, view.mixTrackData.orderInMix,
+                            view.mixTrackData.cueStart.count(),
+                            view.mixTrackData.attachFrom.count(),
+                            view.mixTrackData.attachTo.count(),
                             view.audioStartTime.count(),
                             view.componentStartTime.count());
 
@@ -1104,9 +1222,9 @@ namespace jucyaudio
             spdlog::debug("[RECALC] Synchronizing component data after recalculation");
             for (auto &view : m_trackViews)
             {
-                if (view.component && view.mixTrackData)
+                if (view.component)
                 {
-                    view.component->updateMixTrackData(*view.mixTrackData);
+                    view.component->updateMixTrackData(view.mixTrackData);
                 }
             }
         }
@@ -1228,9 +1346,9 @@ namespace jucyaudio
                     {
                         if (view.component.get() == targetTrack)
                         {
-                            if (view.mixTrackData->orderInMix != m_dropTargetOrderInMix)
+                            if (view.mixTrackData.orderInMix != m_dropTargetOrderInMix)
                             {
-                                m_dropTargetOrderInMix = view.mixTrackData->orderInMix;
+                                m_dropTargetOrderInMix = view.mixTrackData.orderInMix;
                                 spdlog::info("[Timeline] Drag target updated to orderInMix: {}", m_dropTargetOrderInMix);
                             }
                             break;
@@ -1260,7 +1378,7 @@ namespace jucyaudio
                 {
                     if (m_trackViews[i].component.get() == m_draggedTrackForReorder)
                     {
-                        currentOrder = m_trackViews[i].mixTrackData->orderInMix;
+                        currentOrder = m_trackViews[i].mixTrackData.orderInMix;
                         break;
                     }
                 }
@@ -1276,6 +1394,16 @@ namespace jucyaudio
                         lockIfUnloaded();
                         // Through the shared cleanup, not a bare return: the drag still holds a
                         // pointer to a component the lock above may cause to be destroyed.
+                        cancelReorderDrag();
+                        return;
+                    }
+
+                    // Both orders were read off what is on screen. A reload that succeeded leaves
+                    // isLoaded() true above and still moves the rows out from under them.
+                    if (refuseIfViewsAreStale("a reorder"))
+                    {
+                        // Through the shared cleanup, for the same reason as above: the repopulation
+                        // this schedules destroys the component the drag is holding.
                         cancelReorderDrag();
                         return;
                     }
@@ -1353,7 +1481,7 @@ namespace jucyaudio
                 for (const auto &view : m_trackViews)
                 {
                     if (view.component.get() == trackAtPos)
-                        return view.mixTrackData->orderInMix;
+                        return view.mixTrackData.orderInMix;
                 }
             }
 
@@ -1367,14 +1495,14 @@ namespace jucyaudio
             {
                 const double startTime = std::chrono::duration<double>(view.componentStartTime).count();
                 const double effectiveDuration = std::chrono::duration<double>(
-                    view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
+                    view.mixTrackData.getEffectiveDuration(view.trackInfoData.duration)).count();
                 const double midTime = startTime + effectiveDuration / 2.0;
 
                 const double distance = std::abs(cursorTime - midTime);
                 if (distance < closestDistance)
                 {
                     closestDistance = distance;
-                    closestOrder = view.mixTrackData->orderInMix;
+                    closestOrder = view.mixTrackData.orderInMix;
                 }
             }
 
@@ -1597,10 +1725,10 @@ namespace jucyaudio
                     // Initial layout - must calculate everything
                     const double startTime = std::chrono::duration<double>(view.componentStartTime).count();
                     const int startX = static_cast<int>(startTime * m_pixelsPerSecond);
-                    const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
+                    const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData.getEffectiveDuration(view.trackInfoData.duration)).count();
                     const int width = static_cast<int>(effectiveDuration * m_pixelsPerSecond);
                     spdlog::debug("TimelineComponent::resized - setting bounds for track {}: x={}, width={}, pixelsPerSecond={}",
-                                 view.mixTrackData->orderInMix, startX, width, m_pixelsPerSecond);
+                                 view.mixTrackData.orderInMix, startX, width, m_pixelsPerSecond);
                     view.component->setBounds(startX, yPos, width, trackHeight);
                 }
                 // Check if only Y position needs updating (common case for pure vertical resize).
@@ -1610,7 +1738,7 @@ namespace jucyaudio
                 {
                     const double startTime = std::chrono::duration<double>(view.componentStartTime).count();
                     const int startX = static_cast<int>(startTime * m_pixelsPerSecond);
-                    const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
+                    const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData.getEffectiveDuration(view.trackInfoData.duration)).count();
                     const int width = static_cast<int>(effectiveDuration * m_pixelsPerSecond);
 
                     if (currentBounds.getX() == startX &&
@@ -1639,7 +1767,7 @@ namespace jucyaudio
                     // Need to recalculate (zoom changed or size changed)
                     const double startTime = std::chrono::duration<double>(view.componentStartTime).count();
                     const int startX = static_cast<int>(startTime * m_pixelsPerSecond);
-                    const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData->getEffectiveDuration(view.trackInfoData->duration)).count();
+                    const double effectiveDuration = std::chrono::duration<double>(view.mixTrackData.getEffectiveDuration(view.trackInfoData.duration)).count();
                     const int width = static_cast<int>(effectiveDuration * m_pixelsPerSecond);
                     
                     if (currentBounds.getX() != startX || 
@@ -1715,6 +1843,10 @@ namespace jucyaudio
             removeAllChildren();
             m_cachedNumLanes = -1; // Reset lane cache when repopulating
 
+            // Stamped before the views are built, from the contents they are about to be built from:
+            // this is what refuseIfViewsAreStale compares against.
+            m_populatedGeneration = mixLoader->getContentsGeneration();
+
             spdlog::info("TimelineComponent::populateFrom - Starting with {} tracks", mixLoader->getMixTracks().size());
 
             // Create TrackView objects for each track
@@ -1724,13 +1856,13 @@ namespace jucyaudio
                 if (const auto *trackInfo = mixLoader->getTrackInfoForId(mixTrack.trackId))
                 {
                     TrackView view;
-                    view.mixTrackData = &mixTrack;
-                    view.trackInfoData = trackInfo;
+                    view.mixTrackData = mixTrack;
+                    view.trackInfoData = *trackInfo;
                     // Initialize with default values - will be recalculated
                     view.audioStartTime = Duration_t{0};
                     view.componentStartTime = Duration_t{0};
 
-                    view.component = std::make_unique<MixTrackComponent>(*view.mixTrackData, *view.trackInfoData, m_formatManager, m_thumbnailCache);
+                    view.component = std::make_unique<MixTrackComponent>(view.mixTrackData, view.trackInfoData, m_formatManager, m_thumbnailCache);
                     view.component->setPixelsPerSecond(m_pixelsPerSecond);
 
                     view.component->onCueAttachChanged = [this](int orderInMix, const database::MixTrack &updatedTrack)
@@ -1738,6 +1870,10 @@ namespace jucyaudio
                         if (m_isReadOnly)
                         {
                             spdlog::info("Cannot modify cue/attach points - mix is read-only");
+                            return;
+                        }
+                        if (refuseIfViewsAreStale("a cue or attach change"))
+                        {
                             return;
                         }
                         if (!m_isPopulating && onCueAttachChanged)
@@ -1748,6 +1884,10 @@ namespace jucyaudio
                         if (m_isReadOnly)
                         {
                             spdlog::info("Cannot modify envelope - mix is read-only");
+                            return;
+                        }
+                        if (refuseIfViewsAreStale("an envelope change"))
+                        {
                             return;
                         }
                         if (!m_isPopulating && onEnvelopeChanged)
@@ -1761,6 +1901,11 @@ namespace jucyaudio
                             return;
                         }
                         
+                        if (refuseIfViewsAreStale("a gain change"))
+                        {
+                            return;
+                        }
+
                         // Find the MixTrack in the loader's vector
                         MixTrack* targetMixTrack = nullptr;
                         // m_mixLoader is checked against nullptr at the beginning of the function, so false PVS Studio positive
@@ -1825,25 +1970,25 @@ namespace jucyaudio
                             // Find the track view for this orderInMix
                             for (const auto &tv : m_trackViews)
                             {
-                                if (tv.mixTrackData && tv.mixTrackData->orderInMix == orderInMix)
+                                if (tv.mixTrackData.orderInMix == orderInMix)
                                 {
                                     // xToTime returns cueStart + offset_within_component
                                     // componentStartTime is where the component starts on the timeline
                                     // So absolute position = componentStartTime + offset_within_component
                                     
                                     // Debug for track 22650
-                                    if (tv.mixTrackData->trackId == 22650)
+                                    if (tv.mixTrackData.trackId == 22650)
                                     {
                                         spdlog::info("[Track 22650 Timeline Debug] Preview line calculation:");
                                         spdlog::info("  - componentStartTime: {} ms", tv.componentStartTime.count());
                                         spdlog::info("  - previewTime: {} ms", previewTime->count());
-                                        spdlog::info("  - cueStart: {} ms", tv.mixTrackData->cueStart.count());
-                                        spdlog::info("  - offset: {} ms", (*previewTime - tv.mixTrackData->cueStart).count());
+                                        spdlog::info("  - cueStart: {} ms", tv.mixTrackData.cueStart.count());
+                                        spdlog::info("  - offset: {} ms", (*previewTime - tv.mixTrackData.cueStart).count());
                                         spdlog::info("  - final preview position: {} ms", 
-                                            (tv.componentStartTime + (*previewTime - tv.mixTrackData->cueStart)).count());
+                                            (tv.componentStartTime + (*previewTime - tv.mixTrackData.cueStart)).count());
                                     }
                                     
-                                    m_cueDragPreviewTime = tv.componentStartTime + (*previewTime - tv.mixTrackData->cueStart);
+                                    m_cueDragPreviewTime = tv.componentStartTime + (*previewTime - tv.mixTrackData.cueStart);
                                     break;
                                 }
                             }
@@ -1901,7 +2046,7 @@ namespace jucyaudio
                     break; // No next track to crossfade with
 
                 const auto &currentView = m_trackViews[i];
-                const auto &currentTrack = *currentView.mixTrackData;
+                const auto &currentTrack = currentView.mixTrackData;
 
                 // The ATTACH point is calculated relative to the AUDIO start time, not the component start time.
                 const double currentAudioStart = std::chrono::duration<double>(currentView.audioStartTime).count();

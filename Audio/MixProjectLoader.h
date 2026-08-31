@@ -52,6 +52,19 @@ namespace jucyaudio
                 return m_loaded;
             }
 
+            /// @brief Counts the times this loader's set of rows has changed underneath its readers.
+            ///
+            /// A successful loadMix swaps in a new set of rows, and anything built from the old ones -
+            /// the timeline's TrackViews above all - describes a mix that has moved on. Positions taken
+            /// off such a view name rows by an order_in_mix somebody else now holds, so an edit made
+            /// from it lands on the wrong track. isLoaded() cannot say this: a reload that succeeded
+            /// leaves it true. Whoever caches anything derived from these rows records this number
+            /// alongside and compares before acting on the cache.
+            auto getContentsGeneration() const
+            {
+                return m_contentsGeneration;
+            }
+
             // --- Public Accessors ---
             auto getMixId() const
             {
@@ -121,6 +134,8 @@ namespace jucyaudio
             MixId m_mixId;
             MixInfo m_mixInfo;
             std::vector<MixTrack> m_mixTracks;
+            /// @brief Bumped whenever a successful load, or an in-place removal, changes the rows; see getContentsGeneration().
+            uint64_t m_contentsGeneration{0};
             /// @brief False until a load or a save succeeds; see isLoaded().
             bool m_loaded{false};
             /// @brief True once loadMix has been tried at all, successfully or not.

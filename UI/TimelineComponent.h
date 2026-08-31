@@ -126,18 +126,18 @@ namespace jucyaudio
              * @brief Stops showing a mix: drops the loader reference and everything built from it.
              *
              * Called when the timeline no longer represents anything - unloading, or a reload that
-             * failed. The views go with the pointer, because each one holds a raw pointer into the
-             * loader's track vector.
+             * failed. The views go with the pointer: each one carries its own copy of a mix row, and
+             * a copy of a mix nobody is showing any more is not something to lay out or edit.
              */
             void releaseMixLoader()
             {
                 clearTrackContext();
                 cancelReorderDrag();
 
-                // The views go too, not just the pointer. Each TrackView holds a raw pointer into the
-                // loader's track vector, so leaving them behind means the next paint, layout, drag or
-                // copy reads memory the loader has released. Clearing the loader pointer alone stops
-                // new lookups and leaves the old ones exactly where they were.
+                // The views go too, not just the pointer. They hold copies of the mix rows, so
+                // leaving them behind would keep a mix on screen that this timeline no longer has a
+                // loader for - editable, and describing nothing. Clearing the loader pointer alone
+                // stops new lookups and leaves the old views exactly where they were.
                 m_trackViews.clear();
                 removeAllChildren();
                 m_cachedNumLanes = -1;
@@ -356,6 +356,42 @@ namespace jucyaudio
              */
             void recalculateTrackPositions();
 
+            /**
+             * @brief Re-copies each TrackView's mix and track data from the loader.
+             *
+             * The editor edits cue and attach points in the loader's own MixTrack rows and then
+             * asks the timeline to reposition; while the views pointed into that vector they saw
+             * such an edit for free. They hold copies now, so the copies have to be refreshed at
+             * the points that used to depend on that - the layout pass and repositionTrack.
+             *
+             * A view whose row is no longer in the loader keeps the values it has and is logged:
+             * that only happens when the loader was reloaded without the timeline being
+             * repopulated, and laying out stale data is what the timeline did in that case
+             * anyway. Repopulating from here is not an option - it destroys the components the
+             * layout pass, a drag or a mouse handler is standing on.
+             */
+            void syncTrackViewsFromLoader();
+
+            /**
+             * @brief Refuses an edit whose positions were read off views the loader has since replaced.
+             *
+             * Every write path here names rows by an order_in_mix taken from what is on screen. That is
+             * only meaningful while the views describe the loader's current rows: after a reload the
+             * third row on screen is not necessarily the third row in the mix, and `isLoaded()` says
+             * nothing about it because a reload that succeeded leaves it true. The views carry copies
+             * now, so acting on a stale one no longer reads freed memory - it writes the wrong track.
+             *
+             * @param action What is being refused, for the log line.
+             * @return True if the caller must stop. A refusal also schedules a repopulation.
+             */
+            bool refuseIfViewsAreStale(const char *action);
+
+            /// @brief Repopulates from the loader once the current event has finished.
+            ///
+            /// Never inline: populateFrom destroys the components a mouse handler, a drag or the
+            /// layout pass is standing on.
+            void scheduleRepopulate();
+
             void deleteTrackAtIndex(size_t trackIndex);
             bool removeTrackFromMixOnly(int orderInMix);
 
@@ -383,11 +419,22 @@ namespace jucyaudio
                 /** @brief The JUCE component that visually represents the track. This owns the component's memory. */
                 std::unique_ptr<MixTrackComponent> component;
 
-                /** @brief A non-owning pointer to the mutable mix data (cues, attaches, envelopes). */
-                database::MixTrack *mixTrackData{nullptr};
+                /** @brief The view's own copy of the mix data (cues, attaches, envelopes).
+                 *
+                 *  A copy, not a pointer into `MixProjectLoader::m_mixTracks`: a successful
+                 *  `loadMix` move-assigns that vector, which invalidated every pointer held here at
+                 *  once and left painting, layout and dragging reading freed memory whenever a
+                 *  reload arrived without a repopulation behind it. The timeline only ever read
+                 *  through the pointer, so owning the value costs nothing and removes the whole
+                 *  class of problem. `syncTrackViewsFromLoader` re-copies it wherever the timeline
+                 *  used to rely on seeing an in-place edit through the pointer. */
+                database::MixTrack mixTrackData;
 
-                /** @brief A non-owning pointer to the immutable source audio file data (duration, title, etc.). */
-                const database::TrackInfo *trackInfoData{nullptr};
+                /** @brief The view's own copy of the immutable source audio file data (duration, title, etc.).
+                 *         A copy for the same reason as `mixTrackData`: the loader replaces
+                 *         `m_trackInfos` alongside `m_mixTracks`, and its by-id map holds the
+                 *         addresses of that vector's elements. */
+                database::TrackInfo trackInfoData;
 
                 /** @brief The calculated absolute start time of the track's *audio content* on the mix timeline. */
                 Duration_t audioStartTime{0};
@@ -397,8 +444,17 @@ namespace jucyaudio
                 Duration_t componentStartTime{0};
             };
 
+            // Values, not pointers, and it has to stay that way: a pointer here aliases storage that
+            // MixProjectLoader::loadMix replaces wholesale, which is the use-after-free this struct
+            // used to carry.
+            static_assert(!std::is_pointer_v<decltype(TrackView::mixTrackData)> && !std::is_pointer_v<decltype(TrackView::trackInfoData)>,
+                "TrackView must own its data: a pointer into MixProjectLoader's vectors dangles on every reload.");
+
             /** @brief A non-owning pointer to the MixProjectLoader that serves as the master data source for this timeline. */
             audio::MixProjectLoader *m_mixLoader = nullptr;
+
+            /** @brief The loader's contents generation at the last populate; see refuseIfViewsAreStale. */
+            uint64_t m_populatedGeneration{0};
 
             /** @brief A cache of the audio format readers (e.g., for MP3, WAV) required to generate thumbnails. */
             juce::AudioFormatManager &m_formatManager;

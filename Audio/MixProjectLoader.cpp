@@ -36,11 +36,10 @@ namespace jucyaudio
 
             // Everything is read into locals and only published at the end.
             //
-            // The timeline holds raw pointers into m_mixTracks, so clearing it here and then failing
-            // would leave every TrackView on screen pointing at destroyed objects - and the caller has
-            // no way to repaint its way out of that, because painting is one of the things that reads
-            // them. A failed load now leaves the previous mix intact and merely marked unloaded, which
-            // keeps those pointers valid while m_loaded stops anything writing the stale contents back.
+            // Clearing them here and then failing would leave this loader describing half a mix: the
+            // previous one gone, the new one never read. A failed load leaves the previous mix intact
+            // and merely marked unloaded, so callers still see something coherent while m_loaded stops
+            // anything writing the stale contents back.
             const auto mixInfo = theTrackLibrary.getMixManager().getMix(mixId);
             if (mixInfo.mixId == 0)
             {
@@ -85,6 +84,10 @@ namespace jucyaudio
             m_trackInfos = std::move(loadedInfos);
 
             rebuildTrackInfoMap();
+
+            // With the new contents, not before them: anything comparing against this number is asking
+            // whether what it cached still describes what is here now.
+            ++m_contentsGeneration;
             //int index = 0;
             
             // Only dump context in debug builds or when explicitly debugging
@@ -141,6 +144,10 @@ namespace jucyaudio
             }
 
             rebuildTrackInfoMap();
+
+            // A row is gone and the rest have been renumbered, so anything holding a copy of the old
+            // set is describing positions that have moved.
+            ++m_contentsGeneration;
 
             return true;
         }
@@ -281,6 +288,11 @@ namespace jucyaudio
             {
                 m_mixTracks[i].orderInMix = i;
             }
+
+            // The rows have moved, so anything holding a copy of the old order is naming positions that
+            // now belong to other tracks. Bumped here rather than only in loadMix because this happens
+            // without one: the caller reorders, then saves, and a save that fails never reloads.
+            ++m_contentsGeneration;
 
             spdlog::info("Successfully moved track {} from position {} to {}", 
                 trackId, currentPosition, newPosition);

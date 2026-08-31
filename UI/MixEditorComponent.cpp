@@ -257,9 +257,9 @@ namespace jucyaudio
             auto &mixLoader = m_node->getMixProjectLoader();
 
             // Repopulated, or cleared when there is nothing to populate from. Either way the old
-            // TrackViews go: they hold pointers into the vector the reload has just replaced, and
-            // painting, dragging or copying one of them afterwards reads freed memory. Leaving the
-            // stale timeline up is not a cosmetic problem.
+            // TrackViews go: they hold copies of the rows the reload has just replaced, so what is on
+            // screen is the previous contents of a mix that has changed underneath it, and an edit
+            // made against it names rows by a position they may no longer hold.
             if (m_node->isCacheLoaded())
             {
                 m_timeline.populateFrom(&mixLoader);

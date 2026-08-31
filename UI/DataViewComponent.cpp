@@ -803,11 +803,24 @@ namespace jucyaudio
                     else
                     {
                         spdlog::error("Failed to save mix to database");
+
+                        // The reorder happened in the loader's own rows and the database did not
+                        // take it, so the loader is now describing an order nobody else has.
+                        // Re-reading puts it back to what is stored, and brings whatever is
+                        // showing those rows with it.
+                        m_currentNode->refreshCache(true);
+                        refreshView();
                     }
                 }
                 else
                 {
                     spdlog::error("Failed to reorder tracks");
+
+                    // A multi-track reorder applies its moves one at a time, so a failure can
+                    // leave some of them in the loader's rows and nothing in the database.
+                    // Same remedy as the failed save above: the database says what the order is.
+                    m_currentNode->refreshCache(true);
+                    refreshView();
                 }
             }
             else

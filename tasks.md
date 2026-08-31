@@ -2,36 +2,8 @@
 
 Ordered by priority: **P1** (fix before tagging 2.0) → **P3** (whenever). P1 items are memory-safety
 or deadlock bugs reachable in today's code; P2 items are reachable correctness or user-visible
-defects that are not memory-unsafe; P3 items cannot happen today or need a design decision first.
-
----
-
-## P1: the timeline holds raw pointers into vectors that get replaced
-
-**Symptom**: both of `TrackView`'s data pointers point into storage the loader replaces, and both have
-to be dealt with together:
-
-- `mixTrackData` (declared `UI/TimelineComponent.h:387`) points into `MixProjectLoader::m_mixTracks` -
-  assigned in `populateFrom` at `UI/TimelineComponent.cpp:1727` and in `refreshAfterDeletion` at `:786`.
-- `trackInfoData` (`UI/TimelineComponent.h:390`) points into `MixProjectLoader::m_trackInfos` -
-  assigned at `UI/TimelineComponent.cpp:1728` from `getTrackInfoForId`, whose map holds addresses of
-  that vector's elements (`Audio/MixProjectLoader.cpp:21`).
-
-A **successful** `MixProjectLoader::loadMix` move-assigns both vectors together
-(`Audio/MixProjectLoader.cpp:82-85`), so every reload invalidates every TrackView pointer at once; a
-failed load publishes nothing and leaves them intact. Painting, layout, dragging or copying a stale
-TrackView reads freed memory - `resized` dereferences both (`UI/TimelineComponent.cpp:1600`), as does
-the clipboard copy (`:302`). Fixing only `mixTrackData` leaves the second use-after-free in place.
-
-**Why it has not bitten more often**: reloads normally arrive through the editor, which repopulates
-the timeline immediately afterwards. The metadata refresh in `MainComponent` did not, and now calls
-`MixEditorComponent::onNodeCacheReloaded` to do so - but that is one caller being taught the rule,
-not the rule being enforced.
-
-**Fix approach**: the timeline should not retain pointers into replaceable storage, for either vector.
-Indices into the loader, or a copy it owns, remove the whole class of problem rather than requiring every future
-refresh site to remember. Until then, anything calling `refreshCache(true)` on a node the editor may
-be showing has to notify the editor.
+defects that are not memory-unsafe; P3 items cannot happen today, are bounded to a logged
+stale-state effect, or need a design decision first.
 
 ---
 
@@ -110,6 +82,22 @@ on the same connection can write inside someone else's deferred transaction.
 **Fix approach**: not simply switching the default. Immediate mode serialises the whole connection for
 the transaction's duration, which is correct for a short capture and would be a throughput problem for
 a scan. Each deferred call site needs deciding on its own.
+
+---
+
+## P3: a stale timeline is corrected on the next edit, not before
+
+**Symptom**: a reload that the timeline was not told about (the mix rows path in
+`UI/DataViewComponent.cpp:800`, for one) leaves it showing the rows it was built from. Editing that
+picture is refused now - every write path calls `refuseIfViewsAreStale`
+(`UI/TimelineComponent.cpp:1059`), which compares `MixProjectLoader::getContentsGeneration()` against
+the generation stamped at populate time, logs, and schedules a repopulation - so nothing writes to a
+row it did not mean. What is left is the display: until the user tries to edit, the timeline shows the
+previous contents and nothing corrects it.
+
+**Fix approach**: notify rather than detect. The loader could tell whoever is showing its rows that
+they changed, which is the same information `getContentsGeneration` exposes, pushed instead of polled.
+Not urgent while the only consequence is a stale picture that the next interaction fixes.
 
 ---
 
