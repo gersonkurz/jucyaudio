@@ -623,9 +623,23 @@ namespace jucyaudio
             if (SqliteTransaction transaction{m_db})
             {
                 // first, we check all folders that have files in them
+                //
+                // Both ends of this read are checked, because everything below is decided by what is
+                // absent from it. A read that fails, or stops partway, holds fewer folders than the
+                // library really uses and is otherwise indistinguishable from a library that uses
+                // none - so the folders it did not get to would be deleted, and Folders cascades on
+                // parent_id while Tracks cascades on folder_id. A failed read here would take library
+                // content with it rather than decline to run.
                 std::unordered_set<FolderId> foldersWithTracks;
                 {
                     SqliteStatement selectStmt{m_db, "SELECT DISTINCT folder_id FROM Tracks"};
+                    if (!selectStmt.isValid())
+                    {
+                        spdlog::error("removeEmptyFolders: could not read the folders in use: {}. Deleting nothing.",
+                            m_db.getLastError());
+                        return transaction.rollback();
+                    }
+
                     while (selectStmt.getNextResult())
                     {
                         const auto folderId{selectStmt.getInt64(0)};
@@ -633,6 +647,16 @@ namespace jucyaudio
                         {
                             foldersWithTracks.insert(folderId);
                         }
+                    }
+
+                    // The loop above ends the same way on "no more rows" and on "the step failed".
+                    if (selectStmt.hasError())
+                    {
+                        spdlog::error("removeEmptyFolders: the read of the folders in use stopped early after {} folder(s): {}. "
+                                      "Deleting nothing.",
+                            foldersWithTracks.size(),
+                            m_db.getLastError());
+                        return transaction.rollback();
                     }
                 }
 

@@ -7,25 +7,6 @@ stale-state effect, or need a design decision first.
 
 ---
 
-## P2: a failed read in `removeEmptyFolders` reads as an empty library
-
-**Symptom**: `removeEmptyFolders` builds its set of folders that are in use by iterating
-`SELECT DISTINCT folder_id FROM Tracks` (`Database/Sqlite/SqliteFolderDatabase.cpp:628`) and never
-checks `selectStmt.hasError()` afterwards. A query that fails, or stops partway, is indistinguishable
-from one that found nothing - and every folder missing from that set is then deleted. `Folders` carries
-`ON DELETE CASCADE` on `parent_id`, and the `Tracks` rows go with the folders, so a failed read here
-deletes library content rather than declining to.
-
-**Why it has not bitten**: the read is a plain scan of one column on a healthy connection. The
-successful path is exercised by the folder cache self test; the failure path is not reachable from a
-test without breaking the connection under it.
-
-**Fix approach**: `hasError()` after the loop, and refuse the whole operation if it is set - the
-transaction is already there to roll back. `SqliteMixSummary.cpp:75,111` is the pattern to follow.
-Pre-dates the lock-order work and was found while reviewing it.
-
----
-
 ## P2: nothing stops a folder path from being stored twice
 
 **Symptom**: `Folders` has no unique index on its path column - only
@@ -108,6 +89,34 @@ on the same connection can write inside someone else's deferred transaction.
 **Fix approach**: not simply switching the default. Immediate mode serialises the whole connection for
 the transaction's duration, which is correct for a short capture and would be a throughput problem for
 a scan. Each deferred call site needs deciding on its own.
+
+---
+
+## P3: the folder cache build ignores whether its reads worked
+
+**Symptom**: `buildCacheIfNeeded` runs six statements and checks the result of one of them. The
+`reserveFromCount` helper (`Database/Sqlite/SqliteFolderDatabase.cpp:53`) ignores a failed count, which
+is harmless - it only sizes a container. The track-count and album pass is not: a failed or partial
+read of `SELECT folder_id, COALESCE(artist_name, ''), ... FROM Tracks ORDER BY folder_ID ASC`
+(`:247`) leaves folders with track counts that are too low or zero, and the cache is stamped valid at
+the end (`:370`) either way. Seen for real while testing the `removeEmptyFolders` fix: with `Tracks`
+made to fail, the build logged `no such table` and then carried on to mark the cache good.
+
+**What it costs**: wrong track counts in the folder tree until something invalidates the cache - and
+one thing that is written and stays written. The album pass decides a folder's album from the tracks it
+has seen so far, and a read that stops early has seen a prefix: the folder is still pending when the
+loop ends, so the tail block adds it (`:335`) and the transaction below writes it (`:349`), neither of
+them having asked whether the read finished. A later track that would have disqualified that folder -
+a different artist, an empty album title - was never reached. The Albums row that results is wrong and
+survives every later cache rebuild, because the rebuild finds an album already there and leaves it
+alone. Nothing is deleted, unlike the same pattern in `removeEmptyFolders`, which is fixed.
+
+**Fix approach**: `hasError()` after each read that feeds the cache; refuse to mark the cache valid when
+one of them failed, and write no albums from a pass that did not finish - `buildCacheIfNeeded` already
+returns false on other kinds of inconsistency, so the shape exists. The album write is the urgent half:
+a wrong track count is corrected by the next rebuild, a wrong Albums row is not. Worth doing together
+with the accessor window below, since both are about a cache that reports a confident answer it does
+not have.
 
 ---
 

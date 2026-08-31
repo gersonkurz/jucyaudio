@@ -3256,6 +3256,118 @@ namespace jucyaudio
             report.check(!folders.getFolderById(rootFolderId).has_value(),
                 std::format("so are the empty folders this suite seeded (id {})", rootFolderId));
 
+            // --- A read that fails must delete nothing ---
+            //
+            // Everything removeEmptyFolders deletes is decided by what is *absent* from one read of
+            // Tracks, so a read that fails or stops partway looks exactly like a library nobody uses.
+            // Its own database, its own connection: this deliberately breaks the table the read needs,
+            // and doing that to the library the other suites share would be a poor trade for a check.
+            const auto brokenDbPath = selfTestRoot / "foldercache-broken" / "jucyaudio.db";
+            std::filesystem::remove_all(brokenDbPath.parent_path(), removalEc);
+            std::filesystem::create_directories(brokenDbPath.parent_path(), removalEc);
+            if (removalEc)
+            {
+                report.abort(std::format("Could not create {}: {}", pathToString(brokenDbPath.parent_path()), removalEc.message()));
+                writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                return 1;
+            }
+
+            {
+                SqliteTrackDatabase scratch;
+                const auto connected = scratch.connect(brokenDbPath);
+                report.check(connected.isOk(), std::format("a scratch database could be created (said: '{}')", connected.errorMessage));
+                if (!connected.isOk())
+                {
+                    writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                    return 1;
+                }
+
+                auto &scratchFolders = scratch.getFolderDatabase();
+                std::vector<FolderId> seeded;
+                for (int i = 0; i < 5; ++i)
+                {
+                    const auto id = scratchFolders.findOrCreateFolderByPath(brokenDbPath.parent_path() / std::format("empty{:02}", i));
+                    if (id <= 0)
+                    {
+                        report.abort("Could not seed the scratch database with folders.");
+                        writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                        return 1;
+                    }
+                    seeded.push_back(id);
+                }
+
+                // Counted in the database rather than through the cache. With a broken Tracks the cache
+                // cannot be rebuilt at all, so a cache-based count would drop to zero whether the rows
+                // were deleted or not - it would report a refusal that never happened as a success.
+                const auto countFolderRows = [&brokenDbPath, &report]() -> int64_t
+                {
+                    SqliteDatabase counter;
+                    if (!counter.open(pathToString(brokenDbPath)))
+                    {
+                        report.abort("Could not reopen the scratch database to count its folders.");
+                        return -1;
+                    }
+                    SqliteStatement stmt{counter, "SELECT COUNT(*) FROM Folders"};
+                    return (stmt.isValid() && stmt.getNextResult()) ? stmt.getInt64(0) : -1;
+                };
+
+                // Built while Tracks still answers, and not invalidated afterwards: removeEmptyFolders
+                // takes its list of candidates from the cache as it finds it, so an empty cache would
+                // leave it nothing to delete and every check below would pass without proving anything.
+                report.check(scratchFolders.getFolderById(seeded.front()).has_value(), "the scratch folder cache is built and holds the seeded folders");
+
+                const auto folderRowsBefore = countFolderRows();
+                report.check(folderRowsBefore >= static_cast<int64_t>(seeded.size()),
+                    std::format("the scratch database holds the {} empty folders and their parents ({} rows)", seeded.size(), folderRowsBefore));
+
+                // A Tracks that answers one row and then fails, over a second connection so the schema
+                // change is committed before the folder database reads it. abs() of the most negative
+                // integer is a runtime error in SQLite, not a parse error, so the failure lands in the
+                // middle of the read rather than when it is prepared - the partial read this is about.
+                {
+                    SqliteDatabase saboteur;
+                    if (!saboteur.open(pathToString(brokenDbPath)))
+                    {
+                        report.abort("Could not reopen the scratch database to break its Tracks table.");
+                        writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                        return 1;
+                    }
+                    const bool broken = saboteur.execute("DROP TABLE Tracks;") &&
+                        saboteur.execute("CREATE VIEW Tracks (folder_id, track_id) AS "
+                                         "SELECT 1, 1 UNION ALL SELECT abs(-9223372036854775807 - 1), 2;");
+                    report.check(broken, "the scratch Tracks was replaced by one that fails halfway through a read");
+                    if (!broken)
+                    {
+                        writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                        return 1;
+                    }
+                }
+
+                report.check(!scratchFolders.removeEmptyFolders(), "removeEmptyFolders refuses when the read of the folders in use fails");
+                report.check(countFolderRows() == folderRowsBefore,
+                    std::format("it deleted no folder it could not prove was unused ({} rows before, {} after)",
+                        folderRowsBefore,
+                        countFolderRows()));
+
+                // And a Tracks that is not there at all. Worth its own case even though it lands in the
+                // same check: sqlite3_prepare_v2 re-prepares a statement when the schema has changed, so
+                // a table that has since been dropped is reported when the statement is stepped and not
+                // when it is prepared. Reading the missing table is a runtime failure, not a syntax one.
+                {
+                    SqliteDatabase saboteur;
+                    if (!saboteur.open(pathToString(brokenDbPath)) || !saboteur.execute("DROP VIEW Tracks;"))
+                    {
+                        report.abort("Could not remove the scratch Tracks view.");
+                        writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                        return 1;
+                    }
+                }
+
+                report.check(!scratchFolders.removeEmptyFolders(), "removeEmptyFolders refuses when the table it reads is gone");
+                report.check(countFolderRows() == folderRowsBefore,
+                    std::format("it deleted nothing then either ({} rows)", countFolderRows()));
+            }
+
             writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
             spdlog::info("[SelfTest] Folder cache test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
             return report.failures() == 0 ? 0 : 1;
