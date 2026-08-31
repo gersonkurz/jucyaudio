@@ -158,5 +158,26 @@ namespace jucyaudio
          */
         int runTimelineSelfTest(const std::filesystem::path &selfTestRoot);
 
+        /**
+         * @brief Headless test that the folder cache and the folder writer do not stop each other.
+         *
+         * SqliteFolderDatabase guards its four lookup maps with one mutex and reaches the database
+         * through another. Both are needed on two paths, and they used to be taken in opposite
+         * orders: buildCacheIfNeeded held the cache mutex and then acquired the database mutex
+         * through its statements, while findOrCreateFolderByPath held the database mutex and then
+         * wanted the cache mutex. Two threads, one on each path, could hold one each and wait
+         * forever - narrowest during a scan, which is when both run hardest.
+         *
+         * So this suite runs exactly those two paths against each other: a reader that invalidates
+         * the cache between reads, forcing builds, and a writer creating folders. A failure here is
+         * a hang rather than a wrong answer, so the wait has a deadline and the report says which
+         * one it was. It also checks the answers, because locking that is correct and bookkeeping
+         * that is not look the same from outside.
+         *
+         * @param selfTestRoot The root returned by prepareSelfTestEnvironment().
+         * @return 0 if every check passed, 1 otherwise.
+         */
+        int runFolderCacheSelfTest(const std::filesystem::path &selfTestRoot);
+
     } // namespace tests
 } // namespace jucyaudio

@@ -501,7 +501,11 @@ namespace jucyaudio
                     const auto backupResult = tests::runBackupSelfTest(selfTestRoot);
                     const auto migrationResult = tests::runMigrationSelfTest(selfTestRoot);
                     const auto timelineResult = tests::runTimelineSelfTest(selfTestRoot);
-                    result = (scanResult != 0 || recoveryResult != 0 || backupResult != 0 || migrationResult != 0 || timelineResult != 0) ? 1 : 0;
+                    const auto folderCacheResult = tests::runFolderCacheSelfTest(selfTestRoot);
+                    result = (scanResult != 0 || recoveryResult != 0 || backupResult != 0 || migrationResult != 0 || timelineResult != 0 ||
+                              folderCacheResult != 0)
+                        ? 1
+                        : 0;
                 }
                 else
                 {

@@ -19,7 +19,27 @@ namespace jucyaudio
 
         bool SqliteFolderDatabase::buildCacheIfNeeded() const
         {
-            std::lock_guard lock{m_cacheMutex};
+            // The common case first, and under the cache mutex alone: every accessor comes through
+            // here, so a valid cache must not wait for the database mutex. Navigation is meant to be
+            // answered from the cache without touching the connection, and a long statement elsewhere
+            // would otherwise stall the message thread walking the folder tree.
+            {
+                std::lock_guard cacheLock{m_cacheMutex};
+                if (m_isCacheValid)
+                    return true;
+            }
+
+            // Building is the other case, and it needs both, in this order. This function fills the
+            // cache from the database, so it holds the cache mutex across statements that each take the
+            // database mutex - and it used to take them in that order only, while
+            // findOrCreateFolderByPath took them the other way round. Taking the database mutex first
+            // here is what makes one order out of the two. It is recursive, so the caller that already
+            // holds it - findOrCreateFolderByPath - is unaffected.
+            std::lock_guard dbLock{m_db.getMutex()};
+            std::lock_guard cacheLock{m_cacheMutex};
+
+            // Rechecked, because the fast path above released the cache mutex: another thread may have
+            // built the whole cache while this one waited for the connection.
             if (m_isCacheValid)
                 return true;
 
@@ -372,9 +392,12 @@ namespace jucyaudio
             buildCacheIfNeeded();
 
             std::unordered_set<FolderId> allChildIds;
-            for (const auto &folderId : folderIdsToScan)
             {
-                getChildFoldersRecursive(allChildIds, folderId);
+                std::lock_guard cacheLock{m_cacheMutex};
+                for (const auto &folderId : folderIdsToScan)
+                {
+                    getChildFoldersRecursive(allChildIds, folderId);
+                }
             }
             return allChildIds;
         }
@@ -405,7 +428,17 @@ namespace jucyaudio
 
         void SqliteFolderDatabase::invalidateCache() const
         {
-            std::lock_guard lock(m_cacheMutex);
+            // The database mutex too, in the order this class uses everywhere, and not only for
+            // form: findOrCreateFolderByPath holds it from the cache build through the lookup to the
+            // insert, and an invalidation landing between the build and the lookup emptied the map it
+            // was about to read. The path then looked absent and a second row was inserted for it.
+            //
+            // Nothing stops that at the schema level - Folders has no unique index on the path - and
+            // the damage does not stay small: buildCacheIfNeeded refuses to finish a cache holding two
+            // rows for one path, so from the first duplicate onwards the cache can never be rebuilt,
+            // every lookup misses, and every folder touched after that gets another row.
+            std::lock_guard dbLock{m_db.getMutex()};
+            std::lock_guard cacheLock{m_cacheMutex};
             m_isCacheValid = false;
             m_folderInfoFromId.clear();
             m_idFromFolderPath.clear();
@@ -578,40 +611,71 @@ namespace jucyaudio
 
         bool SqliteFolderDatabase::removeEmptyFolders() const
         {
+            // The connection, for all of it. What is deleted below is decided by comparing a set read
+            // from Tracks against the folders the cache knows, and a folder created between those two
+            // reads is in the second and not the first - so it would be deleted moments after another
+            // thread was handed its id. The statements used to overlap enough to hide that; nothing
+            // about a deferred transaction provides it, because that mode does not own the connection.
+            //
+            // Database mutex first, then the cache mutex inside, as everywhere else in this class.
+            std::lock_guard dbLock{m_db.getMutex()};
+
             if (SqliteTransaction transaction{m_db})
             {
                 // first, we check all folders that have files in them
-                SqliteStatement selectStmt{m_db, "SELECT DISTINCT folder_id FROM Tracks"};
-                std::unordered_set<FolderId> foldersInUse;
-                while (selectStmt.getNextResult())
+                std::unordered_set<FolderId> foldersWithTracks;
                 {
-                    const auto folderId{selectStmt.getInt64(0)};
-                    if (folderId > 0)
+                    SqliteStatement selectStmt{m_db, "SELECT DISTINCT folder_id FROM Tracks"};
+                    while (selectStmt.getNextResult())
+                    {
+                        const auto folderId{selectStmt.getInt64(0)};
+                        if (folderId > 0)
+                        {
+                            foldersWithTracks.insert(folderId);
+                        }
+                    }
+                }
+
+                // The cache is read here and nowhere below: the parent chains and the list of
+                // candidates are taken under the cache mutex, and the deletions then run without it.
+                // Iterating the cache while deleting would mean holding this mutex across statements
+                // that take the database mutex, which is the lock order this class had to give up.
+                std::unordered_set<FolderId> foldersInUse;
+                std::vector<FolderId> knownFolderIds;
+                {
+                    std::lock_guard cacheLock{m_cacheMutex};
+                    for (const auto folderId : foldersWithTracks)
                     {
                         // if this folder is new, also add all its parents
                         insertParentsRecursive(folderId, foldersInUse);
+                    }
+
+                    knownFolderIds.reserve(m_folderInfoFromId.size());
+                    for (const auto &item : m_folderInfoFromId)
+                    {
+                        knownFolderIds.push_back(item.first);
                     }
                 }
 
                 // Now, we need all folders that are not in use anywhere - that are not in the above list. We should be able to safely delete those.
                 SqliteStatement deleteStmt{m_db, "DELETE FROM Folders WHERE folder_id=?"};
-                for (const auto &item : m_folderInfoFromId)
+                for (const auto folderId : knownFolderIds)
                 {
-                    if (!foldersInUse.contains(item.first))
+                    if (!foldersInUse.contains(folderId))
                     {
                         // This folder is not in use, we can delete it
-                        deleteStmt.addParam(item.first);
+                        deleteStmt.addParam(folderId);
                         if (!deleteStmt.execute())
                         {
-                            spdlog::error("removeEmptyFolders: Failed to delete folder with ID: {}", item.first);
+                            spdlog::error("removeEmptyFolders: Failed to delete folder with ID: {}", folderId);
                             return transaction.rollback();
                         }
-                        spdlog::debug("Removed empty folder with ID: {}", item.first);
+                        spdlog::debug("Removed empty folder with ID: {}", folderId);
                         deleteStmt.reset();
                     }
                     else
                     {
-                        spdlog::trace("Folder {} is still in use, skipping deletion.", item.first);
+                        spdlog::trace("Folder {} is still in use, skipping deletion.", folderId);
                     }
                 }
 
@@ -666,31 +730,38 @@ namespace jucyaudio
                 return -1; // Cannot process an empty path
             }
 
-            const auto item{m_idFromFolderPath.find(key)};
-            if (item != m_idFromFolderPath.end())
+            // Scoped, and not held past the end of the lookup: addFolder below takes this mutex
+            // itself, and the recursion into the parent path comes back through here. The database
+            // mutex above is what makes the whole find-or-create atomic; this one is what keeps the
+            // maps consistent for the readers, which hold nothing else.
             {
-                // Found existing folder - check if we need to update actual_path
-                FolderId existingId = item->second;
-                auto folderIt = m_folderInfoFromId.find(existingId);
-                if (folderIt != m_folderInfoFromId.end() && folderIt->second.actualPath.empty())
+                std::lock_guard cacheLock{m_cacheMutex};
+                const auto item{m_idFromFolderPath.find(key)};
+                if (item != m_idFromFolderPath.end())
                 {
-                    // Update the actual_path for this folder
-                    std::string actualPath = pathToString(path);
-                    spdlog::debug("Updating actual_path for folder {} to '{}'", existingId, actualPath);
-                    
-                    SqliteStatement stmt{m_db, "UPDATE Folders SET actual_path = ? WHERE folder_id = ?;"};
-                    if (stmt.isValid())
+                    // Found existing folder - check if we need to update actual_path
+                    FolderId existingId = item->second;
+                    auto folderIt = m_folderInfoFromId.find(existingId);
+                    if (folderIt != m_folderInfoFromId.end() && folderIt->second.actualPath.empty())
                     {
-                        stmt.addParam(actualPath);
-                        stmt.addParam(existingId);
-                        if (stmt.execute())
+                        // Update the actual_path for this folder
+                        std::string actualPath = pathToString(path);
+                        spdlog::debug("Updating actual_path for folder {} to '{}'", existingId, actualPath);
+
+                        SqliteStatement stmt{m_db, "UPDATE Folders SET actual_path = ? WHERE folder_id = ?;"};
+                        if (stmt.isValid())
                         {
-                            // Update the cache
-                            folderIt->second.actualPath = actualPath;
+                            stmt.addParam(actualPath);
+                            stmt.addParam(existingId);
+                            if (stmt.execute())
+                            {
+                                // Update the cache
+                                folderIt->second.actualPath = actualPath;
+                            }
                         }
                     }
+                    return existingId;
                 }
-                return item->second;
             }
 
             // --- RECURSION BASE CASE ---
@@ -763,9 +834,11 @@ namespace jucyaudio
                     {
                         // Add the root folder itself
                         offlineFolderIds.insert(rootFolderId);
-                        
-                        // Add all child folders recursively
-                        getChildFoldersRecursive(const_cast<std::unordered_set<FolderId>&>(offlineFolderIds), rootFolderId);
+
+                        // Add all child folders recursively. Under the cache mutex, and taken here
+                        // rather than around the loop: findOrCreateFolderByPath above takes it too.
+                        std::lock_guard cacheLock{m_cacheMutex};
+                        getChildFoldersRecursive(offlineFolderIds, rootFolderId);
                     }
                 }
             }

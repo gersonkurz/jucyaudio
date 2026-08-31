@@ -1,27 +1,53 @@
 # JucyAudio - Open Tasks
 
-Ordered by priority: **P1** (fix before tagging 2.0) → **P3** (whenever). P1 items are memory-safety
-or deadlock bugs reachable in today's code; P2 items are reachable correctness or user-visible
+Ordered by priority: **P1** (fix before tagging 2.0) → **P3** (whenever). Nothing is P1 right now:
+the memory-safety and deadlock items are done. P2 items are reachable correctness or user-visible
 defects that are not memory-unsafe; P3 items cannot happen today, are bounded to a logged
 stale-state effect, or need a design decision first.
 
 ---
 
-## P1: `SqliteFolderDatabase` lock-order inversion
+## P2: a failed read in `removeEmptyFolders` reads as an empty library
 
-**Symptom**: Two threads can deadlock. The cache accessors (`getFolderById`, `hasChildren`,
-`getParentSet`, `getChildFolders`, `getAllChildFolders`) call `buildCacheIfNeeded()`, which takes
-`m_cacheMutex` (`Database/Sqlite/SqliteFolderDatabase.cpp:22`) and then acquires the database mutex
-through `SqliteStatement`. `findOrCreateFolderByPath` (`:660`) takes the database mutex first and then
-wants `m_cacheMutex`.
+**Symptom**: `removeEmptyFolders` builds its set of folders that are in use by iterating
+`SELECT DISTINCT folder_id FROM Tracks` (`Database/Sqlite/SqliteFolderDatabase.cpp:628`) and never
+checks `selectStmt.hasError()` afterwards. A query that fails, or stops partway, is indistinguishable
+from one that found nothing - and every folder missing from that set is then deleted. `Folders` carries
+`ON DELETE CASCADE` on `parent_id`, and the `Tracks` rows go with the folders, so a failed read here
+deletes library content rather than declining to.
 
-**Why it has not bitten yet**: `buildCacheIfNeeded` only reaches for the database mutex when the cache
-is invalid. That happens during scans — which is exactly when `findOrCreateFolderByPath` runs hardest,
-so the window is narrow rather than absent.
+**Why it has not bitten**: the read is a plain scan of one column on a healthy connection. The
+successful path is exercised by the folder cache self test; the failure path is not reachable from a
+test without breaking the connection under it.
 
-**Fix approach**: one consistent order, database mutex before cache mutex, on both paths. Note while
-in there: `findOrCreateFolderByPath` also reads `m_idFromFolderPath` and `m_folderInfoFromId` and
-writes `actualPath` back into the cache while holding only the database mutex.
+**Fix approach**: `hasError()` after the loop, and refuse the whole operation if it is set - the
+transaction is already there to roll back. `SqliteMixSummary.cpp:75,111` is the pattern to follow.
+Pre-dates the lock-order work and was found while reviewing it.
+
+---
+
+## P2: nothing stops a folder path from being stored twice
+
+**Symptom**: `Folders` has no unique index on its path column - only
+`idx_folders_parent_name ON Folders(parent_id, name)`, which is not unique
+(`Database/Sqlite/SqliteTrackDatabase.cpp:183`). A second row for a path that already has one is
+therefore a legal insert, and the consequence does not stay small: `buildCacheIfNeeded` refuses to
+finish a cache that holds two rows for one path
+(`Database/Sqlite/SqliteFolderDatabase.cpp:141`, `return false`), so from the first duplicate onwards
+the cache can never be rebuilt, every lookup misses, and every folder touched after that gets another
+row of its own.
+
+**How it was found**: the folder cache self test produced exactly that cascade - one duplicate, then
+1505 failed cache builds in a single run - against an `invalidateCache()` that did not hold the
+database mutex. That hole is closed, so nothing reachable today inserts a duplicate. What remains is
+that the schema does not say it cannot happen, and the failure mode if it ever does is silent and
+permanent.
+
+**Fix approach**: a unique index on the path column, and a decision about what an insert that violates
+it should do - `findOrCreateFolderByPath` currently treats a failed insert as "could not create" and
+returns -1, which is right for a caller but says nothing about the row that already exists. Needs the
+three-place schema change (`initialSqlStatements`, `latestSchemaVersion`, `runMigrations`) and a
+migration that copes with a database that already holds duplicates.
 
 ---
 
@@ -82,6 +108,26 @@ on the same connection can write inside someone else's deferred transaction.
 **Fix approach**: not simply switching the default. Immediate mode serialises the whole connection for
 the transaction's duration, which is correct for a short capture and would be a throughput problem for
 a scan. Each deferred call site needs deciding on its own.
+
+---
+
+## P3: a folder read can miss while the cache is being rebuilt
+
+**Symptom**: the cache accessors (`getFolderById`, `hasChildren`, `getParentSet`, `getChildFolders`,
+`getAllChildFolders`) call `buildCacheIfNeeded()`, which returns having released both mutexes, and then
+take `m_cacheMutex` for the read itself (`Database/Sqlite/SqliteFolderDatabase.cpp:449` onwards). An
+`invalidateCache()` landing in that gap empties the maps, and the read reports the folder as absent -
+a folder that momentarily has no children, or no name, in the middle of navigation.
+
+**Why it is not worse**: nothing is written from those paths, so the miss is transient and the next
+access rebuilds the cache. The lock order is now consistent, so the same gap can no longer produce a
+duplicate folder row - that was the same window and it is closed.
+
+**Fix approach**: hold both mutexes across the build and the read, in the established order. That makes
+every accessor wait for the database mutex, which is what the fast path in `buildCacheIfNeeded`
+deliberately avoids, so the useful shape is probably to keep the fast path and take both only on the
+build-and-read path. Measured on the folder cache self test, with a thread doing nothing but
+invalidating: 0 of 300 reads hit it.
 
 ---
 

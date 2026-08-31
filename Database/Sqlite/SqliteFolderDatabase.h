@@ -54,6 +54,9 @@ namespace jucyaudio
 
         private:
             bool addFolder(FolderInfo &folder) override;
+
+            /// @brief Adds a folder and every parent of it to @p foldersInUse.
+            ///        Call with m_cacheMutex held, for the same reason as getChildFoldersRecursive.
             void insertParentsRecursive(FolderId folderId, std::unordered_set<FolderId> &foldersInUse) const;
 
             void registerAsParent(FolderId parentId, FolderId folderId) const
@@ -75,6 +78,8 @@ namespace jucyaudio
             /// @brief Helper function that updates root_path values in the database, once.
             bool updateRootPathValuesInDatabase(const std::unordered_map<FolderId, std::string> &pathUpdates) const;
 
+            /// @brief Walks the child index. Call with m_cacheMutex held: it reads the cache and
+            ///        recurses, so taking the mutex inside would need it to be recursive for no reason.
             void getChildFoldersRecursive(std::unordered_set<FolderId> &allChildIds, FolderId folderId) const;
 
             database::SqliteDatabase &m_db;
@@ -86,6 +91,19 @@ namespace jucyaudio
             mutable std::unordered_map<FolderId, std::vector<FolderId>> m_parentsFromChildren; 
 
             mutable bool m_isCacheValid{false};
+
+            /// @brief Guards the four maps above and m_isCacheValid.
+            ///
+            /// Lock order, where both are needed: the database mutex first, then this one. It used to
+            /// be taken in both orders - buildCacheIfNeeded held this one and then reached for the
+            /// database mutex through SqliteStatement, while findOrCreateFolderByPath held the database
+            /// mutex and then wanted this one - so two threads could hold one each and wait for the
+            /// other. That window was narrowest during a scan, which is when both paths run hardest.
+            ///
+            /// Corollary, and the easier rule to check when adding code here: do not run a statement
+            /// while holding this mutex unless the database mutex is already held. Everything except
+            /// buildCacheIfNeeded and the lookup in findOrCreateFolderByPath now reads the maps under
+            /// this mutex alone, with no SQL inside.
             mutable std::mutex m_cacheMutex;
         };
     } // namespace database

@@ -39,6 +39,8 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
@@ -46,6 +48,7 @@
 #include <format>
 #include <map>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace jucyaudio
@@ -3027,6 +3030,234 @@ namespace jucyaudio
 
             writeResultsFile(resultsPath, "jucyaudio timeline self test", report);
             spdlog::info("[SelfTest] Timeline test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
+            return report.failures() == 0 ? 0 : 1;
+        }
+
+        int runFolderCacheSelfTest(const std::filesystem::path &selfTestRoot)
+        {
+            Report report;
+            const auto resultsPath = selfTestRoot / "foldercache-results.txt";
+            const auto workRoot = selfTestRoot / "foldercache-library";
+
+            spdlog::info("[SelfTest] Starting folder cache self test. Root: {}", pathToString(selfTestRoot));
+
+            auto &folders = theTrackLibrary.getTrackDatabase().getFolderDatabase();
+
+            // Rows, not directories: findOrCreateFolderByPath writes the Folders table and never looks
+            // at the disk. Enough of them that a cache build takes long enough to overlap with the
+            // other thread - the window this test exists to enter is open only while one is running.
+            constexpr int kSeedFolders = 400;
+            for (int i = 0; i < kSeedFolders; ++i)
+            {
+                const auto path = workRoot / std::format("artist{:02}", i % 20) / std::format("album{:03}", i);
+                if (folders.findOrCreateFolderByPath(path) <= 0)
+                {
+                    report.abort(std::format("Could not create the seed folder {}", pathToString(path)));
+                    writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                    return 1;
+                }
+            }
+            const auto rootFolderId = folders.findOrCreateFolderByPath(workRoot);
+            if (rootFolderId <= 0)
+            {
+                report.abort("Could not create the folder the reader watches.");
+                writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                return 1;
+            }
+            report.note(std::format("seeded {} folders under {} (folder id {})", kSeedFolders, pathToString(workRoot), rootFolderId));
+
+            // The two paths that used to take the two mutexes in opposite orders. A reader forces cache
+            // builds by invalidating between reads - buildCacheIfNeeded then holds the cache mutex and
+            // reaches for the database mutex through its statements - while a writer runs
+            // findOrCreateFolderByPath, which holds the database mutex and then wants the cache mutex.
+            // Run against the inverted order these two stop each other dead; the test then fails by
+            // deadline rather than by assertion, which is why there is one.
+            constexpr int kIterations = 300;
+            std::atomic<int> readsDone{0};
+            std::atomic<int> writesDone{0};
+            std::atomic<bool> readerFinished{false};
+            std::atomic<bool> writerFinished{false};
+            std::atomic<bool> invalidatorFinished{false};
+            std::atomic<bool> stopInvalidating{false};
+            std::atomic<int> readsThatLostTheRoot{0};
+            std::atomic<int> creationsThatFailed{0};
+            std::atomic<int> pathsThatChangedId{0};
+
+            std::thread reader{[&]()
+                {
+                    for (int i = 0; i < kIterations; ++i)
+                    {
+                        folders.invalidateCache();
+                        const auto seen = folders.getAllChildFolders({rootFolderId});
+                        std::ignore = seen;
+                        if (!folders.getFolderById(rootFolderId).has_value())
+                        {
+                            ++readsThatLostTheRoot;
+                        }
+                        ++readsDone;
+                    }
+                    readerFinished = true;
+                }};
+
+            // A third thread doing nothing but invalidating. The window that produced duplicate
+            // folder rows is between the cache build inside findOrCreateFolderByPath and the lookup
+            // that follows it, and it is a few microseconds wide: the reader above invalidates once
+            // per pass and hit it about half the time. This one spins, which is not realistic use but
+            // is what makes the check reliable rather than lucky.
+            std::thread invalidator{[&]()
+                {
+                    while (!stopInvalidating)
+                    {
+                        folders.invalidateCache();
+                    }
+                    invalidatorFinished = true;
+                }};
+
+            std::thread writer{[&]()
+                {
+                    for (int i = 0; i < kIterations; ++i)
+                    {
+                        const auto path = workRoot / std::format("artist{:02}", i % 20) / std::format("live{:03}", i);
+                        const auto id = folders.findOrCreateFolderByPath(path);
+                        if (id <= 0)
+                        {
+                            ++creationsThatFailed;
+                        }
+                        else if (folders.findOrCreateFolderByPath(path) != id)
+                        {
+                            // The same path twice must be the same row, whatever the reader is doing to
+                            // the cache in between.
+                            ++pathsThatChangedId;
+                        }
+                        ++writesDone;
+                    }
+                    writerFinished = true;
+                }};
+
+            // Generous: this is a deadline for a hang, not a performance assertion. The work itself is
+            // hundreds of small statements and takes a fraction of it.
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{60};
+            while ((!readerFinished || !writerFinished) && std::chrono::steady_clock::now() < deadline)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds{20});
+            }
+
+            const bool finished = readerFinished && writerFinished;
+            report.check(finished,
+                std::format("the cache reader and the folder writer both finished ({}/{} reads, {}/{} writes)",
+                    readsDone.load(),
+                    kIterations,
+                    writesDone.load(),
+                    kIterations));
+
+            // Told to stop either way, though on the failure path below nothing waits for it.
+            stopInvalidating = true;
+
+            if (!finished)
+            {
+                report.abort("Timed out. Two threads holding one mutex each and waiting for the other is what this looks like.");
+                writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+
+                // Out, without unwinding. There is no safe way back from here: a thread stuck on a mutex
+                // never returns, so it can be neither joined nor left behind - joining hangs the run,
+                // and returning destroys the state these threads hold references to and then tears down
+                // the folder database they are standing in. The report is written and the log flushed
+                // above, which is everything this run had to say.
+                spdlog::error("[SelfTest] Folder cache test timed out; leaving the process without unwinding.");
+                spdlog::default_logger()->flush();
+                std::_Exit(1);
+            }
+
+            reader.join();
+            writer.join();
+            invalidator.join();
+            report.check(invalidatorFinished, "the invalidator came back too");
+
+            report.check(creationsThatFailed == 0,
+                std::format("every folder the writer asked for was created ({} failed)", creationsThatFailed.load()));
+            report.check(pathsThatChangedId == 0,
+                std::format("the same path always came back as the same row ({} did not)", pathsThatChangedId.load()));
+            // A count, not a check. An accessor builds the cache, releases both mutexes and then takes
+            // the cache mutex to read, so the invalidator can empty it in between and the read misses -
+            // the known window recorded in tasks.md, and not something this change set out to close.
+            // Asserting zero here would fail a correct implementation on an unlucky schedule.
+            report.note(std::format("{} of {} reads found the cache emptied under them, which is the known accessor window",
+                readsThatLostTheRoot.load(),
+                kIterations));
+
+            // The cache has to agree with the database afterwards, or the locking is right and the
+            // bookkeeping is not.
+            folders.invalidateCache();
+            const auto rebuiltCount = folders.getAllChildFolders({rootFolderId}).size();
+            report.check(rebuiltCount > static_cast<size_t>(kSeedFolders),
+                std::format("a rebuilt cache holds the seeded folders and the ones written during the run (found {})", rebuiltCount));
+
+
+            // --- What removeEmptyFolders deletes, and what it must not ---
+            //
+            // A destructive path, and the one whose phases were rearranged to get the lock order right,
+            // so it gets exercised rather than reasoned about. It deletes every folder with no tracks
+            // under it, which is why it runs at the end: the folders seeded above are all empty.
+            const auto usedRoot = selfTestRoot / "foldercache-used";
+            const auto usedAlbum = usedRoot / "deep" / "album";
+            std::error_code removalEc;
+            std::filesystem::create_directories(usedAlbum, removalEc);
+            if (removalEc)
+            {
+                report.abort(std::format("Could not create {}: {}", pathToString(usedAlbum), removalEc.message()));
+                writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                return 1;
+            }
+            if (!writeSilentWav(usedAlbum / "keep.wav", static_cast<uint32_t>(44100 * kFixtureDurationMs / 1000)))
+            {
+                report.abort("Could not write the fixture the surviving folder is built on.");
+                writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                return 1;
+            }
+
+            auto &trackDb = theTrackLibrary.getTrackDatabase();
+            if (!trackDb.getLibraryRootManager().addRoot(pathToString(usedRoot)).has_value())
+            {
+                report.abort("Could not add the used-folder library as a root.");
+                writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                return 1;
+            }
+            const auto usedRootId = folders.findOrCreateFolderByPath(usedRoot);
+            if (usedRootId <= 0 || !runScan({usedRootId}, false, report, "used-folder discovery"))
+            {
+                report.abort("Could not discover the used-folder library.");
+                writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                return 1;
+            }
+
+            // The three that must survive - the folder holding the track and both its ancestors - and
+            // one sibling with nothing in it, which must not.
+            const auto albumId = folders.findOrCreateFolderByPath(usedAlbum);
+            const auto deepId = folders.findOrCreateFolderByPath(usedRoot / "deep");
+            const auto emptySiblingId = folders.findOrCreateFolderByPath(usedRoot / "deep" / "nothing-here");
+            if (albumId <= 0 || deepId <= 0 || emptySiblingId <= 0)
+            {
+                report.abort("Could not resolve the folders the removal check is about.");
+                writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                return 1;
+            }
+
+            report.check(folders.removeEmptyFolders(), "removeEmptyFolders reports success");
+
+            // By id, not by path: findOrCreateFolderByPath would put a deleted folder straight back.
+            report.check(folders.getFolderById(albumId).has_value(),
+                std::format("the folder holding a track survived (id {})", albumId));
+            report.check(folders.getFolderById(deepId).has_value(),
+                std::format("its ancestor survived (id {})", deepId));
+            report.check(folders.getFolderById(usedRootId).has_value(),
+                std::format("the library root above it survived (id {})", usedRootId));
+            report.check(!folders.getFolderById(emptySiblingId).has_value(),
+                std::format("the empty sibling is gone (id {})", emptySiblingId));
+            report.check(!folders.getFolderById(rootFolderId).has_value(),
+                std::format("so are the empty folders this suite seeded (id {})", rootFolderId));
+
+            writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+            spdlog::info("[SelfTest] Folder cache test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
             return report.failures() == 0 ? 0 : 1;
         }
 
