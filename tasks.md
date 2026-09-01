@@ -1,13 +1,14 @@
 # JucyAudio - Open Tasks
 
-Ordered by priority: **P1** (fix before tagging 2.0) → **P3** (whenever). Nothing is P1 right now:
-the memory-safety and deadlock items are done. P2 items are reachable correctness or user-visible
+Ordered by priority: **P1** (fix before tagging 2.0) → **P3** (whenever). The memory-safety and
+deadlock items are done; what is P1 now is a feature-level one - three subsystems that do not work at
+all in a library created with the current code. P2 items are reachable correctness or user-visible
 defects that are not memory-unsafe; P3 items cannot happen today, are bounded to a logged
 stale-state effect, or need a design decision first.
 
 ---
 
-## P2: a database created from scratch is missing six tables the migrations create
+## P1: a database created from scratch is missing six tables the migrations create
 
 **Symptom**: `initialSqlStatements` (`Database/Sqlite/SqliteTrackDatabase.cpp:171` onwards) does not
 create `TrackMarkers`, `TracksSearchData`, `TracksSearchFTS`, `MixMarkers`, `EQPresets` or
@@ -32,6 +33,10 @@ divergence itself is untouched.
 **Reviewer finding, verbatim** (codex, review of the v31 folder path index, 2026-09-01):
 
 > **[task]** Expand the new schema-divergence task: [initialSqlStatements](C:/Projects/jucyaudio/Database/Sqlite/SqliteTrackDatabase.cpp:206) also omits `MixMarkers`, `EQPresets`, and `ReverbPresets`, not only `TrackMarkers`, `TracksSearchData`, and `TracksSearchFTS`. These additional tables, their indexes, and EQ/reverb factory rows exist only in the v16-v18 migration rungs at [SqliteTrackDatabase.cpp:2024](C:/Projects/jucyaudio/Database/Sqlite/SqliteTrackDatabase.cpp:2024), so fresh latest-version databases never create them and the corresponding managers fail when used. This predates v31 and is deferrable because repairing complete fresh/upgraded schema convergence requires a separate migration.
+
+**Why P1**: it is not a latent defect waiting on an unlucky sequence - it is the state every new
+2.0 install starts in, and three shipped features fail outright in it. Nothing in the ladder or the
+schema check catches it, and a user who hits it has no workaround short of a rebuilt database.
 
 **Fix approach**: the three-place rule from CLAUDE.md, in the direction it is usually needed the
 other way round - the six tables, their indexes, the v25 FTS sync triggers and the EQ/reverb factory
@@ -128,6 +133,34 @@ returns false on other kinds of inconsistency, so the shape exists. The album wr
 a wrong track count is corrected by the next rebuild, a wrong Albums row is not. Worth doing together
 with the accessor window below, since both are about a cache that reports a confident answer it does
 not have.
+
+---
+
+## P3: nothing can tell a folder cache that built from one that failed
+
+**Symptom**: `buildCacheIfNeeded` returns `bool` and has five paths that return `false` - a duplicate
+path, a missing parent, a missing parent chain, a visited-count mismatch, and a failed album write.
+No caller looks at it. `initialize()` discards it (`Database/Sqlite/SqliteFolderDatabase.h`), and every
+accessor - `getFolderById`, `hasChildren`, `getParentSet`, `getChildFolders`, `getAllChildFolders` -
+calls it and then reads the maps regardless of the answer. `m_folderInfoFromId` and
+`m_childrenFromParents` are filled in before all five of those paths, so a folder comes back from a
+build that failed exactly as it does from one that worked. `removeEmptyFolders` calls it and returns
+`true` either way.
+
+**What it costs**: the failure is real - `m_isCacheValid` stays false, so every later access rebuilds
+and fails again, and the log fills up - but nothing in the process, and nothing a test can reach,
+reports it. `connect()` succeeds against a database whose cache cannot be built at all.
+
+**How it was found**: writing a self test check for the v31 migration. The check asserted "the folder
+cache builds against the migrated database" by asking `getFolderById` for a folder - and a probe that
+deliberately broke the album write still passed it, because the map had already been populated. The
+check was renamed to say what it really tests.
+
+**Fix approach**: the cheap half is for `initialize()` to look at the result and log a distinct line
+when a cache build fails, so at least the process says so. The useful half is for the accessors to
+answer differently - a `std::optional` that is empty because the cache is broken, rather than because
+the folder is not there - which is the same shape as the statusless-read entry above and probably
+wants deciding together with it.
 
 ---
 

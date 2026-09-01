@@ -2812,6 +2812,13 @@ namespace jucyaudio
                         seed.execute("UPDATE Tracks SET album_id = 202 WHERE track_id = 110;") &&
                         seed.execute("UPDATE Tracks SET album_id = 204 WHERE track_id = 107;") &&
                         seed.execute("UPDATE Tracks SET album_id = 205 WHERE track_id = 106;") &&
+                        // Every track that ends up in folder 10, describing album 200 - and every one
+                        // of them, because the album pass gives up on a folder the moment it reads a
+                        // row with no artist or no album title, and the lookup it is here to exercise
+                        // sits behind that. The album named is deliberately not the one a lookup
+                        // keeping a single album per folder would have kept: 204 is read last.
+                        seed.execute("UPDATE Tracks SET artist_name = 'Keeper Artist', album_title = 'Shared' "
+                                     "WHERE track_id IN (100, 101, 102, 106, 107, 110);") &&
                         seed.execute("INSERT INTO Mixes (mix_id, name) VALUES (7, 'Folder Seed Mix');") &&
                         seed.execute("INSERT INTO MixTracks (mix_id, track_id, order_in_mix, mix_data) VALUES "
                                      "(7, 101, 0, '{}'), (7, 102, 1, '{}');") &&
@@ -2840,6 +2847,18 @@ namespace jucyaudio
                     SqliteTrackDatabase migrated;
                     const auto connected = migrated.connect(folderDbPath);
                     report.check(connected.isOk(), std::format("the v30 database migrates on open (said: '{}')", connected.errorMessage));
+
+                    // Reading a folder back through the cache, which is what makes the album pass run
+                    // over folder 10 - three albums, every track in it describing one of them, which is
+                    // the layout that used to abort here in Debug.
+                    //
+                    // Deliberately not called a check that the cache *built*: no accessor can say. Each
+                    // one calls buildCacheIfNeeded and then reads m_folderInfoFromId whatever it
+                    // returned, and that map is filled before every path that returns false - so a
+                    // folder comes back from a build that failed exactly as it does from one that
+                    // worked. Recorded in tasks.md.
+                    report.check(migrated.getFolderDatabase().getFolderById(10).has_value(),
+                        "the migrated folder rows read back through the cache");
                 }
 
                 SqliteDatabase check;
@@ -2942,6 +2961,8 @@ namespace jucyaudio
                 report.check(scalar("SELECT album_id FROM Tracks WHERE track_id = 110") == "202", "and the track that pointed at it still does");
                 report.check(scalar("SELECT COUNT(*) FROM Albums WHERE folder_id = 10") == "3",
                     "one folder holds three albums of different titles afterwards, which is a layout the schema allows");
+                report.check(scalar("SELECT COUNT(*) FROM Albums") == "3",
+                    "and the album pass added none of its own for a folder whose tracks describe one it already has");
 
                 // And the index actually refuses, rather than merely existing.
                 {
