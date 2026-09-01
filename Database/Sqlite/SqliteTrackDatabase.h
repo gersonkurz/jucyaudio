@@ -181,6 +181,17 @@ namespace jucyaudio
             /// @brief Fills in the root_path of every Folders row that never had one, the way
             ///        buildCacheIfNeeded does. Part of the v31 rung; call it inside that transaction.
             DbResult reconstructMissingFolderPaths();
+
+            /// @brief Drops the v6 PRIMARY KEY(mix_id, track_id) from MixTracks, preserving its rows.
+            ///        A no-op unless the old shape is actually there. Part of the v32 rung; call it
+            ///        inside that transaction, and before the MixTracks indexes are recreated.
+            DbResult rebuildMixTracksWithoutPrimaryKey();
+
+            /// @brief Writes the factory EQ / reverb presets, skipping any already there by name.
+            ///        Called from the new-database path, from the v17 / v18 rungs that first added
+            ///        them, and from the v32 repair - one definition of what the factory rows are.
+            DbResult seedDefaultEQPresets();
+            DbResult seedDefaultReverbPresets();
             DbResult seedDefaultGenres(); // INSERT OR IGNORE the default genre vocabulary
         };
 

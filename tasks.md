@@ -1,50 +1,10 @@
 # JucyAudio - Open Tasks
 
-Ordered by priority: **P1** (fix before tagging 2.0) → **P3** (whenever). The memory-safety and
-deadlock items are done; what is P1 now is a feature-level one - three subsystems that do not work at
-all in a library created with the current code. P2 items are reachable correctness or user-visible
-defects that are not memory-unsafe; P3 items cannot happen today, are bounded to a logged
-stale-state effect, or need a design decision first.
-
----
-
-## P1: a database created from scratch is missing six tables the migrations create
-
-**Symptom**: `initialSqlStatements` (`Database/Sqlite/SqliteTrackDatabase.cpp:171` onwards) does not
-create `TrackMarkers`, `TracksSearchData`, `TracksSearchFTS`, `MixMarkers`, `EQPresets` or
-`ReverbPresets`, nor the EQ/reverb factory rows. Those exist only in the v4, v12, v16, v17 and v18
-migration rungs, which a brand-new database never runs - `createTablesIfNeeded` stamps a new database
-at the latest version and skips the ladder entirely. Confirmed against a database the self test
-creates from scratch: `sqlite_master` holds sixteen tables and none of those six.
-
-**What it costs**: full-text search, track markers, mix markers and the EQ/reverb presets do not work
-in a library created with the current code, and fail rather than degrade. Every search path in
-`Database/Sqlite/SqliteStatementConstruction.cpp` (`:267`, `:353`, `:414`, `:474`) joins
-`TracksSearchFTS`; every statement in `Database/Sqlite/SqliteMarkerManager.cpp` names `TrackMarkers`;
-`SqliteMixMarkerManager`, `SqliteEQPresetManager` and `SqliteReverbPresetManager` are in the same
-position. A library that was upgraded from an older version has all six and is unaffected, which is
-why this is not more visible.
-
-**How it was found**: the v31 folder merge reuses the v24 track de-duplication SQL, which remaps
-`TrackMarkers` and rebuilds the FTS index. It failed with `no such table: TrackMarkers` against a
-fresh-schema fixture. The v31 rung now skips the steps whose table is absent, so it copes; the
-divergence itself is untouched.
-
-**Reviewer finding, verbatim** (codex, review of the v31 folder path index, 2026-09-01):
-
-> **[task]** Expand the new schema-divergence task: [initialSqlStatements](C:/Projects/jucyaudio/Database/Sqlite/SqliteTrackDatabase.cpp:206) also omits `MixMarkers`, `EQPresets`, and `ReverbPresets`, not only `TrackMarkers`, `TracksSearchData`, and `TracksSearchFTS`. These additional tables, their indexes, and EQ/reverb factory rows exist only in the v16-v18 migration rungs at [SqliteTrackDatabase.cpp:2024](C:/Projects/jucyaudio/Database/Sqlite/SqliteTrackDatabase.cpp:2024), so fresh latest-version databases never create them and the corresponding managers fail when used. This predates v31 and is deferrable because repairing complete fresh/upgraded schema convergence requires a separate migration.
-
-**Why P1**: it is not a latent defect waiting on an unlucky sequence - it is the state every new
-2.0 install starts in, and three shipped features fail outright in it. Nothing in the ladder or the
-schema check catches it, and a user who hits it has no workaround short of a rebuilt database.
-
-**Fix approach**: the three-place rule from CLAUDE.md, in the direction it is usually needed the
-other way round - the six tables, their indexes, the v25 FTS sync triggers and the EQ/reverb factory
-rows belong in `initialSqlStatements`, and a migration rung has to create them for the databases
-already created without them (`CREATE TABLE IF NOT EXISTS` plus a one-off FTS `rebuild`). Walk the
-whole ladder while doing it, since nothing enforces that a new database and a fully migrated one end
-up with the same schema - a check that compares the two would be the thing that stops this
-recurring.
+Ordered by priority: **P1** (fix before tagging 2.0) → **P3** (whenever). Nothing is P1 right now:
+the memory-safety and deadlock items are done, and so is the schema divergence that left every new
+library without search, markers and the EQ/reverb presets. P2 items are reachable correctness or
+user-visible defects that are not memory-unsafe; P3 items cannot happen today, are bounded to a
+logged stale-state effect, or need a design decision first.
 
 ---
 
@@ -105,6 +65,29 @@ on the same connection can write inside someone else's deferred transaction.
 **Fix approach**: not simply switching the default. Immediate mode serialises the whole connection for
 the transaction's duration, which is correct for a short capture and would be a throughput problem for
 a scan. Each deferred call site needs deciding on its own.
+
+---
+
+## P2: nothing compares a new database against a fully migrated one
+
+**Symptom**: the migration self test checks that the v32 rung leaves an already-complete database
+untouched, and that is all it can check. Both databases it builds start from the current schema, so
+sending one back through the ladder only re-runs rungs that are idempotent. v32 is - it is all
+`IF NOT EXISTS` - but an ordinary `ALTER TABLE ADD COLUMN` rung is not, and would fail with a
+duplicate column against a database that already has it. So the check cannot cover the next rung
+either, unless that rung happens to be idempotent too.
+
+**What it costs**: structural differences between v4 and v31 are invisible to it, and two real ones
+were found by reading rather than by testing - the six tables that existed only in the ladder, and
+the v6 `PRIMARY KEY(mix_id, track_id)` on `MixTracks` that the fresh schema never had. Both are
+repaired by v32, but nothing would have caught either, and nothing would catch a third.
+
+**Fix approach**: a frozen old-schema fixture - a database file, or the SQL to build one, shaped the
+way some early version really left it - run all the way up the ladder and compared object by object
+against a freshly created one. The comparison already exists and works; what is missing is a fixture
+old enough to be worth comparing. The awkward part is choosing the version: too old and the fixture
+is a large hand-written artifact nobody can verify, too new and it proves little. v12 is probably the
+useful floor, since that is where the search tables arrive.
 
 ---
 

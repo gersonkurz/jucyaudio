@@ -167,11 +167,26 @@ Nodes implement a command pattern where the node itself decides behavior for UI 
 
 All of it lives in `Database/Sqlite/SqliteTrackDatabase.cpp`:
 
-- `initialSqlStatements[]` (top of file) - the full schema used for a **brand-new** database.
+- `initialSqlStatements[]` (top of file) - the schema a **brand-new** database is built from.
+- `convergenceSqlStatements[]` (next to it) - objects that were once created only by a migration
+  rung. Run from **both** the new-database path and the v32 rung, from one definition, so a fresh
+  database and a repaired one hold byte-identical schema text. A new database needs both arrays.
 - `latestSchemaVersion` - a literal inside `createTablesIfNeeded()`; the version stamped into `SchemaInfo`.
 - `runMigrations()` - the `if (currentVersion < N)` ladder applied to **existing** databases.
 
-A schema change must touch all three, or new and upgraded databases diverge silently.
+A schema change must touch the fresh schema, the version and the ladder, or new and upgraded
+databases diverge silently. They already did, for years: six tables, two indexes and eight triggers
+existed only in the ladder, so search, both marker tables and the EQ/reverb presets were missing from
+every library created with 2.0 code - and the v6 rung's `PRIMARY KEY(mix_id, track_id)` on
+`MixTracks`, which the fresh schema never had, stopped upgraded libraries from saving a mix that
+holds the same track twice. Both are repaired by v32.
+
+Adding to `convergenceSqlStatements` is for that class of object only. Anything genuinely new belongs
+in `initialSqlStatements` plus its own rung, as before.
+
+The migration self test checks that the v32 rung leaves an already-complete database untouched. It is
+**not** a whole-ladder convergence check and cannot see structural differences between v4 and v31 -
+that needs a frozen old-schema fixture, which is an open task.
 
 ### Precompiled Header
 

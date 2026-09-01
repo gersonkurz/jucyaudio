@@ -2518,6 +2518,12 @@ namespace jucyaudio
                 }
             }
 
+            // What a brand-new database is stamped at, read rather than written down: this suite asserts
+            // that an aged database climbs all the way back, and hard-coding the number means editing a
+            // test every time a rung is added, which is how a check ends up being edited to agree with
+            // whatever happened.
+            std::string latestVersion;
+
             {
                 SqliteDatabase seed;
                 if (!seed.open(pathToString(dbPath)))
@@ -2526,6 +2532,15 @@ namespace jucyaudio
                     writeResultsFile(resultsPath, "jucyaudio migration self test", report);
                     return 1;
                 }
+
+                {
+                    SqliteStatement stmt{seed, "SELECT value FROM SchemaInfo WHERE key = 'schema_version';"};
+                    if (stmt.isValid() && stmt.getNextResult())
+                    {
+                        latestVersion = stmt.getText(0);
+                    }
+                }
+                report.check(!latestVersion.empty(), std::format("a new database says what version it is stamped at (said: '{}')", latestVersion));
 
                 // Only MixRecovery goes back: it is the only table the v30 rung touches. Dropping it
                 // takes its indexes with it, which the migration neither reads nor recreates.
@@ -2621,7 +2636,8 @@ namespace jucyaudio
                 SqliteStatement stmt{check, "SELECT value FROM SchemaInfo WHERE key = 'schema_version';"};
                 // The latest version, not 30: opening a v29 database runs every rung above it, and this
                 // fixture is only shaped for the v30 one. The checks below are what say v30 did its job.
-                report.check(stmt.getNextResult() && stmt.getText(0) == "31", "the schema is stamped at the latest version");
+                report.check(stmt.getNextResult() && stmt.getText(0) == latestVersion,
+                    std::format("the schema is stamped at the latest version ({})", latestVersion));
             }
 
             // Read back whole rows, compared as text with NULL spelled out.
@@ -2822,18 +2838,24 @@ namespace jucyaudio
                         seed.execute("INSERT INTO Mixes (mix_id, name) VALUES (7, 'Folder Seed Mix');") &&
                         seed.execute("INSERT INTO MixTracks (mix_id, track_id, order_in_mix, mix_data) VALUES "
                                      "(7, 101, 0, '{}'), (7, 102, 1, '{}');") &&
-                        // TrackMarkers by hand, because initialSqlStatements does not create it - only
-                        // the v4 rung does, and a database created from scratch never runs the ladder.
-                        // That divergence is its own entry in tasks.md; here it means the fixture has to
-                        // put the table back to cover the step that remaps markers. The FTS index is
-                        // deliberately left absent, so this one fixture exercises both sides of the
-                        // "skip a step whose table is not there" check in the v31 rung.
-                        seed.execute("CREATE TABLE TrackMarkers (marker_id INTEGER PRIMARY KEY AUTOINCREMENT, track_id INTEGER NOT NULL, "
-                                     "position_ms INTEGER NOT NULL, comment TEXT NOT NULL, created_at INTEGER NOT NULL, "
-                                     "updated_at INTEGER NOT NULL, color TEXT, emoji TEXT, "
-                                     "FOREIGN KEY (track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE);") &&
+                        // A marker on the row that gets collapsed, to cover the step that remaps them.
+                        // TrackMarkers is part of the schema a new database is built from since v32, so
+                        // the fixture no longer has to put the table back by hand.
                         seed.execute("INSERT INTO TrackMarkers (marker_id, track_id, position_ms, comment, created_at, updated_at) VALUES "
                                      "(1, 101, 5000, 'on the collapsed row', 1, 1);") &&
+                        // The search tables go, which is what a v30 database created from scratch really
+                        // looked like - and keeps both sides of the "skip a step whose table is not
+                        // there" check in the v31 rung covered, now that TrackMarkers is present.
+                        seed.execute("DROP TRIGGER IF EXISTS tracksdata_fts_ai;") &&
+                        seed.execute("DROP TRIGGER IF EXISTS tracksdata_fts_ad;") &&
+                        seed.execute("DROP TRIGGER IF EXISTS tracksdata_fts_au;") &&
+                        seed.execute("DROP TRIGGER IF EXISTS tracks_search_insert;") &&
+                        seed.execute("DROP TRIGGER IF EXISTS tracks_search_update;") &&
+                        seed.execute("DROP TRIGGER IF EXISTS tracks_search_delete;") &&
+                        seed.execute("DROP TRIGGER IF EXISTS tracktags_search_insert;") &&
+                        seed.execute("DROP TRIGGER IF EXISTS tracktags_search_delete;") &&
+                        seed.execute("DROP TABLE IF EXISTS TracksSearchFTS;") &&
+                        seed.execute("DROP TABLE IF EXISTS TracksSearchData;") &&
                         seed.execute("UPDATE SchemaInfo SET value = '30' WHERE key = 'schema_version';");
                     report.check(aged, "a v30-shaped database holding duplicate folder rows could be seeded");
                     if (!aged)
@@ -2881,7 +2903,8 @@ namespace jucyaudio
                     return stmt.isNull(0) ? std::string{"<null>"} : stmt.getText(0);
                 };
 
-                report.check(scalar("SELECT value FROM SchemaInfo WHERE key = 'schema_version'") == "31", "the schema is stamped at version 31");
+                report.check(scalar("SELECT value FROM SchemaInfo WHERE key = 'schema_version'") == latestVersion,
+                    std::format("the schema is stamped at the latest version ({})", latestVersion));
                 report.check(scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_folders_root_path'") == "1",
                     "the unique folder path index is there afterwards");
                 report.check(scalar("SELECT COUNT(*) FROM Folders WHERE root_path = 'c:\\dup'") == "1", "one row is left for the duplicated path");
@@ -2968,6 +2991,366 @@ namespace jucyaudio
                 {
                     SqliteStatement stmt{check, "INSERT INTO Folders (parent_id, name, root_path) VALUES (NULL, 'dup', 'c:\\dup');"};
                     report.check(stmt.isValid() && !stmt.execute(), "a second row for a path the table already has is refused");
+                }
+            }
+
+            // --- The v32 rung leaves a database that already has everything alone ---
+            //
+            // Scope, stated because the first version of this check claimed more than it does: both
+            // databases are built from the current schema, so sending one back through the ladder can
+            // only exercise rungs that are idempotent. v32 is - it is all IF NOT EXISTS. An ordinary
+            // ALTER TABLE ADD COLUMN rung is not, and would fail with a duplicate column against a
+            // database that already has it.
+            //
+            // So this is not a whole-ladder convergence test and must not be read as one. It cannot
+            // see structural differences from v4-v31: the MixTracks primary key the v6 rung creates
+            // and the current schema does not was sitting right under it and it said nothing. What it
+            // does check is that the repair is safe against the databases most people have - the ones
+            // that are already complete - and that is worth having on its own.
+            //
+            // A real convergence check needs a frozen old-schema fixture run up the whole ladder.
+            // That is a task in its own right and is recorded in tasks.md.
+            {
+                const auto freshPath = workRoot / "convergence-fresh.db";
+                const auto laddered = workRoot / "convergence-laddered.db";
+
+                const auto createFresh = [&report](const std::filesystem::path &path, const char *what)
+                {
+                    SqliteTrackDatabase db;
+                    const auto created = db.connect(path);
+                    report.check(created.isOk(), std::format("{} could be created (said: '{}')", what, created.errorMessage));
+                    return created.isOk();
+                };
+
+                // Reads the schema as text, one line per object, ignoring the ANALYZE tables: those
+                // depend on what each database happened to be asked, not on how it was built.
+                const auto schemaOf = [&report](const std::filesystem::path &path)
+                {
+                    std::vector<std::string> objects;
+                    SqliteDatabase db;
+                    if (!db.open(pathToString(path)))
+                    {
+                        report.abort(std::format("Could not open {} to read its schema.", pathToString(path)));
+                        return objects;
+                    }
+
+                    SqliteStatement stmt{db,
+                        "SELECT type, name, COALESCE(sql, '') FROM sqlite_master "
+                        "WHERE name NOT LIKE 'sqlite_stat%' ORDER BY type, name;"};
+                    if (!stmt.isValid())
+                    {
+                        report.abort("Could not read sqlite_master.");
+                        return objects;
+                    }
+
+                    while (stmt.getNextResult())
+                    {
+                        objects.push_back(stmt.getText(0) + " " + stmt.getText(1) + " " + stmt.getText(2));
+                    }
+                    return objects;
+                };
+
+                if (createFresh(freshPath, "a fresh database for the convergence check") &&
+                    createFresh(laddered, "a second one to send back through the ladder"))
+                {
+                    {
+                        SqliteDatabase age;
+                        const bool stamped = age.open(pathToString(laddered)) &&
+                            age.execute("UPDATE SchemaInfo SET value = '31' WHERE key = 'schema_version';");
+                        report.check(stamped, "the second database could be stamped back to version 31");
+                    }
+
+                    {
+                        SqliteTrackDatabase reopened;
+                        const auto connected = reopened.connect(laddered);
+                        report.check(connected.isOk(), std::format("it migrates back up to the latest version (said: '{}')", connected.errorMessage));
+                    }
+
+                    const auto freshSchema = schemaOf(freshPath);
+                    const auto ladderedSchema = schemaOf(laddered);
+
+                    report.check(!freshSchema.empty(), std::format("the fresh database has a schema to compare ({} objects)", freshSchema.size()));
+                    report.check(freshSchema == ladderedSchema,
+                        std::format("the v32 rung changes nothing in a database that already has everything ({} vs {} objects)",
+                            freshSchema.size(),
+                            ladderedSchema.size()));
+
+                    // Name what differs, because "two lists are not equal" is not a bug report.
+                    if (freshSchema != ladderedSchema)
+                    {
+                        for (const auto &object : freshSchema)
+                        {
+                            if (std::ranges::find(ladderedSchema, object) == ladderedSchema.end())
+                            {
+                                report.note("only in the fresh database: " + object);
+                            }
+                        }
+                        for (const auto &object : ladderedSchema)
+                        {
+                            if (std::ranges::find(freshSchema, object) == freshSchema.end())
+                            {
+                                report.note("only after the ladder: " + object);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- And the repair itself, against a database that really is missing all of it ---
+            //
+            // The convergence check above compares two databases that both start complete. This one
+            // strips a v31 database back to the state every library created from scratch was actually
+            // in - no search tables, no markers, no presets - and requires the v32 rung to put them
+            // back and to fill the search content from the tracks that are already there.
+            {
+                const auto strippedPath = workRoot / "v31-stripped.db";
+
+                {
+                    SqliteTrackDatabase fresh;
+                    const auto created = fresh.connect(strippedPath);
+                    report.check(created.isOk(), std::format("a database to strip could be created (said: '{}')", created.errorMessage));
+                    if (!created.isOk())
+                    {
+                        writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                        return 1;
+                    }
+                }
+
+                {
+                    SqliteDatabase strip;
+                    if (!strip.open(pathToString(strippedPath)))
+                    {
+                        report.abort("Could not reopen the database to strip it.");
+                        writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                        return 1;
+                    }
+
+                    // A folder and two tracks first, so the search backfill has something to find - a
+                    // library created without the search tables was scanned without them too, and the
+                    // triggers only maintain the content table from the moment they exist.
+                    const bool stripped =
+                        strip.execute("INSERT INTO Folders (folder_id, parent_id, name, root_path, actual_path) VALUES "
+                                      "(30, NULL, 'stripped', 'c:\\stripped', 'C:\\Stripped');") &&
+                        strip.execute("INSERT INTO Tracks (track_id, folder_id, filename, title, artist_name, album_title) VALUES "
+                                      "(300, 30, 'findme.mp3', 'Findable Title', 'Findable Artist', 'Findable Album'), "
+                                      "(301, 30, 'other.mp3', 'Other Title', 'Other Artist', 'Other Album');") &&
+                        strip.execute("DROP TRIGGER IF EXISTS tracksdata_fts_ai;") &&
+                        strip.execute("DROP TRIGGER IF EXISTS tracksdata_fts_ad;") &&
+                        strip.execute("DROP TRIGGER IF EXISTS tracksdata_fts_au;") &&
+                        strip.execute("DROP TRIGGER IF EXISTS tracks_search_insert;") &&
+                        strip.execute("DROP TRIGGER IF EXISTS tracks_search_update;") &&
+                        strip.execute("DROP TRIGGER IF EXISTS tracks_search_delete;") &&
+                        strip.execute("DROP TRIGGER IF EXISTS tracktags_search_insert;") &&
+                        strip.execute("DROP TRIGGER IF EXISTS tracktags_search_delete;") &&
+                        strip.execute("DROP TABLE IF EXISTS TracksSearchFTS;") &&
+                        strip.execute("DROP TABLE IF EXISTS TracksSearchData;") &&
+                        strip.execute("DROP TABLE IF EXISTS TrackMarkers;") &&
+                        strip.execute("DROP TABLE IF EXISTS MixMarkers;") &&
+                        strip.execute("DROP TABLE IF EXISTS EQPresets;") &&
+                        strip.execute("DROP TABLE IF EXISTS ReverbPresets;") &&
+                        strip.execute("DROP INDEX IF EXISTS idx_tracks_status;") &&
+                        // The name a migrated library carries instead of idx_mixtracks_mix_order.
+                        strip.execute("DROP INDEX IF EXISTS idx_mixtracks_mix_order;") &&
+                        strip.execute("DROP INDEX IF EXISTS idx_mixtracks_track;") &&
+                        strip.execute("CREATE INDEX idx_mixtracks_order ON MixTracks(mix_id, order_in_mix);") &&
+                        strip.execute("UPDATE SchemaInfo SET value = '31' WHERE key = 'schema_version';");
+                    report.check(stripped, "a v31 database could be stripped back to what a fresh one used to hold");
+                    if (!stripped)
+                    {
+                        writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                        return 1;
+                    }
+                }
+
+                {
+                    SqliteTrackDatabase repaired;
+                    const auto connected = repaired.connect(strippedPath);
+                    report.check(connected.isOk(), std::format("the stripped database migrates on open (said: '{}')", connected.errorMessage));
+                }
+
+                SqliteDatabase check;
+                if (!check.open(pathToString(strippedPath)))
+                {
+                    report.abort("Could not reopen the repaired database.");
+                    writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                    return 1;
+                }
+
+                const auto scalar = [&check](const char *sql)
+                {
+                    SqliteStatement stmt{check, sql};
+                    if (!stmt.isValid() || !stmt.getNextResult())
+                    {
+                        return std::string{"<query failed>"};
+                    }
+                    return stmt.isNull(0) ? std::string{"<null>"} : stmt.getText(0);
+                };
+
+                report.check(scalar("SELECT value FROM SchemaInfo WHERE key = 'schema_version'") == latestVersion,
+                    std::format("the repaired schema is stamped at the latest version ({})", latestVersion));
+
+                for (const auto *table : {"TrackMarkers", "MixMarkers", "EQPresets", "ReverbPresets", "TracksSearchData", "TracksSearchFTS"})
+                {
+                    const auto sql{std::format("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '{}'", table)};
+                    report.check(scalar(sql.c_str()) == "1", std::format("{} is back", table));
+                }
+
+                for (const auto *trigger : {"tracks_search_insert",
+                         "tracks_search_update",
+                         "tracks_search_delete",
+                         "tracktags_search_insert",
+                         "tracktags_search_delete",
+                         "tracksdata_fts_ai",
+                         "tracksdata_fts_ad",
+                         "tracksdata_fts_au"})
+                {
+                    const auto sql{std::format("SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name = '{}'", trigger)};
+                    report.check(scalar(sql.c_str()) == "1", std::format("the {} trigger is back", trigger));
+                }
+
+                report.check(scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_tracks_status'") == "1",
+                    "the status index is back");
+                report.check(scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_mixtracks_mix_order'") == "1",
+                    "the MixTracks order index is there under the name the schema uses");
+                report.check(scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_mixtracks_track'") == "1",
+                    "and the one a migrated library never had");
+                report.check(scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_mixtracks_order'") == "0",
+                    "the old name it carried instead is gone");
+
+                report.check(scalar("SELECT COUNT(*) FROM EQPresets") == "6", "the six factory EQ presets are there");
+                report.check(scalar("SELECT COUNT(*) FROM ReverbPresets") == "7", "and the seven factory reverb presets");
+                report.check(scalar("SELECT is_deletable FROM EQPresets WHERE name = 'Flat'") == "0", "a factory preset is not deletable");
+
+                // The tracks that were already in the library have to be searchable, not just the ones
+                // added from here on - which is the difference between creating the tables and
+                // repairing the database.
+                report.check(scalar("SELECT COUNT(*) FROM TracksSearchData") == "2", "the search content table was filled from the tracks already there");
+                report.check(scalar("SELECT COUNT(*) FROM TracksSearchFTS WHERE TracksSearchFTS MATCH 'Findable'") == "1",
+                    "and a track that was in the library before the repair can be found through the index");
+            }
+
+            // --- MixTracks, shaped the way the v6 rung really leaves it ---
+            //
+            // A version-shaped fixture, because the check above cannot see this: the v6 rung gives
+            // MixTracks PRIMARY KEY(mix_id, track_id) and the schema a new database is built from has
+            // no uniqueness on those columns at all. A mix may legitimately hold the same track twice
+            // - MissingFileScanTask returns indices rather than track ids for exactly that reason -
+            // and saveMix inserts each row with a plain INSERT. So on a library that migrated up the
+            // ladder, saving such a mix fails its second row and rolls the whole save back, while on
+            // a library created from scratch it works.
+            //
+            // The table is put back into its v6 shape by hand, the way the v29 fixture above does for
+            // MixRecovery: nothing produces that shape any more.
+            {
+                const auto v6Path = workRoot / "v6-mixtracks.db";
+
+                {
+                    SqliteTrackDatabase fresh;
+                    const auto created = fresh.connect(v6Path);
+                    report.check(created.isOk(), std::format("a database for the MixTracks fixture could be created (said: '{}')", created.errorMessage));
+                    if (!created.isOk())
+                    {
+                        writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                        return 1;
+                    }
+                }
+
+                {
+                    SqliteDatabase seed;
+                    if (!seed.open(pathToString(v6Path)))
+                    {
+                        report.abort("Could not reopen the MixTracks fixture to age it.");
+                        writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                        return 1;
+                    }
+
+                    // Foreign keys on, so the rows the fixture seeds are ones the real schema would
+                    // have accepted - a mix and two tracks that exist, not invented ids.
+                    const bool aged =
+                        seed.execute("PRAGMA foreign_keys = ON;") &&
+                        seed.execute("INSERT INTO Folders (folder_id, parent_id, name, root_path, actual_path) VALUES "
+                                     "(40, NULL, 'mixtracks', 'c:\\mixtracks', 'C:\\MixTracks');") &&
+                        seed.execute("INSERT INTO Tracks (track_id, folder_id, filename, title) VALUES "
+                                     "(400, 40, 'one.mp3', 'One'), (401, 40, 'two.mp3', 'Two');") &&
+                        seed.execute("INSERT INTO Mixes (mix_id, name) VALUES (9, 'MixTracks Fixture');") &&
+                        seed.execute("DROP TABLE MixTracks;") &&
+                        seed.execute("CREATE TABLE MixTracks(mix_id INTEGER NOT NULL, track_id INTEGER NOT NULL, "
+                                     "order_in_mix INTEGER NOT NULL, mix_data TEXT NOT NULL, "
+                                     "PRIMARY KEY(mix_id, track_id), "
+                                     "FOREIGN KEY(mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE, "
+                                     "FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE);") &&
+                        seed.execute("CREATE INDEX idx_mixtracks_order ON MixTracks(mix_id, order_in_mix);") &&
+                        seed.execute("INSERT INTO MixTracks (mix_id, track_id, order_in_mix, mix_data) VALUES "
+                                     "(9, 400, 0, '{\"first\":true}'), (9, 401, 1, '{\"second\":true}');") &&
+                        seed.execute("UPDATE SchemaInfo SET value = '31' WHERE key = 'schema_version';");
+                    report.check(aged, "MixTracks could be put back into its v6 shape with rows in it");
+                    if (!aged)
+                    {
+                        writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                        return 1;
+                    }
+
+                    // The fixture is only worth anything if the old shape really does refuse the second
+                    // row, so that is established here rather than assumed.
+                    SqliteStatement duplicate{seed, "INSERT INTO MixTracks (mix_id, track_id, order_in_mix, mix_data) VALUES (9, 400, 2, '{}');"};
+                    report.check(duplicate.isValid() && !duplicate.execute(), "the v6 shape refuses a mix that holds the same track twice");
+                }
+
+                {
+                    SqliteTrackDatabase migrated;
+                    const auto connected = migrated.connect(v6Path);
+                    report.check(connected.isOk(), std::format("the v6-shaped database migrates on open (said: '{}')", connected.errorMessage));
+                }
+
+                SqliteDatabase check;
+                if (!check.open(pathToString(v6Path)))
+                {
+                    report.abort("Could not reopen the rebuilt MixTracks database.");
+                    writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                    return 1;
+                }
+
+                const auto scalar = [&check](const char *sql)
+                {
+                    SqliteStatement stmt{check, sql};
+                    if (!stmt.isValid() || !stmt.getNextResult())
+                    {
+                        return std::string{"<query failed>"};
+                    }
+                    return stmt.isNull(0) ? std::string{"<null>"} : stmt.getText(0);
+                };
+
+                report.check(scalar("SELECT COUNT(*) FROM pragma_index_list('MixTracks') WHERE origin = 'pk'") == "0",
+                    "the rebuilt MixTracks has no primary key on (mix_id, track_id)");
+
+                // The rows, whole and in order - a rebuild that loses or reorders them would be worse
+                // than the constraint it removes.
+                report.check(scalar("SELECT COUNT(*) FROM MixTracks") == "2", "both rows survived the rebuild");
+                report.check(scalar("SELECT track_id FROM MixTracks WHERE mix_id = 9 AND order_in_mix = 0") == "400", "the first row is intact");
+                report.check(scalar("SELECT mix_data FROM MixTracks WHERE mix_id = 9 AND order_in_mix = 0") == "{\"first\":true}",
+                    "and carries the data it was seeded with");
+                report.check(scalar("SELECT track_id FROM MixTracks WHERE mix_id = 9 AND order_in_mix = 1") == "401", "so is the second");
+                report.check(scalar("SELECT mix_data FROM MixTracks WHERE mix_id = 9 AND order_in_mix = 1") == "{\"second\":true}",
+                    "with its own data, not the other row's");
+
+                report.check(scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_mixtracks_mix_order'") == "1",
+                    "the indexes the drop took with it are back");
+                report.check(scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_mixtracks_track'") == "1",
+                    "including the one only a fresh schema used to have");
+
+                {
+                    // The point of the whole exercise: the second copy of a track now goes in.
+                    SqliteStatement duplicate{check, "INSERT INTO MixTracks (mix_id, track_id, order_in_mix, mix_data) VALUES (9, 400, 2, '{}');"};
+                    report.check(duplicate.isValid() && duplicate.execute(), "a mix can now hold the same track twice");
+                }
+
+                {
+                    // And the foreign keys came through the rebuild. Enforcement is switched on
+                    // explicitly: SqliteDatabase::open does not, so without this the key would be
+                    // recorded and ignored and this check would pass on a table that had lost it.
+                    report.check(check.execute("PRAGMA foreign_keys = ON;"), "foreign key enforcement could be switched on");
+                    SqliteStatement orphan{check, "INSERT INTO MixTracks (mix_id, track_id, order_in_mix, mix_data) VALUES (9, 99999, 3, '{}');"};
+                    report.check(orphan.isValid() && !orphan.execute(), "the rebuilt table still refuses a row pointing at a track that does not exist");
                 }
             }
 

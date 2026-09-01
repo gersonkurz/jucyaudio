@@ -204,6 +204,203 @@ namespace
         "INSERT INTO TracksSearchFTS(TracksSearchFTS) VALUES('rebuild');",
     };
 
+    /// @brief The objects that used to exist only inside a migration rung.
+    ///
+    /// TrackMarkers (v4), idx_tracks_status (v5), the search tables and their triggers (v12, v25),
+    /// MixMarkers (v16), EQPresets (v17) and ReverbPresets (v18) were each added to the ladder and
+    /// never to the schema a new database is built from. A new database is stamped at the latest
+    /// version and skips the ladder entirely, so every library created since has been missing all of
+    /// them - and full-text search, track markers, mix markers and the EQ/reverb presets do not
+    /// degrade without their tables, they fail.
+    ///
+    /// One array, run from two places: the new-database path in createTablesIfNeeded, and the v32 rung
+    /// that repairs the databases already created without them. The same statements, not merely
+    /// equivalent ones, so a fresh database and a repaired one hold byte-identical definitions of
+    /// these objects by construction rather than by two texts being kept in step by hand.
+    ///
+    /// Note what that does not buy. The migration self test checks that the v32 rung leaves an
+    /// already-complete database untouched; it is not a whole-ladder convergence check and cannot see
+    /// structural differences between v4 and v31 - the v6 primary key on MixTracks is one it missed.
+    /// A frozen old-schema fixture is what that needs, and is an open task.
+    ///
+    /// Everything here is IF NOT EXISTS, because the repair runs against databases that have some of
+    /// it (anything that migrated up through the ladder) and databases that have none of it.
+    const char *convergenceSqlStatements[] = {
+        R"SQL(
+        CREATE TABLE IF NOT EXISTS TrackMarkers (
+            marker_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+            track_id   INTEGER NOT NULL,
+            position_ms INTEGER NOT NULL,
+            comment    TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            color      TEXT,
+            emoji      TEXT,
+            FOREIGN KEY (track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
+        );)SQL",
+        "CREATE INDEX IF NOT EXISTS idx_trackmarkers_track_id ON TrackMarkers (track_id);",
+        "CREATE INDEX IF NOT EXISTS idx_tracks_status ON Tracks (status);",
+        R"SQL(
+        CREATE TABLE IF NOT EXISTS MixMarkers (
+            marker_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+            mix_id     INTEGER NOT NULL,
+            position_ms INTEGER NOT NULL,
+            comment    TEXT NOT NULL,
+            color      TEXT,
+            emoji      TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
+        );)SQL",
+        "CREATE INDEX IF NOT EXISTS idx_mix_markers_mix_id ON MixMarkers(mix_id);",
+        "CREATE INDEX IF NOT EXISTS idx_mix_markers_position ON MixMarkers(mix_id, position_ms);",
+        R"SQL(
+        CREATE TABLE IF NOT EXISTS EQPresets (
+            preset_id     INTEGER PRIMARY KEY,
+            name          TEXT NOT NULL UNIQUE,
+            is_deletable  INTEGER NOT NULL DEFAULT 1,
+            settings_json TEXT NOT NULL
+        );)SQL",
+        R"SQL(
+        CREATE TABLE IF NOT EXISTS ReverbPresets (
+            preset_id     INTEGER PRIMARY KEY,
+            name          TEXT NOT NULL UNIQUE,
+            is_deletable  INTEGER NOT NULL DEFAULT 1,
+            settings_json TEXT NOT NULL,
+            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );)SQL",
+        // The search content table, then the FTS index over it, then the triggers - in that order,
+        // because CREATE TRIGGER checks that the table it fires on exists.
+        R"SQL(
+        CREATE TABLE IF NOT EXISTS TracksSearchData (
+            track_id       INTEGER PRIMARY KEY,
+            search_content TEXT NOT NULL,
+            FOREIGN KEY (track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
+        );)SQL",
+        R"SQL(
+        CREATE VIRTUAL TABLE IF NOT EXISTS TracksSearchFTS USING fts5(
+            search_content,
+            content='TracksSearchData',
+            content_rowid='track_id',
+            tokenize='unicode61'
+        );)SQL",
+        R"SQL(
+        CREATE TRIGGER IF NOT EXISTS tracks_search_insert
+        AFTER INSERT ON Tracks
+        BEGIN
+            INSERT INTO TracksSearchData (track_id, search_content)
+            SELECT
+                NEW.track_id,
+                COALESCE(NEW.title, '') || ' ' ||
+                COALESCE(NEW.artist_name, '') || ' ' ||
+                COALESCE(NEW.album_title, '') || ' ' ||
+                COALESCE(NEW.filename, '') || ' ' ||
+                COALESCE((SELECT root_path FROM Folders WHERE folder_id = NEW.folder_id), '') || ' ' ||
+                COALESCE((SELECT name FROM Folders WHERE folder_id = NEW.folder_id), '') || ' ' ||
+                COALESCE(
+                    (SELECT GROUP_CONCAT(Tags.name, ' ')
+                     FROM TrackTags tt
+                     JOIN Tags ON tt.tag_id = Tags.tag_id
+                     WHERE tt.track_id = NEW.track_id),
+                    ''
+                );
+        END;)SQL",
+        R"SQL(
+        CREATE TRIGGER IF NOT EXISTS tracks_search_update
+        AFTER UPDATE OF title, artist_name, album_title, filename, folder_id ON Tracks
+        BEGIN
+            UPDATE TracksSearchData
+            SET search_content = (
+                SELECT
+                    COALESCE(NEW.title, '') || ' ' ||
+                    COALESCE(NEW.artist_name, '') || ' ' ||
+                    COALESCE(NEW.album_title, '') || ' ' ||
+                    COALESCE(NEW.filename, '') || ' ' ||
+                    COALESCE((SELECT root_path FROM Folders WHERE folder_id = NEW.folder_id), '') || ' ' ||
+                    COALESCE((SELECT name FROM Folders WHERE folder_id = NEW.folder_id), '') || ' ' ||
+                    COALESCE(
+                        (SELECT GROUP_CONCAT(Tags.name, ' ')
+                         FROM TrackTags tt
+                         JOIN Tags ON tt.tag_id = Tags.tag_id
+                         WHERE tt.track_id = NEW.track_id),
+                        ''
+                    )
+            )
+            WHERE track_id = NEW.track_id;
+        END;)SQL",
+        R"SQL(
+        CREATE TRIGGER IF NOT EXISTS tracks_search_delete
+        AFTER DELETE ON Tracks
+        BEGIN
+            DELETE FROM TracksSearchData WHERE track_id = OLD.track_id;
+        END;)SQL",
+        R"SQL(
+        CREATE TRIGGER IF NOT EXISTS tracktags_search_insert
+        AFTER INSERT ON TrackTags
+        BEGIN
+            UPDATE TracksSearchData
+            SET search_content = (
+                SELECT
+                    COALESCE(t.title, '') || ' ' ||
+                    COALESCE(t.artist_name, '') || ' ' ||
+                    COALESCE(t.album_title, '') || ' ' ||
+                    COALESCE(t.filename, '') || ' ' ||
+                    COALESCE(f.root_path, '') || ' ' ||
+                    COALESCE(f.name, '') || ' ' ||
+                    COALESCE(
+                        (SELECT GROUP_CONCAT(Tags.name, ' ')
+                         FROM TrackTags tt
+                         JOIN Tags ON tt.tag_id = Tags.tag_id
+                         WHERE tt.track_id = NEW.track_id),
+                        ''
+                    )
+                FROM Tracks t
+                LEFT JOIN Folders f ON t.folder_id = f.folder_id
+                WHERE t.track_id = NEW.track_id
+            )
+            WHERE track_id = NEW.track_id;
+        END;)SQL",
+        R"SQL(
+        CREATE TRIGGER IF NOT EXISTS tracktags_search_delete
+        AFTER DELETE ON TrackTags
+        BEGIN
+            UPDATE TracksSearchData
+            SET search_content = (
+                SELECT
+                    COALESCE(t.title, '') || ' ' ||
+                    COALESCE(t.artist_name, '') || ' ' ||
+                    COALESCE(t.album_title, '') || ' ' ||
+                    COALESCE(t.filename, '') || ' ' ||
+                    COALESCE(f.root_path, '') || ' ' ||
+                    COALESCE(f.name, '') || ' ' ||
+                    COALESCE(
+                        (SELECT GROUP_CONCAT(Tags.name, ' ')
+                         FROM TrackTags tt
+                         JOIN Tags ON tt.tag_id = Tags.tag_id
+                         WHERE tt.track_id = OLD.track_id),
+                        ''
+                    )
+                FROM Tracks t
+                LEFT JOIN Folders f ON t.folder_id = f.folder_id
+                WHERE t.track_id = OLD.track_id
+            )
+            WHERE track_id = OLD.track_id;
+        END;)SQL",
+        // TracksSearchData maintains the content table; these keep the external-content FTS index in
+        // step with it. Without them nothing added by a scan is ever searchable - see the v25 rung.
+        R"SQL(CREATE TRIGGER IF NOT EXISTS tracksdata_fts_ai AFTER INSERT ON TracksSearchData BEGIN
+                            INSERT INTO TracksSearchFTS(rowid, search_content) VALUES (new.track_id, new.search_content);
+                        END;)SQL",
+        R"SQL(CREATE TRIGGER IF NOT EXISTS tracksdata_fts_ad AFTER DELETE ON TracksSearchData BEGIN
+                            INSERT INTO TracksSearchFTS(TracksSearchFTS, rowid, search_content) VALUES ('delete', old.track_id, old.search_content);
+                        END;)SQL",
+        R"SQL(CREATE TRIGGER IF NOT EXISTS tracksdata_fts_au AFTER UPDATE ON TracksSearchData BEGIN
+                            INSERT INTO TracksSearchFTS(TracksSearchFTS, rowid, search_content) VALUES ('delete', old.track_id, old.search_content);
+                            INSERT INTO TracksSearchFTS(rowid, search_content) VALUES (new.track_id, new.search_content);
+                        END;)SQL",
+    };
+
     const char *initialSqlStatements[] = {
         "PRAGMA foreign_keys = ON;",
         R"SQL(
@@ -880,7 +1077,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 31;
+            const int latestSchemaVersion = 32;
 
             if (currentVersion == 0)
             {
@@ -889,6 +1086,9 @@ namespace jucyaudio
 
                 if (SqliteTransaction transaction{m_db})
                 {
+                    // Two arrays, and both of them. convergenceSqlStatements holds what used to be
+                    // created only by a migration rung, which a new database never runs - leaving every
+                    // library created since without search, markers or the presets.
                     for (const auto *sql : initialSqlStatements)
                     {
                         if (!m_db.execute(sql))
@@ -899,7 +1099,29 @@ namespace jucyaudio
                         }
                     }
 
+                    for (const auto *sql : convergenceSqlStatements)
+                    {
+                        if (!m_db.execute(sql))
+                        {
+                            m_lastErrorMessage = "Schema creation failed on SQL: [" + std::string(sql) + "] Error: " + m_db.getLastError();
+                            transaction.rollback();
+                            return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+                        }
+                    }
+
                     if (const auto seedResult{seedDefaultGenres()}; !seedResult.isOk())
+                    {
+                        transaction.rollback();
+                        return seedResult;
+                    }
+
+                    if (const auto seedResult{seedDefaultEQPresets()}; !seedResult.isOk())
+                    {
+                        transaction.rollback();
+                        return seedResult;
+                    }
+
+                    if (const auto seedResult{seedDefaultReverbPresets()}; !seedResult.isOk())
                     {
                         transaction.rollback();
                         return seedResult;
@@ -1174,6 +1396,136 @@ namespace jucyaudio
                 update.reset();
             }
 
+            return DbResult::success();
+        }
+
+        DbResult SqliteTrackDatabase::rebuildMixTracksWithoutPrimaryKey()
+        {
+            // The v6 rung gave MixTracks PRIMARY KEY(mix_id, track_id); the schema a new database is
+            // built from has no uniqueness on those columns at all. That is not a cosmetic difference:
+            // a mix may legitimately contain the same track twice - MissingFileScanTask says so in as
+            // many words, and it is why that task returns indices rather than track ids - and
+            // saveMix inserts each row with a plain INSERT. On a library that migrated up the ladder
+            // the second row fails the primary key and rolls the whole save back, so a mix that plays
+            // fine cannot be saved. On a library created from scratch it works.
+            //
+            // Only when the old shape is actually there. pragma_index_list reports the implicit index
+            // a composite primary key creates with origin 'pk', which is the structural question -
+            // rather than looking for the words PRIMARY KEY in the stored DDL.
+            int64_t primaryKeyIndexes{0};
+            {
+                SqliteStatement stmt{m_db, "SELECT COUNT(*) FROM pragma_index_list('MixTracks') WHERE origin = 'pk';"};
+                if (!stmt.isValid() || !stmt.getNextResult())
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "v32 could not inspect MixTracks: " + m_db.getLastError());
+                }
+                primaryKeyIndexes = stmt.getInt64(0);
+            }
+
+            if (primaryKeyIndexes == 0)
+            {
+                return DbResult::success();
+            }
+
+            spdlog::warn("v32: MixTracks still carries the v6 primary key; rebuilding it so a mix can hold a track twice.");
+
+            // Copy, drop, rename. Nothing in the schema references MixTracks, so dropping it cascades
+            // to nothing - it is a child of Mixes and Tracks, never a parent - and the rename has no
+            // foreign key clauses elsewhere to fix up. All of it inside the migration's transaction,
+            // so a failure anywhere leaves the original table untouched.
+            const char *rebuildSteps[] = {
+                R"SQL(
+                CREATE TABLE MixTracks_v32(
+                    mix_id INTEGER NOT NULL,
+                    track_id INTEGER NOT NULL,
+                    order_in_mix INTEGER NOT NULL,
+                    mix_data TEXT NOT NULL,
+                    FOREIGN KEY(mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE,
+                    FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
+                );)SQL",
+                "INSERT INTO MixTracks_v32 (mix_id, track_id, order_in_mix, mix_data) "
+                "SELECT mix_id, track_id, order_in_mix, mix_data FROM MixTracks;",
+                "DROP TABLE MixTracks;",
+                "ALTER TABLE MixTracks_v32 RENAME TO MixTracks;",
+            };
+
+            for (const char *step : rebuildSteps)
+            {
+                if (!m_db.execute(step))
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "v32 MixTracks rebuild failed: " + m_db.getLastError());
+                }
+            }
+
+            return DbResult::success();
+        }
+
+        DbResult SqliteTrackDatabase::seedDefaultEQPresets()
+        {
+            // INSERT OR IGNORE, not INSERT: this runs from the new-database path, from the v17 rung and
+            // from the v32 repair, and the repair meets databases that already have some or all of
+            // them. name is UNIQUE, so the conflict is on exactly the identity that matters.
+            SqliteStatement stmt{m_db, "INSERT OR IGNORE INTO EQPresets (name, is_deletable, settings_json) VALUES (?, 0, ?);"};
+            if (!stmt.isValid())
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB, "Prepare failed for EQ preset seeding: " + m_db.getLastError());
+            }
+
+            const std::vector<database::model::EQPreset> defaultPresets = {database::model::EQPreset::createFlatPreset(),
+                database::model::EQPreset::createRockPreset(),
+                database::model::EQPreset::createDancePreset(),
+                database::model::EQPreset::createVocalBoostPreset(),
+                database::model::EQPreset::createBassBoostPreset(),
+                database::model::EQPreset::createTrebleBoostPreset()};
+
+            for (const auto &preset : defaultPresets)
+            {
+                stmt.reset();
+                if (!stmt.addParam(preset.name.toStdString()) || !stmt.addParam(preset.settings.toJson().toStdString()) || !stmt.execute())
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB,
+                        "Failed to seed EQ preset '" + preset.name.toStdString() + "': " + m_db.getLastError());
+                }
+            }
+
+            spdlog::info("Seeded {} default EQ presets.", defaultPresets.size());
+            return DbResult::success();
+        }
+
+        DbResult SqliteTrackDatabase::seedDefaultReverbPresets()
+        {
+            struct FactoryPreset
+            {
+                const char *name;
+                const char *json;
+            };
+
+            static constexpr FactoryPreset factoryPresets[] = {
+                {"Small Room", R"({"roomSize":0.2,"damping":0.7,"wetLevel":0.25,"dryLevel":0.75,"width":0.8,"freezeMode":0.0,"isActive":true})"},
+                {"Large Hall", R"({"roomSize":0.8,"damping":0.5,"wetLevel":0.35,"dryLevel":0.65,"width":1.0,"freezeMode":0.0,"isActive":true})"},
+                {"Cathedral", R"({"roomSize":0.95,"damping":0.3,"wetLevel":0.4,"dryLevel":0.6,"width":1.0,"freezeMode":0.0,"isActive":true})"},
+                {"Plate", R"({"roomSize":0.4,"damping":0.9,"wetLevel":0.3,"dryLevel":0.7,"width":1.0,"freezeMode":0.0,"isActive":true})"},
+                {"Spring", R"({"roomSize":0.3,"damping":0.6,"wetLevel":0.35,"dryLevel":0.65,"width":0.5,"freezeMode":0.0,"isActive":true})"},
+                {"Ambient", R"({"roomSize":0.85,"damping":0.2,"wetLevel":0.5,"dryLevel":0.5,"width":1.0,"freezeMode":0.0,"isActive":true})"},
+                {"Subtle", R"({"roomSize":0.15,"damping":0.8,"wetLevel":0.15,"dryLevel":0.85,"width":0.7,"freezeMode":0.0,"isActive":true})"}};
+
+            SqliteStatement stmt{m_db, "INSERT OR IGNORE INTO ReverbPresets (name, is_deletable, settings_json) VALUES (?, 0, ?);"};
+            if (!stmt.isValid())
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB, "Prepare failed for reverb preset seeding: " + m_db.getLastError());
+            }
+
+            for (const auto &preset : factoryPresets)
+            {
+                stmt.reset();
+                if (!stmt.addParam(std::string_view{preset.name}) || !stmt.addParam(std::string_view{preset.json}) || !stmt.execute())
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB,
+                        "Failed to seed reverb preset '" + std::string{preset.name} + "': " + m_db.getLastError());
+                }
+            }
+
+            spdlog::info("Seeded {} factory reverb presets.", std::size(factoryPresets));
             return DbResult::success();
         }
 
@@ -2252,50 +2604,15 @@ CREATE TABLE MixUndoHistory (
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create EQPresets table: " + m_db.getLastError());
                     }
                     
-                    // Insert default system presets
-                    const char* insertPresetSql = R"SQL(
-                        INSERT INTO EQPresets (name, is_deletable, settings_json)
-                        VALUES (?, 0, ?)
-                    )SQL";
-                    
-                    // Helper lambda to insert a preset
-                    auto insertPreset = [&](const database::model::EQPreset& preset) -> bool
+                    // Through the shared seeder, so what a database that migrated here holds and what
+                    // one created from scratch holds are the same rows by construction.
+                    if (auto result = seedDefaultEQPresets(); !result.isOk())
                     {
-                        SqliteStatement stmt{m_db, insertPresetSql};
-                        if (!stmt.isValid())
-                        {
-                            spdlog::error("Failed to prepare preset insert: {}", m_db.getLastError());
-                            return false;
-                        }
-                        stmt.addParam(preset.name.toStdString());
-                        stmt.addParam(preset.settings.toJson().toStdString());
-                        return stmt.execute();
-                    };
-                    
-                    // Insert default presets
-                    const std::vector<database::model::EQPreset> defaultPresets = {
-                        database::model::EQPreset::createFlatPreset(),
-                        database::model::EQPreset::createRockPreset(),
-                        database::model::EQPreset::createDancePreset(),
-                        database::model::EQPreset::createVocalBoostPreset(),
-                        database::model::EQPreset::createBassBoostPreset(),
-                        database::model::EQPreset::createTrebleBoostPreset()
-                    };
-                    
-                    for (const auto& preset : defaultPresets)
-                    {
-                        if (!insertPreset(preset))
-                        {
-                            transaction.rollback();
-                            spdlog::error("Failed to insert default preset '{}': {}", 
-                                        preset.name.toStdString(), m_db.getLastError());
-                            return DbResult::failure(DbResultStatus::ErrorDB, 
-                                                   "Failed to insert default presets: " + m_db.getLastError());
-                        }
+                        transaction.rollback();
+                        return result;
                     }
-                    
-                    spdlog::info("Successfully inserted {} default EQ presets", defaultPresets.size());
-                    
+
+
                     if (auto result = setDBSchemaVersion(17); !result.isOk())
                     {
                         transaction.rollback();
@@ -2344,49 +2661,14 @@ CREATE TABLE MixUndoHistory (
                         return DbResult::failure(DbResultStatus::ErrorDB, "Failed to create ReverbPresets table: " + m_db.getLastError());
                     }
                     
-                    // Insert default system reverb presets
-                    const char* insertPresetSql = R"SQL(
-                        INSERT INTO ReverbPresets (name, is_deletable, settings_json)
-                        VALUES (?, 0, ?)
-                    )SQL";
-                    
-                    // Factory presets
-                    struct FactoryPreset {
-                        const char* name;
-                        const char* json;
-                    };
-                    
-                    const FactoryPreset factoryPresets[] = {
-                        {"Small Room", R"({"roomSize":0.2,"damping":0.7,"wetLevel":0.25,"dryLevel":0.75,"width":0.8,"freezeMode":0.0,"isActive":true})"},
-                        {"Large Hall", R"({"roomSize":0.8,"damping":0.5,"wetLevel":0.35,"dryLevel":0.65,"width":1.0,"freezeMode":0.0,"isActive":true})"},
-                        {"Cathedral", R"({"roomSize":0.95,"damping":0.3,"wetLevel":0.4,"dryLevel":0.6,"width":1.0,"freezeMode":0.0,"isActive":true})"},
-                        {"Plate", R"({"roomSize":0.4,"damping":0.9,"wetLevel":0.3,"dryLevel":0.7,"width":1.0,"freezeMode":0.0,"isActive":true})"},
-                        {"Spring", R"({"roomSize":0.3,"damping":0.6,"wetLevel":0.35,"dryLevel":0.65,"width":0.5,"freezeMode":0.0,"isActive":true})"},
-                        {"Ambient", R"({"roomSize":0.85,"damping":0.2,"wetLevel":0.5,"dryLevel":0.5,"width":1.0,"freezeMode":0.0,"isActive":true})"},
-                        {"Subtle", R"({"roomSize":0.15,"damping":0.8,"wetLevel":0.15,"dryLevel":0.85,"width":0.7,"freezeMode":0.0,"isActive":true})"} 
-                    };
-                    
-                    for (const auto& preset : factoryPresets)
+                    // Through the shared seeder, for the same reason as the EQ presets above.
+                    if (auto result = seedDefaultReverbPresets(); !result.isOk())
                     {
-                        SqliteStatement stmt{m_db, insertPresetSql};
-                        if (!stmt.isValid())
-                        {
-                            spdlog::error("Failed to prepare reverb preset insert: {}", m_db.getLastError());
-                            transaction.rollback();
-                            return DbResult::failure(DbResultStatus::ErrorDB, "Failed to prepare reverb preset insert.");
-                        }
-                        
-                        stmt.addParam(preset.name);
-                        stmt.addParam(preset.json);
-                        
-                        if (!stmt.execute())
-                        {
-                            spdlog::error("Failed to insert reverb preset '{}': {}", preset.name, m_db.getLastError());
-                            transaction.rollback();
-                            return DbResult::failure(DbResultStatus::ErrorDB, "Failed to insert reverb preset.");
-                        }
+                        transaction.rollback();
+                        return result;
                     }
-                    
+
+
                     // Update schema version
                      if (auto result = setDBSchemaVersion(18); !result.isOk())
                     {
@@ -3232,6 +3514,112 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 31;
+            }
+
+            if (currentVersion < 32)
+            {
+                spdlog::info("Migrating database from version 31 to 32 - a new database gets what the ladder used to add...");
+                // The repair half of the divergence convergenceSqlStatements documents. Two kinds of
+                // database arrive here and both are handled by the same statements: one that migrated
+                // up the ladder and already has all of it, and one that was created from scratch at
+                // v22 or later and has none of it. Everything is IF NOT EXISTS, so the first is a
+                // no-op and the second is repaired.
+                if (SqliteTransaction transaction{m_db})
+                {
+                    for (const char *sql : convergenceSqlStatements)
+                    {
+                        if (!m_db.execute(sql))
+                        {
+                            const auto error{m_db.getLastError()};
+                            transaction.rollback();
+                            return DbResult::failure(DbResultStatus::ErrorDB, "v32 schema convergence failed: " + error);
+                        }
+                    }
+
+                    // A library created without the search tables has been scanned without them too, so
+                    // the content table has to be filled from what is already in Tracks - the triggers
+                    // above only maintain it from here on. OR IGNORE because a database that has had
+                    // them all along has these rows already.
+                    const char *searchBackfill[] = {
+                        R"SQL(
+                        INSERT OR IGNORE INTO TracksSearchData (track_id, search_content)
+                        SELECT
+                            t.track_id,
+                            COALESCE(t.title, '') || ' ' ||
+                            COALESCE(t.artist_name, '') || ' ' ||
+                            COALESCE(t.album_title, '') || ' ' ||
+                            COALESCE(t.filename, '') || ' ' ||
+                            COALESCE(f.root_path, '') || ' ' ||
+                            COALESCE(f.name, '') || ' ' ||
+                            COALESCE(
+                                (SELECT GROUP_CONCAT(Tags.name, ' ')
+                                 FROM TrackTags tt
+                                 JOIN Tags ON tt.tag_id = Tags.tag_id
+                                 WHERE tt.track_id = t.track_id),
+                                ''
+                            )
+                        FROM Tracks t
+                        LEFT JOIN Folders f ON t.folder_id = f.folder_id;)SQL",
+                        "INSERT INTO TracksSearchFTS(TracksSearchFTS) VALUES('rebuild');",
+                        // Divergence in the other direction, and the reason to walk the whole ladder
+                        // rather than only the tables that were missing: the v6 rung named this index
+                        // idx_mixtracks_order and the schema a new database is built from names the
+                        // same two columns idx_mixtracks_mix_order, so a migrated library carries the
+                        // old name and lacks idx_mixtracks_track entirely. Both are created above by
+                        // initialSqlStatements on a new database; here the old one goes.
+                        "DROP INDEX IF EXISTS idx_mixtracks_order;",
+                        "CREATE INDEX IF NOT EXISTS idx_mixtracks_mix_order ON MixTracks(mix_id, order_in_mix);",
+                        "CREATE INDEX IF NOT EXISTS idx_mixtracks_track ON MixTracks(track_id);",
+                    };
+
+                    // Before the steps above run: the rebuild drops MixTracks, which takes its indexes
+                    // with it, and the last three of those steps are what put them back under the
+                    // names the current schema uses.
+                    if (const auto rebuilt{rebuildMixTracksWithoutPrimaryKey()}; !rebuilt.isOk())
+                    {
+                        transaction.rollback();
+                        return rebuilt;
+                    }
+
+                    for (const char *sql : searchBackfill)
+                    {
+                        if (!m_db.execute(sql))
+                        {
+                            const auto error{m_db.getLastError()};
+                            transaction.rollback();
+                            return DbResult::failure(DbResultStatus::ErrorDB, "v32 search backfill failed: " + error);
+                        }
+                    }
+
+                    if (auto result = seedDefaultEQPresets(); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return result;
+                    }
+
+                    if (auto result = seedDefaultReverbPresets(); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return result;
+                    }
+
+                    if (auto result = setDBSchemaVersion(32); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 32.");
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated to version 32 - a new database gets what the ladder used to add.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 32;
             }
 
             return DbResult::success();
