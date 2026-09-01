@@ -103,6 +103,24 @@ namespace jucyaudio
                 return m_renderTargetPath;
             }
 
+            /// @brief Reports progress, and answers whether the export should carry on.
+            ///
+            /// The one place that talks to m_progressCallback, so that a refusal cannot be dropped by
+            /// a call site that forgot to look. A refusal is remembered rather than only returned:
+            /// some of these reports are made where there is nothing to return to - the constructor,
+            /// and the notification after the last block - and run() consults the flag before it
+            /// commits, so a cancel at any of them still stops the rendered file from replacing
+            /// whatever the user already had.
+            ///
+            /// Once refused it stays refused. A caller that says stop has said it.
+            bool reportProgress(float progress, const std::string &message);
+
+            /// @brief Whether a report was ever refused. See reportProgress.
+            bool cancelRequested() const
+            {
+                return m_cancelRequested;
+            }
+
             /// @brief Closes whatever the render was writing to, so the file can be moved into place,
             ///        and says whether everything actually reached the disk.
             ///
@@ -138,6 +156,7 @@ namespace jucyaudio
             void discardRenderTarget();
 
             // dynamic members
+            bool m_cancelRequested{false};
             std::filesystem::path m_renderTargetPath;
             Duration_t m_totalMixDurationMs;
             juce::int64 m_totalOutputSamples;

@@ -228,13 +228,20 @@ namespace jucyaudio
 
                 context.samplesWrittenTotal += context.samplesToProcessInThisBlock;
 
-                if (m_progressCallback)
                 {
                     float progress = (float)context.samplesWrittenTotal / (float)m_totalOutputSamples;
                     currentTrackNumber = getCurrentTrackNumber();
-                    const auto progressMessage = std::format("Exporting MP3... Track {}/{} ({:.0f}%)", 
+                    const auto progressMessage = std::format("Exporting MP3... Track {}/{} ({:.0f}%)",
                         currentTrackNumber, totalTracks, progress * 100.0f);
-                    m_progressCallback(progress, progressMessage);
+
+                    // As in the WAV loop: the answer is the cancel button, and a cancelled render has
+                    // to report failure so that run() discards the partial rather than committing it.
+                    if (!reportProgress(progress, progressMessage))
+                    {
+                        return fail(std::format("MTE: the MP3 export was cancelled after {} of {} samples",
+                            context.samplesWrittenTotal,
+                            m_totalOutputSamples));
+                    }
                 }
             }
 
@@ -278,8 +285,10 @@ namespace jucyaudio
                 spdlog::info("MP3 export finished for mix ID: {}", m_mixId);
             }
 
-            if (m_progressCallback)
-                m_progressCallback(1.0f, !m_failedTracks.empty() ? "MP3 export complete (with warnings)" : "MP3 export complete!");
+            // Through reportProgress, so a refusal here is remembered even though the render is
+            // over and there is nothing left to return it to. run() consults it before it
+            // commits, so cancelling at the very end still leaves the previous export in place.
+            std::ignore = reportProgress(1.0f, !m_failedTracks.empty() ? "MP3 export complete (with warnings)" : "MP3 export complete!");
 
             return true;
         }

@@ -4138,6 +4138,124 @@ namespace jucyaudio
                     }
                 }
 
+                // --- Cancelling an export stops it, and keeps what was there ---
+                //
+                // The progress callback is the cancel button: it returns false to say stop. That is
+                // injectable from a test, unlike a failed write, because the callback is a parameter of
+                // exportMixToFile - so this is the one failure path in the export that a self test can
+                // drive from outside without a seam in production code.
+                //
+                // The callback used to return void, and the two callers that wanted to cancel already
+                // handed back `!shouldCancel` for std::function to discard. So the render ran to
+                // completion and wrote the file anyway, over whatever was there.
+                {
+                    const auto beforeCancelling = renderedAudioOf(reExportedPath);
+                    report.check(beforeCancelling.totalSamples > 0, "there is a finished export to protect from a cancelled one");
+
+                    // The mix is lengthened again first, so that "the file did not change" means
+                    // something. Cancelling a render of the same mix that is already on disk would
+                    // produce an identical file if the cancel were ignored, and the check below could
+                    // not tell the two apart.
+                    {
+                        auto lengthened = mixManager.getMixTracks(toneMixInfo.mixId);
+                        bool given{true};
+                        for (auto &row : lengthened)
+                        {
+                            row.attachTo = Duration_t{2000};
+                            given = given && mixManager.updateMixTrack(toneMixInfo.mixId, row);
+                        }
+                        report.check(given, "the mix could be lengthened, so a completed render would differ from the file on disk");
+                    }
+
+                    // Everything before the render is allowed through, and the first report from the
+                    // mixing loop is refused. So this is a cancel in the middle of rendering and not a
+                    // refusal at the "Starting export..." report, which is its own case: nothing has
+                    // been written then, and run() refuses before the first block rather than after it.
+                    //
+                    // Only the render's own reports are counted. The export also reports starting and
+                    // reports the error afterwards, and those say nothing about whether it stopped; the
+                    // mixing loop's messages are the ones that mean "another block went to disk".
+                    int renderReports{0};
+                    const auto cancelled = toneExporter.exportMixToFile(toneMixInfo.mixId,
+                        toneSettings,
+                        [&renderReports](float, const std::string &message)
+                        {
+                            if (!message.starts_with("Exporting WAV..."))
+                            {
+                                return true;
+                            }
+                            ++renderReports;
+                            return false;
+                        });
+
+                    report.check(!cancelled.success, "a cancelled export reports failure rather than success");
+
+                    // The count is what proves it stopped. A render that ignored the answer would report
+                    // once per block - about thirty times for this mix - and then finish.
+                    report.check(renderReports == 1,
+                        std::format("and it stopped at the first refusal rather than running on ({} render reports)", renderReports));
+
+                    // Which is the point of stopping: the file the user already had is still theirs.
+                    const auto afterCancelling = renderedAudioOf(reExportedPath);
+                    report.check(afterCancelling.totalSamples == beforeCancelling.totalSamples,
+                        std::format("the export that was already there is untouched ({} vs {} samples)",
+                            afterCancelling.totalSamples,
+                            beforeCancelling.totalSamples));
+                    report.check(afterCancelling.onsets == beforeCancelling.onsets, "with its tracks still where they were");
+                    report.check(!std::filesystem::exists(partialPath, ec), "and the cancelled render left no partial behind");
+
+                    // Refusing the very first report, before any work is done. The contract is that
+                    // false means stop, so this has to stop too - not set up, write a block, and then
+                    // notice at the next report.
+                    int reportsBeforeRefusing{0};
+                    const auto refusedAtOnce = toneExporter.exportMixToFile(toneMixInfo.mixId,
+                        toneSettings,
+                        [&reportsBeforeRefusing](float, const std::string &)
+                        {
+                            ++reportsBeforeRefusing;
+                            return false;
+                        });
+
+                    report.check(!refusedAtOnce.success, "refusing the very first report cancels the export too");
+                    report.check(reportsBeforeRefusing == 2,
+                        std::format("and nothing is rendered after it - only the start and the error are reported ({} reports)",
+                            reportsBeforeRefusing));
+                    report.check(renderedAudioOf(reExportedPath).totalSamples == beforeCancelling.totalSamples,
+                        "the file that was already there survives that too");
+
+                    // And the last moment there is: after the render has finished and the file has been
+                    // closed, patched and validated, with only the commit left. Everything else is
+                    // allowed through, so this cancels at exactly one point and nowhere earlier - the
+                    // whole mix really is rendered before it is thrown away.
+                    //
+                    // The gate there used to read what the last report had left behind rather than
+                    // asking again, and closing a WAV means patching its header and reading it back, so
+                    // a cancel during that work would have been answered with a stale yes.
+                    int lateReports{0};
+                    const auto cancelledAtTheEnd = toneExporter.exportMixToFile(toneMixInfo.mixId,
+                        toneSettings,
+                        [&lateReports](float, const std::string &message)
+                        {
+                            if (!message.starts_with("Saving the exported file"))
+                            {
+                                return true;
+                            }
+                            ++lateReports;
+                            return false;
+                        });
+
+                    report.check(!cancelledAtTheEnd.success, "cancelling while the finished file is being saved still cancels");
+                    report.check(lateReports == 1,
+                        std::format("and that question is asked exactly once, immediately before the commit ({} times)", lateReports));
+
+                    const auto afterLateCancel = renderedAudioOf(reExportedPath);
+                    report.check(afterLateCancel.totalSamples == beforeCancelling.totalSamples,
+                        std::format("the export that was already there is still untouched ({} vs {} samples)",
+                            afterLateCancel.totalSamples,
+                            beforeCancelling.totalSamples));
+                    report.check(!std::filesystem::exists(partialPath, ec), "and the finished render was discarded rather than committed");
+                }
+
                 // --- The same, through the MP3 path ---
                 //
                 // Its own writer, its own output stream and its own releaseOutput override, none of
@@ -4155,6 +4273,33 @@ namespace jucyaudio
                     report.check(!std::filesystem::exists(mp3Partial, ec), "and its partial was committed rather than left behind");
 
                     const auto mp3SizeBefore = std::filesystem::file_size(mp3Settings.outputPath, ec);
+
+                    // Cancelling through the MP3 loop, which is its own branch against its own writer.
+                    // Before the track is removed below, while the mix still renders: a cancel is only
+                    // meaningful for an export that would otherwise have succeeded, and an export that
+                    // is refused at source preparation never reaches the loop being tested.
+                    {
+                        int mp3RenderReports{0};
+                        const auto mp3Cancelled = toneExporter.exportMixToFile(toneMixInfo.mixId,
+                            mp3Settings,
+                            [&mp3RenderReports](float, const std::string &message)
+                            {
+                                if (!message.starts_with("Exporting MP3..."))
+                                {
+                                    return true;
+                                }
+                                ++mp3RenderReports;
+                                return false;
+                            });
+
+                        report.check(!mp3Cancelled.success, "a cancelled MP3 export reports failure");
+                        report.check(mp3RenderReports == 1,
+                            std::format("and stops at the first refusal ({} render reports)", mp3RenderReports));
+                        report.check(std::filesystem::exists(mp3Settings.outputPath, ec) &&
+                                std::filesystem::file_size(mp3Settings.outputPath, ec) == mp3SizeBefore,
+                            std::format("the MP3 that was already there is untouched ({} bytes)", mp3SizeBefore));
+                        report.check(!std::filesystem::exists(mp3Partial, ec), "and the cancelled MP3 render left no partial behind");
+                    }
 
                     // Break it again and re-export over the MP3 that is now there.
                     {

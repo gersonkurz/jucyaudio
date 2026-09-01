@@ -77,8 +77,7 @@ namespace jucyaudio
               m_totalMixDurationMs{Duration_t::zero()},
               m_totalOutputSamples{0}
         {
-            if (m_progressCallback)
-                m_progressCallback(0.0f, "Starting export...");
+            std::ignore = reportProgress(0.0f, "Starting export...");
 
             loadMix(mixId);
         }
@@ -101,6 +100,16 @@ namespace jucyaudio
                 {"Run Mixing Loop", &ExportMixImplementation::runMixingLoop},
             }};
 
+            // The constructor reports "Starting export..." before any of this, and a caller may refuse
+            // it. Nothing has been written yet, so there is nothing to discard - but the export must
+            // not go on to write the first block after being told to stop.
+            if (m_cancelRequested)
+            {
+                const auto errorMsg{std::string{"The export was cancelled before it began."}};
+                fail(errorMsg);
+                return ExportResult::Failure(errorMsg);
+            }
+
             using clock = std::chrono::steady_clock;
             for (const auto &opdef : steps)
             {
@@ -112,8 +121,7 @@ namespace jucyaudio
                 if (!success)
                 {
                     auto errorMsg = std::format("Operation '{}' failed after {} ms ({}).", opdef.name, duration, durationToString((Duration_t)duration));
-                    if (m_progressCallback)
-                        m_progressCallback(1.0f, "Error: " + errorMsg);
+                    std::ignore = reportProgress(1.0f, "Error: " + errorMsg);
                     fail(errorMsg);
 
                     // Whatever was rendered goes, and the file the user already had is untouched
@@ -134,8 +142,27 @@ namespace jucyaudio
             if (!releaseOutput())
             {
                 const auto errorMsg{std::format("The mix could not be written out completely to {}.", pathToString(m_renderTargetPath))};
-                if (m_progressCallback)
-                    m_progressCallback(1.0f, "Error: " + errorMsg);
+                std::ignore = reportProgress(1.0f, "Error: " + errorMsg);
+                fail(errorMsg);
+                discardRenderTarget();
+                return ExportResult::Failure(errorMsg);
+            }
+
+            // The last gate, and the one that makes the contract true rather than nearly true. The
+            // mixing loops stop the moment they are refused, but the format's own "export complete"
+            // notification comes after the last block, where there is nothing left to return an answer
+            // to. A refusal there still has to stop the rendered file replacing what the user had.
+            //
+            // Asked here rather than only read here. releaseOutput() above patches and re-reads a WAV
+            // header, or flushes and closes an MP3 stream - real work, and on a large file not
+            // instant. A cancel during it would be invisible to a gate that only consulted what the
+            // last report happened to leave behind, and the file would replace the user's on the
+            // strength of an answer given before the question was current. So the caller is asked once
+            // more, immediately before the commit, and this is the last moment at which stopping still
+            // costs the user nothing.
+            if (!reportProgress(1.0f, "Saving the exported file..."))
+            {
+                const auto errorMsg{std::string{"The export was cancelled; the rendered file was discarded."}};
                 fail(errorMsg);
                 discardRenderTarget();
                 return ExportResult::Failure(errorMsg);
@@ -144,13 +171,21 @@ namespace jucyaudio
             if (!commitRenderTarget())
             {
                 const auto errorMsg{std::format("The mix rendered but could not be moved to {}.", pathToString(m_settings.outputPath))};
-                if (m_progressCallback)
-                    m_progressCallback(1.0f, "Error: " + errorMsg);
+                std::ignore = reportProgress(1.0f, "Error: " + errorMsg);
                 fail(errorMsg);
                 return ExportResult::Failure(errorMsg);
             }
 
             return ExportResult::Success(static_cast<int>(m_failedTracks.size()));
+        }
+
+        bool ExportMixImplementation::reportProgress(float progress, const std::string &message)
+        {
+            if (m_progressCallback && !m_progressCallback(progress, message))
+            {
+                m_cancelRequested = true;
+            }
+            return !m_cancelRequested;
         }
 
         bool ExportMixImplementation::commitRenderTarget()
@@ -342,8 +377,10 @@ namespace jucyaudio
         bool ExportMixImplementation::fail(const std::string &errorMessage)
         {
             spdlog::error("MTE: {}", errorMessage);
-            if (m_progressCallback)
-                m_progressCallback(1.0f, "Error: " + errorMessage);
+            // Through reportProgress like every other report, so there is one place that talks to the
+            // callback. The answer is meaningless here - this is the failure being announced - which is
+            // why it is ignored rather than checked.
+            std::ignore = reportProgress(1.0f, "Error: " + errorMessage);
             return false;
         }
 

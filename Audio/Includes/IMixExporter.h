@@ -15,7 +15,16 @@ namespace jucyaudio
 {
     namespace audio
     {
-        using MixExporterProgressCallback = std::function<void(float /*progress 0.0-1.0*/, const std::string & /*statusMsg*/)>;
+        /// @brief Reports how far an export has got, and says whether it should carry on.
+        ///
+        /// Returns true to keep going, false to stop. It used to return void, and the callers that
+        /// wanted to cancel already computed the answer and handed it back - `return !shouldCancel;` -
+        /// where std::function quietly discarded it. So the cancel button did nothing until the render
+        /// finished on its own: minutes of waiting on a long mix, and then the file was written anyway.
+        ///
+        /// The return type is what makes that hard to reintroduce. A lambda returning void cannot be
+        /// stored in this, so a call site that forgets to answer does not compile.
+        using MixExporterProgressCallback = std::function<bool(float /*progress 0.0-1.0*/, const std::string & /*statusMsg*/)>;
 
         // Structured result from export operations, allowing callers to see warnings
         struct ExportResult

@@ -184,13 +184,21 @@ namespace jucyaudio
                 }
                 context.samplesWrittenTotal += context.samplesToProcessInThisBlock;
 
-                if (m_progressCallback)
                 {
                     float progress = (float)context.samplesWrittenTotal / (float)m_totalOutputSamples;
                     currentTrackNumber = getCurrentTrackNumber();
                     const auto progressMessage = std::format("Exporting WAV... Track {}/{} ({:.0f}%)",
                         currentTrackNumber, totalTracks, progress * 100.0f);
-                    m_progressCallback(progress, progressMessage);
+
+                    // The answer is the cancel button. Failing here rather than breaking out: a
+                    // cancelled render is an unfinished file, and run() discards the partial and leaves
+                    // the previous export alone only for a render that reports failure.
+                    if (!reportProgress(progress, progressMessage))
+                    {
+                        return fail(std::format("MTE: the WAV export was cancelled after {} of {} samples",
+                            context.samplesWrittenTotal,
+                            m_totalOutputSamples));
+                    }
                 }
             } // end while samplesWrittenTotal < m_totalOutputSamples
 
@@ -211,8 +219,10 @@ namespace jucyaudio
                 spdlog::info("WAV export finished for mix ID: {}", m_mixId);
             }
 
-            if (m_progressCallback)
-                m_progressCallback(1.0f, !m_failedTracks.empty() ? "WAV export complete (with warnings)" : "WAV export complete!");
+            // Through reportProgress, so a refusal here is remembered even though the render is
+            // over and there is nothing left to return it to. run() consults it before it
+            // commits, so cancelling at the very end still leaves the previous export in place.
+            std::ignore = reportProgress(1.0f, !m_failedTracks.empty() ? "WAV export complete (with warnings)" : "WAV export complete!");
             return true;
         }
     } // namespace audio

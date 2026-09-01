@@ -8,24 +8,6 @@ logged stale-state effect, or need a design decision first.
 
 ---
 
-## P2: cancelling an export does not stop it
-
-**Reviewer finding, verbatim** (codex, review of the failed-export preservation change, 2026-09-01):
-
-> **[task]** Pre-existing cancellation propagation is ineffective: [`MixExporterProgressCallback`](/C:/Projects/jucyaudio/Audio/Includes/IMixExporter.h:18) returns `void`, while the cancellation-returning lambdas in [`MainComponent.cpp:2967`](/C:/Projects/jucyaudio/UI/MainComponent.cpp:2967) and [`BatchExportProgressDialog.cpp:241`](/C:/Projects/jucyaudio/UI/BatchExportProgressDialog.cpp:241) have their return values discarded by the WAV and MP3 loops. Consequently, cancelling during rendering does not stop it and may still replace the target after the user cancelled. This predates the diff and requires a separate callback/API change, so it is deferrable from the failed-export preservation task; record it in `tasks.md`.
-
-**What it costs**: the cancel button on an export does nothing until the render finishes on its own.
-For a long mix that is minutes of waiting after the user asked to stop, and the file is then written
-anyway - now over the previous export, because a completed render commits. The callers already
-compute the right answer and hand it back; nothing collects it.
-
-**Fix approach**: give `MixExporterProgressCallback` a `bool` return meaning "keep going", and have
-both mixing loops stop when it says no. A cancelled render then reports failure like any other, which
-is already enough for the partial file to be discarded and the previous export left alone. Every call
-site has to be visited, since the signature changes; the two named above already return the value.
-
----
-
 ## P2: the mix editor cannot tell a failed track query from an offline one
 
 **Symptom**: `MixProjectLoader::loadMix` reads its `TrackInfo` list with

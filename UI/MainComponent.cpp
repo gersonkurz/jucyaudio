@@ -3033,6 +3033,13 @@ namespace jucyaudio
 
                     completionCb(true, successMsg);
                 }
+                else if (shouldCancel)
+                {
+                    // Asked for rather than gone wrong, and the render now actually stops when asked -
+                    // so it arrives here as a failure and would otherwise be reported as one. The
+                    // partial file is already discarded and whatever was at the target is untouched.
+                    completionCb(false, "Cancelled during export.");
+                }
                 else
                 {
                     // Use detailed failure message if available, otherwise generic message
