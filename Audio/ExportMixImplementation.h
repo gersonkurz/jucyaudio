@@ -85,6 +85,38 @@ namespace jucyaudio
             bool runMixingLoop();
             virtual bool onRunMixingLoop() = 0;
 
+            /// @brief Where the render actually writes. Never the file the user asked for.
+            ///
+            /// The export used to open the target itself, deleting whatever was there first - and the
+            /// two steps that can fail, preparing the sources and the mixing loop, both come after
+            /// that. So a re-export that could not read one of its tracks destroyed the previous
+            /// export and put nothing in its place, and a failure part-way through the render left a
+            /// truncated file where a complete one had been. Re-exporting over the last file is the
+            /// ordinary way to update one, and an offline drive is the easy way to fail.
+            ///
+            /// Beside the target rather than in a temporary directory: the two then resolve through
+            /// the same parent and are on one filesystem whatever that parent is, so committing is a
+            /// replace in place and never a copy. A system temp directory is routinely on another
+            /// volume, where it would be.
+            const std::filesystem::path &renderTargetPath() const
+            {
+                return m_renderTargetPath;
+            }
+
+            /// @brief Closes whatever the render was writing to, so the file can be moved into place,
+            ///        and says whether everything actually reached the disk.
+            ///
+            /// The answer matters because run() commits the rendered file over the target when it is
+            /// true. Closing is the last thing that can fail and the easiest place to fail silently:
+            /// a buffered write returns success without touching the OS, and the flush that finally
+            /// carries it out happens in a destructor whose result nobody can see. Both formats close
+            /// something whose failure would otherwise be invisible, so both answer for themselves.
+            virtual bool releaseOutput()
+            {
+                m_writer.reset();
+                return true;
+            }
+
             // @brief Apply MixTrack's internal fades, volume, and crossfade logic
             bool applyMixTrackSpecs(const MixTrack &mixTrackDef, const SampleContext &context, juce::AudioBuffer<float> &masterOutputBlock,
                                     const juce::AudioBuffer<float> &sourceTrackBlock);
@@ -101,7 +133,12 @@ namespace jucyaudio
             const MixExporterProgressCallback m_progressCallback;
             const ActiveExportSettings &m_settings;
 
+            /// @brief Moves the rendered file onto the target, or throws it away. See renderTargetPath.
+            bool commitRenderTarget();
+            void discardRenderTarget();
+
             // dynamic members
+            std::filesystem::path m_renderTargetPath;
             Duration_t m_totalMixDurationMs;
             juce::int64 m_totalOutputSamples;
             juce::AudioFormatManager m_formatManager;

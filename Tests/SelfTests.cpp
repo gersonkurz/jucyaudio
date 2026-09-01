@@ -4061,9 +4061,117 @@ namespace jucyaudio
                 // positions are not observable in a file for this case - and because a change that
                 // made the export tolerant would need the index coupling in contributeFromActiveSource
                 // dealt with first, which the comment there now says.
-                toneSettings.outputPath = exportRoot / "gapped.wav";
+                //
+                // Re-exported over the file the first export produced, which is the ordinary way to
+                // update one, and the case that used to destroy it: the target was deleted to make the
+                // writer before either of the steps that can fail had run.
+                const auto reExportedPath = toneSettings.outputPath;
                 const auto gappedExport = toneExporter.exportMixToFile(toneMixInfo.mixId, toneSettings, nullptr);
                 report.check(!gappedExport.success, "an export whose track cannot be resolved is refused, not rendered short");
+
+                // The file that was already there is still there, and is still the mix that was
+                // exported into it - not truncated, not emptied, not replaced by a partial render.
+                report.check(std::filesystem::exists(reExportedPath, ec), "the export it was written over still exists");
+                if (std::filesystem::exists(reExportedPath, ec))
+                {
+                    const auto survivor = renderedAudioOf(reExportedPath);
+                    report.check(survivor.totalSamples == rendered.totalSamples,
+                        std::format("and is the same length as before the failed re-export ({} vs {} samples)",
+                            survivor.totalSamples,
+                            rendered.totalSamples));
+                    report.check(survivor.onsets == rendered.onsets,
+                        std::format("with its tracks still where they were ({} runs)", survivor.onsets.size()));
+                }
+
+                // And nothing is left lying beside it. The partial file is what the render actually
+                // wrote to; a failed export has to take it away again.
+                auto partialPath{reExportedPath};
+                partialPath += ".jucyaudio-part";
+                report.check(!std::filesystem::exists(partialPath, ec),
+                    std::format("and the partial render was cleaned up ({})", pathToString(partialPath)));
+
+                // --- A re-export that succeeds does replace the file ---
+                //
+                // The other half, and the one a preservation change can quietly break: every check so
+                // far would pass if the commit never happened at all. The mix is shortened first, so
+                // the replacement is provable from the bytes rather than from a timestamp - the file
+                // that comes out has to be the new render and not the old one left in place.
+                {
+                    auto shortened = mixManager.getMixTracks(toneMixInfo.mixId);
+                    report.check(shortened.size() == 3, std::format("the export fixture still has three rows (has {})", shortened.size()));
+
+                    // The row whose track went missing is put back, so the mix can render again, and
+                    // the last one is dropped so the result is visibly shorter than what is on disk.
+                    bool restored{true};
+                    for (auto &row : shortened)
+                    {
+                        row.attachTo = Duration_t{1000};
+                        restored = restored && mixManager.updateMixTrack(toneMixInfo.mixId, row);
+                    }
+                    report.check(restored, "the export fixture could be given a shorter attach chain");
+
+                    // The unresolvable row is still unresolvable, so the render would still be refused.
+                    // Put the track back the same way it was taken away.
+                    {
+                        SqliteDatabase restorer;
+                        const bool putBack = restorer.open(pathToString(databasePath)) &&
+                            restorer.execute("PRAGMA foreign_keys = OFF;") &&
+                            restorer.execute(std::format("INSERT INTO Tracks (track_id, folder_id, filename, title, duration) "
+                                                         "SELECT {}, folder_id, 'tone02.wav', 'restored', duration FROM Tracks WHERE track_id = {};",
+                                middleTrackId,
+                                toneMix[0].trackId)
+                                                 .c_str());
+                        report.check(putBack, "the missing track could be put back for the replacement check");
+                    }
+
+                    const auto replacement = toneExporter.exportMixToFile(toneMixInfo.mixId, toneSettings, nullptr);
+                    report.check(replacement.success, std::format("the shortened mix re-exports over the old file (said: '{}')", replacement.message));
+
+                    if (replacement.success)
+                    {
+                        const auto replaced = renderedAudioOf(reExportedPath);
+                        report.check(replaced.totalSamples > 0 && replaced.totalSamples != rendered.totalSamples,
+                            std::format("and the file on disk is the new render, not the old one ({} vs {} samples)",
+                                replaced.totalSamples,
+                                rendered.totalSamples));
+                        report.check(!std::filesystem::exists(partialPath, ec), "with no partial left beside it");
+                    }
+                }
+
+                // --- The same, through the MP3 path ---
+                //
+                // Its own writer, its own output stream and its own releaseOutput override, none of
+                // which the WAV checks above touch. Kept small: that it renders, that a refused
+                // re-export leaves the previous file alone, and that no partial survives either way.
+                {
+                    audio::ActiveExportSettings mp3Settings{};
+                    mp3Settings.outputPath = exportRoot / "gap.mp3";
+                    auto mp3Partial{mp3Settings.outputPath};
+                    mp3Partial += ".jucyaudio-part";
+
+                    const auto mp3Export = toneExporter.exportMixToFile(toneMixInfo.mixId, mp3Settings, nullptr);
+                    report.check(mp3Export.success, std::format("the mix exports to MP3 (said: '{}')", mp3Export.message));
+                    report.check(std::filesystem::exists(mp3Settings.outputPath, ec), "the MP3 was written");
+                    report.check(!std::filesystem::exists(mp3Partial, ec), "and its partial was committed rather than left behind");
+
+                    const auto mp3SizeBefore = std::filesystem::file_size(mp3Settings.outputPath, ec);
+
+                    // Break it again and re-export over the MP3 that is now there.
+                    {
+                        SqliteDatabase saboteur;
+                        const bool staged = saboteur.open(pathToString(databasePath)) &&
+                            saboteur.execute("PRAGMA foreign_keys = OFF;") &&
+                            saboteur.execute(std::format("DELETE FROM Tracks WHERE track_id = {};", middleTrackId).c_str());
+                        report.check(staged, "the middle track could be removed again for the MP3 check");
+                    }
+
+                    const auto mp3Refused = toneExporter.exportMixToFile(toneMixInfo.mixId, mp3Settings, nullptr);
+                    report.check(!mp3Refused.success, "an MP3 export whose track cannot be resolved is refused too");
+                    report.check(std::filesystem::exists(mp3Settings.outputPath, ec), "and the MP3 it was written over still exists");
+                    report.check(std::filesystem::file_size(mp3Settings.outputPath, ec) == mp3SizeBefore,
+                        std::format("at the size it was ({} bytes)", mp3SizeBefore));
+                    report.check(!std::filesystem::exists(mp3Partial, ec), "with its partial cleaned up");
+                }
 
                 // The stage, not the track: fail() logs which track it was and hands it to the progress
                 // callback, but the message that comes back to the caller names the operation. Asserted

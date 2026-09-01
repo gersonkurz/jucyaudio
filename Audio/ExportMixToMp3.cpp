@@ -33,17 +33,20 @@ namespace jucyaudio
         {
             m_formatManager.registerBasicFormats(); // For reading input formats
 
-            // Create output file stream
-            juce::File outputFile{pathToString(m_settings.outputPath)};
+            // Create output file stream, on the partial file rather than the target: the two steps
+            // that can still fail come after this one, and this used to delete the previous export
+            // before either of them ran. See ExportMixImplementation::renderTargetPath.
+            juce::File outputFile{pathToString(renderTargetPath())};
             if (outputFile.existsAsFile())
             {
+                // Left over from an export that was interrupted rather than one that finished.
                 outputFile.deleteFile();
             }
 
             m_outputStream = std::unique_ptr<juce::FileOutputStream>(outputFile.createOutputStream());
             if (!m_outputStream)
             {
-                return fail("MTE: Could not create output file stream for " + pathToString(m_settings.outputPath));
+                return fail("MTE: Could not create output file stream for " + pathToString(renderTargetPath()));
             }
 
             // Initialize LAME
@@ -83,7 +86,10 @@ namespace jucyaudio
             }
             unsigned char id3v2[10 * 1024];
             size_t id3bytes = lame_get_id3v2_tag(m_lameFlags, id3v2, sizeof id3v2);
-            m_outputStream->write(id3v2, id3bytes);
+            if (!m_outputStream->write(id3v2, id3bytes))
+            {
+                return fail("MTE: could not write the ID3v2 tag to " + pathToString(renderTargetPath()));
+            }
             spdlog::debug("LAME initialized: SR={}, Channels={}, Mode={}", lame_get_in_samplerate(m_lameFlags), lame_get_num_channels(m_lameFlags),
                           (int)lame_get_mode(m_lameFlags));
             // Allocate MP3 buffer
@@ -250,12 +256,18 @@ namespace jucyaudio
             m_outputStream->flush();
             unsigned char info[8100];
             size_t infoBytes = lame_get_lametag_frame(m_lameFlags, info, sizeof info);
-            m_outputStream->write(info, infoBytes);
+            if (!m_outputStream->write(info, infoBytes))
+            {
+                return fail("MTE: could not write the LAME info frame to " + pathToString(renderTargetPath()));
+            }
 
             // (optional) ID3v1 footer:
             unsigned char id3v1[128];
             size_t id3v1bytes = lame_get_id3v1_tag(m_lameFlags, id3v1, sizeof id3v1);
-            m_outputStream->write(id3v1, id3v1bytes);
+            if (!m_outputStream->write(id3v1, id3v1bytes))
+            {
+                return fail("MTE: could not write the ID3v1 footer to " + pathToString(renderTargetPath()));
+            }
 
             if (!m_failedTracks.empty())
             {

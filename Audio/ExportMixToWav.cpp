@@ -22,11 +22,15 @@ namespace jucyaudio
             m_formatManager.registerBasicFormats(); // For reading various input formats
                                                     // For MP3 writing, LAME will be handled separately or via a Juce LAME format.
 
-            const auto exportPath{pathToString(m_settings.outputPath)};
-            
+            // The partial file, not the target: the two steps that can still fail come after this one,
+            // and this used to delete the previous export before either of them ran. See
+            // ExportMixImplementation::renderTargetPath.
+            const auto exportPath{pathToString(renderTargetPath())};
+
             juce::File outputFile{exportPath};
             if (outputFile.existsAsFile())
             {
+                // Left over from an export that was interrupted rather than one that finished.
                 outputFile.deleteFile();
             }
             std::unique_ptr<juce::FileOutputStream> fileOutputStream(outputFile.createOutputStream());
@@ -51,6 +55,41 @@ namespace jucyaudio
                 return false;
             }
             // Writer now owns the stream via streamPtr
+            return true;
+        }
+
+        bool ExportWavMixImplementation::releaseOutput()
+        {
+            // The reset is what patches the header, so the file is only worth inspecting afterwards.
+            ExportMixImplementation::releaseOutput();
+
+            // Read back rather than measured. Measuring the file only proves the samples are there,
+            // and the failure this is about leaves them there: if the seek-and-rewrite of the RIFF
+            // header does not land, the payload is intact and complete while the header still
+            // advertises the length it was created with. A reader parses that header, so asking one
+            // how long the file is asks the question that matters. There is nothing left to ask the
+            // stream - the writer owned it and took it with it.
+            // WavAudioFormat directly, not through the format manager: the manager chooses a format by
+            // file extension, and the partial's is ".jucyaudio-part", which nothing claims. This class
+            // wrote the file, so it already knows what format to read it back as.
+            juce::WavAudioFormat wavFormat;
+            const juce::File rendered{pathToString(renderTargetPath())};
+            std::unique_ptr<juce::AudioFormatReader> reader{wavFormat.createReaderFor(new juce::FileInputStream{rendered}, true)};
+            if (!reader)
+            {
+                spdlog::error("MTE: {} could not be read back after writing it.", pathToString(renderTargetPath()));
+                return false;
+            }
+
+            if (reader->lengthInSamples != m_totalOutputSamples)
+            {
+                spdlog::error("MTE: {} reads back as {} samples, not the {} the mix rendered; its header did not survive the close.",
+                    pathToString(renderTargetPath()),
+                    reader->lengthInSamples,
+                    m_totalOutputSamples);
+                return false;
+            }
+
             return true;
         }
 
@@ -130,8 +169,19 @@ namespace jucyaudio
                     static_cast<int>(context.samplesToProcessInThisBlock)};
                 audio::theMasterPluginChain.processBlock(pluginBuffer);
 
-                // Write the processed masterOutputBlock to the file
-                m_writer->writeFromAudioSampleBuffer(masterOutputBlock, 0, (int)context.samplesToProcessInThisBlock);
+                // Write the processed masterOutputBlock to the file.
+                //
+                // Checked, because the answer decides whether the previous export survives: run()
+                // commits the rendered file over the target when this loop reports success, so a write
+                // that failed and was ignored - a full disk is the ordinary way - replaced a complete
+                // export with a truncated one.
+                if (!m_writer->writeFromAudioSampleBuffer(masterOutputBlock, 0, (int)context.samplesToProcessInThisBlock))
+                {
+                    return fail(std::format("MTE: could not write {} samples at {} to {}",
+                        context.samplesToProcessInThisBlock,
+                        context.samplesWrittenTotal,
+                        pathToString(renderTargetPath())));
+                }
                 context.samplesWrittenTotal += context.samplesToProcessInThisBlock;
 
                 if (m_progressCallback)
@@ -144,7 +194,12 @@ namespace jucyaudio
                 }
             } // end while samplesWrittenTotal < m_totalOutputSamples
 
-            m_writer->flush();
+            // Also checked: this is where a buffered write finally reaches the disk, so it is the last
+            // chance to find out that the file is not what it should be before run() commits it.
+            if (!m_writer->flush())
+            {
+                return fail(std::format("MTE: could not flush {}", pathToString(renderTargetPath())));
+            }
             // Writer (and its owned stream) and readers are cleaned up by unique_ptr.
 
             if (!m_failedTracks.empty())

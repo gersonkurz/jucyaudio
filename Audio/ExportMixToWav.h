@@ -38,6 +38,13 @@ namespace jucyaudio
         private:
             bool onSetupAudioFormatManagerAndWriter() override;
             bool onRunMixingLoop() override;
+
+            /// @brief Destroying a WavAudioFormatWriter is not free of consequence: it seeks back and
+            ///        rewrites the RIFF header with the real length, and neither that write nor the
+            ///        flush behind it reports to anyone. The writer owns the stream and takes it with
+            ///        it, so there is nothing left to ask afterwards - what is left is the file, and
+            ///        a header patch or a buffered write that did not land leaves it short.
+            bool releaseOutput() override;
         };
     } // namespace audio
 } // namespace jucyaudio

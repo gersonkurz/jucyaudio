@@ -12,6 +12,26 @@
 #include <Audio/AudioUtils.h>
 #include <Utils/AssortedUtils.h>
 #include <Database/Includes/Constants.h>
+#include <Utils/UiUtils.h>
+
+namespace
+{
+    /// @brief The file a render writes to before it has earned the name the user asked for.
+    ///
+    /// Beside the target and not in a temporary directory: the two then resolve through the same
+    /// parent and are on one filesystem whatever that parent is, so committing is a replace in place
+    /// and never a copy. A system temp directory is routinely on another volume, where it would be.
+    ///
+    /// The suffix is appended to the whole name rather than replacing the extension, so "mix.wav"
+    /// renders to "mix.wav.jucyaudio-part" and a stray one after a crash still says what it was going
+    /// to be.
+    std::filesystem::path partialExportPathFor(const std::filesystem::path &target)
+    {
+        auto partial{target};
+        partial += ".jucyaudio-part";
+        return partial;
+    }
+} // namespace
 
 namespace jucyaudio
 {
@@ -53,6 +73,7 @@ namespace jucyaudio
             : MixProjectLoader{},
               m_progressCallback{progressCallback},
               m_settings{settings},
+              m_renderTargetPath{partialExportPathFor(settings.outputPath)},
               m_totalMixDurationMs{Duration_t::zero()},
               m_totalOutputSamples{0}
         {
@@ -94,6 +115,11 @@ namespace jucyaudio
                     if (m_progressCallback)
                         m_progressCallback(1.0f, "Error: " + errorMsg);
                     fail(errorMsg);
+
+                    // Whatever was rendered goes, and the file the user already had is untouched
+                    // because nothing has been written to it - see renderTargetPath.
+                    releaseOutput();
+                    discardRenderTarget();
                     return ExportResult::Failure(errorMsg);
                 }
                 else
@@ -101,7 +127,65 @@ namespace jucyaudio
                     spdlog::info("MTE: Operation '{}' completed successfully in {} ms ({}).", opdef.name, duration, durationToString((Duration_t)duration));
                 }
             }
+
+            // Closed before it is moved: the writer holds the stream, and on Windows a file cannot be
+            // renamed while it is open. Closing is also where the last buffered bytes are written, so
+            // it can fail - and a render that could not be finished must not replace a complete file.
+            if (!releaseOutput())
+            {
+                const auto errorMsg{std::format("The mix could not be written out completely to {}.", pathToString(m_renderTargetPath))};
+                if (m_progressCallback)
+                    m_progressCallback(1.0f, "Error: " + errorMsg);
+                fail(errorMsg);
+                discardRenderTarget();
+                return ExportResult::Failure(errorMsg);
+            }
+
+            if (!commitRenderTarget())
+            {
+                const auto errorMsg{std::format("The mix rendered but could not be moved to {}.", pathToString(m_settings.outputPath))};
+                if (m_progressCallback)
+                    m_progressCallback(1.0f, "Error: " + errorMsg);
+                fail(errorMsg);
+                return ExportResult::Failure(errorMsg);
+            }
+
             return ExportResult::Success(static_cast<int>(m_failedTracks.size()));
+        }
+
+        bool ExportMixImplementation::commitRenderTarget()
+        {
+            // JUCE rather than std::filesystem::rename, and the same reason MixRecoveryM3U gives for
+            // the same choice: rename does not reliably replace an existing destination on Windows.
+            // replaceFileIn uses Win32 ReplaceFile where the target exists and a plain move where it
+            // does not, so the previous file survives a failure either way.
+            //
+            // No copy-and-delete fallback. An earlier version had one for a cross-device rename, which
+            // cannot arise here - the partial sits beside the target, so both resolve through the same
+            // parent and are on one filesystem whatever that parent is - and a copy that truncates the
+            // destination and then fails would destroy exactly the file this exists to preserve. If the
+            // replacement cannot be done, the previous export is left alone and the export says so.
+            const juce::File partial{ui::jucePathFromFs(m_renderTargetPath)};
+            const juce::File target{ui::jucePathFromFs(m_settings.outputPath)};
+            if (!partial.replaceFileIn(target))
+            {
+                spdlog::error("MTE: could not put {} in place; the file that was already there is untouched.", pathToString(m_settings.outputPath));
+                discardRenderTarget();
+                return false;
+            }
+
+            return true;
+        }
+
+        void ExportMixImplementation::discardRenderTarget()
+        {
+            std::error_code ec;
+            if (std::filesystem::remove(m_renderTargetPath, ec); ec)
+            {
+                // Worth saying, not worth failing over: the export has already reported what happened
+                // to it, and a leftover .jucyaudio-part names what it was going to be.
+                spdlog::warn("MTE: could not remove {}: {}", pathToString(m_renderTargetPath), ec.message());
+            }
         }
         void ExportMixImplementation::calculateTrackPositions()
         {

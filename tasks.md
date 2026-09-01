@@ -8,22 +8,21 @@ logged stale-state effect, or need a design decision first.
 
 ---
 
-## P2: a failed export can destroy the previous one
+## P2: cancelling an export does not stop it
 
-**Reviewer finding, verbatim** (codex, review of the shared ATTACH walk, 2026-09-01):
+**Reviewer finding, verbatim** (codex, review of the failed-export preservation change, 2026-09-01):
 
-> **[task]** Pre-existing destructive export ordering: `Audio/ExportMixImplementation.cpp:75-80` creates the output writer before preparing input sources; `Audio/ExportMixToWav.cpp:27-32` and `Audio/ExportMixToMp3.cpp:37-43` delete an existing target first, after which `Audio/ExportMixImplementation.cpp:275-283` can fail on an unreadable or unresolved source. An unsuccessful export can therefore destroy the previous output without producing a replacement. This predates the ATTACH change and requires a broader temporary-file/atomic-replacement fix, so it is deferrable from this task but should be recorded in `tasks.md`.
+> **[task]** Pre-existing cancellation propagation is ineffective: [`MixExporterProgressCallback`](/C:/Projects/jucyaudio/Audio/Includes/IMixExporter.h:18) returns `void`, while the cancellation-returning lambdas in [`MainComponent.cpp:2967`](/C:/Projects/jucyaudio/UI/MainComponent.cpp:2967) and [`BatchExportProgressDialog.cpp:241`](/C:/Projects/jucyaudio/UI/BatchExportProgressDialog.cpp:241) have their return values discarded by the WAV and MP3 loops. Consequently, cancelling during rendering does not stop it and may still replace the target after the user cancelled. This predates the diff and requires a separate callback/API change, so it is deferrable from the failed-export preservation task; record it in `tasks.md`.
 
-**What it costs**: re-exporting a mix over its own previous file is the ordinary way to update an
-export. If any source track cannot be read - an offline drive is the easy case, and the same one
-that motivated the shared ATTACH walk - the old file is already gone by the time that is discovered,
-and nothing takes its place.
+**What it costs**: the cancel button on an export does nothing until the render finishes on its own.
+For a long mix that is minutes of waiting after the user asked to stop, and the file is then written
+anyway - now over the previous export, because a completed render commits. The callers already
+compute the right answer and hand it back; nothing collects it.
 
-**Fix approach**: render to a temporary file beside the target and rename over it only once the
-export has succeeded. The rename wants to be as close to atomic as each platform gives - Windows and
-macOS both have a replace-in-place call - so a crash mid-export leaves either the old file or the new
-one and never neither. Worth doing for both the WAV and MP3 paths at once, since they share the
-ordering.
+**Fix approach**: give `MixExporterProgressCallback` a `bool` return meaning "keep going", and have
+both mixing loops stop when it says no. A cancelled render then reports failure like any other, which
+is already enough for the partial file to be discarded and the previous export left alone. Every call
+site has to be visited, since the signature changes; the two named above already return the value.
 
 ---
 
@@ -85,6 +84,32 @@ against a freshly created one. The comparison already exists and works; what is 
 old enough to be worth comparing. The awkward part is choosing the version: too old and the fixture
 is a large hand-written artifact nobody can verify, too new and it proves little. v12 is probably the
 useful floor, since that is where the search tables arrive.
+
+---
+
+## P3: no executed check that a failed write discards the partial
+
+**Symptom**: the WAV render now checks `writeFromAudioSampleBuffer` and `flush`, and the MP3 render
+checks its ID3 and LAME-frame writes, so a write that fails makes the mixing loop fail, `run()`
+discards the partial file, and the previous export survives. Nothing proves it. Every check in the
+self test reaches the render failing *before* it starts - a track that cannot be resolved - which
+exercises the same discard path but not the write propagation that leads to it.
+
+**Why it is not covered**: a mid-render write failure needs a full disk or a failing device. Every
+injection reachable from outside the exporter - a read-only partial, a partial path that is a
+directory, an unwritable parent - is refused at the setup step instead, before any sample is written.
+Inducing one properly needs a test-only seam in `ExportMixImplementation`, which is an affordance
+this codebase does not have anywhere else.
+
+**How it was found**: raised as a [blocking] finding by the reviewer of the failed-export
+preservation change (codex, 2026-09-01), which asked for an executed fault-injection check. The
+propagation fix shipped; the executed check was accepted as deferred by the human on the same day.
+
+**Fix approach**: a seam is the honest way - a virtual the self test overrides to fail the Nth write -
+and it is worth weighing against the alternative of leaving this to code review, since it is the only
+place in the project that would carry one. If a seam is added it should be one hook, used by both
+mixing loops, and the check should assert all three things at once: the export fails, the partial is
+gone, and the file that was already there is untouched.
 
 ---
 
