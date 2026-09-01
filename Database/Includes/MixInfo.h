@@ -284,11 +284,51 @@ namespace jucyaudio
 
 
         /**
-         * @brief How long a mix is, walked from its tracks.
+         * @brief Where every track of a mix starts, walked from its attach points.
          *
          * The ATTACH model, and the only implementation of it: each track starts where the previous
-         * one's attachTo meets this one's attachFrom, and the mix ends where the last audible sample
-         * does. Crossfades overlap, so the answer is always shorter than the sum of the durations.
+         * one's attachTo meets this one's attachFrom. One entry per element of @p tracks, in the same
+         * order, so the caller can index the two together.
+         *
+         * **A position needs nothing but the mix.** attachTo and attachFrom are stored on the mix
+         * row, so where a track sits does not depend on whether its audio can be resolved - and that
+         * is what lets everything that walks a mix agree about a track that is offline or missing.
+         *
+         * They did not agree before, and there were three answers, not two. MixPlaybackEngine and the
+         * M3U exporter advanced through every row. calculateMixDuration and the WAV/MP3 exporter
+         * skipped an unresolvable row without advancing the previous start, yet still took that
+         * skipped row's attachTo for the next one. The timeline skipped it entirely and chained from
+         * the last row it had drawn, because it builds no view for a row it cannot resolve. So a mix
+         * with one track on a disconnected drive was laid out one way on screen, played another, and
+         * reported a third length.
+         *
+         * Resolution decides only whether a track contributes to the mix's *end*, which is
+         * calculateMixDuration's business below.
+         *
+         * @param tracks The mix, in order.
+         * @return One start per track. Empty for an empty mix.
+         */
+        inline std::vector<Duration_t> calculateMixTrackStarts(const std::vector<MixTrack> &tracks)
+        {
+            std::vector<Duration_t> starts;
+            starts.reserve(tracks.size());
+
+            Duration_t previousTrackStart{0};
+            for (size_t i = 0; i < tracks.size(); ++i)
+            {
+                const auto trackStart{i == 0 ? Duration_t{0} : previousTrackStart + tracks[i - 1].attachTo - tracks[i].attachFrom};
+                starts.push_back(trackStart);
+                previousTrackStart = trackStart;
+            }
+
+            return starts;
+        }
+
+        /**
+         * @brief How long a mix is, walked from its tracks.
+         *
+         * The mix ends where the last audible sample does. Crossfades overlap, so the answer is
+         * always shorter than the sum of the durations.
          *
          * Here, in the model header, rather than in whichever component happened to need it. Six of
          * the eight paths that wrote a mix used to pass along whatever total they were holding, and
@@ -298,42 +338,33 @@ namespace jucyaudio
          *
          * @param tracks The mix, in order.
          * @param durationOf The natural length of a track, or nothing if the track cannot be resolved
-         *        at all. Nothing is skipped - which is not the same as a track that resolves to a
-         *        length of zero. Those exist, they are tracks whose length was never determined, and
-         *        they still occupy their place because their attach points still position what follows.
+         *        at all. Nothing contributes no end - which is not the same as a track that resolves
+         *        to a length of zero. Those exist, they are tracks whose length was never determined.
          * @return The length of the finished mix; zero for an empty one.
          *
-         * @note A skipped track still supplies the attach point for the track after it, because the
-         *       predecessor is the previous element of the list rather than the last one successfully
-         *       placed. That is not the more coherent of the two rules, but it is the one
-         *       ExportMixImplementation already uses, and a length that disagreed with the audio the
-         *       exporter produces would be worse than an odd rule consistently applied. MixPlaybackEngine
-         *       is a third variation again; unifying all three is recorded in tasks.md and is not this
-         *       change. Today no mix row in the library points at a track that cannot be resolved, so
-         *       the three agree in practice.
+         * @note An unresolvable track still holds its place. It positions what follows exactly as it
+         *       would if its audio were there, because calculateMixTrackStarts never asks - it just
+         *       adds nothing to the end. So plugging the drive back in changes what you hear and not
+         *       where anything sits.
          */
         template <typename DurationLookup> Duration_t calculateMixDuration(const std::vector<MixTrack> &tracks, DurationLookup durationOf)
         {
-            Duration_t previousTrackStart{0};
+            const auto starts{calculateMixTrackStarts(tracks)};
             Duration_t mixEnd{0};
 
             for (size_t i = 0; i < tracks.size(); ++i)
             {
-                const auto &track = tracks[i];
-                const auto trackDuration = durationOf(track.trackId);
+                const auto trackDuration = durationOf(tracks[i].trackId);
                 if (!trackDuration.has_value())
                 {
                     continue;
                 }
 
-                const auto trackStart{i == 0 ? Duration_t{0} : previousTrackStart + tracks[i - 1].attachTo - track.attachFrom};
-                const auto trackEnd{trackStart + track.getEffectiveDuration(*trackDuration)};
+                const auto trackEnd{starts[i] + tracks[i].getEffectiveDuration(*trackDuration)};
                 if (trackEnd > mixEnd)
                 {
                     mixEnd = trackEnd;
                 }
-
-                previousTrackStart = trackStart;
             }
 
             return mixEnd;

@@ -65,9 +65,10 @@ namespace jucyaudio
             // being guarded against - and it would not catch a partial failure anyway, which comes
             // back as a non-empty prefix.
             //
-            // Recorded in tasks.md: this wants a status-bearing, mix-specific read. Until then a
-            // track that does not resolve is skipped by the walk and by the timeline, as it always
-            // has been.
+            // Recorded in tasks.md: this wants a status-bearing, mix-specific read. Until then a track
+            // that does not resolve still holds its place - every positioning walk advances through
+            // every row, so the tracks around it do not move - and it contributes nothing to the mix's
+            // length. The timeline draws no component for it; a WAV or MP3 export refuses outright.
             auto loadedInfos = theTrackLibrary.getTracks(getMixTrackQueryArgs(mixId));
 
             spdlog::info("[RELOAD] MixProjectLoader::loadMix - {} tracks and {} track infos for mix ID {}",

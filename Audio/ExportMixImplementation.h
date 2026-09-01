@@ -112,6 +112,9 @@ namespace jucyaudio
             struct TrackTimelinePosition {
                 Duration_t startTime{0};
                 Duration_t endTime{0};
+                /// @brief False when the row's track could not be resolved, so endTime means nothing.
+                ///        Its startTime is still real - the ATTACH chain does not need the audio.
+                bool resolved{false};
             };
             std::vector<TrackTimelinePosition> m_trackPositions;
 

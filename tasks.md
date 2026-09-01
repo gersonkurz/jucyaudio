@@ -8,27 +8,22 @@ logged stale-state effect, or need a design decision first.
 
 ---
 
-## P2: three different ATTACH walks disagree about an unresolvable track
+## P2: a failed export can destroy the previous one
 
-**Symptom**: `calculateMixDuration` (`Database/Includes/MixInfo.h:315`), `MixPlaybackEngine`
-(`Audio/MixPlaybackEngine.cpp:49`) and `ExportMixImplementation::calculateTrackPositions`
-(`Audio/ExportMixImplementation.cpp:112`) each handle a mix row whose track cannot be resolved
-differently. The walk and the exporter skip the row without advancing `previousTrackStart`; the
-playback engine advances through every row. With such a row present, the three place tracks at
-different positions and report different totals.
+**Reviewer finding, verbatim** (codex, review of the shared ATTACH walk, 2026-09-01):
 
-**It is reachable today**, which this entry used to deny: an unresolvable row does not require a
-dangling foreign key. `showOfflineTracks` defaults to false (`UI/Settings.h:166`), the ordinary track
-query then excludes offline folders (`Database/Sqlite/SqliteStatementConstruction.cpp:94`), and
-`MixProjectLoader::loadMix` reads its TrackInfos with that query (`Audio/MixProjectLoader.cpp:72`).
-So an intact mix with one track on a disconnected drive resolves to a `MixTracks` row with no
-TrackInfo, and the three walks disagree about it. The stale "no mix row points at a track that cannot
-be resolved" claim is also in the comment above `calculateMixDuration` and should go with it.
+> **[task]** Pre-existing destructive export ordering: `Audio/ExportMixImplementation.cpp:75-80` creates the output writer before preparing input sources; `Audio/ExportMixToWav.cpp:27-32` and `Audio/ExportMixToMp3.cpp:37-43` delete an existing target first, after which `Audio/ExportMixImplementation.cpp:275-283` can fail on an unreadable or unresolved source. An unsuccessful export can therefore destroy the previous output without producing a replacement. This predates the ATTACH change and requires a broader temporary-file/atomic-replacement fix, so it is deferrable from this task but should be recorded in `tasks.md`.
 
-**Fix approach**: one walk, used by all three. The blocker is that the playback engine and the
-exporter each own their own positioning loop for reasons unrelated to this - unpicking those is the
-work, not choosing the rule. Related: the statusless read below is what makes an offline track
-indistinguishable from a failed query in the first place.
+**What it costs**: re-exporting a mix over its own previous file is the ordinary way to update an
+export. If any source track cannot be read - an offline drive is the easy case, and the same one
+that motivated the shared ATTACH walk - the old file is already gone by the time that is discovered,
+and nothing takes its place.
+
+**Fix approach**: render to a temporary file beside the target and rename over it only once the
+export has succeeded. The rename wants to be as close to atomic as each platform gives - Windows and
+macOS both have a replace-in-place call - so a crash mid-export leaves either the old file or the new
+one and never neither. Worth doing for both the WAV and MP3 paths at once, since they share the
+ordering.
 
 ---
 
@@ -40,8 +35,10 @@ when the query fails and when it legitimately matches nothing. The loader publis
 sets `m_loaded = true` either way (`:97`), so the timeline and playback see a mix whose tracks do not
 resolve, and the read-only guard in the editor does not catch it: that fires on
 `!node->isCacheLoaded()` (`UI/MixEditorComponent.cpp:542`), which covers a failed `readMixTracks`, not
-this query. An unresolvable track is simply skipped by the ATTACH walk and by the timeline, as it
-always has been.
+this query. An unresolvable track is not silently dropped from the layout any more - every
+positioning walk advances through every row, so it holds its place and the tracks around it do not
+move - but nothing tells the user why a track is missing from the editor, and a WAV or MP3 export of
+that mix is refused outright rather than explained.
 
 **Why the obvious check is wrong**: an empty result is not evidence of failure. The ordinary track
 query filters out offline folders, so a valid mix whose tracks are all on a disconnected drive

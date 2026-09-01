@@ -125,7 +125,11 @@ namespace jucyaudio
             /// Generated rather than copied so the test carries its own fixtures and depends on nothing
             /// in the user's library. WAV rather than MP3 because a correct file can be written by hand
             /// in a few lines - the scanner accepts *.wav, and TagLib reads it without complaint.
-            bool writeSilentWav(const std::filesystem::path &path, uint32_t sampleCount)
+            /// @brief Writes a mono 16-bit 44.1 kHz WAV fixture.
+            /// @param amplitude Zero for silence, which is what most fixtures want - they are scanned,
+            ///        not listened to. Non-zero writes a square wave, for the one check that reads an
+            ///        exported file back and asks where a track's audio starts.
+            bool writeSilentWav(const std::filesystem::path &path, uint32_t sampleCount, int16_t amplitude = 0)
             {
                 const uint32_t sampleRate = 44100;
                 const uint16_t channels = 1;
@@ -169,8 +173,23 @@ namespace jucyaudio
                 out.write("data", 4);
                 u32(dataBytes);
 
-                const std::vector<char> silence(dataBytes, 0);
-                out.write(silence.data(), static_cast<std::streamsize>(silence.size()));
+                if (amplitude == 0)
+                {
+                    const std::vector<char> silence(dataBytes, 0);
+                    out.write(silence.data(), static_cast<std::streamsize>(silence.size()));
+                }
+                else
+                {
+                    // A square wave at 441 Hz - a hundred samples up, a hundred down. Square rather
+                    // than sine because the only thing read back is "is this sample loud", and a
+                    // square wave is loud from its very first sample, so an onset found in the
+                    // exported file is the track's start and not the first audible part of a ramp.
+                    for (uint32_t i = 0; i < sampleCount; ++i)
+                    {
+                        const int16_t sample = ((i / 50) % 2 == 0) ? amplitude : static_cast<int16_t>(-amplitude);
+                        u16(static_cast<uint16_t>(sample));
+                    }
+                }
 
                 return out.good();
             }
@@ -1151,14 +1170,13 @@ namespace jucyaudio
 
                     // (f) A track deleted from the middle of the mix.
                     //
-                    // Not the case the review asked to pin down, and it cannot be: MixTracks.track_id
-                    // is a foreign key that cascades, so deleting a track takes its mix row with it.
-                    // A row referring to a track that cannot be resolved therefore cannot exist while
-                    // that key stands - which is why the skip branch in calculateMixDuration, and the
-                    // disagreement between it, the playback engine and the exporter over what to do
-                    // with such a row, are unreachable today. Zero rows in the real library point at a
-                    // missing track. What is reachable, and what this checks, is that a cascade leaves
-                    // the stored length describing what remains.
+                    // Not a mix row whose track cannot be resolved: MixTracks.track_id is a foreign key
+                    // that cascades, so deleting a track takes its mix row with it, and no row pointing
+                    // at a deleted track can exist while that key stands. An unresolvable row is
+                    // reached the other way, through a query that filters offline folders, and what a
+                    // walk over a mix does with one is checked separately over the walk itself. What is
+                    // reachable here, and what this checks, is that a cascade leaves the stored length
+                    // describing what remains.
                     const auto beforeDeletion = mixes.getMixTracks(durationMix.mixId);
                     report.check(beforeDeletion.size() == 3, std::format("the mix has three tracks before the deletion (has {})", beforeDeletion.size()));
                     if (beforeDeletion.size() == 3)
@@ -1807,6 +1825,100 @@ namespace jucyaudio
                         db.getLibraryRootManager().removeRoot(addedRoot->id);
                     }
                 }
+            }
+
+            // --- Where a mix's tracks sit does not depend on whether they can be resolved ---
+            //
+            // The one property that makes every walk over a mix agree. The timeline, the playback
+            // engine, both exporters and the stored length all position tracks from the mix's own
+            // attach points, and they now do it through calculateMixTrackStarts - so a track on a
+            // disconnected drive leaves a silent gap where it belongs rather than pulling everything
+            // after it earlier in some of those places and not others.
+            //
+            // Over the walk directly, with no database: it is a pure function of a track list, and the
+            // five callers agree by sharing it rather than by each being checked to behave alike.
+            {
+                const auto ms = [](int64_t value)
+                {
+                    return Duration_t{value};
+                };
+
+                // Three tracks, each handing over 1000 ms before it ends, with distinct attach points
+                // so an off-by-one in the chain cannot look correct by symmetry.
+                std::vector<MixTrack> tracks(3);
+                tracks[0].trackId = 1;
+                tracks[0].attachTo = ms(9000);
+                tracks[1].trackId = 2;
+                tracks[1].attachFrom = ms(1000);
+                tracks[1].attachTo = ms(19000);
+                tracks[2].trackId = 3;
+                tracks[2].attachFrom = ms(2000);
+                tracks[2].attachTo = ms(29000);
+
+                // 0, then 0 + 9000 - 1000, then 8000 + 19000 - 2000.
+                const std::vector<Duration_t> expectedStarts{ms(0), ms(8000), ms(25000)};
+                report.check(database::calculateMixTrackStarts(tracks) == expectedStarts,
+                    std::format("the ATTACH chain places three tracks at 0, 8000, 25000 ms (got {}, {}, {})",
+                        database::calculateMixTrackStarts(tracks)[0].count(),
+                        database::calculateMixTrackStarts(tracks)[1].count(),
+                        database::calculateMixTrackStarts(tracks)[2].count()));
+
+                // Durations of 10, 20 and 30 seconds, so the ends are 10000, 28000 and 55000.
+                const auto lengthOf = [](TrackId trackId) -> std::optional<Duration_t>
+                {
+                    return Duration_t{trackId * 10000};
+                };
+                report.check(database::calculateMixDuration(tracks, lengthOf) == ms(55000),
+                    std::format("the mix is as long as its last track's end ({} ms, expected 55000)",
+                        database::calculateMixDuration(tracks, lengthOf).count()));
+
+                // The middle track offline. Its position is unchanged and so is the third's - which is
+                // the whole point, and what used to differ between the walk, the engine and the
+                // exporter. Only the end it would have contributed goes.
+                const auto lengthWithoutTheMiddle = [](TrackId trackId) -> std::optional<Duration_t>
+                {
+                    if (trackId == 2)
+                    {
+                        return std::nullopt;
+                    }
+                    return Duration_t{trackId * 10000};
+                };
+
+                report.check(database::calculateMixTrackStarts(tracks) == expectedStarts,
+                    "an unresolvable track moves nothing: the starts come from the mix, not from the audio");
+                report.check(database::calculateMixDuration(tracks, lengthWithoutTheMiddle) == ms(55000),
+                    std::format("and the mix is still as long, because the last track has not moved ({} ms, expected 55000)",
+                        database::calculateMixDuration(tracks, lengthWithoutTheMiddle).count()));
+
+                // The last track offline instead, which is the case where the total really does change:
+                // 55000 was its end, and the longest remaining end is the middle track's 28000.
+                const auto lengthWithoutTheLast = [](TrackId trackId) -> std::optional<Duration_t>
+                {
+                    if (trackId == 3)
+                    {
+                        return std::nullopt;
+                    }
+                    return Duration_t{trackId * 10000};
+                };
+                report.check(database::calculateMixDuration(tracks, lengthWithoutTheLast) == ms(28000),
+                    std::format("losing the last track shortens the mix to what is left ({} ms, expected 28000)",
+                        database::calculateMixDuration(tracks, lengthWithoutTheLast).count()));
+
+                // A track whose length was never determined is not the same as one that cannot be
+                // resolved: it resolves, to zero, and still ends where it starts.
+                const auto zeroLengthMiddle = [](TrackId trackId) -> std::optional<Duration_t>
+                {
+                    if (trackId == 2)
+                    {
+                        return Duration_t{0};
+                    }
+                    return Duration_t{trackId * 10000};
+                };
+                report.check(database::calculateMixDuration(tracks, zeroLengthMiddle) == ms(55000),
+                    "a track that resolves to zero length is not treated as unresolvable");
+
+                report.check(database::calculateMixTrackStarts({}).empty(), "an empty mix has no positions");
+                report.check(database::calculateMixDuration(std::vector<MixTrack>{}, lengthOf) == ms(0), "and no length");
             }
 
             writeResultsFile(resultsPath, "jucyaudio scan self test", report);
@@ -3465,7 +3577,7 @@ namespace jucyaudio
             return report.failures() == 0 ? 0 : 1;
         }
 
-        int runTimelineSelfTest(const std::filesystem::path &selfTestRoot)
+        int runTimelineSelfTest(const std::filesystem::path &selfTestRoot, const std::filesystem::path &databasePath)
         {
             Report report;
             // Its own library again: this suite writes to the mix it builds, and the checks are about
@@ -3664,6 +3776,301 @@ namespace jucyaudio
             const auto rowsAfterFreshPaste = mixManager.getMixTracks(mixId).size();
             report.check(rowsAfterFreshPaste == rowsBefore + 1,
                 std::format("the same paste goes through once the views are current again (rows {} -> {})", rowsBefore, rowsAfterFreshPaste));
+
+            // --- 3. A row the timeline cannot resolve still holds its place ---
+            //
+            // The disagreement this suite exists to pin down. The timeline builds a view only for a
+            // mix row whose TrackInfo resolves, so its views are a subsequence of the rows - and it
+            // used to chain each view's position off the previous *view*, which meant an offline track
+            // pulled everything after it earlier. Playback and the M3U export advanced through every
+            // row and so kept the gap; the length the editor reported skipped the row but still took
+            // the skipped row's attachTo, which was a third answer again. The picture the user edited
+            // on was none of them.
+            //
+            // The row still has no component - there is nothing to draw - but it keeps its place.
+            //
+            // Staged over a second connection with foreign keys off, because nothing reachable
+            // through the public interfaces can produce it: MixTracks.track_id cascades, so deleting
+            // a track the ordinary way takes its mix row with it. Last in this suite, since it leaves
+            // the scratch mix pointing at a track that is gone.
+            {
+                // The fixture mix is built with cue points but no attach points, so every track starts
+                // at zero and the components sit on top of each other - a layout in which no rule can
+                // be told from another. Give it a real ATTACH chain first: each track hands over at
+                // the end of its fixture audio, so the tracks are one duration apart.
+                {
+                    auto spread = mixManager.getMixTracks(mixId);
+                    bool given{true};
+                    for (auto &row : spread)
+                    {
+                        row.attachTo = Duration_t{kFixtureDurationMs};
+                        row.attachFrom = Duration_t{0};
+                        given = given && mixManager.updateMixTrack(mixId, row);
+                    }
+                    report.check(given, "the fixture mix could be given a real attach chain to lay out");
+                    if (!given)
+                    {
+                        writeResultsFile(resultsPath, "jucyaudio timeline self test", report);
+                        return 1;
+                    }
+                }
+
+                if (!loader.reloadFromDatabase() || !timeline.populateFrom(&loader))
+                {
+                    return stop("Could not return the timeline to the loaded mix before the offline check.");
+                }
+
+                const auto rows = loader.getMixTracks();
+                if (rows.size() < 3 || timeline.getNumChildComponents() != static_cast<int>(rows.size()))
+                {
+                    return stop("The offline check needs at least three resolved rows to work with.");
+                }
+
+                // Where every component sits while everything resolves. Read from the components
+                // themselves rather than from the loader, so this is the layout and not the arithmetic.
+                const auto viewsBefore = timeline.getNumChildComponents();
+                std::vector<int> xBefore;
+                for (int i = 0; i < viewsBefore; ++i)
+                {
+                    xBefore.push_back(timeline.getChildComponent(i)->getX());
+                }
+
+                // Which also says the layout is worth reading at all: components that all sat at the
+                // same x would agree under any rule, which is how the first version of this check
+                // passed while proving nothing.
+                report.check(std::ranges::is_sorted(xBefore, std::less_equal<>{}) && xBefore.front() < xBefore.back(),
+                    std::format("the attach chain spreads the components out (x {} .. {})", xBefore.front(), xBefore.back()));
+
+                const auto vanishingTrackId = rows[1].trackId;
+                {
+                    SqliteDatabase saboteur;
+                    const bool staged = saboteur.open(pathToString(databasePath)) &&
+                        saboteur.execute("PRAGMA foreign_keys = OFF;") &&
+                        saboteur.execute(std::format("DELETE FROM Tracks WHERE track_id = {};", vanishingTrackId).c_str());
+                    report.check(staged, std::format("the second track ({}) could be made unresolvable", vanishingTrackId));
+                    if (!staged)
+                    {
+                        writeResultsFile(resultsPath, "jucyaudio timeline self test", report);
+                        return 1;
+                    }
+                }
+
+                if (!loader.reloadFromDatabase() || !timeline.populateFrom(&loader))
+                {
+                    return stop("Could not repopulate the timeline after the second track went missing.");
+                }
+
+                report.check(timeline.getNumChildComponents() == viewsBefore - 1,
+                    std::format("the unresolvable row gets no component ({} -> {})", viewsBefore, timeline.getNumChildComponents()));
+                report.check(loader.getMixTracks().size() == rows.size(),
+                    std::format("but its row is still in the mix ({} rows)", loader.getMixTracks().size()));
+
+                // The check the whole change is about: every surviving track is drawn exactly where it
+                // was, so the missing one leaves a gap instead of pulling the rest earlier. Row 1 is
+                // the one that went, so the components now correspond to rows 0, 2, 3, ...
+                std::vector<int> xExpected{xBefore};
+                xExpected.erase(xExpected.begin() + 1);
+
+                std::vector<int> xAfter;
+                for (int i = 0; i < timeline.getNumChildComponents(); ++i)
+                {
+                    xAfter.push_back(timeline.getChildComponent(i)->getX());
+                }
+
+                const auto joined = [](const std::vector<int> &values)
+                {
+                    std::string text;
+                    for (const auto value : values)
+                    {
+                        text += (text.empty() ? "" : ",") + std::to_string(value);
+                    }
+                    return text;
+                };
+
+                report.check(xAfter == xExpected,
+                    std::format("every track after the missing one is drawn where it always was, gap and all (got {}, expected {})",
+                        joined(xAfter),
+                        joined(xExpected)));
+            }
+
+            // --- 4. The exported file, against real PCM ---
+            //
+            // Two separate statements, and the second is not the one you would guess.
+            //
+            // With every track resolved, the samples that come out have to sit where the ATTACH chain
+            // says - checked against the file rather than against the positions the exporter computed,
+            // so the shared walk is verified end to end.
+            //
+            // With a track unresolvable, the export does not render a gap: prepareActiveTrackSources
+            // refuses the whole export the moment a row has no TrackInfo. So there is no output to
+            // compare, and the contract worth pinning is the refusal itself. The positions the
+            // exporter now shares with everything else are therefore not observable in a file for
+            // that case - they matter to the length the editor reports, the M3U export, playback and
+            // the timeline.
+            //
+            // Its own library, with audible fixtures: everything else here is silent, and an onset
+            // cannot be found in silence.
+            {
+                const auto exportRoot = selfTestRoot / "timeline-export";
+                std::filesystem::remove_all(exportRoot, ec);
+                std::filesystem::create_directories(exportRoot, ec);
+                if (ec)
+                {
+                    return stop(std::format("Could not create {}: {}", pathToString(exportRoot), ec.message()));
+                }
+
+                constexpr uint32_t kToneSamples = 44100; // one second each
+                for (int i = 1; i <= 3; ++i)
+                {
+                    if (!writeSilentWav(exportRoot / std::format("tone{:02}.wav", i), kToneSamples, 12000))
+                    {
+                        return stop("Could not write the audible export fixtures.");
+                    }
+                }
+
+                if (!db.getLibraryRootManager().addRoot(pathToString(exportRoot)).has_value())
+                {
+                    return stop("Could not add the export fixture library as a root.");
+                }
+                const auto exportFolderId = db.getFolderDatabase().findOrCreateFolderByPath(exportRoot);
+                if (exportFolderId <= 0 || !runScan({exportFolderId}, false, report, "export fixture discovery"))
+                {
+                    return stop("Could not discover the export fixture library.");
+                }
+
+                const auto toneTracks = tracksUnder(db, exportFolderId);
+                if (toneTracks.size() != 3)
+                {
+                    return stop(std::format("Expected 3 audible fixtures, found {}.", toneTracks.size()));
+                }
+
+                // One second of audio each, handing over at two seconds, so the three sit at 0, 2 and 4
+                // seconds with a second of silence between them. The silence is what makes the onsets
+                // findable: three tracks butted together are one continuous loud run.
+                std::vector<MixTrack> toneMix;
+                for (const auto &entry : toneTracks)
+                {
+                    MixTrack row{};
+                    row.trackId = entry.second.trackId;
+                    row.orderInMix = static_cast<int>(toneMix.size());
+                    row.attachTo = Duration_t{2000};
+                    row.attachFrom = Duration_t{0};
+                    toneMix.push_back(row);
+                }
+
+                MixInfo toneMixInfo{};
+                toneMixInfo.name = "SelfTest Export Gap Mix";
+                if (!mixManager.createOrUpdateMix(toneMixInfo, toneMix) || toneMixInfo.mixId <= 0)
+                {
+                    return stop("Could not create the export fixture mix.");
+                }
+
+                // Where each track's audio begins in an exported file, and how long that file is. A run
+                // is a stretch of loud samples with silence before it; the fixtures are square waves,
+                // so a track is uniformly loud from its first sample and the runs are its tracks.
+                struct RenderedAudio
+                {
+                    std::vector<int64_t> onsets;
+                    int64_t totalSamples{-1};
+                };
+
+                const auto renderedAudioOf = [&report](const std::filesystem::path &file)
+                {
+                    RenderedAudio rendered;
+
+                    juce::AudioFormatManager formatsForReading;
+                    formatsForReading.registerBasicFormats();
+                    std::unique_ptr<juce::AudioFormatReader> reader{
+                        formatsForReading.createReaderFor(juce::File{juce::String{pathToString(file)}})};
+                    if (!reader)
+                    {
+                        report.abort(std::format("Could not read back {}", pathToString(file)));
+                        return rendered;
+                    }
+
+                    rendered.totalSamples = reader->lengthInSamples;
+                    juce::AudioBuffer<float> audio{static_cast<int>(reader->numChannels), static_cast<int>(rendered.totalSamples)};
+                    reader->read(&audio, 0, static_cast<int>(rendered.totalSamples), 0, true, true);
+
+                    bool inRun{false};
+                    for (int64_t i = 0; i < rendered.totalSamples; ++i)
+                    {
+                        const bool loud = std::abs(audio.getSample(0, static_cast<int>(i))) > 0.05f;
+                        if (loud && !inRun)
+                        {
+                            rendered.onsets.push_back(i);
+                        }
+                        inRun = loud;
+                    }
+                    return rendered;
+                };
+
+                audio::ActiveExportSettings toneSettings{};
+                toneSettings.outputPath = exportRoot / "whole.wav";
+                const audio::MixExporter toneExporter{};
+
+                const auto wholeExport = toneExporter.exportMixToFile(toneMixInfo.mixId, toneSettings, nullptr);
+                report.check(wholeExport.success, std::format("the three-track mix exports (said: '{}')", wholeExport.message));
+                if (!wholeExport.success)
+                {
+                    writeResultsFile(resultsPath, "jucyaudio timeline self test", report);
+                    return 1;
+                }
+
+                // What the ATTACH chain says, checked against the samples that came out. A tolerance,
+                // because the exporter may fade a track in and the threshold then trips a little late;
+                // 50 ms is far tighter than the 2000 ms a misplaced track would be out by.
+                const auto rendered = renderedAudioOf(toneSettings.outputPath);
+                const std::vector<int64_t> expectedOnsets{0, 88200, 176400};
+                report.check(rendered.onsets.size() == expectedOnsets.size(),
+                    std::format("the exported file holds three separate tracks (found {})", rendered.onsets.size()));
+
+                if (rendered.onsets.size() == expectedOnsets.size())
+                {
+                    bool placed{true};
+                    for (size_t i = 0; i < expectedOnsets.size(); ++i)
+                    {
+                        placed = placed && std::llabs(rendered.onsets[i] - expectedOnsets[i]) < 2205;
+                    }
+                    report.check(placed,
+                        std::format("and each one starts where the attach chain puts it (samples {}, {}, {}; expected 0, 88200, 176400)",
+                            rendered.onsets[0],
+                            rendered.onsets[1],
+                            rendered.onsets[2]));
+                }
+
+                // Now the middle one goes, the same way as above: over its own connection with foreign
+                // keys off, because the cascade would take the mix row with it.
+                const auto middleTrackId = toneMix[1].trackId;
+                {
+                    SqliteDatabase saboteur;
+                    const bool staged = saboteur.open(pathToString(databasePath)) &&
+                        saboteur.execute("PRAGMA foreign_keys = OFF;") &&
+                        saboteur.execute(std::format("DELETE FROM Tracks WHERE track_id = {};", middleTrackId).c_str());
+                    report.check(staged, std::format("the middle exported track ({}) could be made unresolvable", middleTrackId));
+                    if (!staged)
+                    {
+                        writeResultsFile(resultsPath, "jucyaudio timeline self test", report);
+                        return 1;
+                    }
+                }
+
+                // And the contract when one cannot be resolved, which is not "render a gap":
+                // prepareActiveTrackSources refuses the whole export rather than producing a mix that
+                // is quietly missing a track. Pinned down because it is the reason the exporter's
+                // positions are not observable in a file for this case - and because a change that
+                // made the export tolerant would need the index coupling in contributeFromActiveSource
+                // dealt with first, which the comment there now says.
+                toneSettings.outputPath = exportRoot / "gapped.wav";
+                const auto gappedExport = toneExporter.exportMixToFile(toneMixInfo.mixId, toneSettings, nullptr);
+                report.check(!gappedExport.success, "an export whose track cannot be resolved is refused, not rendered short");
+
+                // The stage, not the track: fail() logs which track it was and hands it to the progress
+                // callback, but the message that comes back to the caller names the operation. Asserted
+                // as it is rather than as it might ideally be, so this says what a caller can rely on.
+                report.check(gappedExport.message.find("Preparing active track sources") != std::string::npos,
+                    std::format("and the refusal names the stage it failed at: '{}'", gappedExport.message));
+            }
 
             // The timeline is a local and takes its components with it; this drops the loader pointer
             // first so nothing outlives the loader either.

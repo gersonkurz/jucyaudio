@@ -107,46 +107,48 @@ namespace jucyaudio
         {
             m_trackPositions.clear();
             m_trackPositions.resize(m_mixTracks.size());
-            Duration_t previousTrackStart{0};
-            
+
+            // Through the shared walk in MixInfo.h. Every row is positioned, including one whose track
+            // cannot be resolved: its position comes from the mix's own attach points, so it holds its
+            // place rather than pulling everything after it earlier.
+            //
+            // Not because this exporter ever renders such a mix - prepareActiveTrackSources refuses
+            // the whole export when a row has no TrackInfo, so the unresolved case never reaches the
+            // renderer. It is so that the total this class reports, the length the editor shows, the
+            // M3U export, playback and the timeline are one answer computed once, rather than five
+            // that happen to agree while every track resolves.
+            const auto starts{database::calculateMixTrackStarts(m_mixTracks)};
+
             for (size_t i = 0; i < m_mixTracks.size(); ++i)
             {
-                const auto& mixTrack = m_mixTracks[i];
-                const auto* trackInfo = getTrackInfoForId(mixTrack.trackId);
-                if (!trackInfo)
+                const auto &mixTrack = m_mixTracks[i];
+                const auto *trackInfo = getTrackInfoForId(mixTrack.trackId);
+
+                TrackTimelinePosition pos;
+                pos.startTime = starts[i];
+
+                if (trackInfo)
                 {
-                    spdlog::warn("Track info not found for track ID {} during position calculation", mixTrack.trackId);
-                    continue;
-                }
-                
-                Duration_t trackStart{0};
-                
-                if (i == 0)
-                {
-                    // First track starts at position 0
-                    trackStart = Duration_t{0};
+                    pos.resolved = true;
+                    pos.endTime = pos.startTime + mixTrack.getEffectiveDuration(trackInfo->duration);
                 }
                 else
                 {
-                    // ATTACH formula: Next track start = Previous track start + Previous track's attachTo - Current track's attachFrom
-                    const auto& prevTrack = m_mixTracks[i-1];
-                    trackStart = previousTrackStart + prevTrack.attachTo - mixTrack.attachFrom;
+                    // No audio to place, so nothing to end. Left unresolved rather than given a
+                    // zero-length end, because the mix's total is the maximum of these and a row that
+                    // sits past the last audible sample would stretch it.
+                    spdlog::warn("Track info not found for track ID {} during position calculation", mixTrack.trackId);
+                    pos.endTime = pos.startTime;
                 }
-                
-                // Store the calculated position
-                TrackTimelinePosition pos;
-                pos.startTime = trackStart;
-                pos.endTime = trackStart + mixTrack.getEffectiveDuration(trackInfo->duration);
+
                 m_trackPositions[i] = pos;
-                
-                // Remember this track's start for the next iteration
-                previousTrackStart = trackStart;
-                
-                spdlog::debug("Track at index {} (ID {}) positioned at [{}, {}]", 
+
+                spdlog::debug("Track at index {} (ID {}) positioned at [{}, {}]{}",
                     i,
-                    mixTrack.trackId, 
-                    durationToString(pos.startTime), 
-                    durationToString(pos.endTime));
+                    mixTrack.trackId,
+                    durationToString(pos.startTime),
+                    durationToString(pos.endTime),
+                    pos.resolved ? "" : " (unresolved)");
             }
         }
 
@@ -161,17 +163,19 @@ namespace jucyaudio
             // Calculate timeline positions for all tracks using ATTACH model
             calculateTrackPositions();
 
-            // Find the maximum end time among all tracks
-            Duration_t maxEndTime{0};
-            for (const auto& pos : m_trackPositions)
-            {
-                if (pos.endTime > maxEndTime)
+            // The total through the shared walk rather than a maximum over the positions above. Same
+            // rule, one implementation - and the maximum would have had to know to ignore a row that
+            // could not be resolved, whose endTime is only a placeholder.
+            m_totalMixDurationMs = database::calculateMixDuration(m_mixTracks,
+                [this](TrackId trackId) -> std::optional<Duration_t>
                 {
-                    maxEndTime = pos.endTime;
-                }
-            }
-
-            m_totalMixDurationMs = maxEndTime;
+                    const auto *trackInfo = getTrackInfoForId(trackId);
+                    if (!trackInfo)
+                    {
+                        return std::nullopt;
+                    }
+                    return trackInfo->duration;
+                });
 
             if (m_totalMixDurationMs <= Duration_t::zero())
             {
@@ -295,7 +299,13 @@ namespace jucyaudio
         bool ExportMixImplementation::contributeFromActiveSource(size_t trackIndex, const SampleContext &overallContext,
                                                                  juce::AudioBuffer<float> &masterOutputBlock)
         {
-            // Get the source and position data using the track's index in the mix
+            // Get the source and position data using the track's index in the mix.
+            //
+            // The two are indexed alike only because prepareActiveTrackSources refuses the whole
+            // export when any track cannot be resolved, so m_activeSources is either as long as
+            // m_mixTracks or the export never reaches here. m_trackPositions holds every row,
+            // resolved or not. Anything that makes the export tolerate an unresolvable track has to
+            // give the sources their row index rather than rely on the two lining up.
             ActiveTrackSource& activeSource = m_activeSources[trackIndex];
             const TrackTimelinePosition& trackPos = m_trackPositions[trackIndex];
 

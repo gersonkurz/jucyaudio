@@ -500,7 +500,7 @@ namespace jucyaudio
                     const auto recoveryResult = tests::runMixRecoverySelfTest(selfTestRoot, databasePath);
                     const auto backupResult = tests::runBackupSelfTest(selfTestRoot);
                     const auto migrationResult = tests::runMigrationSelfTest(selfTestRoot);
-                    const auto timelineResult = tests::runTimelineSelfTest(selfTestRoot);
+                    const auto timelineResult = tests::runTimelineSelfTest(selfTestRoot, databasePath);
                     const auto folderCacheResult = tests::runFolderCacheSelfTest(selfTestRoot);
                     result = (scanResult != 0 || recoveryResult != 0 || backupResult != 0 || migrationResult != 0 || timelineResult != 0 ||
                               folderCacheResult != 0)

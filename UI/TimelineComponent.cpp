@@ -1152,6 +1152,7 @@ namespace jucyaudio
                 }
 
                 view.mixTrackData = *row;
+                view.mixRowIndex = static_cast<size_t>(std::distance(mixTracks.begin(), row));
                 if (const auto *const trackInfo = m_mixLoader->getTrackInfoForId(view.mixTrackData.trackId))
                 {
                     view.trackInfoData = *trackInfo;
@@ -1181,23 +1182,22 @@ namespace jucyaudio
                 spdlog::debug("[RECALC]   First track has negative cueStart, globalOffset={}ms", globalOffset.count());
             }
 
-            // Recalculate positions for all tracks
-            Duration_t previousAudioStartTime{0};
+            // Positions come from the whole mix, not from the views. The views are a subsequence -
+            // populateFrom skips a row whose TrackInfo does not resolve - and chaining view to view
+            // meant an offline track pulled everything after it earlier, so the timeline showed a mix
+            // that neither playback nor either exporter agreed with. Through the shared walk in
+            // MixInfo.h, which every one of them now uses: an unresolvable row holds its place and
+            // leaves a gap where its audio would be.
+            const auto trackStarts{database::calculateMixTrackStarts(m_mixLoader->getMixTracks())};
 
             for (size_t i = 0; i < m_trackViews.size(); ++i)
             {
                 auto &view = m_trackViews[i];
 
-                // Calculate audio start time according to Mix Flow algorithm
-                if (i == 0)
-                {
-                    view.audioStartTime = globalOffset;
-                }
-                else
-                {
-                    const auto &prevTrack = m_trackViews[i - 1].mixTrackData;
-                    view.audioStartTime = previousAudioStartTime + prevTrack.attachTo - view.mixTrackData.attachFrom;
-                }
+                // The guard is for a view whose row syncTrackViewsFromLoader could not find, which it
+                // logs and leaves standing; laying it out at the offset is what it did before.
+                view.audioStartTime =
+                    globalOffset + (view.mixRowIndex < trackStarts.size() ? trackStarts[view.mixRowIndex] : Duration_t{0});
 
                 // Update component start time
                 view.componentStartTime = view.audioStartTime + view.mixTrackData.cueStart;
@@ -1209,8 +1209,6 @@ namespace jucyaudio
                             view.mixTrackData.attachTo.count(),
                             view.audioStartTime.count(),
                             view.componentStartTime.count());
-
-                previousAudioStartTime = view.audioStartTime;
             }
 
             // Refresh the layout with the new positions
@@ -1858,6 +1856,7 @@ namespace jucyaudio
                     TrackView view;
                     view.mixTrackData = mixTrack;
                     view.trackInfoData = *trackInfo;
+                    view.mixRowIndex = i;
                     // Initialize with default values - will be recalculated
                     view.audioStartTime = Duration_t{0};
                     view.componentStartTime = Duration_t{0};

@@ -59,24 +59,16 @@ namespace jucyaudio
             outFile << "#EXTMIX:" << mixInfo.name << "\n";
             outFile << "#EXTMIXDURATION:" << std::chrono::duration_cast<std::chrono::seconds>(mixInfo.totalDuration).count() << "\n\n";
 
-            // Calculate timeline positions using ATTACH model
+            // Calculate timeline positions using the ATTACH model, through the shared walk in
+            // MixInfo.h. What is written here is the *audible* start, which is the track's position
+            // plus its cueStart.
+            const auto trackStarts{database::calculateMixTrackStarts(mixTracks)};
             std::vector<Duration_t> trackAudibleStartTimes;
-            trackAudibleStartTimes.resize(mixTracks.size());
-            Duration_t previousFileStart{0};
+            trackAudibleStartTimes.reserve(mixTracks.size());
 
             for (size_t i = 0; i < mixTracks.size(); ++i)
             {
-                const auto &mixTrack = mixTracks[i];
-                Duration_t fileStart{0};
-
-                if (i > 0)
-                {
-                    const auto &prevTrack = mixTracks[i - 1];
-                    fileStart = previousFileStart + prevTrack.attachTo - mixTrack.attachFrom;
-                }
-                
-                trackAudibleStartTimes[i] = fileStart + mixTrack.cueStart;
-                previousFileStart = fileStart;
+                trackAudibleStartTimes.push_back(trackStarts[i] + mixTracks[i].cueStart);
             }
 
             // Process each track

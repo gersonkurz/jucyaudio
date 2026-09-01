@@ -162,7 +162,7 @@ namespace jucyaudio
          * @param selfTestRoot The root returned by prepareSelfTestEnvironment().
          * @return 0 if every check passed, 1 otherwise.
          */
-        int runTimelineSelfTest(const std::filesystem::path &selfTestRoot);
+        int runTimelineSelfTest(const std::filesystem::path &selfTestRoot, const std::filesystem::path &databasePath);
 
         /**
          * @brief Headless test that the folder cache and the folder writer do not stop each other.

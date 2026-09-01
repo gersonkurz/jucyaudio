@@ -442,6 +442,15 @@ namespace jucyaudio
                 /** @brief The calculated absolute start time of the track's *visual component* on the mix timeline.
                  *         This is equal to `audioStartTime + cueStart`. */
                 Duration_t componentStartTime{0};
+
+                /** @brief Which row of the loader's mix this view was built from.
+                 *
+                 *  populateFrom skips a row whose TrackInfo does not resolve, so the views are a
+                 *  subsequence of the rows and their own indices are not the mix's. Positions come
+                 *  from the whole mix - an offline track still occupies its place - so laying a view
+                 *  out needs to know which row it is. Maintained wherever a view is matched to a row,
+                 *  which is populateFrom and syncTrackViewsFromLoader. */
+                size_t mixRowIndex{0};
             };
 
             // Values, not pointers, and it has to stay that way: a pointer here aliases storage that

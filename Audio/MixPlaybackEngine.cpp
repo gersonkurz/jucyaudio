@@ -42,28 +42,10 @@ namespace jucyaudio
                 trackInfoMap[ti.trackId] = &ti;
             }
 
-            // Calculate track start times using Mix Flow algorithm
-            state->trackStartTimes.reserve(mixTracks.size());
-            Duration_t previousAudioStartTime{0};
-
-            for (size_t i = 0; i < mixTracks.size(); ++i)
-            {
-                const auto& mixTrack = mixTracks[i];
-                Duration_t audioStartTime;
-
-                if (i == 0)
-                {
-                    audioStartTime = Duration_t{0};
-                }
-                else
-                {
-                    const auto& prevTrack = mixTracks[i - 1];
-                    audioStartTime = previousAudioStartTime + prevTrack.attachTo - mixTrack.attachFrom;
-                }
-
-                state->trackStartTimes.push_back(audioStartTime);
-                previousAudioStartTime = audioStartTime;
-            }
+            // Calculate track start times using the ATTACH model. Through the shared walk in
+            // MixInfo.h, so this agrees with the timeline, the exporters and the stored length by
+            // there being one implementation rather than by five of them being written alike.
+            state->trackStartTimes = database::calculateMixTrackStarts(mixTracks);
 
             // Calculate total duration using O(1) map lookups
             // Use effective duration from cue points
