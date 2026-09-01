@@ -7,28 +7,39 @@ stale-state effect, or need a design decision first.
 
 ---
 
-## P2: nothing stops a folder path from being stored twice
+## P2: a database created from scratch is missing six tables the migrations create
 
-**Symptom**: `Folders` has no unique index on its path column - only
-`idx_folders_parent_name ON Folders(parent_id, name)`, which is not unique
-(`Database/Sqlite/SqliteTrackDatabase.cpp:183`). A second row for a path that already has one is
-therefore a legal insert, and the consequence does not stay small: `buildCacheIfNeeded` refuses to
-finish a cache that holds two rows for one path
-(`Database/Sqlite/SqliteFolderDatabase.cpp:141`, `return false`), so from the first duplicate onwards
-the cache can never be rebuilt, every lookup misses, and every folder touched after that gets another
-row of its own.
+**Symptom**: `initialSqlStatements` (`Database/Sqlite/SqliteTrackDatabase.cpp:171` onwards) does not
+create `TrackMarkers`, `TracksSearchData`, `TracksSearchFTS`, `MixMarkers`, `EQPresets` or
+`ReverbPresets`, nor the EQ/reverb factory rows. Those exist only in the v4, v12, v16, v17 and v18
+migration rungs, which a brand-new database never runs - `createTablesIfNeeded` stamps a new database
+at the latest version and skips the ladder entirely. Confirmed against a database the self test
+creates from scratch: `sqlite_master` holds sixteen tables and none of those six.
 
-**How it was found**: the folder cache self test produced exactly that cascade - one duplicate, then
-1505 failed cache builds in a single run - against an `invalidateCache()` that did not hold the
-database mutex. That hole is closed, so nothing reachable today inserts a duplicate. What remains is
-that the schema does not say it cannot happen, and the failure mode if it ever does is silent and
-permanent.
+**What it costs**: full-text search, track markers, mix markers and the EQ/reverb presets do not work
+in a library created with the current code, and fail rather than degrade. Every search path in
+`Database/Sqlite/SqliteStatementConstruction.cpp` (`:267`, `:353`, `:414`, `:474`) joins
+`TracksSearchFTS`; every statement in `Database/Sqlite/SqliteMarkerManager.cpp` names `TrackMarkers`;
+`SqliteMixMarkerManager`, `SqliteEQPresetManager` and `SqliteReverbPresetManager` are in the same
+position. A library that was upgraded from an older version has all six and is unaffected, which is
+why this is not more visible.
 
-**Fix approach**: a unique index on the path column, and a decision about what an insert that violates
-it should do - `findOrCreateFolderByPath` currently treats a failed insert as "could not create" and
-returns -1, which is right for a caller but says nothing about the row that already exists. Needs the
-three-place schema change (`initialSqlStatements`, `latestSchemaVersion`, `runMigrations`) and a
-migration that copes with a database that already holds duplicates.
+**How it was found**: the v31 folder merge reuses the v24 track de-duplication SQL, which remaps
+`TrackMarkers` and rebuilds the FTS index. It failed with `no such table: TrackMarkers` against a
+fresh-schema fixture. The v31 rung now skips the steps whose table is absent, so it copes; the
+divergence itself is untouched.
+
+**Reviewer finding, verbatim** (codex, review of the v31 folder path index, 2026-09-01):
+
+> **[task]** Expand the new schema-divergence task: [initialSqlStatements](C:/Projects/jucyaudio/Database/Sqlite/SqliteTrackDatabase.cpp:206) also omits `MixMarkers`, `EQPresets`, and `ReverbPresets`, not only `TrackMarkers`, `TracksSearchData`, and `TracksSearchFTS`. These additional tables, their indexes, and EQ/reverb factory rows exist only in the v16-v18 migration rungs at [SqliteTrackDatabase.cpp:2024](C:/Projects/jucyaudio/Database/Sqlite/SqliteTrackDatabase.cpp:2024), so fresh latest-version databases never create them and the corresponding managers fail when used. This predates v31 and is deferrable because repairing complete fresh/upgraded schema convergence requires a separate migration.
+
+**Fix approach**: the three-place rule from CLAUDE.md, in the direction it is usually needed the
+other way round - the six tables, their indexes, the v25 FTS sync triggers and the EQ/reverb factory
+rows belong in `initialSqlStatements`, and a migration rung has to create them for the databases
+already created without them (`CREATE TABLE IF NOT EXISTS` plus a one-off FTS `rebuild`). Walk the
+whole ladder while doing it, since nothing enforces that a new database and a fully migrated one end
+up with the same schema - a check that compares the two would be the thing that stops this
+recurring.
 
 ---
 

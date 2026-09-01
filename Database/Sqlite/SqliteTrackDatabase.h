@@ -177,6 +177,10 @@ namespace jucyaudio
             DbResult setDBSchemaVersion(int version);
 
             DbResult runMigrations(); // Calls specific migration steps
+
+            /// @brief Fills in the root_path of every Folders row that never had one, the way
+            ///        buildCacheIfNeeded does. Part of the v31 rung; call it inside that transaction.
+            DbResult reconstructMissingFolderPaths();
             DbResult seedDefaultGenres(); // INSERT OR IGNORE the default genre vocabulary
         };
 

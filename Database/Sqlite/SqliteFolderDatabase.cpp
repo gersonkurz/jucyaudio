@@ -216,8 +216,13 @@ namespace jucyaudio
                 FolderId folderId{0};
             };
 
-            // build lookup map of existing albums by folder ID
-            std::unordered_map<FolderId, ExistingAlbumInfo> albumsByFolder;
+            // All the albums a folder holds, not one of them. The schema says a folder may hold several -
+            // the index is UNIQUE(title, folder_id), and findOrCreateAlbum happily makes a second album
+            // in a folder that already has one under another title - so keeping a single entry per
+            // folder meant an arbitrary one won, and the assert that used to stand here fired on a
+            // layout the database is entitled to hold. Two ways to reach it: an album per disc in one
+            // directory, and the v31 folder merge, which moves a loser folder's albums onto the keeper.
+            std::unordered_map<FolderId, std::vector<ExistingAlbumInfo>> albumsByFolder;
             reserveFromCount("SELECT COUNT(*) FROM Albums", albumsByFolder);
 
             SqliteStatement albumQuery{m_db, "SELECT album_id, album_artist, title, folder_id FROM Albums"};
@@ -229,9 +234,8 @@ namespace jucyaudio
                 albumInfo.title = albumQuery.getText(2);
                 const FolderId folderId = albumQuery.getInt64(3);
                 assert(albumInfo.albumId >= 0 && "Album ID should be non-negative");
-                assert(!albumsByFolder.contains(folderId) && "Folder should not have multiple albums in this context");
 
-                albumsByFolder[folderId] = std::move(albumInfo);
+                albumsByFolder[folderId].push_back(std::move(albumInfo));
             }
 
             FolderId lastKnownFolderId = -1;
@@ -293,16 +297,24 @@ namespace jucyaudio
                     }
                     else if (lastKnownArtistName.empty())
                     {
-                        auto item = albumsByFolder.find(folderId);
+                        // Does any album this folder holds describe what these tracks say? Asking about
+                        // one of them was wrong for a folder holding several: the album that happened
+                        // to be read last decided the answer for all of them.
+                        const auto item = albumsByFolder.find(folderId);
                         if (item != albumsByFolder.end())
                         {
-                            if (item->second.albumArtist != artistName || item->second.title != albumName)
+                            const auto describesTheseTracks = [&](const ExistingAlbumInfo &album)
                             {
-                                useThisFolder = false; // Skip this folder for album creation
+                                return album.albumArtist == artistName && album.title == albumName;
+                            };
+
+                            if (std::ranges::any_of(item->second, describesTheseTracks))
+                            {
+                                folderAlreadyHasAlbum = true; // This folder already has this album
                             }
                             else
                             {
-                                folderAlreadyHasAlbum = true; // This folder already has an album
+                                useThisFolder = false; // Skip this folder for album creation
                             }
                         }
                         if (useThisFolder)
@@ -433,10 +445,12 @@ namespace jucyaudio
             // insert, and an invalidation landing between the build and the lookup emptied the map it
             // was about to read. The path then looked absent and a second row was inserted for it.
             //
-            // Nothing stops that at the schema level - Folders has no unique index on the path - and
-            // the damage does not stay small: buildCacheIfNeeded refuses to finish a cache holding two
-            // rows for one path, so from the first duplicate onwards the cache can never be rebuilt,
-            // every lookup misses, and every folder touched after that gets another row.
+            // The damage did not stay small: buildCacheIfNeeded refuses to finish a cache holding two
+            // rows for one path, so from the first duplicate onwards the cache could never be rebuilt,
+            // every lookup missed, and every folder touched after that got another row. Schema v31 adds
+            // a unique index on the path so the insert is refused rather than accepted, and addFolder
+            // treats that refusal as the stale cache it is - but the lock order is still what stops the
+            // window from opening in the first place.
             std::lock_guard dbLock{m_db.getMutex()};
             std::lock_guard cacheLock{m_cacheMutex};
             m_isCacheValid = false;
@@ -575,6 +589,28 @@ namespace jucyaudio
 
             if (!stmt.execute())
             {
+                // A path is unique in Folders since schema v31, so this insert can now fail because the
+                // row already exists - which says the cache the caller looked in is stale, not that the
+                // folder could not be created. Reporting that as a failure would leave a scan unable to
+                // place any track in the folder, for as long as the cache stayed stale, while the row it
+                // needed sat in the table. So: find it, hand it back, and throw the cache away.
+                FolderId existingId{-1};
+                {
+                    SqliteStatement lookup{m_db, "SELECT folder_id FROM Folders WHERE root_path = ?;"};
+                    if (lookup.isValid() && lookup.addParam(folder.path) && lookup.getNextResult())
+                    {
+                        existingId = lookup.getInt64(0);
+                    }
+                }
+
+                if (existingId > 0)
+                {
+                    spdlog::warn("addFolder: '{}' is already folder {}; the cache did not have it. Rebuilding the cache.", folder.path, existingId);
+                    folder.folderId = existingId;
+                    invalidateCache();
+                    return true;
+                }
+
                 spdlog::error("addFolder: Failed to execute INSERT. DB error: {}", m_db.getLastError());
                 return false;
             }

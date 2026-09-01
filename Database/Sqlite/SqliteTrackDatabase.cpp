@@ -14,6 +14,7 @@
 #include <cassert>   // For assert
 #include <cctype>    // For ::isdigit
 #include <cstring>  // For std::memcmp/std::memcpy
+#include <format>   // For the per-column album merge statements in the v31 migration
 #include <ranges>
 #include <spdlog/spdlog.h>
 #include <unordered_map>
@@ -168,6 +169,41 @@ namespace
         "witchtrap",
     };
 
+    /// @brief Collapses duplicate Tracks rows sharing (folder_id, filename) onto the lowest track_id,
+    ///        remapping every reference, and puts UNIQUE(folder_id, filename) back afterwards.
+    ///
+    /// Written for the v24 migration and reused by v31, which merges duplicate folder rows and so
+    /// moves tracks into a folder that may already hold a row for the same filename. The index has to
+    /// come off before that move and go back on after this, which is the last two steps here.
+    ///
+    /// Only run it when there is something to collapse: the final step rebuilds the whole FTS index.
+    const char *trackDedupeSteps[] = {
+        "CREATE TEMP TABLE _dup_map AS "
+        "SELECT t.track_id AS old_id, m.canonical_id FROM Tracks t "
+        "JOIN (SELECT folder_id, filename, MIN(track_id) AS canonical_id FROM Tracks "
+        "GROUP BY folder_id, filename HAVING COUNT(*) > 1) m "
+        "ON t.folder_id = m.folder_id AND t.filename = m.filename WHERE t.track_id <> m.canonical_id;",
+        "CREATE INDEX _dup_map_idx ON _dup_map(old_id);",
+        "UPDATE MixTracks SET track_id=(SELECT canonical_id FROM _dup_map WHERE old_id=MixTracks.track_id) "
+        "WHERE track_id IN (SELECT old_id FROM _dup_map);",
+        "UPDATE TrackMarkers SET track_id=(SELECT canonical_id FROM _dup_map WHERE old_id=TrackMarkers.track_id) "
+        "WHERE track_id IN (SELECT old_id FROM _dup_map);",
+        "INSERT OR IGNORE INTO WorkingSetTracks(ws_id, track_id) "
+        "SELECT ws_id,(SELECT canonical_id FROM _dup_map WHERE old_id=w.track_id) FROM WorkingSetTracks w "
+        "WHERE w.track_id IN (SELECT old_id FROM _dup_map);",
+        "DELETE FROM WorkingSetTracks WHERE track_id IN (SELECT old_id FROM _dup_map);",
+        "INSERT OR IGNORE INTO TrackTags(track_id, tag_id) "
+        "SELECT (SELECT canonical_id FROM _dup_map WHERE old_id=g.track_id),tag_id FROM TrackTags g "
+        "WHERE g.track_id IN (SELECT old_id FROM _dup_map);",
+        "DELETE FROM TrackTags WHERE track_id IN (SELECT old_id FROM _dup_map);",
+        "DELETE FROM WaveformCache WHERE track_id IN (SELECT old_id FROM _dup_map);",
+        "DELETE FROM Tracks WHERE track_id IN (SELECT old_id FROM _dup_map);",
+        "DROP TABLE _dup_map;",
+        "DROP INDEX IF EXISTS idx_tracks_parent_filename;",
+        "CREATE UNIQUE INDEX idx_tracks_parent_filename ON Tracks(folder_id, filename);",
+        "INSERT INTO TracksSearchFTS(TracksSearchFTS) VALUES('rebuild');",
+    };
+
     const char *initialSqlStatements[] = {
         "PRAGMA foreign_keys = ON;",
         R"SQL(
@@ -181,6 +217,18 @@ namespace
             FOREIGN KEY (parent_id) REFERENCES Folders(folder_id) ON DELETE CASCADE
         );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_folders_parent_name ON Folders(parent_id, name);",
+        // UNIQUE so one directory is one Folders row. Nothing used to say that, and the cost of a
+        // second row for a path that already has one does not stay small: buildCacheIfNeeded refuses
+        // to finish a cache holding two rows for one path, so from the first duplicate onwards the
+        // cache can never be rebuilt, every lookup misses, and every folder touched after that gets
+        // another row of its own.
+        //
+        // NULL is left unconstrained, which SQLite gives for free by treating NULLs as distinct:
+        // rows old enough to have no computed path exist, and buildCacheIfNeeded fills them in. It
+        // detects a collision between two of them itself, before it writes either, so such a pair
+        // never reaches this index. An empty string would collide where NULL does not, which is why
+        // the v31 migration turns the blanks into NULLs and addFolder refuses an empty path.
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_root_path ON Folders(root_path);",
         R"SQL(
         CREATE TABLE IF NOT EXISTS Albums (
             album_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -832,7 +880,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 30;
+            const int latestSchemaVersion = 31;
 
             if (currentVersion == 0)
             {
@@ -984,6 +1032,148 @@ namespace jucyaudio
             }
 
             spdlog::info("Seeded {} default genres.", std::size(defaultGenreVocabulary));
+            return DbResult::success();
+        }
+
+        DbResult SqliteTrackDatabase::reconstructMissingFolderPaths()
+        {
+            // A row whose root_path was never computed is invisible to a unique index on that column -
+            // SQLite treats NULLs as distinct - so two of them that name the same directory would slip
+            // past v31 and keep the exact failure it exists to end: buildCacheIfNeeded reconstructs
+            // their paths on the way past, finds the collision, and returns false *before* writing
+            // either one, so the pair survives every rebuild. initialize() discards that refusal, so
+            // the library just navigates without a cache forever.
+            //
+            // Computing the paths here means the duplicate map below sees them like any other pair.
+            // The rule is buildCacheIfNeeded's, and has to stay that way: a root is
+            // normalizeForCache(name), a child is normalizeForCache(parent path + "\" + name). It
+            // cannot be done in SQL, because normalizeForCache is Unicode-aware and platform-native.
+            struct FolderRow
+            {
+                FolderId parentId{-1};
+                std::string name;
+                std::string path;
+            };
+
+            std::unordered_map<FolderId, FolderRow> rows;
+            {
+                SqliteStatement stmt{m_db, "SELECT folder_id, COALESCE(parent_id, -1), name, COALESCE(root_path, '') FROM Folders;"};
+                if (!stmt.isValid())
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "v31 could not read Folders: " + m_db.getLastError());
+                }
+
+                while (stmt.getNextResult())
+                {
+                    FolderRow row{};
+                    const auto folderId{stmt.getInt64(0)};
+                    row.parentId = stmt.getInt64(1);
+                    row.name = stmt.getText(2);
+                    row.path = stmt.getText(3);
+                    rows[folderId] = std::move(row);
+                }
+
+                // The loop above ends the same way on "no more rows" and on "the step failed", and a
+                // read that stopped early would leave rows looking like they have no parent.
+                if (stmt.hasError())
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "v31 read of Folders stopped early: " + m_db.getLastError());
+                }
+            }
+
+            std::vector<std::pair<FolderId, std::string>> backfill;
+            std::vector<FolderId> chain;
+            for (const auto &[folderId, row] : rows)
+            {
+                if (!row.path.empty())
+                {
+                    continue;
+                }
+
+                // Up to the first ancestor that already knows its path, or to a root.
+                chain.clear();
+                bool resolvable{true};
+                for (auto cursor{folderId}; cursor > 0;)
+                {
+                    const auto it{rows.find(cursor)};
+                    if (it == rows.end() || chain.size() > rows.size())
+                    {
+                        // A missing parent, or a parent_id cycle. Both are broken in a way this rung is
+                        // not about, and leaving root_path NULL keeps the row out of the index.
+                        spdlog::warn("v31: cannot reconstruct the path of folder {} - its parent chain is broken.", folderId);
+                        resolvable = false;
+                        break;
+                    }
+                    if (!it->second.path.empty())
+                    {
+                        break;
+                    }
+                    chain.push_back(cursor);
+                    cursor = it->second.parentId;
+                }
+
+                if (!resolvable)
+                {
+                    continue;
+                }
+
+                // Downwards, so each row's parent already has its path.
+                for (const auto id : std::views::reverse(chain))
+                {
+                    const auto it{rows.find(id)};
+                    if (it == rows.end())
+                    {
+                        continue;
+                    }
+
+                    auto &entry{it->second};
+                    if (entry.parentId > 0)
+                    {
+                        const auto parentIt{rows.find(entry.parentId)};
+                        if (parentIt == rows.end())
+                        {
+                            continue;
+                        }
+                        entry.path = normalizeForCache(parentIt->second.path + "\\" + entry.name);
+                    }
+                    else
+                    {
+                        entry.path = normalizeForCache(entry.name);
+                    }
+
+                    // A folder with no name reconstructs to nothing, and writing that back would turn
+                    // "unknown" into an empty string - which, unlike NULL, collides with the next one.
+                    if (entry.path.empty())
+                    {
+                        spdlog::warn("v31: folder {} has no name, so it keeps no path.", id);
+                        continue;
+                    }
+                    backfill.emplace_back(id, entry.path);
+                }
+            }
+
+            if (backfill.empty())
+            {
+                return DbResult::success();
+            }
+
+            spdlog::info("v31: reconstructing the path of {} folder row(s) that never had one.", backfill.size());
+
+            SqliteStatement update{m_db, "UPDATE Folders SET root_path = ? WHERE folder_id = ?;"};
+            if (!update.isValid())
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB, "v31 could not prepare the path backfill: " + m_db.getLastError());
+            }
+
+            for (const auto &[folderId, path] : backfill)
+            {
+                if (!update.addParam(path) || !update.addParam(folderId) || !update.execute())
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "v31 could not write a reconstructed path: " + m_db.getLastError());
+                }
+                update.reset();
+            }
+
             return DbResult::success();
         }
 
@@ -2480,34 +2670,8 @@ CREATE TABLE MixUndoHistory (
                     // Collapse duplicate Tracks rows sharing (folder_id, filename) onto the lowest
                     // track_id, remapping every reference, so the UNIQUE index can be created. Older
                     // libraries accumulated duplicates from overlapping roots + repeated scans.
-                    const char *dedupeSteps[] = {
-                        "CREATE TEMP TABLE _dup_map AS "
-                        "SELECT t.track_id AS old_id, m.canonical_id FROM Tracks t "
-                        "JOIN (SELECT folder_id, filename, MIN(track_id) AS canonical_id FROM Tracks "
-                        "GROUP BY folder_id, filename HAVING COUNT(*) > 1) m "
-                        "ON t.folder_id = m.folder_id AND t.filename = m.filename WHERE t.track_id <> m.canonical_id;",
-                        "CREATE INDEX _dup_map_idx ON _dup_map(old_id);",
-                        "UPDATE MixTracks SET track_id=(SELECT canonical_id FROM _dup_map WHERE old_id=MixTracks.track_id) "
-                        "WHERE track_id IN (SELECT old_id FROM _dup_map);",
-                        "UPDATE TrackMarkers SET track_id=(SELECT canonical_id FROM _dup_map WHERE old_id=TrackMarkers.track_id) "
-                        "WHERE track_id IN (SELECT old_id FROM _dup_map);",
-                        "INSERT OR IGNORE INTO WorkingSetTracks(ws_id, track_id) "
-                        "SELECT ws_id,(SELECT canonical_id FROM _dup_map WHERE old_id=w.track_id) FROM WorkingSetTracks w "
-                        "WHERE w.track_id IN (SELECT old_id FROM _dup_map);",
-                        "DELETE FROM WorkingSetTracks WHERE track_id IN (SELECT old_id FROM _dup_map);",
-                        "INSERT OR IGNORE INTO TrackTags(track_id, tag_id) "
-                        "SELECT (SELECT canonical_id FROM _dup_map WHERE old_id=g.track_id),tag_id FROM TrackTags g "
-                        "WHERE g.track_id IN (SELECT old_id FROM _dup_map);",
-                        "DELETE FROM TrackTags WHERE track_id IN (SELECT old_id FROM _dup_map);",
-                        "DELETE FROM WaveformCache WHERE track_id IN (SELECT old_id FROM _dup_map);",
-                        "DELETE FROM Tracks WHERE track_id IN (SELECT old_id FROM _dup_map);",
-                        "DROP TABLE _dup_map;",
-                        "DROP INDEX IF EXISTS idx_tracks_parent_filename;",
-                        "CREATE UNIQUE INDEX idx_tracks_parent_filename ON Tracks(folder_id, filename);",
-                        "INSERT INTO TracksSearchFTS(TracksSearchFTS) VALUES('rebuild');",
-                    };
                     bool ok = true;
-                    for (const char *step : dedupeSteps)
+                    for (const char *step : trackDedupeSteps)
                     {
                         if (!m_db.execute(step))
                         {
@@ -2829,6 +2993,245 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 30;
+            }
+
+            if (currentVersion < 31)
+            {
+                spdlog::info("Migrating database from version 30 to 31 - one Folders row per path...");
+                // Folders had no unique index on its path, so a second row for a path that already had
+                // one was a legal insert - and the consequence was permanent: buildCacheIfNeeded
+                // refuses to finish a cache holding two rows for one path, so from the first duplicate
+                // onwards the cache could never be rebuilt, every lookup missed, and every folder
+                // touched after that got another row of its own.
+                //
+                // Adding the index means merging whatever duplicates a library already carries. The
+                // losers are folded onto the lowest folder_id for the path: their children are
+                // re-parented, their tracks moved, and only then are they deleted. Deleting them first
+                // and letting ON DELETE CASCADE sort it out would take the tracks and the mix rows
+                // that reference them (MixTracks.track_id cascades) with it.
+                if (SqliteTransaction transaction{m_db})
+                {
+                    const auto runSteps = [this](const auto &steps)
+                    {
+                        for (const char *step : steps)
+                        {
+                            if (!m_db.execute(step))
+                            {
+                                return false;
+                            }
+                        }
+                        return true;
+                    };
+
+                    // The blanks become NULLs first, so the reconstruction below has one thing to look
+                    // for rather than two.
+                    const char *blankSteps[] = {
+                        "UPDATE Folders SET root_path = NULL WHERE root_path = '';",
+                    };
+
+                    if (!runSteps(blankSteps))
+                    {
+                        const auto error{m_db.getLastError()};
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "v31 folder de-duplication failed: " + error);
+                    }
+
+                    if (const auto backfill{reconstructMissingFolderPaths()}; !backfill.isOk())
+                    {
+                        transaction.rollback();
+                        return backfill;
+                    }
+
+                    const char *mapSteps[] = {
+                        "CREATE TEMP TABLE _folder_dup_map AS "
+                        "SELECT f.folder_id AS old_id, m.canonical_id FROM Folders f "
+                        "JOIN (SELECT root_path, MIN(folder_id) AS canonical_id FROM Folders "
+                        "WHERE root_path IS NOT NULL GROUP BY root_path HAVING COUNT(*) > 1) m "
+                        "ON f.root_path = m.root_path WHERE f.folder_id <> m.canonical_id;",
+                        "CREATE INDEX _folder_dup_map_idx ON _folder_dup_map(old_id);",
+                    };
+
+                    if (!runSteps(mapSteps))
+                    {
+                        const auto error{m_db.getLastError()};
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "v31 folder de-duplication failed: " + error);
+                    }
+
+                    int64_t duplicateFolders = 0;
+                    {
+                        SqliteStatement countStmt{m_db, "SELECT COUNT(*) FROM _folder_dup_map"};
+                        if (!countStmt.isValid() || !countStmt.getNextResult())
+                        {
+                            const auto error{m_db.getLastError()};
+                            transaction.rollback();
+                            return DbResult::failure(DbResultStatus::ErrorDB, "v31 could not count duplicate folders: " + error);
+                        }
+                        duplicateFolders = countStmt.getInt64(0);
+                    }
+
+                    if (duplicateFolders > 0)
+                    {
+                        spdlog::warn("v31: {} duplicate folder row(s) to merge.", duplicateFolders);
+
+                        // UNIQUE(folder_id, filename) comes off for the move and is put back by
+                        // trackDedupeSteps below: two rows for one path can each hold the same
+                        // filename, and both have to survive the move long enough to be collapsed
+                        // onto one track_id with their mix and working set rows remapped.
+                        //
+                        // Albums are merged before they are moved. The index on (title, folder_id) is
+                        // unique, so two albums of one title cannot share the keeper folder - and the
+                        // one that would have to give way is not dropped: what the survivor has no
+                        // value for is taken from it, then its tracks are pointed at the survivor, and
+                        // only then is it deleted. Letting it cascade away with its folder instead
+                        // would take the user's genres, moods, tags and bandcamp link with it and set
+                        // every referencing Tracks.album_id to NULL, which nothing later restores - the
+                        // album pass in buildCacheIfNeeded creates a row where there is none, and there
+                        // would be one.
+                        //
+                        // Albums of different titles are left alone. A folder is allowed to hold
+                        // several, so co-locating them is not a collision to resolve.
+                        //
+                        // Where both have a value, the survivor keeps its own. There is no merge rule
+                        // for two different free-text genre lists that is better than picking one.
+                        const char *mergeSteps[] = {
+                            "UPDATE Folders SET parent_id = (SELECT canonical_id FROM _folder_dup_map WHERE old_id = Folders.parent_id) "
+                            "WHERE parent_id IN (SELECT old_id FROM _folder_dup_map);",
+                            "DROP INDEX IF EXISTS idx_tracks_parent_filename;",
+                            "UPDATE Tracks SET folder_id = (SELECT canonical_id FROM _folder_dup_map WHERE old_id = Tracks.folder_id) "
+                            "WHERE folder_id IN (SELECT old_id FROM _folder_dup_map);",
+                            // Every album that is about to share a folder, with the folder it is headed
+                            // for. Built before anything moves, so which album survives a title
+                            // collision is decided here and not by the order an UPDATE happens to visit
+                            // rows in: it is the lowest album_id among the albums that would share a
+                            // (folder, title), the same rule the folder and track merges use. With no
+                            // album on the keeper and same-title albums on two losers, that is still
+                            // one determinate answer.
+                            "CREATE TEMP TABLE _album_group AS "
+                            "SELECT a.album_id, a.title, "
+                            "COALESCE((SELECT d.canonical_id FROM _folder_dup_map d WHERE d.old_id = a.folder_id), a.folder_id) AS target_folder "
+                            "FROM Albums a WHERE a.folder_id IN (SELECT old_id FROM _folder_dup_map) "
+                            "OR a.folder_id IN (SELECT canonical_id FROM _folder_dup_map);",
+                            "CREATE TEMP TABLE _album_dup_map AS "
+                            "SELECT g.album_id AS old_id, m.canonical_id FROM _album_group g "
+                            "JOIN (SELECT target_folder, title, MIN(album_id) AS canonical_id FROM _album_group "
+                            "GROUP BY target_folder, title) m ON g.target_folder = m.target_folder AND g.title = m.title "
+                            "WHERE g.album_id <> m.canonical_id;",
+                            "CREATE INDEX _album_dup_map_idx ON _album_dup_map(old_id);",
+                        };
+
+                        // One statement per column, all the same shape, generated rather than written
+                        // out seven times. "No value" is spelled three ways here and the guard has to
+                        // know all of them: NULL, '', and '[]' - genres, moods and tags are JSON
+                        // arrays, and vectorToJsonArray writes an empty one as '[]'. It is the same
+                        // test SqliteAlbumManager uses when it asks whether an album carries genres.
+                        // On the columns that hold no JSON the '[]' arm is simply never true.
+                        static constexpr const char *mergeableAlbumColumns[] = {
+                            "album_artist", "year", "genres", "moods", "tags", "bandcamp_url", "bitrate"};
+
+                        const auto mergeAlbumFields = [this]()
+                        {
+                            for (const auto *column : mergeableAlbumColumns)
+                            {
+                                const auto sql{std::format("UPDATE Albums SET {0} = COALESCE("
+                                                           "(SELECT o.{0} FROM Albums o JOIN _album_dup_map m ON o.album_id = m.old_id "
+                                                           "WHERE m.canonical_id = Albums.album_id "
+                                                           "AND o.{0} IS NOT NULL AND o.{0} <> '' AND o.{0} <> '[]' "
+                                                           "ORDER BY o.album_id LIMIT 1), {0}) "
+                                                           "WHERE ({0} IS NULL OR {0} = '' OR {0} = '[]') "
+                                                           "AND album_id IN (SELECT canonical_id FROM _album_dup_map);",
+                                    column)};
+                                if (!m_db.execute(sql.c_str()))
+                                {
+                                    return false;
+                                }
+                            }
+                            return true;
+                        };
+
+                        const char *albumTailSteps[] = {
+                            "UPDATE Tracks SET album_id = (SELECT canonical_id FROM _album_dup_map WHERE old_id = Tracks.album_id) "
+                            "WHERE album_id IN (SELECT old_id FROM _album_dup_map);",
+                            "DELETE FROM Albums WHERE album_id IN (SELECT old_id FROM _album_dup_map);",
+                            // Only now, with every collision already resolved, do the survivors move.
+                            // A plain UPDATE: nothing can be in its way, because anything that would
+                            // have been was just merged into it.
+                            "UPDATE Albums SET folder_id = (SELECT canonical_id FROM _folder_dup_map WHERE old_id = Albums.folder_id) "
+                            "WHERE folder_id IN (SELECT old_id FROM _folder_dup_map);",
+                            "DROP TABLE _album_dup_map;",
+                            "DROP TABLE _album_group;",
+                            "DELETE FROM Folders WHERE folder_id IN (SELECT old_id FROM _folder_dup_map);",
+                        };
+
+                        // The dedupe steps were written for a database that migrated its way up, and
+                        // they touch two tables that only the v4 and v12 rungs create: TrackMarkers
+                        // and the FTS index. initialSqlStatements creates neither, so every database
+                        // created from scratch since is missing both - recorded in tasks.md, and not
+                        // this rung's to fix. What this rung has to do is not fail on it.
+                        const auto runDedupe = [this]()
+                        {
+                            const bool haveMarkers{m_db.doesTableExist("TrackMarkers")};
+                            const bool haveSearchIndex{m_db.doesTableExist("TracksSearchFTS")};
+                            for (const char *step : trackDedupeSteps)
+                            {
+                                const std::string_view sql{step};
+                                if ((!haveMarkers && sql.find("TrackMarkers") != std::string_view::npos) ||
+                                    (!haveSearchIndex && sql.find("TracksSearchFTS") != std::string_view::npos))
+                                {
+                                    spdlog::warn("v31: skipping a de-duplication step, this database has no such table: {}", sql);
+                                    continue;
+                                }
+
+                                if (!m_db.execute(step))
+                                {
+                                    return false;
+                                }
+                            }
+                            return true;
+                        };
+
+                        if (!runSteps(mergeSteps) || !mergeAlbumFields() || !runSteps(albumTailSteps) || !runDedupe())
+                        {
+                            const auto error{m_db.getLastError()};
+                            transaction.rollback();
+                            return DbResult::failure(DbResultStatus::ErrorDB, "v31 folder merge failed: " + error);
+                        }
+                    }
+
+                    // Dropped before it is created, the way v24 does it: a database stamped below 31
+                    // is not supposed to carry this index, but if one ever does, recreating it is how
+                    // this rung guarantees the index it means rather than accepting whatever is there
+                    // under that name.
+                    const char *indexSteps[] = {
+                        "DROP TABLE _folder_dup_map;",
+                        "DROP INDEX IF EXISTS idx_folders_root_path;",
+                        "CREATE UNIQUE INDEX idx_folders_root_path ON Folders(root_path);",
+                    };
+
+                    if (!runSteps(indexSteps))
+                    {
+                        const auto error{m_db.getLastError()};
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "v31 could not create the unique folder path index: " + error);
+                    }
+
+                    if (auto result = setDBSchemaVersion(31); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 31.");
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated to version 31 - one Folders row per path.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 31;
             }
 
             return DbResult::success();

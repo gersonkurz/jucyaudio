@@ -113,18 +113,24 @@ namespace jucyaudio
         int runBackupSelfTest(const std::filesystem::path &selfTestRoot);
 
         /**
-         * @brief Headless test of the v29 to v30 MixRecovery migration.
+         * @brief Headless test of the two migrations that rewrite rather than add.
          *
-         * Builds a database shaped the way v29 left one - by hand, because nothing produces that shape
-         * any more - seeds it with an intact record and a gapped partial one, opens it so the ladder
-         * runs, and checks what came out.
+         * v29 to v30, MixRecovery: builds a database shaped the way v29 left one - by hand, because
+         * nothing produces that shape any more - seeds it with an intact record and a gapped partial
+         * one, opens it so the ladder runs, and checks what came out. It is the only migration in the
+         * project that rewrites primary keys, and it does so to records that cannot be recaptured: the
+         * mixes they describe have already lost the rows in question, and no backup holds them. Getting
+         * the renumbering wrong would not fail loudly - it would quietly reorder somebody's last
+         * description of a mix.
          *
-         * That migration gets a suite to itself because it is the only one in the project that rewrites
-         * primary keys, and it does so to records that cannot be recaptured: the mixes they describe
-         * have already lost the rows in question, and no backup holds them. Getting the renumbering
-         * wrong would not fail loudly - it would quietly reorder somebody's last description of a mix.
+         * v30 to v31, Folders: a second database carrying the damage the new unique path index exists
+         * to prevent - two rows for one path, tracks under both, one filename present in both, a child
+         * folder under the row that is about to go, and a mix pointing into it. The index is the easy
+         * half; the merge that has to happen before it can be created is the half that can lose data,
+         * because MixTracks.track_id cascades and the obvious implementation deletes the duplicate
+         * folder and lets the cascade tidy up.
          *
-         * Uses its own database, unrelated to the one the other suites share.
+         * Uses its own databases, unrelated to the one the other suites share.
          *
          * @param selfTestRoot The root returned by prepareSelfTestEnvironment().
          * @return 0 if every check passed, 1 otherwise.
@@ -173,6 +179,11 @@ namespace jucyaudio
          * a hang rather than a wrong answer, so the wait has a deadline and the report says which
          * one it was. It also checks the answers, because locking that is correct and bookkeeping
          * that is not look the same from outside.
+         *
+         * It also covers the two paths that depend on Folders holding one row per path: what
+         * removeEmptyFolders deletes and what it must not, and what findOrCreateFolderByPath does
+         * when the unique index refuses its insert - which happens exactly when the cache it just
+         * consulted is stale, and has to come back as the existing row rather than as a failure.
          *
          * @param selfTestRoot The root returned by prepareSelfTestEnvironment().
          * @return 0 if every check passed, 1 otherwise.

@@ -2619,7 +2619,9 @@ namespace jucyaudio
 
             {
                 SqliteStatement stmt{check, "SELECT value FROM SchemaInfo WHERE key = 'schema_version';"};
-                report.check(stmt.getNextResult() && stmt.getText(0) == "30", "the schema is stamped at version 30");
+                // The latest version, not 30: opening a v29 database runs every rung above it, and this
+                // fixture is only shaped for the v30 one. The checks below are what say v30 did its job.
+                report.check(stmt.getNextResult() && stmt.getText(0) == "31", "the schema is stamped at the latest version");
             }
 
             // Read back whole rows, compared as text with NULL spelled out.
@@ -2711,6 +2713,241 @@ namespace jucyaudio
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND tbl_name = 'MixRecovery' "
                     "AND name IN ('idx_mixrecovery_track', 'idx_mixrecovery_fileident')"};
                 report.check(stmt.getNextResult() && stmt.getInt64(0) == 2, "both MixRecovery indexes are still there afterwards");
+            }
+
+            // --- v30 to v31: one Folders row per path ---
+            //
+            // Its own database, because the fixture is a library that already carries the damage the
+            // index exists to prevent: two Folders rows for one path, tracks under both, one filename
+            // present in both, a child folder hanging off the row that is about to go, and a mix
+            // pointing at a track in it.
+            //
+            // The merge is what needs the test, not the index. Folding two folders onto one moves
+            // tracks into a folder that may already hold a row for the same filename, and the obvious
+            // way to get there - delete the duplicate and let ON DELETE CASCADE tidy up - takes those
+            // tracks and the MixTracks rows referencing them with it, silently.
+            {
+                const auto folderDbPath = workRoot / "v30-folders.db";
+
+                {
+                    SqliteTrackDatabase fresh;
+                    const auto created = fresh.connect(folderDbPath);
+                    report.check(created.isOk(), std::format("a scratch schema for the folder migration could be created (said: '{}')", created.errorMessage));
+                    if (!created.isOk())
+                    {
+                        writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                        return 1;
+                    }
+                }
+
+                {
+                    SqliteDatabase seed;
+                    if (!seed.open(pathToString(folderDbPath)))
+                    {
+                        report.abort("Could not reopen the folder scratch database to age it.");
+                        writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                        return 1;
+                    }
+
+                    // Dropping the index is what puts the database back into its v30 shape - it is the
+                    // only thing v31 adds, and the duplicate rows below cannot be inserted while it
+                    // stands. Foreign keys stay off here on purpose: the fixture is written by hand and
+                    // is consistent, and the migration is what has to keep it that way.
+                    const bool aged =
+                        seed.execute("DROP INDEX idx_folders_root_path;") &&
+                        // Rows 20 and 21 are the other kind of duplicate: neither has a computed path,
+                        // so a unique index on root_path cannot see them (NULLs are distinct) and the
+                        // migration has to reconstruct their paths before it looks for duplicates.
+                        // Their names differ only in case, which is a duplicate to normalizeForCache
+                        // and therefore to the cache - the reconstruction has to use the same rule.
+                        // Three rows for c:\dup, not two: with only two, a title collision always has
+                        // one album on the keeper, and the case where neither is - two losers holding
+                        // the same title and the keeper holding none - never arises. That is the case
+                        // where "whichever the UPDATE reached first" would be the answer if the merge
+                        // did not pick one itself.
+                        seed.execute("INSERT INTO Folders (folder_id, parent_id, name, root_path, actual_path) VALUES "
+                                     "(10, NULL, 'dup', 'c:\\dup', 'C:\\Dup'), "
+                                     "(11, NULL, 'dup', 'c:\\dup', 'C:\\Dup'), "
+                                     "(12, 11, 'sub', 'c:\\dup\\sub', 'C:\\Dup\\Sub'), "
+                                     "(13, NULL, 'dup', 'c:\\dup', 'C:\\Dup'), "
+                                     "(20, NULL, 'Orphan', NULL, NULL), "
+                                     "(21, NULL, 'ORPHAN', '', NULL), "
+                                     "(22, 20, 'Deep', NULL, NULL), "
+                                     "(23, 21, 'DEEP', NULL, NULL);") &&
+                        seed.execute("INSERT INTO Tracks (track_id, folder_id, filename, title) VALUES "
+                                     "(100, 10, 'both.mp3', 'kept'), "
+                                     "(101, 11, 'both.mp3', 'collapsed'), "
+                                     "(102, 11, 'only-here.mp3', 'moved'), "
+                                     "(103, 12, 'child.mp3', 'reparented'), "
+                                     "(104, 20, 'a.mp3', 'under the surviving pathless row'), "
+                                     "(105, 21, 'b.mp3', 'under the other pathless row'), "
+                                     "(106, 13, 'c.mp3', 'under the third row for one path'), "
+                                     "(107, 11, 'd.mp3', 'on the album that wins a two-loser collision'), "
+                                     "(108, 22, 'e.mp3', 'under the surviving pathless child'), "
+                                     "(109, 23, 'f.mp3', 'under the other pathless child'), "
+                                     "(110, 11, 'g.mp3', 'on the album that has no counterpart');") &&
+                        // Albums, covering the three shapes the merge has to tell apart. genres, moods
+                        // and tags are JSON arrays - that is what vectorToJsonArray writes and what
+                        // jsonArrayToVector expects - so the fixture stores them that way.
+                        //
+                        // 200 and 201 collide by title with one of them on the keeper: 201 gives way to
+                        // 200 (lower id) rather than cascading away with folder 11. 200 carries no
+                        // genres, tags, bandcamp link or year; 201 carries all four, and an
+                        // album_artist that 200 also has, so the survivor keeps its own there.
+                        //
+                        // 204 and 205 collide by title with neither on the keeper - one on each of the
+                        // two loser rows. 204 wins by id, and has to be moved to folder 10 afterwards.
+                        //
+                        // 202 has no counterpart at all and simply moves, landing beside 200 in folder
+                        // 10. A folder holding two albums of different titles is a layout the schema
+                        // allows and the fixture is deliberately built to produce.
+                        seed.execute("INSERT INTO Albums (album_id, album_artist, title, year, folder_id, genres, moods, tags, bandcamp_url) VALUES "
+                                     "(200, 'Keeper Artist', 'Shared', NULL, 10, '[]', NULL, NULL, NULL), "
+                                     "(201, 'Loser Artist', 'Shared', 1999, 11, '[\"downtempo\"]', '[\"calm\"]', '[\"mine\"]', 'https://example.test/album'), "
+                                     "(202, 'Solo Artist', 'Only There', 2001, 11, '[\"ambient\"]', NULL, NULL, NULL), "
+                                     "(204, 'Loser One', 'Two Losers', NULL, 11, '[]', NULL, '[\"from-204\"]', NULL), "
+                                     "(205, 'Loser Two', 'Two Losers', 1990, 13, '[\"acid\"]', NULL, '[\"from-205\"]', NULL);") &&
+                        seed.execute("UPDATE Tracks SET album_id = 200 WHERE track_id = 100;") &&
+                        seed.execute("UPDATE Tracks SET album_id = 201 WHERE track_id IN (101, 102);") &&
+                        seed.execute("UPDATE Tracks SET album_id = 202 WHERE track_id = 110;") &&
+                        seed.execute("UPDATE Tracks SET album_id = 204 WHERE track_id = 107;") &&
+                        seed.execute("UPDATE Tracks SET album_id = 205 WHERE track_id = 106;") &&
+                        seed.execute("INSERT INTO Mixes (mix_id, name) VALUES (7, 'Folder Seed Mix');") &&
+                        seed.execute("INSERT INTO MixTracks (mix_id, track_id, order_in_mix, mix_data) VALUES "
+                                     "(7, 101, 0, '{}'), (7, 102, 1, '{}');") &&
+                        // TrackMarkers by hand, because initialSqlStatements does not create it - only
+                        // the v4 rung does, and a database created from scratch never runs the ladder.
+                        // That divergence is its own entry in tasks.md; here it means the fixture has to
+                        // put the table back to cover the step that remaps markers. The FTS index is
+                        // deliberately left absent, so this one fixture exercises both sides of the
+                        // "skip a step whose table is not there" check in the v31 rung.
+                        seed.execute("CREATE TABLE TrackMarkers (marker_id INTEGER PRIMARY KEY AUTOINCREMENT, track_id INTEGER NOT NULL, "
+                                     "position_ms INTEGER NOT NULL, comment TEXT NOT NULL, created_at INTEGER NOT NULL, "
+                                     "updated_at INTEGER NOT NULL, color TEXT, emoji TEXT, "
+                                     "FOREIGN KEY (track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE);") &&
+                        seed.execute("INSERT INTO TrackMarkers (marker_id, track_id, position_ms, comment, created_at, updated_at) VALUES "
+                                     "(1, 101, 5000, 'on the collapsed row', 1, 1);") &&
+                        seed.execute("UPDATE SchemaInfo SET value = '30' WHERE key = 'schema_version';");
+                    report.check(aged, "a v30-shaped database holding duplicate folder rows could be seeded");
+                    if (!aged)
+                    {
+                        writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                        return 1;
+                    }
+                }
+
+                {
+                    SqliteTrackDatabase migrated;
+                    const auto connected = migrated.connect(folderDbPath);
+                    report.check(connected.isOk(), std::format("the v30 database migrates on open (said: '{}')", connected.errorMessage));
+                }
+
+                SqliteDatabase check;
+                if (!check.open(pathToString(folderDbPath)))
+                {
+                    report.abort("Could not reopen the migrated folder database.");
+                    writeResultsFile(resultsPath, "jucyaudio migration self test", report);
+                    return 1;
+                }
+
+                // One value per query, as text with NULL spelled out, so a column that was blanked
+                // cannot read as one that was always empty.
+                const auto scalar = [&check](const char *sql)
+                {
+                    SqliteStatement stmt{check, sql};
+                    if (!stmt.isValid() || !stmt.getNextResult())
+                    {
+                        return std::string{"<query failed>"};
+                    }
+                    return stmt.isNull(0) ? std::string{"<null>"} : stmt.getText(0);
+                };
+
+                report.check(scalar("SELECT value FROM SchemaInfo WHERE key = 'schema_version'") == "31", "the schema is stamped at version 31");
+                report.check(scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_folders_root_path'") == "1",
+                    "the unique folder path index is there afterwards");
+                report.check(scalar("SELECT COUNT(*) FROM Folders WHERE root_path = 'c:\\dup'") == "1", "one row is left for the duplicated path");
+                report.check(scalar("SELECT folder_id FROM Folders WHERE root_path = 'c:\\dup'") == "10", "and it is the lowest of the two ids");
+                report.check(scalar("SELECT parent_id FROM Folders WHERE folder_id = 12") == "10", "the child of the row that went is re-parented onto the survivor");
+
+                // The tracks that must still be there, and where. 101 is the collapsed one: same folder
+                // path and same filename as 100, so it is the same file described twice.
+                report.check(scalar("SELECT COUNT(*) FROM Tracks") == "10", "the merge lost no track it could not prove was a duplicate");
+                report.check(scalar("SELECT folder_id FROM Tracks WHERE track_id = 100") == "10", "the surviving copy of the shared filename stayed put");
+                report.check(scalar("SELECT COUNT(*) FROM Tracks WHERE track_id = 101") == "0", "its duplicate was collapsed away");
+                report.check(scalar("SELECT folder_id FROM Tracks WHERE track_id = 102") == "10", "a track with no counterpart moved to the survivor");
+                report.check(scalar("SELECT folder_id FROM Tracks WHERE track_id = 103") == "12", "a track in the re-parented child did not move");
+
+                // The point of merging rather than cascading. MixTracks.track_id cascades on delete, so
+                // a migration that removed 101 without remapping would have silently shortened this mix.
+                report.check(scalar("SELECT COUNT(*) FROM MixTracks WHERE mix_id = 7") == "2", "the mix still has both of its rows");
+                report.check(scalar("SELECT track_id FROM MixTracks WHERE mix_id = 7 AND order_in_mix = 0") == "100",
+                    "the row that pointed at the collapsed track now points at the one it kept");
+                report.check(scalar("SELECT track_id FROM MixTracks WHERE mix_id = 7 AND order_in_mix = 1") == "102", "the other row is untouched");
+                report.check(scalar("SELECT track_id FROM TrackMarkers WHERE marker_id = 1") == "100", "a marker on the collapsed track followed it to the one it kept");
+
+                // Two rows that never had a path. Nothing in the schema can see them as duplicates, so
+                // the migration has to reconstruct what they name before it looks - and reconstruct it
+                // with normalizeForCache, or 'Orphan' and 'ORPHAN' stay two folders forever.
+                report.check(scalar("SELECT COUNT(*) FROM Folders WHERE root_path = 'orphan'") == "1",
+                    "two rows that never had a computed path are reconstructed and merged into one");
+                report.check(scalar("SELECT folder_id FROM Folders WHERE root_path = 'orphan'") == "20", "and the survivor is the lowest of the two ids");
+                report.check(scalar("SELECT COUNT(*) FROM Folders WHERE root_path IS NULL OR root_path = ''") == "0",
+                    "no row is left with a path the index cannot see");
+                report.check(scalar("SELECT folder_id FROM Tracks WHERE track_id = 104") == "20", "the track under the survivor stayed there");
+                report.check(scalar("SELECT folder_id FROM Tracks WHERE track_id = 105") == "20", "the track under the other one came across");
+
+                // The same thing one level down, which is the branch that reconstructs a path from a
+                // parent rather than from a name alone: two pathless children under the two pathless
+                // roots, whose names also differ only in case.
+                report.check(scalar("SELECT COUNT(*) FROM Folders WHERE root_path = 'orphan\\deep'") == "1",
+                    "two pathless children under two pathless parents reconstruct to one path and merge");
+                report.check(scalar("SELECT folder_id FROM Folders WHERE root_path = 'orphan\\deep'") == "22", "the survivor is the lowest of the two ids");
+                report.check(scalar("SELECT parent_id FROM Folders WHERE folder_id = 22") == "20", "and hangs off the folder its parent was merged into");
+                report.check(scalar("SELECT folder_id FROM Tracks WHERE track_id = 108") == "22", "the track under the surviving child stayed there");
+                report.check(scalar("SELECT folder_id FROM Tracks WHERE track_id = 109") == "22", "the track under the other child came across");
+                report.check(scalar("SELECT COUNT(*) FROM Folders") == "4", "four folders are left, one per distinct path");
+
+                // The albums. 201 could not move - 200 holds that title on the keeper folder - and had
+                // to be merged rather than left to cascade away with folder 11.
+                report.check(scalar("SELECT COUNT(*) FROM Albums") == "3", "the two colliding albums were merged away and three survive");
+                report.check(scalar("SELECT folder_id FROM Albums WHERE album_id = 200") == "10", "the survivor of the collision with the keeper is the keeper's");
+                report.check(scalar("SELECT COUNT(*) FROM Albums WHERE album_id = 201") == "0", "the album that could not move is gone");
+                report.check(scalar("SELECT genres FROM Albums WHERE album_id = 200") == "[\"downtempo\"]", "the survivor took the genres it had none of");
+                report.check(scalar("SELECT moods FROM Albums WHERE album_id = 200") == "[\"calm\"]", "and the moods");
+                report.check(scalar("SELECT tags FROM Albums WHERE album_id = 200") == "[\"mine\"]", "and the tags");
+                report.check(scalar("SELECT bandcamp_url FROM Albums WHERE album_id = 200") == "https://example.test/album", "and the bandcamp link");
+                report.check(scalar("SELECT year FROM Albums WHERE album_id = 200") == "1999", "and the year");
+                report.check(scalar("SELECT album_artist FROM Albums WHERE album_id = 200") == "Keeper Artist",
+                    "but kept its own value where it had one");
+                report.check(scalar("SELECT album_id FROM Tracks WHERE track_id = 100") == "200", "the track already on the survivor still points at it");
+                report.check(scalar("SELECT album_id FROM Tracks WHERE track_id = 102") == "200",
+                    "and the track on the merged-away album was moved onto it, not orphaned");
+
+                // Two losers, no album of that title on the keeper. Which one survives is decided by
+                // id, not by the order the statements happened to reach them.
+                report.check(scalar("SELECT COUNT(*) FROM Albums WHERE title = 'Two Losers'") == "1", "a collision between two losers leaves one album");
+                report.check(scalar("SELECT album_id FROM Albums WHERE title = 'Two Losers'") == "204", "and it is the lower of the two ids, whichever was reached first");
+                report.check(scalar("SELECT folder_id FROM Albums WHERE album_id = 204") == "10", "the survivor was moved onto the keeper folder");
+                report.check(scalar("SELECT genres FROM Albums WHERE album_id = 204") == "[\"acid\"]", "it took the genres it had none of from the other loser");
+                report.check(scalar("SELECT year FROM Albums WHERE album_id = 204") == "1990", "and the year");
+                report.check(scalar("SELECT tags FROM Albums WHERE album_id = 204") == "[\"from-204\"]", "and kept its own tags");
+                report.check(scalar("SELECT album_id FROM Tracks WHERE track_id = 107") == "204", "its own track still points at it");
+                report.check(scalar("SELECT album_id FROM Tracks WHERE track_id = 106") == "204", "and the other loser's track was moved onto it");
+
+                // The album with no counterpart moves with its folder, id, metadata and tracks intact -
+                // landing beside 200 in folder 10, which is a folder holding two albums of different
+                // titles. The schema allows that, so the migration must not treat it as a collision.
+                report.check(scalar("SELECT folder_id FROM Albums WHERE album_id = 202") == "10", "an album with no counterpart moved to the survivor");
+                report.check(scalar("SELECT genres FROM Albums WHERE album_id = 202") == "[\"ambient\"]", "keeping what was on it");
+                report.check(scalar("SELECT album_id FROM Tracks WHERE track_id = 110") == "202", "and the track that pointed at it still does");
+                report.check(scalar("SELECT COUNT(*) FROM Albums WHERE folder_id = 10") == "3",
+                    "one folder holds three albums of different titles afterwards, which is a layout the schema allows");
+
+                // And the index actually refuses, rather than merely existing.
+                {
+                    SqliteStatement stmt{check, "INSERT INTO Folders (parent_id, name, root_path) VALUES (NULL, 'dup', 'c:\\dup');"};
+                    report.check(stmt.isValid() && !stmt.execute(), "a second row for a path the table already has is refused");
+                }
             }
 
             writeResultsFile(resultsPath, "jucyaudio migration self test", report);
@@ -3255,6 +3492,79 @@ namespace jucyaudio
                 std::format("the empty sibling is gone (id {})", emptySiblingId));
             report.check(!folders.getFolderById(rootFolderId).has_value(),
                 std::format("so are the empty folders this suite seeded (id {})", rootFolderId));
+
+            // --- A path the cache does not know, but the table does ---
+            //
+            // The schema says one Folders row per path since v31, so the insert findOrCreateFolderByPath
+            // falls back on can now be refused - and it is refused exactly when the cache it just
+            // consulted is out of date. Reporting that as "could not create the folder" would leave a
+            // scan unable to place any track in the folder while the row it needed sat in the table.
+            //
+            // Staged over a second connection, because nothing reachable through this interface can
+            // produce a cache that is valid and missing a row - which is the whole point of the index.
+            // Its own database, since it deliberately writes behind a live cache's back.
+            {
+                const auto stagedDbPath = selfTestRoot / "foldercache-staged" / "jucyaudio.db";
+                std::filesystem::remove_all(stagedDbPath.parent_path(), removalEc);
+                std::filesystem::create_directories(stagedDbPath.parent_path(), removalEc);
+                if (removalEc)
+                {
+                    report.abort(std::format("Could not create {}: {}", pathToString(stagedDbPath.parent_path()), removalEc.message()));
+                    writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                    return 1;
+                }
+
+                SqliteTrackDatabase scratch;
+                const auto connected = scratch.connect(stagedDbPath);
+                report.check(connected.isOk(), std::format("a scratch database for the staged folder could be created (said: '{}')", connected.errorMessage));
+                if (!connected.isOk())
+                {
+                    writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                    return 1;
+                }
+
+                auto &scratchFolders = scratch.getFolderDatabase();
+                const auto knownPath = stagedDbPath.parent_path() / "library";
+                const auto knownId = scratchFolders.findOrCreateFolderByPath(knownPath);
+                report.check(knownId > 0, "the parent of the staged folder is in the cache");
+
+                // A child of it, so the recursion in findOrCreateFolderByPath resolves the parent from
+                // the cache and only the child itself reaches the insert.
+                const auto stagedPath = knownPath / "staged";
+                const auto stagedKey = normalizeForCache(pathToString(stagedPath));
+                FolderId stagedId{-1};
+                {
+                    SqliteDatabase direct;
+                    if (!direct.open(pathToString(stagedDbPath)))
+                    {
+                        report.abort("Could not reopen the scratch database to stage a folder behind its cache.");
+                        writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                        return 1;
+                    }
+
+                    SqliteStatement insert{direct, "INSERT INTO Folders (parent_id, name, root_path, actual_path) VALUES (?, 'staged', ?, ?);"};
+                    const bool staged = insert.isValid() && insert.addParam(knownId) && insert.addParam(stagedKey) &&
+                        insert.addParam(pathToString(stagedPath)) && insert.execute();
+                    report.check(staged, "a folder row could be written behind the live cache's back");
+                    if (!staged)
+                    {
+                        writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
+                        return 1;
+                    }
+                    stagedId = direct.getLastInsertRowId();
+
+                    // The index refuses a second row for that path, which is what makes the recovery
+                    // below reachable in the first place.
+                    SqliteStatement again{direct, "INSERT INTO Folders (parent_id, name, root_path) VALUES (?, 'staged-again', ?);"};
+                    report.check(again.isValid() && again.addParam(knownId) && again.addParam(stagedKey) && !again.execute(),
+                        "a second row for a path the table already has is refused");
+                }
+
+                report.check(scratchFolders.findOrCreateFolderByPath(stagedPath) == stagedId,
+                    std::format("a folder the cache never saw comes back as the row that already exists (id {})", stagedId));
+                report.check(scratchFolders.findOrCreateFolderByPath(stagedPath) == stagedId, "and the rebuilt cache agrees");
+                report.check(scratchFolders.getFolderById(stagedId).has_value(), "the cache holds it by id too");
+            }
 
             // --- A read that fails must delete nothing ---
             //
