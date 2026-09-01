@@ -291,7 +291,8 @@ namespace jucyaudio
             {
                 g.setColour(juce::Colours::orange.withAlpha(0.8f));
                 g.setFont(14.0f);
-                const auto text = "[LOCKED] Mix is Read-Only (Exported) - Right-click in tree to unlock";
+                const auto text = isReadOnlyBecauseUnreadable() ? "[LOCKED] Mix is Read-Only (could not be read) - see the log"
+                                                              : "[LOCKED] Mix is Read-Only (Exported) - Right-click in tree to unlock";
                 juce::GlyphArrangement glyphs;
                 glyphs.addLineOfText(g.getCurrentFont(), text, 0.0f, 0.0f);
                 const auto textWidth = static_cast<int>(glyphs.getBoundingBox(0, -1, true).getWidth());
@@ -553,8 +554,17 @@ namespace jucyaudio
 
             if (m_isReadOnly)
             {
-                spdlog::info("[MixEditor] Mix {} is in read-only mode (exported to folder: {})",
-                            node->getMixInfo().mixId, mixInfo.exportFolder.value_or(""));
+                // Which reason, because the two are fixed by different things: unlocking a mix in the
+                // tree does nothing for one that could not be read.
+                if (isReadOnlyBecauseUnreadable())
+                {
+                    spdlog::info("[MixEditor] Mix {} is in read-only mode (it could not be read)", node->getMixInfo().mixId);
+                }
+                else
+                {
+                    spdlog::info("[MixEditor] Mix {} is in read-only mode (exported to folder: {})",
+                                node->getMixInfo().mixId, mixInfo.exportFolder.value_or(""));
+                }
             }
             
             // Configure timeline for read-only mode

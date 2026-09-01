@@ -200,6 +200,20 @@ namespace jucyaudio
             // Read-only mode for exported mixes
             bool m_isReadOnly{false};
 
+            /// @brief Why the mix is read-only, when it is. Enforcement does not care - m_isReadOnly
+            ///        decides that - but the user is owed the right reason: a mix that could not be
+            ///        read is not a mix that was exported, and telling them to unlock it in the tree
+            ///        sends them after a lock that is not there.
+            ///
+            /// Asked of the node rather than remembered. A second flag would have to be set everywhere
+            /// m_isReadOnly is, and the first version of this was already wrong in both directions -
+            /// stale true after an unreadable mix was replaced by a readable exported one, and never
+            /// set at all by the reload path. The node knows; there is nothing to keep in step.
+            bool isReadOnlyBecauseUnreadable() const
+            {
+                return m_node != nullptr && !m_node->isCacheLoaded();
+            }
+
             // Playback controller reference
             PlaybackController* m_playbackController{nullptr};
 

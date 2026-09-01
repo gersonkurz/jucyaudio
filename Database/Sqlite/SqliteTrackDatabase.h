@@ -61,6 +61,7 @@ namespace jucyaudio
             std::optional<TrackInfo> getTrackById(TrackId trackId) const override;
 
             std::vector<TrackInfo> getTracks(const TrackQueryArgs &args) const override;
+            DbResult getTracks(const TrackQueryArgs &args, std::vector<TrackInfo> &results) const override;
             std::vector<TrackId> getTrackIds(const TrackQueryArgs &args) const override;
             int getTotalTrackCount(const TrackQueryArgs &baseFilters) const override;
             bool getAggregateStats(const TrackQueryArgs &args, AggregateStats &outStats) const override;
@@ -148,7 +149,12 @@ namespace jucyaudio
             template <typename T>
             DbResult updateSingleTrackField(TrackId trackId, const std::string &columnName, T value,
                                             std::function<bool(database::SqliteStatement &, T)> binder);
-            void readAllTagTracks(std::vector<TrackInfo> &tracks) const;
+            /// @brief Fills in each track's tag ids, and says whether it managed to.
+            ///
+            /// Its answer matters to a caller that is reporting status of its own: a tag read that
+            /// failed leaves tracks carrying some of their tags, which reads as a track with fewer
+            /// tags rather than as a failure.
+            DbResult readAllTagTracks(std::vector<TrackInfo> &tracks) const;
             bool updateTrackTagsFromInsideTransaction(TrackId trackId, const std::vector<TagId>& tagIds);
         private:
             mutable database::SqliteDatabase m_db;

@@ -171,6 +171,18 @@ namespace jucyaudio
                 return m_builtinDatabase.getTracks(args);
             }
 
+            /// @brief The same query, reporting whether it worked. See ITrackDatabase::getTracks.
+            DbResult getTracks(const TrackQueryArgs &args, std::vector<TrackInfo> &results) const
+            {
+                if (!m_isInitialised)
+                {
+                    setLastError("TrackLibrary not initialised.");
+                    results.clear();
+                    return DbResult::failure(DbResultStatus::ErrorConnection, "TrackLibrary not initialised.");
+                }
+                return m_builtinDatabase.getTracks(args, results);
+            }
+
             /**
              * @brief Checks if a track is available (its library root is online).
              * Uses caching to avoid repeated database lookups.

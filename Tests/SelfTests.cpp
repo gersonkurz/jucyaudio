@@ -3860,6 +3860,11 @@ namespace jucyaudio
                     return stop("Could not repopulate the timeline after the second track went missing.");
                 }
 
+                // Stated on its own, because the other half of telling a failed query from an offline
+                // track is that an offline track must not be treated as a failure. The query answered
+                // with fewer rows than the mix has, and that is a mix the user can still open and edit.
+                report.check(loader.isLoaded(), "a mix with a track that cannot be resolved still loads");
+
                 report.check(timeline.getNumChildComponents() == viewsBefore - 1,
                     std::format("the unresolvable row gets no component ({} -> {})", viewsBefore, timeline.getNumChildComponents()));
                 report.check(loader.getMixTracks().size() == rows.size(),
@@ -4323,6 +4328,166 @@ namespace jucyaudio
                 // as it is rather than as it might ideally be, so this says what a caller can rely on.
                 report.check(gappedExport.message.find("Preparing active track sources") != std::string::npos,
                     std::format("and the refusal names the stage it failed at: '{}'", gappedExport.message));
+            }
+
+            // --- 5. A track query that fails is not a mix with no tracks ---
+            //
+            // The loader used to read its TrackInfos with a call that reports a failed query and an
+            // empty result the same way, and published the result either way.
+            //
+            // The rows themselves were never at risk - they come from readMixTracks, which is checked,
+            // and that is what a save writes. What was at risk is the picture: the editor draws what
+            // this read returned, so a failed read makes the mix look shorter than it is, and the
+            // edits the user makes against that picture are then saved against the real rows. The
+            // read-only guard did not catch it either: it asks isCacheLoaded(), which the loader was
+            // setting true.
+            //
+            // Tracks is renamed out of the way rather than dropped, so this is reversible - and with
+            // legacy_alter_table on, so the rename does not rewrite the triggers and views that name
+            // it. Nothing writes while it is hidden. Last in this suite, and restored before the end,
+            // because the suite after this one uses the same library.
+            {
+                const auto hideTracks = [&report](const std::filesystem::path &dbPath, bool hide)
+                {
+                    SqliteDatabase saboteur;
+                    const bool done = saboteur.open(pathToString(dbPath)) && saboteur.execute("PRAGMA legacy_alter_table=ON;") &&
+                        saboteur.execute(hide ? "ALTER TABLE Tracks RENAME TO Tracks_hidden;" : "ALTER TABLE Tracks_hidden RENAME TO Tracks;");
+                    report.check(done, hide ? "the Tracks table could be hidden" : "and put back afterwards");
+                    return done;
+                };
+
+                // It loads now, so that the refusal below is the hiding and not something already wrong.
+                audio::MixProjectLoader before;
+                report.check(before.loadMix(mixId), "the mix loads while its tracks can be read");
+
+                if (hideTracks(databasePath, true))
+                {
+                    audio::MixProjectLoader broken;
+                    const auto loaded = broken.loadMix(mixId);
+                    report.check(!loaded, "a mix whose track query fails does not load");
+
+                    // The same statement from the side the editor asks from: isLoaded() is what
+                    // MixNode::isCacheLoaded() returns, and that is what opens the editor read-only.
+                    report.check(!broken.isLoaded(), "and says so through isLoaded(), which is what makes the editor read-only");
+
+                    // Nothing was published from the failed read. The statusless version would have
+                    // published the mix's rows in full - they come from readMixTracks and were never
+                    // in doubt - alongside the TrackInfos it could not read, which is the mismatch the
+                    // editor would then have drawn and been edited against.
+                    report.check(broken.getMixTracks().empty(), "and publishes no rows from a read it could not trust");
+
+                    std::ignore = hideTracks(databasePath, false);
+                }
+
+                audio::MixProjectLoader after;
+                report.check(after.loadMix(mixId), "and the mix loads again once the table is back");
+            }
+
+            // --- 6. A read that stops partway is a failure, not a shorter answer ---
+            //
+            // The check above hides Tracks, so the statement never prepares and the hasError() branch
+            // that catches a partial read is not reached - deleting that branch would leave every
+            // check so far passing. This one makes the read return rows and *then* fail, which is the
+            // case the branch exists for and the one that cannot be seen from the row count alone.
+            //
+            // Over its own scratch database and against the database directly, because the prefix is
+            // what has to be inspected: the loader deliberately publishes nothing on failure, so the
+            // rows that were read before it failed are only visible here.
+            {
+                const auto partialDbPath = selfTestRoot / "timeline-partial" / "jucyaudio.db";
+                std::error_code partialEc;
+                std::filesystem::remove_all(partialDbPath.parent_path(), partialEc);
+                std::filesystem::create_directories(partialDbPath.parent_path(), partialEc);
+                if (partialEc)
+                {
+                    return stop(std::format("Could not create {}: {}", pathToString(partialDbPath.parent_path()), partialEc.message()));
+                }
+
+                SqliteTrackDatabase scratch;
+                const auto connected = scratch.connect(partialDbPath);
+                report.check(connected.isOk(), std::format("a scratch database for the partial read could be created (said: '{}')", connected.errorMessage));
+                if (!connected.isOk())
+                {
+                    writeResultsFile(resultsPath, "jucyaudio timeline self test", report);
+                    return 1;
+                }
+
+                {
+                    SqliteDatabase seed;
+                    const bool seeded = seed.open(pathToString(partialDbPath)) &&
+                        seed.execute("INSERT INTO Folders (folder_id, parent_id, name, root_path, actual_path) VALUES "
+                                     "(60, NULL, 'partial', 'c:\\partial', 'C:\\Partial');") &&
+                        seed.execute("INSERT INTO Tracks (track_id, folder_id, filename, title) VALUES "
+                                     "(600, 60, 'a.mp3', 'A'), (601, 60, 'b.mp3', 'B'), (602, 60, 'c.mp3', 'C');");
+                    report.check(seeded, "the scratch database could be seeded with three tracks");
+                }
+
+                // The offline filter names temp.OfflineFolders, a temp table that only exists on a
+                // connection someone has called rebuildOfflineFoldersTable on - which nothing has, for
+                // this scratch database. Left in, the query fails before it reads anything, and a
+                // check for a partial read would be watching the wrong failure. Restored below.
+                const auto offlineFilterWasOff = config::theSettings.uiSettings.showOfflineTracks.get();
+                config::theSettings.uiSettings.showOfflineTracks.set(true);
+
+                // What a working read returns, so the partial one below can be compared against it.
+                TrackQueryArgs allTracks{};
+                allTracks.usePaging = false;
+                // The read on its own line, not inside the check: the arguments to report.check are
+                // evaluated in an unspecified order, so formatting the message from `whole` in the same
+                // expression that fills it printed the size it had beforehand. The check passed and
+                // said "0 of 3".
+                std::vector<TrackInfo> whole;
+                const auto wholeRead = scratch.getTracks(allTracks, whole);
+                report.check(wholeRead.isOk() && whole.size() == 3, std::format("the scratch tracks read back cleanly ({} of 3)", whole.size()));
+
+                // Tracks becomes a view that yields its rows and then raises. abs() of the most
+                // negative integer is a runtime error in SQLite, not a parse error, so the failure
+                // lands in the middle of the read rather than when the statement is prepared - which
+                // is the whole point, and the same technique the folder cache suite uses.
+                {
+                    SqliteDatabase saboteur;
+                    // The first branch deliberately withholds the last track, so what comes out before
+                    // the failure is a genuine prefix - fewer rows than the clean read gave - and not
+                    // the whole answer with an error stapled to the end. A check that could not tell
+                    // those apart would pass on a read that had finished and then tripped.
+                    const bool broken = saboteur.open(pathToString(partialDbPath)) &&
+                        saboteur.execute("PRAGMA legacy_alter_table=ON;") &&
+                        saboteur.execute("ALTER TABLE Tracks RENAME TO Tracks_real;") &&
+                        saboteur.execute("CREATE VIEW Tracks AS SELECT * FROM Tracks_real WHERE track_id < 602 "
+                                         "UNION ALL SELECT * FROM Tracks_real WHERE track_id = abs(-9223372036854775807 - 1);");
+                    report.check(broken, "Tracks was replaced by one that answers with part of itself and then fails");
+                }
+
+                std::vector<TrackInfo> partial;
+                const auto partialRead = scratch.getTracks(allTracks, partial);
+                const auto partialCount = partial.size();
+                report.check(!partialRead.isOk(), "a read that stops partway reports failure rather than a shorter answer");
+                report.check(partialCount > 0, std::format("and it really did read rows before failing ({})", partialCount));
+                report.check(partialCount < whole.size(),
+                    std::format("and stopped before the end - a prefix of the answer, not the whole of it ({} of {})", partialCount, whole.size()));
+
+                // --- And a tag read that fails is a failed read too ---
+                //
+                // The tags are filled in by a second statement after the rows are in hand. It used to
+                // report nothing, so a TrackTags that was missing or stopped early produced tracks
+                // carrying some of their tags and a successful result - fewer tags reading as a
+                // smaller answer rather than as a failure. Neither check above reaches it: both fail
+                // on the main query and return first.
+                {
+                    SqliteDatabase repair;
+                    const bool restored = repair.open(pathToString(partialDbPath)) && repair.execute("PRAGMA legacy_alter_table=ON;") &&
+                        repair.execute("DROP VIEW Tracks;") && repair.execute("ALTER TABLE Tracks_real RENAME TO Tracks;") &&
+                        repair.execute("ALTER TABLE TrackTags RENAME TO TrackTags_hidden;");
+                    report.check(restored, "Tracks was put back and TrackTags hidden instead");
+                }
+
+                std::vector<TrackInfo> withoutTags;
+                const auto tagRead = scratch.getTracks(allTracks, withoutTags);
+                report.check(!tagRead.isOk(), "a read whose tag query fails reports failure rather than tracks with fewer tags");
+                report.check(withoutTags.size() == whole.size(),
+                    std::format("even though the rows themselves came back ({} of {})", withoutTags.size(), whole.size()));
+
+                config::theSettings.uiSettings.showOfflineTracks.set(offlineFilterWasOff);
             }
 
             // The timeline is a local and takes its components with it; this drops the loader pointer

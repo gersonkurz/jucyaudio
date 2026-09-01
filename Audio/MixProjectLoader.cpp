@@ -57,19 +57,32 @@ namespace jucyaudio
                 return false;
             }
 
-            // Statusless, and knowingly so. getTracks reports a failed query and an empty result the
-            // same way, but an empty result is not evidence of failure here: the ordinary track query
-            // filters out offline folders, so a perfectly good mix whose tracks are all on a
-            // disconnected drive legitimately resolves to nothing. Rejecting that would make those
-            // mixes unopenable whenever the volume is unplugged, which is a worse failure than the one
-            // being guarded against - and it would not catch a partial failure anyway, which comes
-            // back as a non-empty prefix.
+            // Status-bearing, because the answer decides whether this mix may be edited. The statusless
+            // form reports a failed query and an empty result the same way, and reports a read that
+            // stopped partway as a shorter answer.
             //
-            // Recorded in tasks.md: this wants a status-bearing, mix-specific read. Until then a track
-            // that does not resolve still holds its place - every positioning walk advances through
-            // every row, so the tracks around it do not move - and it contributes nothing to the mix's
-            // length. The timeline draws no component for it; a WAV or MP3 export refuses outright.
-            auto loadedInfos = theTrackLibrary.getTracks(getMixTrackQueryArgs(mixId));
+            // What that costs is not a saved row set full of holes - the rows come from readMixTracks
+            // above, which is checked, and saveMix writes those. It is that the editor draws what this
+            // read returned. A failed read makes the mix look shorter than it is, or empty, and every
+            // edit the user then makes - reordering, deleting, pasting - is made against a picture of
+            // a mix that is missing tracks which really are there. Those edits are saved from the rows,
+            // and the rows are real, so the mix is quietly rewritten to match a view that was wrong.
+            //
+            // What is *not* treated as failure is a short answer that the query meant: this query
+            // filters out offline folders, so a perfectly good mix whose tracks are all on a
+            // disconnected drive resolves to nothing at all. Refusing that would make those mixes
+            // unopenable whenever the volume is unplugged, which is a worse failure than the one being
+            // guarded against. Such a track still holds its place - every positioning walk advances
+            // through every row - and contributes nothing to the mix's length; the timeline draws no
+            // component for it, and a WAV or MP3 export refuses outright.
+            //
+            // So: the query failing is fatal, the query answering with less than the whole mix is not.
+            std::vector<TrackInfo> loadedInfos;
+            if (const auto read = theTrackLibrary.getTracks(getMixTrackQueryArgs(mixId), loadedInfos); !read.isOk())
+            {
+                spdlog::error("MixProjectLoader: Could not read the tracks of mix {}: {}", mixId, read.errorMessage);
+                return false;
+            }
 
             spdlog::info("[RELOAD] MixProjectLoader::loadMix - {} tracks and {} track infos for mix ID {}",
                 loadedTracks.size(),

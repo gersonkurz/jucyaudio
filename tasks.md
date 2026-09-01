@@ -8,29 +8,6 @@ logged stale-state effect, or need a design decision first.
 
 ---
 
-## P2: the mix editor cannot tell a failed track query from an offline one
-
-**Symptom**: `MixProjectLoader::loadMix` reads its `TrackInfo` list with
-`theTrackLibrary.getTracks(...)` (`Audio/MixProjectLoader.cpp:72`), which returns an empty vector both
-when the query fails and when it legitimately matches nothing. The loader publishes that result and
-sets `m_loaded = true` either way (`:97`), so the timeline and playback see a mix whose tracks do not
-resolve, and the read-only guard in the editor does not catch it: that fires on
-`!node->isCacheLoaded()` (`UI/MixEditorComponent.cpp:542`), which covers a failed `readMixTracks`, not
-this query. An unresolvable track is not silently dropped from the layout any more - every
-positioning walk advances through every row, so it holds its place and the tracks around it do not
-move - but nothing tells the user why a track is missing from the editor, and a WAV or MP3 export of
-that mix is refused outright rather than explained.
-
-**Why the obvious check is wrong**: an empty result is not evidence of failure. The ordinary track
-query filters out offline folders, so a valid mix whose tracks are all on a disconnected drive
-resolves to nothing - and rejecting that would make those mixes unopenable whenever the volume is
-unplugged. A partial failure does not show up as emptiness either; it comes back as a prefix.
-
-**Fix approach**: a status-bearing read that fetches the TrackInfos for a specific set of track ids,
-without the offline filter, and reports whether the query itself succeeded.
-
----
-
 ## P2: deferred transactions are not isolated against the same connection
 
 **Symptom**: `TransactionMode::Immediate` (added for the mix recovery capture) holds

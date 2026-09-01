@@ -106,6 +106,19 @@ namespace jucyaudio
             virtual std::optional<TrackInfo> getTrackById(TrackId trackId) const = 0;
             
             virtual std::vector<TrackInfo> getTracks(const TrackQueryArgs &args) const = 0;
+
+            /// @brief The same query, but it says whether it worked.
+            ///
+            /// An empty result from the form above means "the query failed" and "nothing matched"
+            /// equally, and a read that stopped partway is a non-empty prefix indistinguishable from a
+            /// shorter answer. That is fine for filling a view that is only looked at, and not fine
+            /// for one that is then edited: the mix editor draws what this returns, so a failed read
+            /// makes a mix look shorter than it is, and the edits the user makes against that picture
+            /// are saved against the real rows.
+            ///
+            /// @param results Cleared first, and holds whatever was read - including a prefix when the
+            ///        read stopped early, so a caller that wants to show what it got still can.
+            virtual DbResult getTracks(const TrackQueryArgs &args, std::vector<TrackInfo> &results) const = 0;
             virtual std::vector<TrackId> getTrackIds(const TrackQueryArgs &args) const = 0;
             virtual int getTotalTrackCount(const TrackQueryArgs &baseFilters) const = 0;
 

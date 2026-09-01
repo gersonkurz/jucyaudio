@@ -4325,37 +4325,58 @@ CREATE TABLE MixUndoHistory (
         // on TrackQueryArgs
         std::vector<TrackInfo> SqliteTrackDatabase::getTracks(const TrackQueryArgs &args) const
         {
+            // The statusless form, kept because most callers are filling a view and an empty list is
+            // the right thing to show whether the query failed or matched nothing. Callers that have to
+            // tell those apart use the overload below rather than a second copy of this query.
+            std::vector<TrackInfo> results;
+            std::ignore = getTracks(args, results);
+            return results;
+        }
+
+        DbResult SqliteTrackDatabase::getTracks(const TrackQueryArgs &args, std::vector<TrackInfo> &results) const
+        {
+            results.clear();
             if (!isOpen())
-                return {};
+            {
+                return DbResult::failure(DbResultStatus::ErrorConnection, "DB not open for getTracks.");
+            }
             m_lastErrorMessage.clear();
             m_cachedTotalTrackCountValid = false;
 
-            std::vector<TrackInfo> results;
             SqliteStatement stmt{m_db};
             SqliteStatementConstruction stmtConstruction{stmt};
             if (!stmtConstruction.createSelectStatement(args))
             {
                 m_lastErrorMessage = "Failed to create select statement: " + m_db.getLastError();
-                return results; // Return empty vector on failure
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
 
-            if (stmt.isValid())
-            {
-                while (stmt.getNextResult())
-                {
-                    results.emplace_back(trackInfoFromStatement(stmt));
-                }
-                readAllTagTracks(results);
-            }
-            else
+            if (!stmt.isValid())
             {
                 m_lastErrorMessage = m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
-            if (!m_db.getLastError().empty() && m_db.getLastError().find("SQLITE_DONE") == std::string::npos)
+
+            while (stmt.getNextResult())
+            {
+                results.emplace_back(trackInfoFromStatement(stmt));
+            }
+
+            // The loop above ends the same way on "no more rows" and on "the step failed", so a read
+            // that stopped partway is a non-empty prefix and looks exactly like a shorter answer. That
+            // is the whole reason this overload exists: a caller deciding whether it may write back
+            // what it read cannot afford to mistake the two.
+            if (stmt.hasError())
             {
                 m_lastErrorMessage = m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB,
+                    std::format("the track query stopped after {} row(s): {}", results.size(), m_lastErrorMessage));
             }
-            return results;
+
+            // The tags are part of the answer, so a tag read that failed makes this answer wrong too -
+            // the tracks would come back carrying some of their tags, which reads as tracks with fewer
+            // tags rather than as a failure. The rows already read stay in `results` either way.
+            return readAllTagTracks(results);
         }
 
         int64_t nextUniqueId()
@@ -4369,7 +4390,7 @@ CREATE TABLE MixUndoHistory (
             return base + "_" + std::to_string(nextUniqueId());
         }
 
-        void SqliteTrackDatabase::readAllTagTracks(std::vector<TrackInfo> &tracks) const
+        DbResult SqliteTrackDatabase::readAllTagTracks(std::vector<TrackInfo> &tracks) const
         {
             StringWriter sqlStatement;
             sqlStatement.append("SELECT track_id, tag_id FROM TrackTags WHERE track_id IN (");
@@ -4394,6 +4415,11 @@ CREATE TABLE MixUndoHistory (
             sqlStatement.append(");");
 
             SqliteStatement stmt{m_db, sqlStatement.asString()};
+            if (!stmt.isValid())
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB, "could not prepare the tag read: " + m_db.getLastError());
+            }
+
             while (stmt.getNextResult())
             {
                 if (!stmt.isNull(0))
@@ -4407,6 +4433,16 @@ CREATE TABLE MixUndoHistory (
                     }
                 }
             }
+
+            // Same reason the caller checks its own read: this loop ends the same way on "no more
+            // rows" and on "the step failed", and a read that stopped partway leaves tracks holding
+            // some of their tags. Silently fewer tags is a wrong answer that looks like a right one.
+            if (stmt.hasError())
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB, "the tag read stopped early: " + m_db.getLastError());
+            }
+
+            return DbResult::success();
         }
 
         std::vector<TrackId> SqliteTrackDatabase::getTrackIds(const TrackQueryArgs &args) const
