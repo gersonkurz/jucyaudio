@@ -537,20 +537,20 @@ namespace jucyaudio
             /// structure: the same columns with the same types, nullability, defaults and primary key
             /// membership, the same foreign keys, and the same indexes over the same columns.
             ///
-            /// Column ordinal position is compared for the tables that are read by position, and only
-            /// for those. Two are: `SELECT * FROM Tracks`, decoded with a running index in
-            /// trackInfoFromStatement, and `SELECT * FROM MixTracks`, decoded the same way in
-            /// readMixTracksChecked. For those two a column that one path appends and the other declares
-            /// earlier would decode migrated rows into the wrong fields, so the ordinal has to match.
+            /// Column ordinal position is deliberately not compared, and no longer needs to be. It used
+            /// to matter for Tracks and MixTracks, which were read with `SELECT *` and decoded by a
+            /// running index, so a column one path appended and the other declared earlier would land
+            /// every following value in the wrong field. Those queries now name their columns -
+            /// trackColumnsForDecoding and mixTrackColumnsForDecoding, each sitting beside the decoder it
+            /// serves - so the order a table declares its columns in is no longer a behaviour anywhere.
             ///
-            /// Everywhere else the ordinal is not compared, because nothing reads those tables by
-            /// position and making it match would mean rebuilding tables in a migration to renumber
-            /// columns no one addresses by number. Albums and MixRecovery really do differ that way
-            /// today - the ladder appends Albums.bitrate and MixRecovery.total_duration where the fresh
-            /// schema declares them mid-table - and that is recorded in tasks.md rather than papered
-            /// over here: changing the fresh schema to match would hand every database already stamped
-            /// at the latest version a different column order from a new one, which is the divergence
-            /// this suite exists to prevent, and no rung would fix it.
+            /// Which is just as well, because two tables genuinely disagree about it: the ladder appends
+            /// Albums.bitrate and MixRecovery.total_duration where the fresh schema declares them
+            /// mid-table. Neither reordering is safe to make - changing the fresh schema would hand every
+            /// database already stamped at the latest version a different order from a new one, and
+            /// changing the ladder means rebuilding two tables to renumber columns nobody addresses by
+            /// number. Removing the dependency was the way out, so the difference is now genuinely
+            /// without consequence rather than merely unnoticed.
             ///
             /// The facts are sorted before comparing, so the report reads in a stable order.
             ///
@@ -570,10 +570,6 @@ namespace jucyaudio
             /// @return Each object, keyed by kind and name, to its sorted facts. Empty on failure.
             std::map<std::string, std::vector<std::string>> readSchemaStructure(const std::filesystem::path &path, Report &report)
             {
-                // The tables something reads with SELECT * and decodes by position. Anything added here
-                // has to actually be read that way, and anything read that way has to be in here.
-                constexpr const char *ordinalSensitiveTables[]{"Tracks", "MixTracks"};
-
                 std::map<std::string, std::vector<std::string>> structure;
 
                 SqliteDatabase db;
@@ -708,18 +704,11 @@ namespace jucyaudio
                     auto &facts = structure[std::format("table {}", table)];
 
                     {
-                        const bool comparePosition = std::ranges::any_of(ordinalSensitiveTables,
-                            [&table](const char *name)
-                            {
-                                return table == name;
-                            });
-
                         SqliteStatement stmt{db, std::format("PRAGMA table_info({});", quoted(table))};
                         while (stmt.getNextResult())
                         {
-                            facts.push_back(std::format("column {} position={} type={} notnull={} default={} pk={}",
+                            facts.push_back(std::format("column {} type={} notnull={} default={} pk={}",
                                 stmt.getText(1),
-                                comparePosition ? std::to_string(stmt.getInt32(0)) : std::string{"<not compared>"},
                                 stmt.getText(2),
                                 stmt.getInt32(3),
                                 stmt.isNull(4) ? std::string{"<none>"} : stmt.getText(4),
@@ -2190,6 +2179,118 @@ namespace jucyaudio
 
                 report.check(database::calculateMixTrackStarts({}).empty(), "an empty mix has no positions");
                 report.check(database::calculateMixDuration(std::vector<MixTrack>{}, lengthOf) == ms(0), "and no length");
+            }
+
+            // --- The BPM picker reads a whole track row, and reads it by position ---
+            //
+            // getNextTrackForBpmAnalysis is the one such read nothing else here exercises, and it is
+            // the one where a mistake is worst: BpmAnalysis writes the result back keyed by the
+            // track_id this decodes, so a column list out of step with trackInfoFromStatement would
+            // file one track's BPM against another track's id. Both of its queries are covered, because
+            // they are written differently - the first joins MixTracks and so has to qualify every
+            // column, the second does not.
+            //
+            // What each field is compared against is read back out of the database by name, in a
+            // separate query, which is the comparison that matters: not "did it return a track" but
+            // "did this value land in the field SQL says it belongs to".
+            //
+            // Four fields rather than all twenty-eight, chosen for where they sit in the row - folder_id
+            // and filename near the front, title in the middle, status last. A list that is wrong by one
+            // shifts everything after the mistake, so a sample spread across the row catches it wherever
+            // it is, while comparing every field would only say the same thing at more length.
+            {
+                auto &tracks = theTrackLibrary.getTrackDatabase();
+
+                SqliteDatabase probe;
+                if (!probe.open(pathToString(databasePath)))
+                {
+                    report.check(false, "a probe connection could be opened for the BPM picker check");
+                }
+                else
+                {
+                    const auto scalar = [&probe](const std::string &sql)
+                    {
+                        SqliteStatement stmt{probe, sql};
+                        return (stmt.isValid() && stmt.getNextResult()) ? stmt.getText(0) : std::string{"<query failed>"};
+                    };
+
+                    // Nothing left to analyse, so the picker has to come back empty. Without this the
+                    // checks below would pass on a picker that simply returned the first track it saw.
+                    report.check(probe.execute("UPDATE Tracks SET bpm = 120;"), "every scratch track could be marked as analysed");
+                    report.check(!tracks.getNextTrackForBpmAnalysis().has_value(), "with every track analysed the BPM picker offers nothing");
+
+                    // Priority 1: a track that is in a mix. This is the joined query.
+                    const auto inMixId = scalar("SELECT t.track_id FROM Tracks t JOIN MixTracks m ON t.track_id = m.track_id "
+                                                "ORDER BY t.track_id LIMIT 1");
+                    report.check(inMixId != "<query failed>" && inMixId != "",
+                        std::format("the scratch library has a track in a mix to offer the picker (id '{}')", inMixId));
+
+                    if (inMixId != "<query failed>" && !inMixId.empty())
+                    {
+                        report.check(probe.execute(std::format("UPDATE Tracks SET bpm = NULL WHERE track_id = {};", inMixId)),
+                            "that track could be marked as un-analysed");
+
+                        const auto offered = tracks.getNextTrackForBpmAnalysis();
+                        report.check(offered.has_value() && std::to_string(offered->trackId) == inMixId,
+                            std::format("the picker offers the un-analysed track that is in a mix (offered '{}', expected '{}')",
+                                offered.has_value() ? std::to_string(offered->trackId) : std::string{"nothing"},
+                                inMixId));
+
+                        if (offered.has_value())
+                        {
+                            // Three fields from three different places in the row - near the front, the
+                            // middle and the end - because a list that is wrong by one shifts some
+                            // fields and not others.
+                            report.check(offered->filename == scalar(std::format("SELECT filename FROM Tracks WHERE track_id = {};", inMixId)),
+                                "the filename it decoded is the one that row holds");
+                            report.check(offered->title == scalar(std::format("SELECT title FROM Tracks WHERE track_id = {};", inMixId)),
+                                "and so is the title");
+                            report.check(std::to_string(offered->folderId) ==
+                                    scalar(std::format("SELECT folder_id FROM Tracks WHERE track_id = {};", inMixId)),
+                                "and the folder it points at");
+                            // The last column, and the one that would catch a list too long or too
+                            // short. Compared against what the row holds through the same mapping the
+                            // decoder uses, rather than against a pair of acceptable values - "either
+                            // of two" would have passed on a status that decoded from the wrong column.
+                            const auto statusText = scalar(std::format("SELECT status FROM Tracks WHERE track_id = {};", inMixId));
+                            const auto expectedStatus = (statusText == "ok") ? TrackStatus::Ok
+                                : (statusText == "bad_format")               ? TrackStatus::BadFormat
+                                                                             : TrackStatus::Unknown;
+                            report.check(offered->status == expectedStatus,
+                                std::format("the status column decoded into the status field (got {}, row says '{}')",
+                                    static_cast<int>(offered->status),
+                                    statusText));
+                        }
+
+                        // Priority 2: nothing in a mix needs analysing, but something outside one does.
+                        report.check(probe.execute(std::format("UPDATE Tracks SET bpm = 120 WHERE track_id = {};", inMixId)),
+                            "the mixed track could be marked as analysed again");
+
+                        const auto outsideId = scalar("SELECT track_id FROM Tracks WHERE track_id NOT IN (SELECT track_id FROM MixTracks) "
+                                                      "ORDER BY track_id LIMIT 1");
+                        report.check(outsideId != "<query failed>" && !outsideId.empty(),
+                            std::format("the scratch library has a track outside every mix (id '{}')", outsideId));
+
+                        if (outsideId != "<query failed>" && !outsideId.empty())
+                        {
+                            report.check(probe.execute(std::format("UPDATE Tracks SET bpm = NULL WHERE track_id = {};", outsideId)),
+                                "that track could be marked as un-analysed");
+
+                            const auto second = tracks.getNextTrackForBpmAnalysis();
+                            report.check(second.has_value() && std::to_string(second->trackId) == outsideId,
+                                std::format("the picker falls through to a track in no mix (offered '{}', expected '{}')",
+                                    second.has_value() ? std::to_string(second->trackId) : std::string{"nothing"},
+                                    outsideId));
+                            if (second.has_value())
+                            {
+                                report.check(second->filename == scalar(std::format("SELECT filename FROM Tracks WHERE track_id = {};", outsideId)),
+                                    "with the filename that row holds");
+                                report.check(second->title == scalar(std::format("SELECT title FROM Tracks WHERE track_id = {};", outsideId)),
+                                    "and its title");
+                            }
+                        }
+                    }
+                }
             }
 
             writeResultsFile(resultsPath, "jucyaudio scan self test", report);

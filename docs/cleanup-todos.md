@@ -57,17 +57,20 @@ These columns in `Tracks` are 0% populated. Dropping would require full table re
 
 **Action**: Keep all columns for now. The truly dead ones are NULL/0 and cost minimal space.
 
-### Future Optimization: Query Changes
+### Done: explicit column lists for the positional decoders
 
-Currently `trackInfoFromStatement()` uses `SELECT * FROM Tracks` and maps all columns including unused ones. A future optimization could:
+`trackInfoFromStatement()` used to be fed `SELECT * FROM Tracks`, and `mixTrackFromStatement()`
+`SELECT * FROM MixTracks`. Both walk the row with a running index, so the field each value landed in
+was decided by the order the table happened to declare its columns in - and a database created from
+scratch does not declare them in the same order as one that migrated up, because
+`ALTER TABLE ADD COLUMN` appends. Every such query now names its columns, from
+`trackColumnsForDecoding` and `mixTrackColumnsForDecoding`, each sitting beside the decoder it feeds.
 
-1. Replace `SELECT *` with explicit column list
-2. Remove dead fields from `TrackInfo` struct
-3. Use column names instead of positional indices (more robust)
+Not done, and still only worth doing if something measures a reason to: removing the dead fields from
+`TrackInfo`, and reading by column name rather than by index. The column list makes the order the
+query's business, which is what the robustness item was really after.
 
-**Effort**: Medium (touches many queries)
-**Benefit**: Low (NULL columns are cheap to transfer/store)
-**Recommendation**: Defer unless profiling shows actual bottleneck
+**Benefit realised**: correctness, not speed. NULL columns were always cheap to transfer.
 
 ### Low Priority: Unused Column in Mixes
 

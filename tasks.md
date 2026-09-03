@@ -8,33 +8,6 @@ logged stale-state effect, or need a design decision first.
 
 ---
 
-## P3: Albums and MixRecovery have different column order in a new database than in a migrated one
-
-**Symptom**: the ladder appends `Albums.bitrate` (v14) and `MixRecovery.total_duration` (v28), while
-`initialSqlStatements` declares both mid-table. So a database created from scratch numbers those
-columns differently from one that migrated up. Measured, not suspected: 24 of 26 tables agree, these
-two do not.
-
-**Why it is P3 and not P2**: nothing reads either table with `SELECT *`. The two tables that are read
-that way and decoded by position - `Tracks` via `trackInfoFromStatement` and `MixTracks` via
-`readMixTracksChecked` - do agree, and the whole-ladder check in the migration self test compares
-ordinals for exactly those two so they stay that way. The divergence is latent: it costs nothing until
-someone writes `SELECT * FROM Albums`.
-
-**Why it was not simply fixed**: reordering the fresh schema to match the ladder would leave every
-database already stamped at the latest version on the old order and every new one on the new order,
-with no rung able to tell them apart - the divergence this suite exists to prevent, introduced by the
-attempt to remove one. Reordering the other way needs a rung that rebuilds both tables, which is the
-riskiest kind of migration and buys no reader anything.
-
-**Fix approach**: remove the positional dependency instead, so column order stops being a behaviour
-anywhere. Give `SELECT * FROM Tracks` (`SqliteTrackDatabase.cpp:3884` and `:3931`) and
-`SELECT * FROM MixTracks` (`SqliteMixSummary.cpp:88`) explicit column lists matching what
-`trackInfoFromStatement` and `readMixTracksChecked` decode. Then the ordinal check can be dropped from
-the convergence comparison altogether and this entry closes with it.
-
----
-
 ## P3: no executed check that a failed write discards the partial
 
 **Symptom**: the WAV render now checks `writeFromAudioSampleBuffer` and `flush`, and the MP3 render

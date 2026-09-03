@@ -85,7 +85,8 @@ namespace jucyaudio
 
         DbResult readMixTracksChecked(SqliteDatabase &db, MixId mixId, std::vector<MixTrack> &tracksOut)
         {
-            SqliteStatement stmt{db, "SELECT * FROM MixTracks WHERE mix_id=? ORDER BY order_in_mix ASC"};
+            SqliteStatement stmt{db,
+                std::format("SELECT {} FROM MixTracks WHERE mix_id=? ORDER BY order_in_mix ASC", mixTrackColumnsForDecoding)};
             if (!stmt.isValid() || !stmt.addParam(mixId))
             {
                 return DbResult::failure(DbResultStatus::ErrorDB, std::format("could not query the rows of mix {}: {}", mixId, db.getLastError()));

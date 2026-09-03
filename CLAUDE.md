@@ -196,9 +196,11 @@ columns, uniqueness and collation, and for a virtual table its own definition. S
 text, because `ALTER TABLE ADD COLUMN` appends to the stored `CREATE` statement and an old table never
 spells itself the way today's schema does.
 
-Column ordinals are compared only for `Tracks` and `MixTracks`, the two tables something reads with
-`SELECT *` and decodes by position. Elsewhere the order is not a behaviour, and forcing it to match
-would mean renumbering columns in a migration for no reader's benefit.
+Column ordinals are not compared, because nothing depends on them: every query that decodes a row by
+position names the columns it reads, via `trackColumnsForDecoding` and `mixTrackColumnsForDecoding`
+next to the decoders they serve. Keep it that way - a `SELECT *` feeding a positional decoder makes the
+order a table declares its columns in load-bearing, and a new database does not declare them in the
+same order as a migrated one.
 
 Adding a rung means the fixtures climb one more step, and nothing needs editing for it. What does need
 editing is `convergenceSqlStatements`, if the rung's objects are not also added to

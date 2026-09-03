@@ -41,7 +41,7 @@ namespace jucyaudio
          * that cannot be read is a row this code declines to draw conclusions from, not a reason to
          * abandon everything that came before it.
          *
-         * @param stmt Positioned on a row of SELECT * FROM MixTracks.
+         * @param stmt Positioned on a row selecting mixTrackColumnsForDecoding, in that order.
          * @param trackOut Written only on success.
          * @param errorOut Optional; receives why it failed. Worth asking for: this is a JSON parse
          *        error, so it never reaches SqliteDatabase::getLastError, and a caller reporting that
@@ -49,6 +49,19 @@ namespace jucyaudio
          * @return False if mix_data could not be understood.
          */
         bool mixTrackFromStatement(const SqliteStatement &stmt, MixTrack &trackOut, std::string *errorOut = nullptr);
+
+        /**
+         * @brief The MixTracks columns mixTrackFromStatement reads, in the order it reads them.
+         *
+         * Selected by name rather than with a star, for the same reason as trackColumnsForDecoding: the
+         * decoder reads the row by position, and the order a table declares its columns in is not
+         * something a query should depend on. A migrated database carried an is_active column here for
+         * a while, and the v32 rung rebuilds the table - either would have shifted every field along by
+         * one under a SELECT *.
+         *
+         * This and mixTrackFromStatement are one contract. Change them together.
+         */
+        inline constexpr std::string_view mixTrackColumnsForDecoding{"mix_id, track_id, order_in_mix, mix_data"};
 
         /**
          * @brief Binds a MixTrack to an INSERT INTO MixTracks statement, mix_data included.

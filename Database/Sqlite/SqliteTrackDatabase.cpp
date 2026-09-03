@@ -3883,7 +3883,7 @@ CREATE TABLE MixUndoHistory (
             }
             m_lastErrorMessage.clear(); // mutable m_lastErrorMessage
 
-            SqliteStatement stmt{m_db, "SELECT * FROM Tracks WHERE track_id = ?;"};
+            SqliteStatement stmt{m_db, std::format("SELECT {} FROM Tracks WHERE track_id = ?;", trackColumnsForDecoding)};
             if (!stmt.isValid())
             {
                 m_lastErrorMessage = m_db.getLastError();
@@ -3915,13 +3915,17 @@ CREATE TABLE MixUndoHistory (
             m_lastErrorMessage.clear(); // mutable m_lastErrorMessage
 
             // --- PRIORITY 1: Un-analyzed tracks that are part of ANY mix project ---
-            std::string sql_priority1 = R"SQL(
-                SELECT T.* FROM Tracks T
-                JOIN MixTracks MT ON T.track_id = MT.track_id
-                WHERE (T.bpm IS NULL OR T.bpm <= 0)
-                AND T.status != 'bad_format'
+            //
+            // Unaliased, so the one qualified column list works here as well as in the unjoined query
+            // below. The alias was only ever a shorthand.
+            const auto sql_priority1 = std::format(R"SQL(
+                SELECT {} FROM Tracks
+                JOIN MixTracks ON Tracks.track_id = MixTracks.track_id
+                WHERE (Tracks.bpm IS NULL OR Tracks.bpm <= 0)
+                AND Tracks.status != 'bad_format'
                 LIMIT 1;
-            )SQL";
+            )SQL",
+                trackColumnsForDecoding);
 
             SqliteStatement stmt1{m_db, sql_priority1};
             if (stmt1.getNextResult())
@@ -3930,7 +3934,8 @@ CREATE TABLE MixUndoHistory (
             }
 
             // --- PRIORITY 2: Any other un-analyzed track ---
-            std::string sql_priority2 = "SELECT * FROM Tracks WHERE (bpm IS NULL OR bpm <= 0) AND status != 'bad_format' LIMIT 1;";
+            const auto sql_priority2 =
+                std::format("SELECT {} FROM Tracks WHERE (bpm IS NULL OR bpm <= 0) AND status != 'bad_format' LIMIT 1;", trackColumnsForDecoding);
             SqliteStatement stmt2{m_db, sql_priority2};
             if (stmt2.getNextResult())
             {

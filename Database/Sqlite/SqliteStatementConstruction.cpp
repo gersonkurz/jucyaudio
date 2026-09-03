@@ -252,7 +252,7 @@ namespace jucyaudio
                 writer.append("SELECT ");
                 if (args.columns.empty())
                 {
-                    writer.append("Tracks.*");
+                    writer.append(trackColumnsForDecoding);
                 }
                 else
                 {
@@ -309,7 +309,7 @@ namespace jucyaudio
                 writer.append("SELECT ");
                 if (args.columns.empty())
                 {
-                    writer.append("*");
+                    writer.append(trackColumnsForDecoding);
                 }
                 else
                 {
