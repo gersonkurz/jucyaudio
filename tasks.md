@@ -40,34 +40,6 @@ things the WAV one does, and should pin the step that failed rather than only th
 
 ---
 
-## P3: the folder cache build ignores whether its reads worked
-
-**Symptom**: `buildCacheIfNeeded` runs six statements and checks the result of one of them. The
-`reserveFromCount` helper (`Database/Sqlite/SqliteFolderDatabase.cpp:53`) ignores a failed count, which
-is harmless - it only sizes a container. The track-count and album pass is not: a failed or partial
-read of `SELECT folder_id, COALESCE(artist_name, ''), ... FROM Tracks ORDER BY folder_ID ASC`
-(`:247`) leaves folders with track counts that are too low or zero, and the cache is stamped valid at
-the end (`:370`) either way. Seen for real while testing the `removeEmptyFolders` fix: with `Tracks`
-made to fail, the build logged `no such table` and then carried on to mark the cache good.
-
-**What it costs**: wrong track counts in the folder tree until something invalidates the cache - and
-one thing that is written and stays written. The album pass decides a folder's album from the tracks it
-has seen so far, and a read that stops early has seen a prefix: the folder is still pending when the
-loop ends, so the tail block adds it (`:335`) and the transaction below writes it (`:349`), neither of
-them having asked whether the read finished. A later track that would have disqualified that folder -
-a different artist, an empty album title - was never reached. The Albums row that results is wrong and
-survives every later cache rebuild, because the rebuild finds an album already there and leaves it
-alone. Nothing is deleted, unlike the same pattern in `removeEmptyFolders`, which is fixed.
-
-**Fix approach**: `hasError()` after each read that feeds the cache; refuse to mark the cache valid when
-one of them failed, and write no albums from a pass that did not finish - `buildCacheIfNeeded` already
-returns false on other kinds of inconsistency, so the shape exists. The album write is the urgent half:
-a wrong track count is corrected by the next rebuild, a wrong Albums row is not. Worth doing together
-with the accessor window below, since both are about a cache that reports a confident answer it does
-not have.
-
----
-
 ## P3: nothing can tell a folder cache that built from one that failed
 
 **Symptom**: `buildCacheIfNeeded` returns `bool` and has five paths that return `false` - a duplicate

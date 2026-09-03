@@ -104,6 +104,18 @@ namespace jucyaudio
                 }
             }
 
+            // The loop above ends the same way on "no more rows" and on "the step failed", and a read
+            // that stopped part way leaves a cache holding some of the folders while claiming to hold
+            // them all. Everything below decides what a folder contains from what this loop collected,
+            // so there is nothing worth continuing to.
+            if (stmt.hasError())
+            {
+                spdlog::error("buildCacheIfNeeded: the read of Folders stopped early after {} folder(s): {}. The cache stays invalid.",
+                    m_folderInfoFromId.size(),
+                    m_db.getLastError());
+                return false;
+            }
+
             // lookup list for updates of the root_path value
             std::unordered_map<FolderId, std::string> pathUpdates;
 
@@ -226,6 +238,12 @@ namespace jucyaudio
             reserveFromCount("SELECT COUNT(*) FROM Albums", albumsByFolder);
 
             SqliteStatement albumQuery{m_db, "SELECT album_id, album_artist, title, folder_id FROM Albums"};
+            if (!albumQuery.isValid())
+            {
+                spdlog::error("buildCacheIfNeeded: could not read the albums: {}. The cache stays invalid.", m_db.getLastError());
+                return false;
+            }
+
             while (albumQuery.getNextResult())
             {
                 ExistingAlbumInfo albumInfo;
@@ -236,6 +254,17 @@ namespace jucyaudio
                 assert(albumInfo.albumId >= 0 && "Album ID should be non-negative");
 
                 albumsByFolder[folderId].push_back(std::move(albumInfo));
+            }
+
+            // What is already there decides what the pass below may add. A short read of this one looks
+            // exactly like a folder that has no album yet, and the answer to that is to create one - so
+            // a failure here does not merely lose information, it invents an Albums row.
+            if (albumQuery.hasError())
+            {
+                spdlog::error("buildCacheIfNeeded: the read of Albums stopped early after {} folder(s): {}. The cache stays invalid.",
+                    albumsByFolder.size(),
+                    m_db.getLastError());
+                return false;
             }
 
             FolderId lastKnownFolderId = -1;
@@ -249,6 +278,12 @@ namespace jucyaudio
             reserveFromCount("SELECT COUNT(*) FROM Tracks", albumFolders);
 
             SqliteStatement countStmt{m_db, "SELECT folder_id, COALESCE(artist_name, ''), COALESCE(album_title, '') FROM Tracks ORDER BY folder_ID ASC"};
+            if (!countStmt.isValid())
+            {
+                spdlog::error("buildCacheIfNeeded: could not read the tracks: {}. The cache stays invalid.", m_db.getLastError());
+                return false;
+            }
+
             while (countStmt.getNextResult())
             {
                 const FolderId folderId = countStmt.getInt64(0);
@@ -344,6 +379,26 @@ namespace jucyaudio
                     }
                 }
             }
+            // Checked before the tail block below, not after it, and this is the half that matters.
+            //
+            // The pass decides a folder's album from the tracks it has seen so far, and it only knows a
+            // folder is finished when a row for the next one arrives. A read that stopped early has seen
+            // a prefix: the last folder is still pending, so the tail block would add it and the
+            // transaction would write it - neither of them having asked whether the read finished. The
+            // track that would have disqualified that folder, a second artist or an empty album title,
+            // was simply never reached.
+            //
+            // A wrong track count is corrected by the next rebuild. A wrong Albums row is not: the
+            // rebuild finds an album already there and leaves it alone, so it outlives every later
+            // build. That is why this returns rather than writing what it has.
+            if (countStmt.hasError())
+            {
+                spdlog::error("buildCacheIfNeeded: the read of Tracks stopped early: {}. No albums are written from a pass that did not "
+                              "finish, and the cache stays invalid.",
+                    m_db.getLastError());
+                return false;
+            }
+
             if (useThisFolder && !folderAlreadyHasAlbum && lastKnownFolderId > 0)
             {
                 if (!albumFolders.contains(lastKnownFolderId) &&
@@ -375,7 +430,18 @@ namespace jucyaudio
                         }
                         stmt.reset();
                     }
-                    transaction.commit();
+                    if (!transaction.commit())
+                    {
+                        spdlog::error("buildCacheIfNeeded: the albums could not be committed: {}. The cache stays invalid.", m_db.getLastError());
+                        return false;
+                    }
+                }
+                else
+                {
+                    spdlog::error("buildCacheIfNeeded: could not begin the transaction for {} new album(s): {}. The cache stays invalid.",
+                        albums.size(),
+                        m_db.getLastError());
+                    return false;
                 }
             }
 

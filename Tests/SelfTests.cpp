@@ -5695,6 +5695,283 @@ namespace jucyaudio
                     std::format("it deleted nothing then either ({} rows)", countFolderRows()));
             }
 
+            // How a sabotaged read actually ended, asked of the exact query the cache runs.
+            //
+            // Every check below rests on the induced failure being *partial* - rows and then an error.
+            // A total failure is a different case and a much weaker one: the album pass never learns a
+            // folder id from it, so it invents nothing, and a check that could not tell the two apart
+            // would stay green with the guard removed. That is not hypothetical here. The obvious
+            // sabotage, the UNION ALL view the timeline suite uses, is a total failure against the
+            // track query, because a UNION ALL view cannot be answered from an index and SQLite sorts -
+            // which consumes every row before handing over the first.
+            //
+            // So the shape is asserted rather than assumed, and asserted against the production SQL, so
+            // that a planner that stops streaming one day is reported here instead of quietly making
+            // these checks vacuous.
+            struct ReadPrefix
+            {
+                int64_t rows{0};
+                bool prepared{false};
+                bool failed{false};
+            };
+
+            const auto prefixOf = [](const std::filesystem::path &dbPath, const char *sql)
+            {
+                ReadPrefix result;
+                SqliteDatabase probe;
+                if (!probe.open(pathToString(dbPath)))
+                {
+                    return result;
+                }
+                SqliteStatement stmt{probe, sql};
+                result.prepared = stmt.isValid();
+                if (!result.prepared)
+                {
+                    return result;
+                }
+                while (stmt.getNextResult())
+                {
+                    ++result.rows;
+                }
+                result.failed = stmt.hasError();
+                return result;
+            };
+
+            // --- A cache build that could not read the tracks invents no album ---
+            //
+            // The album pass decides a folder's album from the tracks it has seen so far, and it only
+            // learns a folder is finished when a row for the next one arrives. So a read that stops
+            // part way has seen a prefix, the last folder is still pending, and the block after the
+            // loop used to add it and the transaction below used to write it - neither having asked
+            // whether the read finished. The track that would have disqualified the folder was simply
+            // never reached.
+            //
+            // That row outlives everything. A wrong track count is corrected by the next rebuild; a
+            // wrong Albums row is not, because the rebuild finds an album already there and leaves it
+            // alone. Nothing deletes it.
+            //
+            // Its own database, because it renames Tracks and would write Albums.
+            {
+                const auto readFailRoot = selfTestRoot / "foldercache-readfail";
+                const auto readFailDb = readFailRoot / "jucyaudio.db";
+                std::error_code readFailEc;
+                std::filesystem::remove_all(readFailRoot, readFailEc);
+                std::filesystem::create_directories(readFailRoot, readFailEc);
+
+                SqliteTrackDatabase scratch;
+                const auto connected = scratch.connect(readFailDb);
+                report.check(connected.isOk(), std::format("a scratch database for the failed read could be created (said: '{}')", connected.errorMessage));
+
+                if (connected.isOk())
+                {
+                    auto &folders = scratch.getFolderDatabase();
+
+                    const auto albumCount = [&](const char *what)
+                    {
+                        SqliteDatabase counter;
+                        if (!counter.open(pathToString(readFailDb)))
+                        {
+                            report.check(false, std::format("the albums could be counted {}", what));
+                            return -1LL;
+                        }
+                        SqliteStatement stmt{counter, "SELECT COUNT(*) FROM Albums;"};
+                        return (stmt.isValid() && stmt.getNextResult()) ? stmt.getInt64(0) : -1LL;
+                    };
+
+                    // One folder, four tracks, and the fourth is the one that disqualifies it: three
+                    // tracks agree on artist and album, the fourth names a different artist. So a
+                    // complete read must create no album at all, and a read that stops before the
+                    // fourth row sees a folder that looks like one album.
+                    //
+                    // Filenames in index order, because ORDER BY folder_id is answered from
+                    // idx_tracks_parent_filename and that decides which rows arrive first.
+                    {
+                        SqliteDatabase seed;
+                        const bool seeded = seed.open(pathToString(readFailDb)) &&
+                            seed.execute("INSERT INTO Folders (folder_id, parent_id, name, root_path) VALUES (1, NULL, 'aged', 'c:\\aged');") &&
+                            seed.execute("INSERT INTO Tracks (track_id, folder_id, filename, artist_name, album_title) VALUES "
+                                         "(1, 1, 'a1.mp3', 'Aged Artist', 'Aged Album'), "
+                                         "(2, 1, 'a2.mp3', 'Aged Artist', 'Aged Album'), "
+                                         "(3, 1, 'a3.mp3', 'Aged Artist', 'Aged Album'), "
+                                         "(4, 1, 'a4.mp3', 'Other Artist', 'Aged Album');");
+                        report.check(seeded, std::format("the folder and its four tracks could be seeded (said: '{}')", seed.getLastError()));
+                    }
+
+                    // The complete read first, so that "no album" below means the read was refused
+                    // rather than that this fixture never had an album in it to invent.
+                    folders.invalidateCache();
+                    std::ignore = folders.getFolderById(1);
+                    report.check(albumCount("after a complete read") == 0,
+                        std::format("a complete read of four tracks that disagree creates no album ({} albums)", albumCount("after a complete read")));
+
+                    // Tracks becomes a view that answers with part of itself and then raises. abs() of
+                    // the most negative integer is a runtime error, so it lands mid-read rather than
+                    // when the statement is prepared.
+                    //
+                    // A simple view with the error in its WHERE, not the UNION ALL form the timeline
+                    // suite uses: this query has an ORDER BY, and a UNION ALL view cannot be answered
+                    // from the index, so SQLite sorts - which consumes every row, and the error then
+                    // arrives before the first one is handed over. That would be a total failure, and
+                    // a total failure invents nothing, because the pass never learns a folder id. The
+                    // flattened form streams through idx_tracks_parent_filename and fails partway,
+                    // which is the case the fix is about.
+                    {
+                        SqliteDatabase saboteur;
+                        const bool broken = saboteur.open(pathToString(readFailDb)) &&
+                            saboteur.execute("PRAGMA legacy_alter_table=ON;") &&
+                            saboteur.execute("ALTER TABLE Tracks RENAME TO Tracks_real;") &&
+                            saboteur.execute("CREATE VIEW Tracks AS SELECT * FROM Tracks_real "
+                                             "WHERE (CASE WHEN track_id >= 4 THEN abs(-9223372036854775807 - 1) ELSE 1 END) = 1;");
+                        report.check(broken, "Tracks was replaced by one that answers with part of itself and then fails");
+                    }
+
+                    {
+                        const auto prefix = prefixOf(readFailDb,
+                            "SELECT folder_id, COALESCE(artist_name, ''), COALESCE(album_title, '') FROM Tracks ORDER BY folder_ID ASC");
+                        report.check(prefix.prepared && prefix.rows > 0 && prefix.failed,
+                            std::format("the track read really does answer and then fail - {} row(s), prepared={}, failed={}",
+                                prefix.rows,
+                                prefix.prepared,
+                                prefix.failed));
+                    }
+
+                    folders.invalidateCache();
+                    std::ignore = folders.getFolderById(1);
+
+                    const auto afterFailure = albumCount("after a failed read");
+                    report.check(afterFailure == 0,
+                        std::format("a read that stopped partway writes no album from the folder it never finished ({} albums)", afterFailure));
+
+                    // And the cache still works once the table is back, so what the fix refuses is the
+                    // failed read and not the folder.
+                    {
+                        SqliteDatabase repair;
+                        const bool restored = repair.open(pathToString(readFailDb)) && repair.execute("PRAGMA legacy_alter_table=ON;") &&
+                            repair.execute("DROP VIEW Tracks;") && repair.execute("ALTER TABLE Tracks_real RENAME TO Tracks;");
+                        report.check(restored, "Tracks was put back");
+                    }
+
+                    folders.invalidateCache();
+                    const auto recovered = folders.getFolderById(1);
+                    report.check(recovered.has_value() && recovered->folderId == 1, "the folder reads back once its tracks can be read again");
+                    report.check(albumCount("after the repair") == 0, "and the complete read still creates no album");
+                }
+            }
+
+            // --- And a cache build that could not read the albums invents no album either ---
+            //
+            // The other direction, and it writes. What Albums already holds decides what the pass may
+            // add: a folder whose existing album does not describe its tracks is left alone, and a
+            // folder with no album at all gets one. A read that stops before a folder's row cannot
+            // tell those apart, so it takes the second branch and writes an album the complete read
+            // would have suppressed.
+            //
+            // The unique index on (title, folder_id) does not stand in the way, which is the point of
+            // the shape below: the invented album carries the tracks' title, the existing one carries
+            // a different title, so the index permits both and the folder ends up with two.
+            //
+            // Its own database again, and Tracks is left alone here - this failure is in the Albums
+            // read, and mixing the two would not say which guard refused the build.
+            {
+                const auto albumFailRoot = selfTestRoot / "foldercache-albumfail";
+                const auto albumFailDb = albumFailRoot / "jucyaudio.db";
+                std::error_code albumEc;
+                std::filesystem::remove_all(albumFailRoot, albumEc);
+                std::filesystem::create_directories(albumFailRoot, albumEc);
+
+                SqliteTrackDatabase scratch;
+                const auto connected = scratch.connect(albumFailDb);
+                report.check(connected.isOk(),
+                    std::format("a scratch database for the failed album read could be created (said: '{}')", connected.errorMessage));
+
+                if (connected.isOk())
+                {
+                    auto &folders = scratch.getFolderDatabase();
+
+                    // Counted from the real table, because Albums becomes a view below.
+                    const auto albumCount = [&](const char *table)
+                    {
+                        SqliteDatabase counter;
+                        if (!counter.open(pathToString(albumFailDb)))
+                        {
+                            return -1LL;
+                        }
+                        SqliteStatement stmt{counter, std::format("SELECT COUNT(*) FROM {};", table)};
+                        return (stmt.isValid() && stmt.getNextResult()) ? stmt.getInt64(0) : -1LL;
+                    };
+
+                    {
+                        SqliteDatabase seed;
+                        const bool seeded = seed.open(pathToString(albumFailDb)) &&
+                            seed.execute("INSERT INTO Folders (folder_id, parent_id, name, root_path) VALUES "
+                                         "(1, NULL, 'aged', 'c:\\aged'), (2, NULL, 'other', 'c:\\other'), (3, NULL, 'third', 'c:\\third');") &&
+                            // Two tracks, agreeing, so the folder qualifies for an album at all.
+                            seed.execute("INSERT INTO Tracks (track_id, folder_id, filename, artist_name, album_title) VALUES "
+                                         "(1, 1, 'a1.mp3', 'Aged Artist', 'Aged Album'), "
+                                         "(2, 1, 'a2.mp3', 'Aged Artist', 'Aged Album');") &&
+                            // Folder 1's album names something else, so a complete read suppresses any
+                            // new one. It is last, so the rows before it are the prefix the sabotaged
+                            // read gets through before failing.
+                            seed.execute("INSERT INTO Albums (album_id, album_artist, title, folder_id) VALUES "
+                                         "(1, 'Other One', 'Album One', 2), "
+                                         "(2, 'Other Two', 'Album Two', 3), "
+                                         "(3, 'Someone Else', 'Something Else', 1);");
+                        report.check(seeded, std::format("the folders, tracks and albums could be seeded (said: '{}')", seed.getLastError()));
+                    }
+
+                    folders.invalidateCache();
+                    std::ignore = folders.getFolderById(1);
+                    report.check(albumCount("Albums") == 3,
+                        std::format("a complete read leaves the folder whose album says something else alone ({} albums)", albumCount("Albums")));
+
+                    // Albums answers with part of itself and then raises, the same flattened-view trick
+                    // the track sabotage uses. The INSTEAD OF trigger keeps the write working: without
+                    // it the build's INSERT would fail against a view, and a build that failed to write
+                    // would look like a build that declined to - which is the distinction being tested.
+                    {
+                        SqliteDatabase saboteur;
+                        const bool broken = saboteur.open(pathToString(albumFailDb)) &&
+                            saboteur.execute("PRAGMA legacy_alter_table=ON;") &&
+                            saboteur.execute("ALTER TABLE Albums RENAME TO Albums_real;") &&
+                            saboteur.execute("CREATE VIEW Albums AS SELECT * FROM Albums_real "
+                                             "WHERE (CASE WHEN album_id >= 3 THEN abs(-9223372036854775807 - 1) ELSE 1 END) = 1;") &&
+                            saboteur.execute("CREATE TRIGGER albums_insert INSTEAD OF INSERT ON Albums BEGIN "
+                                             "INSERT INTO Albums_real (album_artist, title, folder_id) "
+                                             "VALUES (new.album_artist, new.title, new.folder_id); END;");
+                        report.check(broken, "Albums was replaced by one that answers with part of itself and then fails");
+                    }
+
+                    {
+                        const auto prefix = prefixOf(albumFailDb, "SELECT album_id, album_artist, title, folder_id FROM Albums");
+                        report.check(prefix.prepared && prefix.rows > 0 && prefix.failed,
+                            std::format("the album read really does answer and then fail - {} row(s), prepared={}, failed={}",
+                                prefix.rows,
+                                prefix.prepared,
+                                prefix.failed));
+                    }
+
+                    folders.invalidateCache();
+                    std::ignore = folders.getFolderById(1);
+
+                    const auto afterFailure = albumCount("Albums_real");
+                    report.check(afterFailure == 3,
+                        std::format("a read that stopped partway writes no album for a folder it never saw the album of ({} albums)", afterFailure));
+
+                    {
+                        SqliteDatabase repair;
+                        const bool restored = repair.open(pathToString(albumFailDb)) && repair.execute("PRAGMA legacy_alter_table=ON;") &&
+                            repair.execute("DROP TRIGGER albums_insert;") && repair.execute("DROP VIEW Albums;") &&
+                            repair.execute("ALTER TABLE Albums_real RENAME TO Albums;");
+                        report.check(restored, "Albums was put back");
+                    }
+
+                    folders.invalidateCache();
+                    const auto recovered = folders.getFolderById(1);
+                    report.check(recovered.has_value() && recovered->folderId == 1, "the folder reads back once its albums can be read again");
+                    report.check(albumCount("Albums") == 3, "and the complete read still leaves that folder alone");
+                }
+            }
+
             writeResultsFile(resultsPath, "jucyaudio folder cache self test", report);
             spdlog::info("[SelfTest] Folder cache test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
             return report.failures() == 0 ? 0 : 1;
