@@ -8,29 +8,35 @@ logged stale-state effect, or need a design decision first.
 
 ---
 
-## P3: no executed check that a failed write discards the partial
+## P3: no executed check that a refused MP3 write discards the partial
 
-**Symptom**: the WAV render now checks `writeFromAudioSampleBuffer` and `flush`, and the MP3 render
-checks its ID3 and LAME-frame writes, so a write that fails makes the mixing loop fail, `run()`
-discards the partial file, and the previous export survives. Nothing proves it. Every check in the
-self test reaches the render failing *before* it starts - a track that cannot be resolved - which
-exercises the same discard path but not the write propagation that leads to it.
+**Symptom**: the WAV render's write propagation is now covered - a stream that refuses mid-render makes
+the mixing loop fail, the partial is discarded and the previous export survives, all asserted in the
+scan suite. The MP3 render's four writes (`Audio/ExportMixToMp3.cpp:223`, `:257`, `:266`, `:274`) are
+checked in the same way and none of it is executed. The MP3 checks that exist cover cancellation and a
+pre-render source failure, neither of which reaches a refused write.
 
-**Why it is not covered**: a mid-render write failure needs a full disk or a failing device. Every
-injection reachable from outside the exporter - a read-only partial, a partial path that is a
-directory, an unwritable parent - is refused at the setup step instead, before any sample is written.
-Inducing one properly needs a test-only seam in `ExportMixImplementation`, which is an affordance
-this codebase does not have anywhere else.
+**Why it was not covered with the WAV half**: the technique that works for WAV does not transfer. WAV
+writes through a `juce::AudioFormatWriter` built over a `juce::OutputStream`, so the self test
+substitutes the stream and changes nothing else. MP3 writes through `m_outputStream`, a
+`std::unique_ptr<juce::FileOutputStream>` that is private to `ExportMp3MixImplementation`, and
+`releaseOutput()` calls `getStatus()` on it - a `FileOutputStream` method, so the member cannot simply
+become a `juce::OutputStream`. Covering it needs that private member opened up as well, or a
+`juce::FileOutputStream` subclass installed into it, which is a deeper concession than the WAV half
+cost.
 
-**How it was found**: raised as a [blocking] finding by the reviewer of the failed-export
-preservation change (codex, 2026-09-01), which asked for an executed fault-injection check. The
-propagation fix shipped; the executed check was accepted as deferred by the human on the same day.
+**How it was decided**: raised as a [blocking] finding by the reviewer of the WAV write-refusal check
+(codex, 2026-09-03), which said either to cover MP3 too or to have the human defer it explicitly and
+keep this entry. The human had already been told, in the option they chose when picking how to cover
+WAV, that MP3 "writes through LAME and would need its own treatment, so it stays review-verified
+unless you want that too", and chose that option. So the risk is accepted rather than overlooked, and
+recorded here rather than closed.
 
-**Fix approach**: a seam is the honest way - a virtual the self test overrides to fail the Nth write -
-and it is worth weighing against the alternative of leaving this to code review, since it is the only
-place in the project that would carry one. If a seam is added it should be one hook, used by both
-mixing loops, and the check should assert all three things at once: the export fails, the partial is
-gone, and the file that was already there is untouched.
+**Fix approach**: either the shared seam the earlier entry described - one virtual returning the render
+output stream, used by both mixing loops - or the same subclassing trick with
+`ExportMp3MixImplementation` made non-final and `m_outputStream` protected, plus a test-only
+`juce::FileOutputStream` whose `write()` refuses after N bytes. The check should assert the same three
+things the WAV one does, and should pin the step that failed rather than only that the export failed.
 
 ---
 

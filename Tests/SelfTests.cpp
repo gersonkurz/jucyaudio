@@ -20,6 +20,7 @@
 #include <Tests/SchemaV12Fixture.h>
 
 #include <Audio/Includes/ActiveExportSettings.h>
+#include <Audio/ExportMixToWav.h>
 #include <Audio/MixExporter.h>
 #include <Audio/MixRecoveryM3U.h>
 #include <Database/Includes/AlbumInfo.h>
@@ -784,6 +785,118 @@ namespace jucyaudio
                 }
                 return structure;
             }
+
+            /// @brief Writes through to a file for a while, then refuses everything.
+            ///
+            /// The header and the first blocks land, so the render is genuinely under way before it
+            /// fails - a stream that refused from the first byte would fail createWriterFor instead and
+            /// test the setup path that is already covered. What it accepted and how often it refused
+            /// are recorded outside it, because the writer takes ownership of the stream and destroys
+            /// it before the test can ask.
+            struct WriteRefusalLog
+            {
+                int64_t bytesAccepted{0};
+                int refusals{0};
+            };
+
+            class RefusingOutputStream final : public juce::OutputStream
+            {
+            public:
+                RefusingOutputStream(std::unique_ptr<juce::FileOutputStream> inner, int64_t refuseAfterBytes, WriteRefusalLog &log)
+                    : m_inner{std::move(inner)},
+                      m_refuseAfterBytes{refuseAfterBytes},
+                      m_log{log}
+                {
+                }
+
+                void flush() override
+                {
+                    m_inner->flush();
+                }
+
+                bool setPosition(juce::int64 newPosition) override
+                {
+                    // Delegated rather than refused: destroying a WavAudioFormatWriter seeks back to
+                    // patch the RIFF header, and a seek that failed would be a different fault from the
+                    // one being injected.
+                    return m_inner->setPosition(newPosition);
+                }
+
+                juce::int64 getPosition() override
+                {
+                    return m_inner->getPosition();
+                }
+
+                bool write(const void *data, size_t numBytes) override
+                {
+                    if (m_log.bytesAccepted >= m_refuseAfterBytes)
+                    {
+                        ++m_log.refusals;
+                        return false;
+                    }
+                    if (!m_inner->write(data, numBytes))
+                    {
+                        return false;
+                    }
+                    m_log.bytesAccepted += static_cast<int64_t>(numBytes);
+                    return true;
+                }
+
+            private:
+                std::unique_ptr<juce::FileOutputStream> m_inner;
+                const int64_t m_refuseAfterBytes;
+                WriteRefusalLog &m_log;
+            };
+
+            /// @brief The real WAV export, writing to a stream that starts refusing mid-render.
+            ///
+            /// Only the writer's stream is substituted. onRunMixingLoop, releaseOutput and run() are
+            /// the shipping implementations, so what this exercises is their handling of a write that
+            /// comes back false.
+            class WriteRefusingWavExport final : public audio::ExportWavMixImplementation
+            {
+            public:
+                WriteRefusingWavExport(MixId mixId, const audio::ActiveExportSettings &settings, int64_t refuseAfterBytes, WriteRefusalLog &log)
+                    : audio::ExportWavMixImplementation{mixId, settings, nullptr},
+                      m_refuseAfterBytes{refuseAfterBytes},
+                      m_log{log}
+                {
+                }
+
+            protected:
+                bool onSetupAudioFormatManagerAndWriter() override
+                {
+                    // Registered for reading the input tracks, exactly as the shipping override does.
+                    m_formatManager.registerBasicFormats();
+
+                    juce::File partial{juce::String{pathToString(renderTargetPath())}};
+                    if (partial.existsAsFile())
+                    {
+                        partial.deleteFile();
+                    }
+
+                    std::unique_ptr<juce::FileOutputStream> file{partial.createOutputStream()};
+                    if (!file)
+                    {
+                        return false;
+                    }
+
+                    const auto options = juce::AudioFormatWriterOptions{}
+                                             .withSampleRate(outputSampleRate())
+                                             .withNumChannels(static_cast<int>(outputNumChannels()))
+                                             .withBitsPerSample(static_cast<int>(outputBitDepth()))
+                                             .withQualityOptionIndex(0);
+
+                    std::unique_ptr<juce::OutputStream> stream{std::make_unique<RefusingOutputStream>(std::move(file), m_refuseAfterBytes, m_log)};
+                    juce::WavAudioFormat wavFormat;
+                    m_writer = wavFormat.createWriterFor(stream, options);
+                    return m_writer != nullptr;
+                }
+
+            private:
+                const int64_t m_refuseAfterBytes;
+                WriteRefusalLog &m_log;
+            };
 
             /// @param title Names the suite. Passed in rather than fixed, because two suites write two
             /// files and a results file that misnames itself is worse than one with no title at all.
@@ -4764,10 +4877,10 @@ namespace jucyaudio
 
                 // --- Cancelling an export stops it, and keeps what was there ---
                 //
-                // The progress callback is the cancel button: it returns false to say stop. That is
-                // injectable from a test, unlike a failed write, because the callback is a parameter of
-                // exportMixToFile - so this is the one failure path in the export that a self test can
-                // drive from outside without a seam in production code.
+                // The progress callback is the cancel button: it returns false to say stop, and being a
+                // parameter of exportMixToFile it needs nothing of the export to be injectable. A failed
+                // write is checked further down and takes more arranging - see the block that subclasses
+                // the WAV export - but neither of them needs a hook that exists only for the test.
                 //
                 // The callback used to return void, and the two callers that wanted to cancel already
                 // handed back `!shouldCancel` for std::function to discard. So the render ran to
@@ -4878,6 +4991,62 @@ namespace jucyaudio
                             afterLateCancel.totalSamples,
                             beforeCancelling.totalSamples));
                     report.check(!std::filesystem::exists(partialPath, ec), "and the finished render was discarded rather than committed");
+                }
+
+                // --- A write that fails part way through leaves the previous export alone ---
+                //
+                // The propagation this proves: a refused write makes the mixing loop fail, run()
+                // discards the partial instead of committing it, and the export that was already on
+                // disk is untouched. All three at once, because any one of them alone would pass on a
+                // build where another was broken.
+                //
+                // The refusal is injected by subclassing the WAV export and giving its writer a stream
+                // that accepts 64 KB and then refuses. That is a substitution of the output stream and
+                // nothing else - the mixing loop, its write check, releaseOutput and run() are the
+                // shipping code. See ExportWavMixImplementation, which is not final for this reason.
+                {
+                    constexpr int64_t kRefuseAfterBytes{64 * 1024};
+
+                    const auto beforeFailedWrite = renderedAudioOf(reExportedPath);
+                    report.check(beforeFailedWrite.totalSamples > 0, "there is a finished export for a failed write to threaten");
+                    const auto sizeBefore = std::filesystem::file_size(reExportedPath, ec);
+
+                    WriteRefusalLog log;
+                    {
+                        // Its own settings object, held here: ExportMixImplementation keeps a reference
+                        // to it for the whole run.
+                        audio::ActiveExportSettings refusingSettings{};
+                        refusingSettings.outputPath = reExportedPath;
+
+                        WriteRefusingWavExport refusing{toneMixInfo.mixId, refusingSettings, kRefuseAfterBytes, log};
+                        const auto refused = refusing.run();
+                        report.check(!refused.success, std::format("an export whose writes start failing reports failure (said: '{}')", refused.message));
+
+                        // Which step failed, not merely that one did. The write check is not the only
+                        // thing standing between a refused write and a committed truncation:
+                        // releaseOutput reads the finished file back and compares its length, and it
+                        // catches the same fault a moment later. So a check that only asked whether the
+                        // export failed would pass with the write check deleted, and would be pinning
+                        // the second guard while claiming to pin the first.
+                        report.check(refused.message.find("Run Mixing Loop") != std::string::npos,
+                            std::format("and fails in the mixing loop, where the write was refused, rather than later (said: '{}')", refused.message));
+                    }
+
+                    // Without these two the checks below would pass on an export that failed for some
+                    // other reason, or never started rendering at all.
+                    report.check(log.refusals > 0, std::format("the injected stream refused at least one write ({} refusals)", log.refusals));
+                    report.check(log.bytesAccepted >= kRefuseAfterBytes,
+                        std::format("and did so after the render was under way, not at the header ({} bytes accepted)", log.bytesAccepted));
+
+                    report.check(std::filesystem::exists(reExportedPath, ec) && std::filesystem::file_size(reExportedPath, ec) == sizeBefore,
+                        std::format("the export that was already there is untouched ({} bytes)", sizeBefore));
+
+                    const auto afterFailedWrite = renderedAudioOf(reExportedPath);
+                    report.check(afterFailedWrite.totalSamples == beforeFailedWrite.totalSamples,
+                        std::format("and still reads back as the render it was ({} samples)", afterFailedWrite.totalSamples));
+                    report.check(afterFailedWrite.onsets == beforeFailedWrite.onsets, "with its audio where it was");
+
+                    report.check(!std::filesystem::exists(partialPath, ec), "and the truncated partial was discarded rather than committed");
                 }
 
                 // --- The same, through the MP3 path ---

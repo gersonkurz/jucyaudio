@@ -24,7 +24,24 @@ namespace jucyaudio
     namespace audio
     {
         using namespace database;
-        class ExportWavMixImplementation final : public ExportMixImplementation
+        /// @brief Not final, so the self test can subclass it. Nothing else about it is opened up.
+        ///
+        /// A write that fails part way through a render is the one export failure nothing could induce
+        /// from outside: every injection reachable through exportMixToFile - a read-only target, a
+        /// partial path that is a directory, an unwritable parent - is refused at the setup step,
+        /// before a single sample is written. So the propagation from a refused write to a failed
+        /// export, and from there to the previous export surviving untouched, went unproven.
+        ///
+        /// The self test overrides onSetupAudioFormatManagerAndWriter to build the same WavAudioFormat
+        /// writer over a stream that accepts a while and then refuses. Everything after that is this
+        /// class's own code: the real mixing loop, the real write check, the real releaseOutput, and
+        /// run()'s real decision to discard rather than commit.
+        ///
+        /// The overrides below stay private, because a derived class may override a private virtual -
+        /// access controls who can name a function, not who can replace it. So the whole cost of being
+        /// testable here is one keyword removed, and there is no test-only hook: the virtual the test
+        /// replaces is the one the two formats already needed between themselves.
+        class ExportWavMixImplementation : public ExportMixImplementation
         {
         public:
             ExportWavMixImplementation(MixId mixId, const ActiveExportSettings &settings,
