@@ -17,6 +17,7 @@
  */
 
 #include <Tests/SelfTests.h>
+#include <Tests/SchemaV12Fixture.h>
 
 #include <Audio/Includes/ActiveExportSettings.h>
 #include <Audio/MixExporter.h>
@@ -524,6 +525,275 @@ namespace jucyaudio
                     },
                     nullptr);
                 return scanReportedSuccess;
+            }
+
+            /// @brief Reads a database's structure as comparable facts, one sorted list per object.
+            ///
+            /// Text is the wrong thing to compare two schemas by. SQLite stores a CREATE statement
+            /// exactly as it was written, and ALTER TABLE ADD COLUMN appends to that stored text - so a
+            /// table the ladder built carries its old wording plus a tail of appended columns, while the
+            /// same table in a new database carries whatever initialSqlStatements says today. Those two
+            /// never match as strings, and the difference means nothing. What has to match is the
+            /// structure: the same columns with the same types, nullability, defaults and primary key
+            /// membership, the same foreign keys, and the same indexes over the same columns.
+            ///
+            /// Column ordinal position is compared for the tables that are read by position, and only
+            /// for those. Two are: `SELECT * FROM Tracks`, decoded with a running index in
+            /// trackInfoFromStatement, and `SELECT * FROM MixTracks`, decoded the same way in
+            /// readMixTracksChecked. For those two a column that one path appends and the other declares
+            /// earlier would decode migrated rows into the wrong fields, so the ordinal has to match.
+            ///
+            /// Everywhere else the ordinal is not compared, because nothing reads those tables by
+            /// position and making it match would mean rebuilding tables in a migration to renumber
+            /// columns no one addresses by number. Albums and MixRecovery really do differ that way
+            /// today - the ladder appends Albums.bitrate and MixRecovery.total_duration where the fresh
+            /// schema declares them mid-table - and that is recorded in tasks.md rather than papered
+            /// over here: changing the fresh schema to match would hand every database already stamped
+            /// at the latest version a different column order from a new one, which is the divergence
+            /// this suite exists to prevent, and no rung would fix it.
+            ///
+            /// The facts are sorted before comparing, so the report reads in a stable order.
+            ///
+            /// Indexes come from PRAGMA index_xinfo rather than index_info, for the collation: Tags.name
+            /// is UNIQUE COLLATE NOCASE, and an index that lost the NOCASE would compare equal on its
+            /// columns alone while letting case-variant duplicates in.
+            ///
+            /// A virtual table's definition lives in its SQL and nowhere else - PRAGMA table_info shows
+            /// the columns of TracksSearchFTS but not its tokenizer, its content table or its content
+            /// rowid - so for those the normalized SQL is a fact of its own.
+            ///
+            /// Triggers and views have no pragma to interrogate either, so they are compared as SQL with
+            /// whitespace collapsed and IF NOT EXISTS removed. The IF NOT EXISTS matters: the v12 rung
+            /// wrote these objects without it and convergenceSqlStatements writes them with it, and that
+            /// difference in the stored text says nothing about behaviour.
+            ///
+            /// @return Each object, keyed by kind and name, to its sorted facts. Empty on failure.
+            std::map<std::string, std::vector<std::string>> readSchemaStructure(const std::filesystem::path &path, Report &report)
+            {
+                // The tables something reads with SELECT * and decodes by position. Anything added here
+                // has to actually be read that way, and anything read that way has to be in here.
+                constexpr const char *ordinalSensitiveTables[]{"Tracks", "MixTracks"};
+
+                std::map<std::string, std::vector<std::string>> structure;
+
+                SqliteDatabase db;
+                if (!db.open(pathToString(path)))
+                {
+                    report.abort(std::format("Could not open {} to read its structure.", pathToString(path)));
+                    return {};
+                }
+
+                // Identifiers come out of sqlite_master, so they are this project's own names rather
+                // than anything a user typed - but a pragma takes no parameters, so they have to be
+                // pasted into the SQL, and quoting them properly costs one line.
+                const auto quoted = [](const std::string &name)
+                {
+                    std::string out{"\""};
+                    for (const auto ch : name)
+                    {
+                        if (ch == '"')
+                        {
+                            out.push_back('"');
+                        }
+                        out.push_back(ch);
+                    }
+                    out.push_back('"');
+                    return out;
+                };
+
+                // Whitespace outside a literal is formatting; whitespace inside one is data. These
+                // triggers build search_content by concatenating with ' ' separators, so collapsing
+                // runs of spaces indiscriminately would make a trigger that joins fields with two
+                // spaces compare equal to one that joins them with one - a change to what gets stored,
+                // reported as no change at all.
+                const auto collapsed = [](const std::string &text)
+                {
+                    std::string out;
+                    bool pendingSpace = false;
+                    char quote = '\0';
+                    for (const auto ch : text)
+                    {
+                        if (quote != '\0')
+                        {
+                            // Inside a literal or a quoted identifier: copied through exactly. A
+                            // doubled quote closes and immediately reopens, which changes nothing here
+                            // because either way every character is kept.
+                            out.push_back(ch);
+                            if (ch == quote)
+                            {
+                                quote = '\0';
+                            }
+                            continue;
+                        }
+
+                        if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r')
+                        {
+                            pendingSpace = true;
+                            continue;
+                        }
+                        if (pendingSpace && !out.empty())
+                        {
+                            out.push_back(' ');
+                        }
+                        pendingSpace = false;
+                        out.push_back(ch);
+
+                        if (ch == '\'' || ch == '"' || ch == '`')
+                        {
+                            quote = ch;
+                        }
+                    }
+
+                    // "IF NOT EXISTS" is not part of what an object is, and the two creation paths
+                    // disagree about writing it - so it goes, rather than being reported as a
+                    // difference. Only where it can be the real thing though: ahead of the first
+                    // literal, which is where a CREATE puts it. A trigger body that happens to contain
+                    // the words inside a string keeps them.
+                    constexpr std::string_view noise{"IF NOT EXISTS "};
+                    const auto firstQuote = out.find_first_of("'\"`");
+                    if (const auto at = out.find(noise); at != std::string::npos && (firstQuote == std::string::npos || at < firstQuote))
+                    {
+                        out.erase(at, noise.size());
+                    }
+                    return out;
+                };
+
+                // The ANALYZE tables are left out: they describe what each database happened to be
+                // asked, not how it was built.
+                std::vector<std::string> tables;
+                std::map<std::string, std::string> virtualTableSql;
+                {
+                    SqliteStatement stmt{db,
+                        "SELECT type, name, COALESCE(sql, '') FROM sqlite_master "
+                        "WHERE name NOT LIKE 'sqlite_stat%' ORDER BY type, name;"};
+                    if (!stmt.isValid())
+                    {
+                        report.abort(std::format("Could not read sqlite_master of {}.", pathToString(path)));
+                        return {};
+                    }
+
+                    while (stmt.getNextResult())
+                    {
+                        const auto kind{stmt.getText(0)};
+                        const auto name{stmt.getText(1)};
+                        if (kind == "table")
+                        {
+                            tables.push_back(name);
+                            structure[std::format("table {}", name)] = {};
+
+                            // Its options - tokenizer, content table, content rowid - are in the SQL and
+                            // in no pragma, so they are kept and compared.
+                            const auto sql{collapsed(stmt.getText(2))};
+                            if (sql.starts_with("CREATE VIRTUAL TABLE"))
+                            {
+                                virtualTableSql[name] = sql;
+                            }
+                        }
+                        else if (kind == "trigger" || kind == "view")
+                        {
+                            structure[std::format("{} {}", kind, name)] = {collapsed(stmt.getText(2))};
+                        }
+                        // Indexes are picked up per table below, where their uniqueness is visible.
+                    }
+
+                    if (stmt.hasError())
+                    {
+                        report.abort(std::format("The read of sqlite_master of {} stopped early.", pathToString(path)));
+                        return {};
+                    }
+                }
+
+                for (const auto &table : tables)
+                {
+                    auto &facts = structure[std::format("table {}", table)];
+
+                    {
+                        const bool comparePosition = std::ranges::any_of(ordinalSensitiveTables,
+                            [&table](const char *name)
+                            {
+                                return table == name;
+                            });
+
+                        SqliteStatement stmt{db, std::format("PRAGMA table_info({});", quoted(table))};
+                        while (stmt.getNextResult())
+                        {
+                            facts.push_back(std::format("column {} position={} type={} notnull={} default={} pk={}",
+                                stmt.getText(1),
+                                comparePosition ? std::to_string(stmt.getInt32(0)) : std::string{"<not compared>"},
+                                stmt.getText(2),
+                                stmt.getInt32(3),
+                                stmt.isNull(4) ? std::string{"<none>"} : stmt.getText(4),
+                                stmt.getInt32(5)));
+                        }
+                    }
+
+                    if (const auto it = virtualTableSql.find(table); it != virtualTableSql.end())
+                    {
+                        facts.push_back("definition " + it->second);
+                    }
+
+                    {
+                        SqliteStatement stmt{db, std::format("PRAGMA foreign_key_list({});", quoted(table))};
+                        while (stmt.getNextResult())
+                        {
+                            facts.push_back(std::format("foreign-key {} -> {}({}) on_update={} on_delete={}",
+                                stmt.getText(3),
+                                stmt.getText(2),
+                                stmt.isNull(4) ? std::string{"<primary key>"} : stmt.getText(4),
+                                stmt.getText(5),
+                                stmt.getText(6)));
+                        }
+                    }
+
+                    // Collected before they are interrogated: one statement at a time is easier to
+                    // follow than a nested pair, and index_info needs the name index_list just gave.
+                    std::vector<std::pair<std::string, std::string>> indexes;
+                    {
+                        SqliteStatement stmt{db, std::format("PRAGMA index_list({});", quoted(table))};
+                        while (stmt.getNextResult())
+                        {
+                            indexes.emplace_back(stmt.getText(1),
+                                std::format("unique={} origin={} partial={}", stmt.getInt32(2), stmt.getText(3), stmt.getInt32(4)));
+                        }
+                    }
+
+                    for (const auto &[name, properties] : indexes)
+                    {
+                        auto &indexFacts = structure[std::format("index {}", name)];
+                        indexFacts.push_back(std::format("on {}", table));
+                        indexFacts.push_back(properties);
+
+                        // Position matters for an index, so the column list is one fact in order rather
+                        // than one fact per column: an index on (a, b) is not an index on (b, a). Each
+                        // column carries its collation and direction, which is why this is index_xinfo -
+                        // index_info does not report the collation, and an index that quietly lost a
+                        // COLLATE NOCASE stops refusing the duplicates it was created to refuse.
+                        std::string columns;
+                        SqliteStatement stmt{db, std::format("PRAGMA index_xinfo({});", quoted(name))};
+                        while (stmt.getNextResult())
+                        {
+                            // key=0 rows are the rowid SQLite appends to every index; they say nothing
+                            // about how the index was declared.
+                            if (stmt.getInt32(5) == 0)
+                            {
+                                continue;
+                            }
+                            if (!columns.empty())
+                            {
+                                columns.append(", ");
+                            }
+                            columns.append(stmt.isNull(2) ? std::string{"<expression>"} : stmt.getText(2));
+                            columns.append(std::format(" collate={} desc={}", stmt.getText(4), stmt.getInt32(3)));
+                        }
+                        indexFacts.push_back(std::format("columns ({})", columns));
+                    }
+                }
+
+                for (auto &[name, facts] : structure)
+                {
+                    std::ranges::sort(facts);
+                }
+                return structure;
             }
 
             /// @param title Names the suite. Passed in rather than fixed, because two suites write two
@@ -3122,7 +3392,7 @@ namespace jucyaudio
             // that are already complete - and that is worth having on its own.
             //
             // A real convergence check needs a frozen old-schema fixture run up the whole ladder.
-            // That is a task in its own right and is recorded in tasks.md.
+            // There is one, at the end of this suite.
             {
                 const auto freshPath = workRoot / "convergence-fresh.db";
                 const auto laddered = workRoot / "convergence-laddered.db";
@@ -3464,6 +3734,197 @@ namespace jucyaudio
                     report.check(check.execute("PRAGMA foreign_keys = ON;"), "foreign key enforcement could be switched on");
                     SqliteStatement orphan{check, "INSERT INTO MixTracks (mix_id, track_id, order_in_mix, mix_data) VALUES (9, 99999, 3, '{}');"};
                     report.check(orphan.isValid() && !orphan.execute(), "the rebuilt table still refuses a row pointing at a track that does not exist");
+                }
+            }
+
+            // --- The databases that really were version 12, run all the way up the ladder ---
+            //
+            // This is the check the block above cannot be. The fixture is not built from the current
+            // schema and then aged by a stamp: it is the initialSqlStatements array copied out of commit
+            // d34e3bc, whose latestSchemaVersion is 12, so every rung from 13 to 32 runs against the
+            // shape a library created at that version really had. See Tests/SchemaV12Fixture.h.
+            //
+            // Two shapes are climbed, because they are missing different things and take different
+            // branches. They are not every shape a version-12 database could have - one migrated from
+            // below v11 carries other rung-only objects, and rungs 2 to 12 are not exercised by either
+            // of these; that is the same limit as the fixture's own, recorded in tasks.md:
+            //  - created from scratch, which never got the search tables (the v12 rung made those, and
+            //    initialSqlStatements did not) - the divergence v32 exists to repair, frozen as it was;
+            //  - migrated up from an earlier version, which ran that rung and does have them. It is the
+            //    only one of the two that reaches the v25 rung with something to sync.
+            //
+            // The comparison is structural rather than textual, because text cannot work here: SQLite
+            // keeps a CREATE statement as written and ALTER TABLE ADD COLUMN appends to it, so a table
+            // twenty rungs old never spells itself the way today's initialSqlStatements does even when
+            // the two are the same table. readSchemaStructure says what the difference is.
+            {
+                const auto freshPath = workRoot / "v32-fresh.db";
+
+                SqliteTrackDatabase freshDb;
+                const auto createdFresh = freshDb.connect(freshPath);
+                report.check(createdFresh.isOk(),
+                    std::format("a new database to compare the aged ones against could be created (said: '{}')", createdFresh.errorMessage));
+
+                const auto freshStructure = readSchemaStructure(freshPath, report);
+                report.check(!freshStructure.empty(), std::format("the new database has a structure to compare ({} objects)", freshStructure.size()));
+
+                // @param withSearch Whether the fixture also runs the search objects the v12 rung
+                //        created, which is what tells the two real v12 shapes apart.
+                const auto climbAndCompare = [&](const std::string &label, const std::filesystem::path &agedPath, bool withSearch)
+                {
+                    bool built = false;
+                    {
+                        SqliteDatabase seed;
+                        if (!seed.open(pathToString(agedPath)))
+                        {
+                            report.check(false, std::format("the {} fixture database could be created", label));
+                            return;
+                        }
+
+                        built = true;
+                        for (const auto *sql : schemaV12Statements)
+                        {
+                            if (!seed.execute(sql))
+                            {
+                                report.check(false, std::format("the {} fixture schema could be built (failed on: {})", label, seed.getLastError()));
+                                built = false;
+                                break;
+                            }
+                        }
+
+                        if (built && withSearch)
+                        {
+                            for (const auto *sql : schemaV12SearchStatements)
+                            {
+                                if (!seed.execute(sql))
+                                {
+                                    report.check(false,
+                                        std::format("the {} fixture's search objects could be built (failed on: {})", label, seed.getLastError()));
+                                    built = false;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (built)
+                        {
+                            // Rows, not just tables. A rung that rebuilds a table can lose what was in
+                            // it, and an empty database is the one case where that never shows. The mix
+                            // holds the same track twice on purpose: at 12 nothing stopped it, and it is
+                            // what the v6 primary key - which v32 removes - made impossible to save.
+                            const bool seeded =
+                                seed.execute("INSERT INTO SchemaInfo (key, value) VALUES ('schema_version', '12');") &&
+                                seed.execute("INSERT INTO Folders (folder_id, parent_id, name, root_path) VALUES (1, NULL, 'aged', 'c:\\aged');") &&
+                                seed.execute("INSERT INTO Tracks (track_id, folder_id, filename, title, artist_name, album_title) "
+                                             "VALUES (1, 1, 'one.mp3', 'One', 'Aged Artist', 'Aged Album'), "
+                                             "(2, 1, 'two.mp3', 'Two', 'Aged Artist', 'Aged Album');") &&
+                                seed.execute("INSERT INTO Tags (tag_id, name) VALUES (1, 'aged-tag');") &&
+                                seed.execute("INSERT INTO TrackTags (track_id, tag_id) VALUES (1, 1);") &&
+                                seed.execute("INSERT INTO WorkingSets (ws_id, name) VALUES (1, 'Aged Working Set');") &&
+                                seed.execute("INSERT INTO WorkingSetTracks (ws_id, track_id) VALUES (1, 1), (1, 2);") &&
+                                seed.execute("INSERT INTO Mixes (mix_id, name) VALUES (1, 'Aged Mix');") &&
+                                seed.execute("INSERT INTO MixTracks (mix_id, track_id, order_in_mix, mix_data) "
+                                             "VALUES (1, 1, 0, '{}'), (1, 2, 1, '{}'), (1, 1, 2, '{}');") &&
+                                seed.execute("INSERT INTO LibraryRoots (root_id, path) VALUES (1, 'c:\\aged');");
+                            report.check(seeded,
+                                std::format("the {} fixture could be given something to migrate (said: '{}')", label, seed.getLastError()));
+                            built = seeded;
+                        }
+                    }
+
+                    if (!built)
+                    {
+                        return;
+                    }
+
+                    {
+                        SqliteTrackDatabase aged;
+                        const auto climbed = aged.connect(agedPath);
+                        report.check(climbed.isOk(), std::format("the {} database climbs the whole ladder (said: '{}')", label, climbed.errorMessage));
+                    }
+
+                    {
+                        SqliteDatabase reopened;
+                        std::string reached;
+                        if (reopened.open(pathToString(agedPath)))
+                        {
+                            SqliteStatement stmt{reopened, "SELECT value FROM SchemaInfo WHERE key = 'schema_version';"};
+                            if (stmt.isValid() && stmt.getNextResult())
+                            {
+                                reached = stmt.getText(0);
+                            }
+                        }
+                        report.check(!reached.empty() && reached == latestVersion,
+                            std::format("the {} database ends up stamped at the version a new one is (said '{}', expected '{}')",
+                                label,
+                                reached,
+                                latestVersion));
+
+                        // The rows are still there. Twenty rungs, two of which rebuild a table.
+                        const auto scalar = [&reopened](const char *sql)
+                        {
+                            SqliteStatement stmt{reopened, sql};
+                            return (stmt.isValid() && stmt.getNextResult()) ? stmt.getText(0) : std::string{"<query failed>"};
+                        };
+                        report.check(scalar("SELECT COUNT(*) FROM Tracks") == "2", std::format("{}: both tracks came up the ladder", label));
+                        report.check(scalar("SELECT COUNT(*) FROM MixTracks WHERE mix_id = 1") == "3",
+                            std::format("{}: so did all three mix rows, including the second copy of the same track", label));
+                        report.check(scalar("SELECT COUNT(*) FROM WorkingSetTracks WHERE ws_id = 1") == "2",
+                            std::format("{}: and the working set kept its tracks", label));
+                        report.check(scalar("SELECT COUNT(*) FROM TracksSearchData") == "2",
+                            std::format("{}: the search content is there for both tracks", label));
+                    }
+
+                    const auto agedStructure = readSchemaStructure(agedPath, report);
+                    report.check(agedStructure == freshStructure,
+                        std::format("the {} database ends up structurally identical to a new one ({} vs {} objects)",
+                            label,
+                            agedStructure.size(),
+                            freshStructure.size()));
+
+                    // Name what differs. "Two maps are not equal" is not a bug report, and the whole
+                    // value of this check is in what it says when it fails.
+                    if (agedStructure != freshStructure)
+                    {
+                        for (const auto &[name, facts] : freshStructure)
+                        {
+                            const auto it = agedStructure.find(name);
+                            if (it == agedStructure.end())
+                            {
+                                report.note(std::format("{}: only in a new database: {}", label, name));
+                                continue;
+                            }
+                            for (const auto &fact : facts)
+                            {
+                                if (std::ranges::find(it->second, fact) == it->second.end())
+                                {
+                                    report.note(std::format("{}: {}: only a new database has [{}]", label, name, fact));
+                                }
+                            }
+                        }
+                        for (const auto &[name, facts] : agedStructure)
+                        {
+                            const auto it = freshStructure.find(name);
+                            if (it == freshStructure.end())
+                            {
+                                report.note(std::format("{}: only after the ladder: {}", label, name));
+                                continue;
+                            }
+                            for (const auto &fact : facts)
+                            {
+                                if (std::ranges::find(it->second, fact) == it->second.end())
+                                {
+                                    report.note(std::format("{}: {}: only the ladder produces [{}]", label, name, fact));
+                                }
+                            }
+                        }
+                    }
+                };
+
+                if (!freshStructure.empty())
+                {
+                    climbAndCompare("v12-created-fresh", workRoot / "v12-aged.db", false);
+                    climbAndCompare("v12-migrated-up", workRoot / "v12-with-search.db", true);
                 }
             }
 

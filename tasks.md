@@ -8,26 +8,43 @@ logged stale-state effect, or need a design decision first.
 
 ---
 
-## P2: nothing compares a new database against a fully migrated one
+## P3: the v29 MixRecovery fixture is not in the column order v29 really had
 
-**Symptom**: the migration self test checks that the v32 rung leaves an already-complete database
-untouched, and that is all it can check. Both databases it builds start from the current schema, so
-sending one back through the ladder only re-runs rungs that are idempotent. v32 is - it is all
-`IF NOT EXISTS` - but an ordinary `ALTER TABLE ADD COLUMN` rung is not, and would fail with a
-duplicate column against a database that already has it. So the check cannot cover the next rung
-either, unless that rung happens to be idempotent too.
+Recorded verbatim from the reviewer of the whole-ladder convergence change (round 2, finding 4):
 
-**What it costs**: structural differences between v4 and v31 are invisible to it, and two real ones
-were found by reading rather than by testing - the six tables that existed only in the ladder, and
-the v6 `PRIMARY KEY(mix_id, track_id)` on `MixTracks` that the fresh schema never had. Both are
-repaired by v32, but nothing would have caught either, and nothing would catch a third.
+> `Tests/SelfTests.cpp:2893` hand-writes the v29 `MixRecovery` fixture with `total_duration` fifth. The
+> real migrations append `total_duration` and then `is_complete` at
+> `SqliteTrackDatabase.cpp:3243` and `SqliteTrackDatabase.cpp:3281`, so the real v29 order ends with
+> `mix_data, total_duration, is_complete`. This makes the fixture historically inaccurate and could
+> mislead future ordinal-sensitive checks. It is deferrable because the v30 migration and current
+> assertions address every field by name.
 
-**Fix approach**: a frozen old-schema fixture - a database file, or the SQL to build one, shaped the
-way some early version really left it - run all the way up the ladder and compared object by object
-against a freshly created one. The comparison already exists and works; what is missing is a fixture
-old enough to be worth comparing. The awkward part is choosing the version: too old and the fixture
-is a large hand-written artifact nobody can verify, too new and it proves little. v12 is probably the
-useful floor, since that is where the search tables arrive.
+---
+
+## P3: Albums and MixRecovery have different column order in a new database than in a migrated one
+
+**Symptom**: the ladder appends `Albums.bitrate` (v14) and `MixRecovery.total_duration` (v28), while
+`initialSqlStatements` declares both mid-table. So a database created from scratch numbers those
+columns differently from one that migrated up. Measured, not suspected: 24 of 26 tables agree, these
+two do not.
+
+**Why it is P3 and not P2**: nothing reads either table with `SELECT *`. The two tables that are read
+that way and decoded by position - `Tracks` via `trackInfoFromStatement` and `MixTracks` via
+`readMixTracksChecked` - do agree, and the whole-ladder check in the migration self test compares
+ordinals for exactly those two so they stay that way. The divergence is latent: it costs nothing until
+someone writes `SELECT * FROM Albums`.
+
+**Why it was not simply fixed**: reordering the fresh schema to match the ladder would leave every
+database already stamped at the latest version on the old order and every new one on the new order,
+with no rung able to tell them apart - the divergence this suite exists to prevent, introduced by the
+attempt to remove one. Reordering the other way needs a rung that rebuilds both tables, which is the
+riskiest kind of migration and buys no reader anything.
+
+**Fix approach**: remove the positional dependency instead, so column order stops being a behaviour
+anywhere. Give `SELECT * FROM Tracks` (`SqliteTrackDatabase.cpp:3884` and `:3931`) and
+`SELECT * FROM MixTracks` (`SqliteMixSummary.cpp:88`) explicit column lists matching what
+`trackInfoFromStatement` and `readMixTracksChecked` decode. Then the ordinal check can be dropped from
+the convergence comparison altogether and this entry closes with it.
 
 ---
 

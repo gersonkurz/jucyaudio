@@ -563,6 +563,7 @@ target_sources(jucyaudio PRIVATE
     Tests/MixDurationRepair.h
     Tests/MixRecoveryBackfill.h
     Tests/SelfTests.h
+    Tests/SchemaV12Fixture.h
     UI/SingletonDialog.h
     UI/TaskDialog.h
     UI/MainComponent.h

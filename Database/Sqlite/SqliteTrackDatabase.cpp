@@ -204,11 +204,70 @@ namespace
         "INSERT INTO TracksSearchFTS(TracksSearchFTS) VALUES('rebuild');",
     };
 
+    /// @brief Runs trackDedupeSteps, leaving out the steps whose tables this database does not have.
+    ///
+    /// The steps were written for a database that migrated its way up, and three of them touch tables
+    /// that only the v4, v11 and v12 rungs create: TrackMarkers, WaveformCache and the FTS index.
+    /// initialSqlStatements created none of the three until v32, so a database created from scratch
+    /// anywhere between has none of them, and running the steps unguarded against one fails on "no
+    /// such table".
+    ///
+    /// That is not hypothetical. A database created fresh at v12 - the shape Tests/SchemaV12Fixture.h
+    /// freezes - died here at the v24 rung and stopped the whole ladder at 23, leaving a library the
+    /// application could no longer finish upgrading, on every later start. v31 already skipped the
+    /// steps it could not run; v24 ran the same array without the guard, and nothing noticed because
+    /// no test had ever sent a genuinely old database up the ladder.
+    ///
+    /// So the guard lives with the steps, and both rungs go through here.
+    bool runTrackDedupeSteps(SqliteDatabase &db)
+    {
+        // Every table the steps touch that a database might not have, with the rung that created it:
+        // TrackMarkers (v4), WaveformCache (v11) and TracksSearchFTS (v12). The rest - Tracks,
+        // MixTracks, WorkingSetTracks, TrackTags - have been there since the first version, so their
+        // absence would be corruption rather than age and should fail loudly.
+        //
+        // A list, and not two hardcoded flags, because two was already wrong: the guard covered
+        // TrackMarkers and the FTS index and not WaveformCache, so a v12 database got one step further
+        // and died on the next one. Anything added to the steps that touches a table introduced by a
+        // rung belongs in here.
+        constexpr const char *optionalTables[]{"TrackMarkers", "WaveformCache", "TracksSearchFTS"};
+
+        std::vector<std::string_view> missing;
+        for (const char *table : optionalTables)
+        {
+            if (!db.doesTableExist(table))
+            {
+                missing.push_back(table);
+            }
+        }
+
+        for (const char *step : trackDedupeSteps)
+        {
+            const std::string_view sql{step};
+            const auto absent = std::ranges::find_if(missing,
+                [sql](const std::string_view table)
+                {
+                    return sql.find(table) != std::string_view::npos;
+                });
+            if (absent != missing.end())
+            {
+                spdlog::warn("De-duplication: skipping a step, this database has no {}: {}", *absent, sql);
+                continue;
+            }
+
+            if (!db.execute(step))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /// @brief The objects that used to exist only inside a migration rung.
     ///
-    /// TrackMarkers (v4), idx_tracks_status (v5), the search tables and their triggers (v12, v25),
-    /// MixMarkers (v16), EQPresets (v17) and ReverbPresets (v18) were each added to the ladder and
-    /// never to the schema a new database is built from. A new database is stamped at the latest
+    /// TrackMarkers (v4), idx_tracks_status (v5), WaveformCache (v11), the search tables and their
+    /// triggers (v12, v25), MixMarkers (v16), EQPresets (v17) and ReverbPresets (v18) were each added
+    /// to the ladder and never to the schema a new database is built from. A new database is stamped at the latest
     /// version and skips the ladder entirely, so every library created since has been missing all of
     /// them - and full-text search, track markers, mix markers and the EQ/reverb presets do not
     /// degrade without their tables, they fail.
@@ -218,10 +277,11 @@ namespace
     /// equivalent ones, so a fresh database and a repaired one hold byte-identical definitions of
     /// these objects by construction rather than by two texts being kept in step by hand.
     ///
-    /// Note what that does not buy. The migration self test checks that the v32 rung leaves an
-    /// already-complete database untouched; it is not a whole-ladder convergence check and cannot see
-    /// structural differences between v4 and v31 - the v6 primary key on MixTracks is one it missed.
-    /// A frozen old-schema fixture is what that needs, and is an open task.
+    /// The migration self test has the whole-ladder check that goes with this: Tests/SchemaV12Fixture.h
+    /// freezes the schema a new database really had at v12, in both of the shapes it covers, and
+    /// the suite runs each up every rung and compares the result against a freshly created database
+    /// object by object. That is what catches an object living in only one of the two places - as the
+    /// v6 primary key on MixTracks did, unseen, for as long as nothing compared them.
     ///
     /// Everything here is IF NOT EXISTS, because the repair runs against databases that have some of
     /// it (anything that migrated up through the ladder) and databases that have none of it.
@@ -399,6 +459,17 @@ namespace
                             INSERT INTO TracksSearchFTS(TracksSearchFTS, rowid, search_content) VALUES ('delete', old.track_id, old.search_content);
                             INSERT INTO TracksSearchFTS(rowid, search_content) VALUES (new.track_id, new.search_content);
                         END;)SQL",
+        // Moved here from initialSqlStatements rather than copied, so there is one definition of the
+        // table and a new database and a repaired one hold the same text. The v11 rung creates it too,
+        // for databases old enough to run that rung - but a database created from scratch at v12, when
+        // initialSqlStatements did not yet have it, is past v11 and never gets it from anywhere. The
+        // whole-ladder check in the migration self test is what found that.
+        R"SQL(
+        CREATE TABLE IF NOT EXISTS WaveformCache (
+            track_id INTEGER PRIMARY KEY NOT NULL,
+            waveform_blob BLOB NOT NULL,
+            FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
+        );)SQL",
     };
 
     const char *initialSqlStatements[] = {
@@ -592,12 +663,6 @@ namespace
         );)SQL",
         "CREATE INDEX IF NOT EXISTS idx_export_folders_order ON ExportFolders(display_order);",
         "CREATE TABLE IF NOT EXISTS LibraryRoots (root_id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, file_count INTEGER DEFAULT 0, last_scanned INTEGER);",
-        R"SQL(
-        CREATE TABLE IF NOT EXISTS WaveformCache (
-            track_id INTEGER PRIMARY KEY NOT NULL,
-            waveform_blob BLOB NOT NULL,
-            FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
-        );)SQL",
         R"SQL(
         CREATE TABLE IF NOT EXISTS MasterChainPlugins (
             order_index INTEGER PRIMARY KEY,
@@ -2952,16 +3017,11 @@ CREATE TABLE MixUndoHistory (
                     // Collapse duplicate Tracks rows sharing (folder_id, filename) onto the lowest
                     // track_id, remapping every reference, so the UNIQUE index can be created. Older
                     // libraries accumulated duplicates from overlapping roots + repeated scans.
-                    bool ok = true;
-                    for (const char *step : trackDedupeSteps)
-                    {
-                        if (!m_db.execute(step))
-                        {
-                            ok = false;
-                            break;
-                        }
-                    }
-                    if (!ok)
+                    //
+                    // Through the guarded runner, like v31: a database created from scratch at v12 has
+                    // neither TrackMarkers nor the FTS index, and this rung used to fail on the first
+                    // of them and strand the ladder at 23.
+                    if (!runTrackDedupeSteps(m_db))
                     {
                         const auto error{m_db.getLastError()};
                         transaction.rollback();
@@ -3016,14 +3076,28 @@ CREATE TABLE MixUndoHistory (
                         END;)SQL",
                         "INSERT INTO TracksSearchFTS(TracksSearchFTS) VALUES('rebuild');",
                     };
-                    for (const char *step : ftsSyncSteps)
+                    // A database created from scratch between v12 and v32 has no search tables at
+                    // all - they came only from the v12 rung, never from initialSqlStatements - so
+                    // there is no index here to keep in sync and every step below would fail on the
+                    // first missing table. The v32 rung creates these same three triggers, from the
+                    // one definition in convergenceSqlStatements, once the tables themselves exist,
+                    // and backfills the content. So this rung has nothing to do rather than
+                    // something to fail at.
+                    if (m_db.doesTableExist("TracksSearchData"))
                     {
-                        if (!m_db.execute(step))
+                        for (const char *step : ftsSyncSteps)
                         {
-                            const auto error{m_db.getLastError()};
-                            transaction.rollback();
-                            return DbResult::failure(DbResultStatus::ErrorDB, "v25 FTS-sync migration failed: " + error);
+                            if (!m_db.execute(step))
+                            {
+                                const auto error{m_db.getLastError()};
+                                transaction.rollback();
+                                return DbResult::failure(DbResultStatus::ErrorDB, "v25 FTS-sync migration failed: " + error);
+                            }
                         }
+                    }
+                    else
+                    {
+                        spdlog::warn("v25: this database has no search tables, so there is no FTS index to sync; the v32 rung creates both.");
                     }
 
                     if (auto result = setDBSchemaVersion(25); !result.isOk())
@@ -3445,34 +3519,11 @@ CREATE TABLE MixUndoHistory (
                             "DELETE FROM Folders WHERE folder_id IN (SELECT old_id FROM _folder_dup_map);",
                         };
 
-                        // The dedupe steps were written for a database that migrated its way up, and
-                        // they touch two tables that only the v4 and v12 rungs create: TrackMarkers
-                        // and the FTS index. initialSqlStatements creates neither, so every database
-                        // created from scratch since is missing both - recorded in tasks.md, and not
-                        // this rung's to fix. What this rung has to do is not fail on it.
-                        const auto runDedupe = [this]()
-                        {
-                            const bool haveMarkers{m_db.doesTableExist("TrackMarkers")};
-                            const bool haveSearchIndex{m_db.doesTableExist("TracksSearchFTS")};
-                            for (const char *step : trackDedupeSteps)
-                            {
-                                const std::string_view sql{step};
-                                if ((!haveMarkers && sql.find("TrackMarkers") != std::string_view::npos) ||
-                                    (!haveSearchIndex && sql.find("TracksSearchFTS") != std::string_view::npos))
-                                {
-                                    spdlog::warn("v31: skipping a de-duplication step, this database has no such table: {}", sql);
-                                    continue;
-                                }
-
-                                if (!m_db.execute(step))
-                                {
-                                    return false;
-                                }
-                            }
-                            return true;
-                        };
-
-                        if (!runSteps(mergeSteps) || !mergeAlbumFields() || !runSteps(albumTailSteps) || !runDedupe())
+                        // The dedupe steps go through the guarded runner, which leaves out the ones
+                        // whose tables a database created from scratch never got. The guard used to
+                        // live here; it belongs with the steps, because v24 runs them too and used to
+                        // run them unguarded.
+                        if (!runSteps(mergeSteps) || !mergeAlbumFields() || !runSteps(albumTailSteps) || !runTrackDedupeSteps(m_db))
                         {
                             const auto error{m_db.getLastError()};
                             transaction.rollback();

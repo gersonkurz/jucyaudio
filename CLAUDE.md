@@ -184,9 +184,25 @@ holds the same track twice. Both are repaired by v32.
 Adding to `convergenceSqlStatements` is for that class of object only. Anything genuinely new belongs
 in `initialSqlStatements` plus its own rung, as before.
 
-The migration self test checks that the v32 rung leaves an already-complete database untouched. It is
-**not** a whole-ladder convergence check and cannot see structural differences between v4 and v31 -
-that needs a frozen old-schema fixture, which is an open task.
+The migration self test has both halves now. One check sends an already-complete database back through
+the v32 rung and requires it to change nothing. The other starts from `Tests/SchemaV12Fixture.h`, which
+freezes the two version-12 shapes it covers - `initialSqlStatements` copied verbatim out of
+commit `d34e3bc` (whose `latestSchemaVersion` is 12 and whose v12 rung is where the search tables
+arrive), and the search objects that rung created, from the same commit. One shape is what a library
+created from scratch then had, missing the search objects; the other is what a library migrated up to 12
+had, with them. Each is run up every rung from 13 to 32 and compared against a freshly created database
+object by object: columns with their types, nullability and defaults, foreign keys, indexes with their
+columns, uniqueness and collation, and for a virtual table its own definition. Structurally, not as
+text, because `ALTER TABLE ADD COLUMN` appends to the stored `CREATE` statement and an old table never
+spells itself the way today's schema does.
+
+Column ordinals are compared only for `Tracks` and `MixTracks`, the two tables something reads with
+`SELECT *` and decodes by position. Elsewhere the order is not a behaviour, and forcing it to match
+would mean renumbering columns in a migration for no reader's benefit.
+
+Adding a rung means the fixtures climb one more step, and nothing needs editing for it. What does need
+editing is `convergenceSqlStatements`, if the rung's objects are not also added to
+`initialSqlStatements`.
 
 ### Precompiled Header
 
