@@ -2933,16 +2933,26 @@ namespace jucyaudio
                 // explicitly: SqliteDatabase::open does not set PRAGMA foreign_keys, so without this
                 // the key would be recorded and ignored, and a seeding mistake that invented mixes
                 // would go through unnoticed.
+                //
+                // Three statements rather than one, because that is how the shape came about: the v27
+                // rung created the table, the v28 rung appended total_duration and the v29 rung appended
+                // is_complete. Writing the finished column list out in a single CREATE is what made this
+                // fixture wrong - it had total_duration fifth, where initialSqlStatements declares it,
+                // rather than second to last, where ALTER TABLE put it in every database that really
+                // migrated. Adding the columns the way the rungs added them makes the order a
+                // consequence of the same operations instead of a transcription that can drift again.
                 const bool built =
                     seed.execute("PRAGMA foreign_keys = ON;") &&
                     seed.execute("INSERT INTO Mixes (mix_id, name) VALUES (1, 'Seed One'), (2, 'Seed Two');") &&
                     seed.execute("DROP TABLE MixRecovery;") &&
                     seed.execute("CREATE TABLE MixRecovery(mix_id INTEGER NOT NULL, order_in_mix INTEGER NOT NULL, "
-                                 "captured_at INTEGER NOT NULL, mix_name TEXT NOT NULL, total_duration INTEGER, track_id INTEGER, "
+                                 "captured_at INTEGER NOT NULL, mix_name TEXT NOT NULL, track_id INTEGER, "
                                  "artist_name TEXT, album_title TEXT, title TEXT, filename TEXT, folder_path TEXT, duration INTEGER, "
-                                 "filesize_bytes INTEGER, bpm INTEGER, mix_data TEXT, is_complete INTEGER NOT NULL DEFAULT 1, "
+                                 "filesize_bytes INTEGER, bpm INTEGER, mix_data TEXT, "
                                  "PRIMARY KEY (mix_id, order_in_mix), "
                                  "FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE);") &&
+                    seed.execute("ALTER TABLE MixRecovery ADD COLUMN total_duration INTEGER;") &&
+                    seed.execute("ALTER TABLE MixRecovery ADD COLUMN is_complete INTEGER NOT NULL DEFAULT 1;") &&
                     // The indexes go back too. Dropping the table took them with it, and a fixture
                     // without them cannot show that the migration leaves them standing - which is
                     // worth showing, because renumbering a primary key is exactly the kind of work
@@ -2955,6 +2965,52 @@ namespace jucyaudio
                 {
                     writeResultsFile(resultsPath, "jucyaudio migration self test", report);
                     return 1;
+                }
+
+                // The fixture's own column order, checked rather than assumed. Every other assertion in
+                // this suite names the field it reads, so a fixture in the wrong order passes all of
+                // them and nothing says a word - which is exactly how it sat wrong. The list is the v27
+                // rung's CREATE TABLE followed by what the v28 and v29 rungs appended, and can be read
+                // straight off runMigrations.
+                {
+                    constexpr const char *v29Columns[]{"mix_id",
+                        "order_in_mix",
+                        "captured_at",
+                        "mix_name",
+                        "track_id",
+                        "artist_name",
+                        "album_title",
+                        "title",
+                        "filename",
+                        "folder_path",
+                        "duration",
+                        "filesize_bytes",
+                        "bpm",
+                        "mix_data",
+                        "total_duration",
+                        "is_complete"};
+
+                    std::vector<std::string> columns;
+                    {
+                        SqliteStatement stmt{seed, "PRAGMA table_info(MixRecovery);"};
+                        while (stmt.getNextResult())
+                        {
+                            columns.push_back(stmt.getText(1));
+                        }
+                    }
+
+                    std::string found;
+                    for (const auto &column : columns)
+                    {
+                        if (!found.empty())
+                        {
+                            found.append(", ");
+                        }
+                        found.append(column);
+                    }
+
+                    report.check(std::ranges::equal(columns, v29Columns),
+                        std::format("the v29 fixture holds the columns v29 really had, in that order (found: {})", found));
                 }
 
                 // Mix 1 is intact: positions 0, 1, 2, and must come through completely unchanged.

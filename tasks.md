@@ -8,19 +8,6 @@ logged stale-state effect, or need a design decision first.
 
 ---
 
-## P3: the v29 MixRecovery fixture is not in the column order v29 really had
-
-Recorded verbatim from the reviewer of the whole-ladder convergence change (round 2, finding 4):
-
-> `Tests/SelfTests.cpp:2893` hand-writes the v29 `MixRecovery` fixture with `total_duration` fifth. The
-> real migrations append `total_duration` and then `is_complete` at
-> `SqliteTrackDatabase.cpp:3243` and `SqliteTrackDatabase.cpp:3281`, so the real v29 order ends with
-> `mix_data, total_duration, is_complete`. This makes the fixture historically inaccurate and could
-> mislead future ordinal-sensitive checks. It is deferrable because the v30 migration and current
-> assertions address every field by name.
-
----
-
 ## P3: Albums and MixRecovery have different column order in a new database than in a migrated one
 
 **Symptom**: the ladder appends `Albums.bitrate` (v14) and `MixRecovery.total_duration` (v28), while
