@@ -244,6 +244,12 @@ namespace jucyaudio
         bool SqliteAlbumManager::deleteAlbum(AlbumId albumId)
         {
             SqliteTransaction transaction{m_db};
+            if (!transaction)
+            {
+                // The statements below go straight to the connection, so nothing else would stop them
+                // from running - and committing one at a time - outside a transaction that never began.
+                return false;
+            }
             
             // First, clear album_id from tracks
             const char* clearTracksSql = "UPDATE Tracks SET album_id = NULL WHERE album_id = ?;";
@@ -380,11 +386,11 @@ namespace jucyaudio
             // the same notion of sameness SQLite used to resolve the rows above.
             const auto fromKey{noCaseKey(from)};
 
-            // Immediate, so the read of Albums below and the writes that follow see one state of the
-            // database. A deferred transaction would let another writer relabel an album in between,
-            // and this rewrites whole JSON arrays - a lost update there silently drops an album's
-            // other genres, not just the one being renamed.
-            SqliteTransaction transaction{m_db, TransactionMode::Immediate};
+            // One transaction around the read of Albums below and the writes that follow, so they see
+            // one state of the database: this rewrites whole JSON arrays, and a relabel landing in
+            // between would be a lost update that silently drops an album's other genres, not just the
+            // one being renamed.
+            SqliteTransaction transaction{m_db};
             if (!transaction)
             {
                 spdlog::error("Could not begin a transaction to rename genre '{}'.", from);

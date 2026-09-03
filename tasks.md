@@ -8,21 +8,6 @@ logged stale-state effect, or need a design decision first.
 
 ---
 
-## P2: deferred transactions are not isolated against the same connection
-
-**Symptom**: `TransactionMode::Immediate` (added for the mix recovery capture) holds
-`SqliteDatabase::getMutex()` for the transaction's lifetime, so nothing else on the connection can
-interleave. `TransactionMode::Deferred` — the default, used everywhere else — does not. Another thread
-on the same connection can write inside someone else's deferred transaction.
-
-**Key files**: `Database/Sqlite/SqliteTransaction.{h,cpp}`, `Database/Sqlite/SqliteDatabase.cpp`.
-
-**Fix approach**: not simply switching the default. Immediate mode serialises the whole connection for
-the transaction's duration, which is correct for a short capture and would be a throughput problem for
-a scan. Each deferred call site needs deciding on its own.
-
----
-
 ## P2: nothing compares a new database against a fully migrated one
 
 **Symptom**: the migration self test checks that the v32 rung leaves an already-complete database

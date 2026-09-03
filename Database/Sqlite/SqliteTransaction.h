@@ -1,12 +1,9 @@
-
 #pragma once
 
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
-#include <list>
 #include <mutex>
 #include <optional>
-#include <string>
 #include <string_view>
 
 namespace jucyaudio
@@ -14,49 +11,33 @@ namespace jucyaudio
     namespace database
     {
         /**
-         * @brief How much of the world a transaction shuts out.
+         * @brief A write transaction that owns the connection for as long as it is open.
          *
-         * The default is what this class has always done. Immediate exists for operations whose
-         * correctness depends on nothing else changing underneath them - reading, deciding something
-         * from what was read, and writing based on that decision.
+         * A SQLite transaction belongs to the connection, not to the thread that began it, and this
+         * application has several threads sharing one connection: the message thread, the background
+         * task service, a thread per TaskDialog task, batch export, and the BPM analysis pool. So a
+         * transaction here shuts out two different things, because there are two different hazards:
+         *  - BEGIN IMMEDIATE takes the write lock up front, so writers on other connections and in
+         *    other processes are excluded, and the transaction either starts or does not. A deferred
+         *    BEGIN takes a read lock and can fail the upgrade after the reads have already happened.
+         *  - Holding SqliteDatabase::getMutex() until commit or rollback excludes the other threads
+         *    sharing this connection, which BEGIN IMMEDIATE does nothing about. Without it, a statement
+         *    another thread ran between BEGIN and COMMIT was part of this transaction and was committed
+         *    or discarded along with it - and that thread's own BEGIN was refused outright, because the
+         *    connection was already inside one.
+         *
+         * The mutex is recursive, so this transaction's own statements acquire it freely, and so does a
+         * caller that already holds it.
+         *
+         * The cost: every other database user on this connection waits until this transaction ends,
+         * rather than between its statements. Keep transactions short - a bounded loop of prepared
+         * statements over data already in memory, with no file I/O and no waiting on another thread
+         * inside. Every transaction in the project is that shape; the scanner commits per track.
          */
-        enum class TransactionMode
-        {
-            /**
-             * @brief BEGIN TRANSACTION. No connection ownership.
-             *
-             * SQLite takes a read lock and upgrades it on the first write, so the upgrade can fail with
-             * SQLITE_BUSY after reads have already happened. Other threads sharing this connection can
-             * also run statements between this transaction's BEGIN and COMMIT - and because a SQLite
-             * transaction belongs to the connection rather than to a thread, those statements are part
-             * of it, and are committed or discarded along with it.
-             *
-             * Fine for the short write-only sequences this is mostly used for. Not fine for anything
-             * that reads, decides, and then writes.
-             */
-            Deferred,
-
-            /**
-             * @brief BEGIN IMMEDIATE, and ownership of the connection for the transaction's lifetime.
-             *
-             * Two different exclusions, because there are two different hazards:
-             *  - BEGIN IMMEDIATE takes the write lock up front, so writers on other connections and in
-             *    other processes are excluded, and the transaction either starts or does not.
-             *  - Holding SqliteDatabase::getMutex() until commit or rollback excludes other threads
-             *    sharing this connection, which BEGIN IMMEDIATE does nothing about.
-             *
-             * The mutex is recursive, so this transaction's own statements acquire it freely.
-             *
-             * The cost is real: every other database user on this connection waits. Keep immediate
-             * transactions short.
-             */
-            Immediate
-        };
-
         class SqliteTransaction final
         {
         public:
-            explicit SqliteTransaction(SqliteDatabase &db, TransactionMode mode = TransactionMode::Deferred);
+            explicit SqliteTransaction(SqliteDatabase &db);
             ~SqliteTransaction();
 
             bool commit();
@@ -69,8 +50,13 @@ namespace jucyaudio
 
             template <typename... Args> bool execute(std::string_view sql, Args &&...args)
             {
-                if (!m_db.isValid())
+                if (!m_active)
                 {
+                    // Nothing is begun, so nothing may run through here. BEGIN IMMEDIATE can be refused
+                    // with SQLITE_BUSY, and a statement issued after that would autocommit on its own,
+                    // outside the transaction the caller believes it is in - a caller that does not
+                    // check its transaction would then delete the row and report failure.
+                    spdlog::error("SqliteTransaction: execute() refused, no transaction is open.");
                     return false;
                 }
 
@@ -89,7 +75,7 @@ namespace jucyaudio
             void releaseConnection();
 
             SqliteDatabase &m_db;
-            /// @brief Engaged only in Immediate mode, for exactly as long as the transaction is open.
+            /// @brief Engaged for exactly as long as the transaction is open.
             std::optional<std::unique_lock<std::recursive_mutex>> m_connectionLock;
             bool m_active{false};
         };

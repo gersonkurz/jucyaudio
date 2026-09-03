@@ -190,5 +190,30 @@ namespace jucyaudio
          */
         int runFolderCacheSelfTest(const std::filesystem::path &selfTestRoot);
 
+        /**
+         * @brief Headless test that a transaction owns its connection.
+         *
+         * A SQLite transaction belongs to the connection, not to the thread that began it, and every
+         * thread in this application shares one connection. So one thread holds a transaction open
+         * while another runs a plain INSERT and then a transaction of its own against the same
+         * connection, and the first thread then rolls back.
+         *
+         * Without the connection being owned, the intruder's INSERT joined the holder's transaction
+         * and was discarded by its rollback, and the intruder's own BEGIN was refused because the
+         * connection was already inside one. With it, the intruder waits at the mutex until the
+         * rollback and both of its writes stand. The checks are the rows that survive, and that the
+         * intruder's writes happened after the rollback rather than before it.
+         *
+         * A failure of the other kind - a thread that never gets the connection back - is a hang, so
+         * the wait has a deadline and the report says which thread was stuck.
+         *
+         * Uses its own database, unrelated to the one the other suites share, because it holds a
+         * transaction open on purpose and nothing else should be waiting behind it.
+         *
+         * @param selfTestRoot The root returned by prepareSelfTestEnvironment().
+         * @return 0 if every check passed, 1 otherwise.
+         */
+        int runTransactionSelfTest(const std::filesystem::path &selfTestRoot);
+
     } // namespace tests
 } // namespace jucyaudio

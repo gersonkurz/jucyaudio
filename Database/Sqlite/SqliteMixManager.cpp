@@ -541,11 +541,11 @@ WHERE m.export_folder IS NULL
             const std::vector<MixTrack> *renderedTracks,
             RecoveryCaptureMode mode) const
         {
-            // Immediate, not the default deferred mode: this reads, decides something from what it read,
-            // and then writes based on that decision. A deferred transaction would let another thread on
-            // this connection - or another process - change the mix in between, so the rows written would
-            // not be the rows that were validated.
-            SqliteTransaction transaction{m_db, TransactionMode::Immediate};
+            // One transaction, owning the connection: this reads, decides something from what it read,
+            // and then writes based on that decision. Another thread on this connection - or another
+            // process - changing the mix in between would mean the rows written are not the rows that
+            // were validated.
+            SqliteTransaction transaction{m_db};
             if (!transaction)
             {
                 return DbResult::failure(DbResultStatus::ErrorDB,
@@ -1061,12 +1061,12 @@ WHERE m.export_folder IS NULL
         {
             result = MixDurationCheck{};
 
-            // Immediate, and covering the reads as well as the write. The comparison that decides
+            // One transaction covering the reads as well as the write. The comparison that decides
             // whether to write is only meaningful if nothing can change the mix between making it and
             // acting on it - and another instance of the application may be editing this very mix.
             // Both reported figures are read inside it too, so the before and after in a report
             // describe one moment rather than three.
-            SqliteTransaction transaction{m_db, TransactionMode::Immediate};
+            SqliteTransaction transaction{m_db};
             if (!transaction)
             {
                 return DbResult::failure(DbResultStatus::ErrorDB, std::format("could not begin a transaction for mix {}", mixId));

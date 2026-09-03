@@ -3638,10 +3638,11 @@ CREATE TABLE MixUndoHistory (
                 return DbResult::failure(DbResultStatus::ErrorGeneric, "Filename cannot be empty.");
             }
 
-            // For simplicity, we'll use a single transaction for INSERT or
-            // UPDATE You might want finer-grained transaction control in a real
-            // app
-            if (!m_db.execute("BEGIN TRANSACTION;"))
+            // One transaction for the row and its tags. Through SqliteTransaction, not a hand-written
+            // BEGIN: this runs from the scanner and from the UI at once, and a transaction that does not
+            // own the connection is joined by whatever the other thread runs meanwhile.
+            SqliteTransaction transaction{m_db};
+            if (!transaction)
             {
                 return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin transaction: " + m_db.getLastError());
             }
@@ -3688,26 +3689,22 @@ CREATE TABLE MixUndoHistory (
                 }
             }
 
-            if (success)
-            {
-                updateTrackTagsFromInsideTransaction(trackInfo.trackId,
-                    trackInfo.tag_ids); // Update tags after insert
-                if (!m_db.execute("COMMIT;"))
-                {
-                    m_lastErrorMessage = "Failed to commit transaction: " + m_db.getLastError();
-                    // Attempt to rollback, though the main operation might have
-                    // already written
-                    m_db.execute("ROLLBACK;");
-                    return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
-                }
-                return DbResult::success();
-            }
-            else
+            if (!success)
             {
                 m_lastErrorMessage = "SaveTrackInfo failed: " + m_db.getLastError(); // Get last error from SqliteDatabase
-                m_db.execute("ROLLBACK;");                                           // Rollback on any failure
+                transaction.rollback();
                 return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
             }
+
+            updateTrackTagsFromInsideTransaction(trackInfo.trackId,
+                trackInfo.tag_ids); // Update tags after insert
+            if (!transaction.commit())
+            {
+                // The transaction is still open and still owns the connection; its destructor rolls back.
+                m_lastErrorMessage = "Failed to commit transaction: " + m_db.getLastError();
+                return DbResult::failure(DbResultStatus::ErrorDB, m_lastErrorMessage);
+            }
+            return DbResult::success();
         }
 
         DbResult SqliteTrackDatabase::updateScannedTrackData(const TrackInfo &trackInfo, ScannedFields fields)
@@ -3730,9 +3727,9 @@ CREATE TABLE MixUndoHistory (
                 return DbResult::failure(DbResultStatus::ErrorGeneric, "updateScannedTrackData needs a folder and a filename.");
             }
 
-            // Immediate, because the row is read back through getChangesCount below and the tag insert
-            // depends on the update having landed.
-            SqliteTransaction transaction{m_db, TransactionMode::Immediate};
+            // One transaction, because the row is read back through getChangesCount below and the tag
+            // insert depends on the update having landed.
+            SqliteTransaction transaction{m_db};
             if (!transaction)
             {
                 return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin transaction: " + m_db.getLastError());
@@ -4184,11 +4181,9 @@ CREATE TABLE MixUndoHistory (
                 return DbResult::success();
             }
 
-            // Immediate: this reads which mixes are affected, then writes based on that answer. A
-            // deferred transaction takes its write lock at the first write, so another writer can get
-            // in between the two and turn the upgrade into a failure - or, on this connection, join the
-            // transaction outright.
-            if (SqliteTransaction transaction{m_db, TransactionMode::Immediate})
+            // One transaction: this reads which mixes are affected, then writes based on that answer,
+            // and nothing may get in between the two.
+            if (SqliteTransaction transaction{m_db})
             {
                 // Which mixes are about to change, captured before the rows go. MixTracks.track_id
                 // cascades, so once the tracks are deleted there is nothing left to say which mixes
@@ -4242,8 +4237,8 @@ CREATE TABLE MixUndoHistory (
                 return DbResult::success();
             }
 
-            // Immediate, for the same reason as removeTracks above: a read that decides what to write.
-            if (SqliteTransaction transaction{m_db, TransactionMode::Immediate})
+            // One transaction, for the same reason as removeTracks above: a read that decides what to write.
+            if (SqliteTransaction transaction{m_db})
             {
                 // Which mixes are about to change, captured before the rows go. MixTracks.track_id
                 // cascades, so once the tracks are deleted there is nothing left to say which mixes
@@ -4605,8 +4600,9 @@ CREATE TABLE MixUndoHistory (
             }
             m_lastErrorMessage.clear();
 
-            // Transaction for atomicity
-            if (!m_db.execute("BEGIN TRANSACTION;"))
+            // Transaction for atomicity - and through SqliteTransaction, so it owns the connection.
+            SqliteTransaction transaction{m_db};
+            if (!transaction)
             {
                 m_lastErrorMessage = m_db.getLastError();
                 return DbResult::failure(DbResultStatus::ErrorDB, "Unable to begin transaction: " + m_db.getLastError());
@@ -4614,12 +4610,11 @@ CREATE TABLE MixUndoHistory (
 
             if (!updateTrackTagsFromInsideTransaction(trackId, tagIds))
             {
-                m_db.execute("ROLLBACK;");
+                transaction.rollback();
                 return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update track tags: " + m_db.getLastError());
             }
-            if (!m_db.execute("COMMIT;"))
+            if (!transaction.commit())
             {
-                m_db.execute("ROLLBACK;");
                 m_lastErrorMessage = m_db.getLastError();
                 return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit transaction: " + m_db.getLastError());
             }

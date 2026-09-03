@@ -647,11 +647,12 @@ namespace jucyaudio
 
         bool SqliteFolderDatabase::removeEmptyFolders() const
         {
-            // The connection, for all of it. What is deleted below is decided by comparing a set read
-            // from Tracks against the folders the cache knows, and a folder created between those two
-            // reads is in the second and not the first - so it would be deleted moments after another
-            // thread was handed its id. The statements used to overlap enough to hide that; nothing
-            // about a deferred transaction provides it, because that mode does not own the connection.
+            // The connection, for all of it - including the cache rebuild after the commit, which the
+            // transaction below does not cover. What is deleted is decided by comparing a set read from
+            // Tracks against the folders the cache knows, and a folder created between those two reads
+            // is in the second and not the first - so it would be deleted moments after another thread
+            // was handed its id. And a lookup landing between the commit and the rebuild would be
+            // answered from a cache that still lists the deleted rows.
             //
             // Database mutex first, then the cache mutex inside, as everywhere else in this class.
             std::lock_guard dbLock{m_db.getMutex()};
@@ -907,6 +908,14 @@ namespace jucyaudio
             if (!offlineFolderIds.empty())
             {
                 SqliteTransaction transaction{m_db};
+                if (!transaction)
+                {
+                    // Same outcome as any other failure in here: the temp tables stay as the clear above
+                    // left them. The inserts below go straight to the connection and would otherwise run
+                    // outside a transaction that never began.
+                    spdlog::error("rebuildOfflineFoldersTable: could not begin a transaction: {}", m_db.getLastError());
+                    return;
+                }
                 SqliteStatement insertStmt{m_db};
                 
                 for (const auto folderId : offlineFolderIds)

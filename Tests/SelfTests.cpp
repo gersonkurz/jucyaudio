@@ -29,6 +29,7 @@
 #include <Database/DatabaseBackupManager.h>
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
+#include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/TrackLibrary.h>
 #include <UI/Settings.h>
 #include <UI/TimelineComponent.h>
@@ -4912,5 +4913,174 @@ namespace jucyaudio
             return report.failures() == 0 ? 0 : 1;
         }
 
+
+        int runTransactionSelfTest(const std::filesystem::path &selfTestRoot)
+        {
+            Report report;
+            const auto workRoot = selfTestRoot / "transaction";
+            const auto resultsPath = selfTestRoot / "transaction-results.txt";
+            const auto dbPath = workRoot / "isolation.db";
+
+            spdlog::info("[SelfTest] Starting transaction self test. Root: {}", pathToString(selfTestRoot));
+
+            std::error_code ec;
+            std::filesystem::remove_all(workRoot, ec);
+            std::filesystem::create_directories(workRoot, ec);
+            if (ec)
+            {
+                report.abort(std::format("Could not create {}: {}", pathToString(workRoot), ec.message()));
+                writeResultsFile(resultsPath, "jucyaudio transaction self test", report);
+                return 1;
+            }
+
+            // Its own connection, not the library's: this test holds a transaction open on purpose while
+            // another thread hammers the same connection, and nothing else should be waiting behind it.
+            SqliteDatabase db;
+            if (!db.open(pathToString(dbPath)) || !db.execute("CREATE TABLE Marks (name TEXT NOT NULL);"))
+            {
+                report.abort(std::format("Could not set up the scratch database: {}", db.getLastError()));
+                writeResultsFile(resultsPath, "jucyaudio transaction self test", report);
+                return 1;
+            }
+
+            // Two threads, one connection. The holder begins a transaction, writes a row and then stands
+            // still with it open. The intruder, told that the transaction is open, runs a plain INSERT
+            // and then a transaction of its own. Then the holder rolls back.
+            //
+            // A SQLite transaction belongs to the connection, so on a connection nobody owns the
+            // intruder's plain INSERT lands inside the holder's transaction and goes with the rollback,
+            // and its own BEGIN is refused because the connection is already in one. On an owned
+            // connection the intruder waits at the mutex until the rollback, and both writes stand.
+            using Clock = std::chrono::steady_clock;
+            const auto ticksNow = []() -> int64_t
+            {
+                return Clock::now().time_since_epoch().count();
+            };
+            std::atomic<bool> holderBegan{false};
+            std::atomic<bool> holderBeginOk{false};
+            std::atomic<bool> holderWriteOk{false};
+            std::atomic<bool> intruderAboutToWrite{false};
+            std::atomic<bool> holderFinished{false};
+            std::atomic<bool> intruderFinished{false};
+            std::atomic<bool> plainWriteOk{false};
+            std::atomic<bool> intruderBeginOk{false};
+            std::atomic<bool> intruderCommitOk{false};
+            std::atomic<int64_t> rollbackStartedAt{0};
+            std::atomic<int64_t> plainWriteAt{0};
+
+            // Generous: this is a deadline for a hang, not a performance assertion.
+            const auto deadline = Clock::now() + std::chrono::seconds{30};
+
+            std::thread holder{[&]()
+                {
+                    SqliteTransaction transaction{db};
+                    holderBeginOk = static_cast<bool>(transaction);
+                    if (transaction)
+                    {
+                        holderWriteOk = transaction.execute("INSERT INTO Marks (name) VALUES ('holder');");
+                    }
+                    holderBegan = true;
+
+                    while (!intruderAboutToWrite && Clock::now() < deadline)
+                    {
+                        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+                    }
+                    // Long enough for a statement on an unowned connection to get in. On an owned one
+                    // this is time the intruder spends waiting at the mutex.
+                    std::this_thread::sleep_for(std::chrono::milliseconds{250});
+                    // Stamped before, not after: rollback() hands the connection back on its way out, and
+                    // the intruder can have written before this thread gets to the next line.
+                    rollbackStartedAt = ticksNow();
+                    transaction.rollback();
+                    holderFinished = true;
+                }};
+
+            std::thread intruder{[&]()
+                {
+                    while (!holderBegan && Clock::now() < deadline)
+                    {
+                        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+                    }
+                    intruderAboutToWrite = true;
+                    {
+                        SqliteStatement stmt{db, "INSERT INTO Marks (name) VALUES ('plain');"};
+                        plainWriteOk = stmt.execute();
+                        plainWriteAt = ticksNow();
+                    }
+                    {
+                        SqliteTransaction transaction{db};
+                        intruderBeginOk = static_cast<bool>(transaction);
+                        if (transaction && transaction.execute("INSERT INTO Marks (name) VALUES ('transacted');"))
+                        {
+                            intruderCommitOk = transaction.commit();
+                        }
+                    }
+                    intruderFinished = true;
+                }};
+
+            while ((!holderFinished || !intruderFinished) && Clock::now() < deadline)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds{20});
+            }
+
+            if (!holderFinished || !intruderFinished)
+            {
+                report.abort(std::format("Timed out with the holder {} and the intruder {}. A thread that never gets the connection back is what this looks like.",
+                    holderFinished ? "finished" : "stuck",
+                    intruderFinished ? "finished" : "stuck"));
+                writeResultsFile(resultsPath, "jucyaudio transaction self test", report);
+
+                // Out, without unwinding, for the same reason the folder cache test does it: a thread
+                // stuck on a mutex can be neither joined nor left behind with references to this frame.
+                spdlog::error("[SelfTest] Transaction test timed out; leaving the process without unwinding.");
+                spdlog::default_logger()->flush();
+                std::_Exit(1);
+            }
+
+            holder.join();
+            intruder.join();
+
+            report.check(holderBeginOk && holderWriteOk, "the holder's transaction began and wrote its row");
+            report.check(plainWriteOk, "the intruder's plain INSERT executed");
+            report.check(intruderBeginOk, "the intruder's own transaction began while the holder's was open - it waited rather than being refused");
+            report.check(intruderCommitOk, "the intruder's transaction committed");
+            report.check(plainWriteAt > rollbackStartedAt, "the intruder's INSERT ran after the holder's rollback began, not inside its transaction");
+
+            const auto countOf = [&db](std::string_view name) -> int64_t
+            {
+                SqliteStatement stmt{db, "SELECT COUNT(*) FROM Marks WHERE name = ?;"};
+                stmt.addParam(name);
+                return stmt.execute() ? stmt.getInt64(0) : -1;
+            };
+            report.check(countOf("holder") == 0, "the holder's row went with its rollback");
+            report.check(countOf("plain") == 1, "the intruder's plain INSERT survived the holder's rollback");
+            report.check(countOf("transacted") == 1, "the intruder's transacted INSERT survived the holder's rollback");
+
+            // The other way a transaction ends up owning nothing: BEGIN IMMEDIATE itself is refused. A
+            // second connection holds the write lock, so this connection's BEGIN comes back SQLITE_BUSY -
+            // quickly, because the busy timeout is shortened first. The lock is then released, and a
+            // write goes through the transaction that never began, the way a caller that does not check
+            // its transaction would issue one. With nothing begun that write would autocommit on its
+            // own, so it has to be refused, and nothing may reach the table.
+            {
+                SqliteDatabase blocker;
+                report.check(blocker.open(pathToString(dbPath)) && blocker.execute("BEGIN IMMEDIATE;"),
+                    "a second connection could take the write lock");
+                report.check(db.execute("PRAGMA busy_timeout = 100;"), "the busy timeout could be shortened for the refused BEGIN");
+
+                SqliteTransaction refused{db};
+                report.check(!refused, "BEGIN IMMEDIATE was refused while another connection held the write lock");
+
+                report.check(blocker.execute("ROLLBACK;"), "the second connection released the write lock");
+
+                report.check(!refused.execute("INSERT INTO Marks (name) VALUES ('orphan');"),
+                    "a write through a transaction that never began is refused");
+                report.check(countOf("orphan") == 0, "nothing reached the table through the refused transaction");
+            }
+
+            writeResultsFile(resultsPath, "jucyaudio transaction self test", report);
+            spdlog::info("[SelfTest] Transaction test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
+            return report.failures() == 0 ? 0 : 1;
+        }
     } // namespace tests
 } // namespace jucyaudio

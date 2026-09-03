@@ -8,7 +8,7 @@ namespace jucyaudio
     namespace database
     {
 
-        SqliteTransaction::SqliteTransaction(SqliteDatabase &db, TransactionMode mode)
+        SqliteTransaction::SqliteTransaction(SqliteDatabase &db)
             : m_db{db},
               m_active{false}
         {
@@ -20,13 +20,9 @@ namespace jucyaudio
 
             // Claim the connection before BEGIN, not after: between the two there would be a window in
             // which another thread could run a statement that this transaction would then own.
-            if (mode == TransactionMode::Immediate)
-            {
-                m_connectionLock.emplace(m_db.getMutex());
-            }
+            m_connectionLock.emplace(m_db.getMutex());
 
-            const auto *const statement = (mode == TransactionMode::Immediate) ? "BEGIN IMMEDIATE;" : "BEGIN TRANSACTION;";
-            if (m_db.execute(statement))
+            if (m_db.execute("BEGIN IMMEDIATE;"))
             {
                 m_active = true;
             }
