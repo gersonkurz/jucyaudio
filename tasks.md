@@ -1,10 +1,19 @@
 # JucyAudio - Open Tasks
 
-Ordered by priority: **P1** (fix before tagging 2.0) → **P3** (whenever). One P1 is open - the macOS half of the
-JUCE 9.0.2 upgrade has not been built. The memory-safety and deadlock items are done, and so is the
-schema divergence that left every new library without search, markers and the EQ/reverb presets. P2 items are reachable correctness or
-user-visible defects that are not memory-unsafe; P3 items cannot happen today, are bounded to a
-logged stale-state effect, or need a design decision first.
+Ordered by priority: **P1** (fix before tagging 2.0) → **P3** (whenever). Two P1s are open: the macOS
+half of the JUCE 9.0.2 upgrade has not been built, and it needs a machine nobody has had to hand yet;
+and the MP3 exporter reads past a stack buffer when the ID3v2 tag it is handed is larger than 10 KiB.
+The deadlock items are done, and so is the schema divergence that left every new library without
+search, markers and the EQ/reverb presets. P2 items are reachable correctness or user-visible defects
+that are not memory-unsafe; P3 items cannot happen today, are bounded to a logged stale-state effect,
+or need a design decision first.
+
+Reprioritized on 2026-09-13, after reading every entry against the code it describes. Two moved. The
+MP3 Info frame entry went P2 -> P1 and is **fixed in that same change**, so it is gone from this file
+rather than sitting here relabelled. The folder cache entry went P3 -> P2; its own section says why.
+The oversized-ID3v2 entry was added the same day by the reviewer of that fix, and is P1 rather than
+the P2 it was first filed as: it is an out-of-bounds read, and the line above says in as many words
+that P2 is for defects which are **not** memory-unsafe.
 
 ---
 
@@ -12,9 +21,23 @@ logged stale-state effect, or need a design decision first.
 
 **Symptom**: the WAV render's write propagation is now covered - a stream that refuses mid-render makes
 the mixing loop fail, the partial is discarded and the previous export survives, all asserted in the
-scan suite. The MP3 render's four writes (`Audio/ExportMixToMp3.cpp:223`, `:257`, `:266`, `:274`) are
-checked in the same way and none of it is executed. The MP3 checks that exist cover cancellation and a
-pre-render source failure, neither of which reaches a refused write.
+scan suite. The MP3 side has the same guards and none of them has ever run.
+
+Be precise about what is missing, because it is not the writes. `ExportMp3MixImplementation` makes
+five `m_outputStream->write` calls, named rather than numbered because the numbers have already gone
+stale once. One is in setup: the ID3v2 tag, in `onSetupAudioFormatManagerAndWriter`. The other four
+are the render and its finalisation - the encoded-buffer write inside `onRunMixingLoop`, the flush
+write after `lame_encode_flush`, the LAME info frame write inside the `infoBytes > 0` block, and the
+ID3v1 footer write after it.
+
+Every one of those five **is** executed, by any successful export, and the tagged export check in the
+timeline suite executes all five on purpose. What has never executed is the branch each one guards:
+the `return fail(...)` a refused write leads to. Nothing can make the stream refuse, so none of those
+five failure paths, and none of the partial-discarding behaviour they are supposed to trigger, has
+been run even once.
+
+The MP3 checks that exist cover cancellation, a pre-render source failure and the format of a
+successful export. None of them reaches a refused write.
 
 **Why it was not covered with the WAV half**: the technique that works for WAV does not transfer. WAV
 writes through a `juce::AudioFormatWriter` built over a `juce::OutputStream`, so the self test
@@ -38,22 +61,67 @@ output stream, used by both mixing loops - or the same subclassing trick with
 `juce::FileOutputStream` whose `write()` refuses after N bytes. The check should assert the same three
 things the WAV one does, and should pin the step that failed rather than only that the export failed.
 
+**Not unblocked by the Info frame fix** (corrected 2026-09-13): an earlier version of this note
+claimed the two wanted doing together because both needed `m_outputStream` opened up. That was wrong
+about the second one. Fixing the Info frame only needed the exporter to seek within its own stream,
+which it can do from inside the class, and its regression check reads the finished file rather than
+injecting anything. So this entry still needs what it always needed - a way to put a refusing stream
+*into* `ExportMp3MixImplementation` - and nothing done since has provided it.
+
+**Verified still current on 2026-09-13**: all five writes are still there and every refusal branch is
+still unexecuted, `m_outputStream` is still `std::unique_ptr<juce::FileOutputStream>` and private to
+`ExportMp3MixImplementation` (`Audio/ExportMixToMp3.h`), and `releaseOutput()` still calls
+`getStatus()` on it. The Info frame change moved the info frame write inside a new `infoBytes > 0`
+block but added no write - there were five before it and five after - and did nothing to make any
+refusal injectable.
+
 ---
 
-## P3: nothing can tell a folder cache that built from one that failed
+## P2: nothing can tell a folder cache that built from one that failed
 
-**Symptom**: `buildCacheIfNeeded` returns `bool` and has five paths that return `false` - a duplicate
-path, a missing parent, a missing parent chain, a visited-count mismatch, and a failed album write.
-No caller looks at it. `initialize()` discards it (`Database/Sqlite/SqliteFolderDatabase.h`), and every
-accessor - `getFolderById`, `hasChildren`, `getParentSet`, `getChildFolders`, `getAllChildFolders` -
-calls it and then reads the maps regardless of the answer. `m_folderInfoFromId` and
-`m_childrenFromParents` are filled in before all five of those paths, so a folder comes back from a
-build that failed exactly as it does from one that worked. `removeEmptyFolders` calls it and returns
-`true` either way.
+**Why P2 and not P3** (moved 2026-09-13): P3 in this file means a thing that cannot happen today,
+or whose effect is bounded to a logged stale-state. Neither holds here. Twelve reachable paths reach
+it, and the effect is not bounded to a log line - the accessors hand back folders read out of a
+half-filled map, which is wrong data served as truth. That is the P2 definition: a reachable
+correctness defect that is not memory-unsafe. It stays below the macOS P1 because it needs a database
+that is already failing its reads, which is not the common case.
 
-**What it costs**: the failure is real - `m_isCacheValid` stays false, so every later access rebuilds
-and fails again, and the log fills up - but nothing in the process, and nothing a test can reach,
-reports it. `connect()` succeeds against a database whose cache cannot be built at all.
+**Symptom**: `buildCacheIfNeeded` (`Database/Sqlite/SqliteFolderDatabase.cpp:20`) returns `bool` and
+now has **twelve** paths that return `false`. No caller looks at any of them.
+
+The twelve, by kind:
+
+- the folder read cannot be prepared (`:77`), or stops early (`:116`);
+- the folder tree does not hold together - a duplicate path (`:171`), a missing parent (`:159`), a
+  missing parent chain (`:181`), a visited-count mismatch (`:206`);
+- the album read fails (`:244`) or stops early (`:267`);
+- the track read fails (`:284`) or stops early (`:399`);
+- the album write cannot commit (`:436`) or cannot begin (`:444`).
+
+`m_isCacheValid` is set true at `:448` and nowhere else, so a build that took any of those twelve
+exits leaves the cache invalid - correctly. What it also leaves behind is the problem: the four maps
+are cleared at the *start* of the build (`:48`-`:51`) and filled as it goes, and not one of the twelve
+exits clears them again. So a folder comes back from a build that failed exactly as it does from one
+that worked, out of a map holding however much was read before the failure.
+
+Every caller discards the answer. `initialize()` (`Database/Sqlite/SqliteFolderDatabase.h:45`),
+`getAllChildFolders` (`:470`), `getFolderById` (`:531`), `hasChildren` (`:544`), `getParentSet`
+(`:568`), `getChildFolders` (`:585`), `removeEmptyFolders` (`:814`) and `findOrCreateFolderByPath`
+(`:852`).
+
+**What it costs**: the failure is real - every later access rebuilds and fails again, and the log
+fills up - but nothing in the process, and nothing a test can reach, reports it. `connect()` succeeds
+against a database whose cache cannot be built at all.
+
+**What changed since this was written** (updated 2026-09-13): commit `e0eed9a` added seven of those
+twelve exits, by making each read that feeds the cache say how it ended. That commit fixed the
+half of this that could *write* - no album is written from a pass that did not finish - so the
+remaining damage is reads served from a half-filled map, not rows invented in the database.
+
+One sub-claim here has narrowed and is worth stating precisely, because the entry used to overstate
+it. `removeEmptyFolders` does now refuse when the read that decides what to delete fails, and the
+folder cache suite asserts exactly that. What it still does unconditionally is the *rebuild after the
+commit* (`:814`): if that fails, `removeEmptyFolders` returns `true` regardless.
 
 **How it was found**: writing a self test check for the v31 migration. The check asserted "the folder
 cache builds against the migrated database" by asking `getFolderById` for a folder - and a probe that
@@ -70,11 +138,13 @@ wants deciding together with it.
 
 ## P3: a folder read can miss while the cache is being rebuilt
 
-**Symptom**: the cache accessors (`getFolderById`, `hasChildren`, `getParentSet`, `getChildFolders`,
-`getAllChildFolders`) call `buildCacheIfNeeded()`, which returns having released both mutexes, and then
-take `m_cacheMutex` for the read itself (`Database/Sqlite/SqliteFolderDatabase.cpp:449` onwards). An
-`invalidateCache()` landing in that gap empties the maps, and the read reports the folder as absent -
-a folder that momentarily has no children, or no name, in the middle of navigation.
+**Symptom**: the cache accessors call `buildCacheIfNeeded()`, which returns having released both
+mutexes, and then take `m_cacheMutex` for the read itself. The gap is one statement wide in each
+(`Database/Sqlite/SqliteFolderDatabase.cpp`, build then lock): `getAllChildFolders` `:470`/`:474`,
+`getFolderById` `:531`/`:532`, `hasChildren` `:544`/`:545`, `getParentSet` `:568`/`:569`,
+`getChildFolders` `:585`/`:586`. An `invalidateCache()` landing in that gap empties the maps, and the
+read reports the folder as absent - a folder that momentarily has no children, or no name, in the
+middle of navigation.
 
 **Why it is not worse**: nothing is written from those paths, so the miss is transient and the next
 access rebuilds the cache. The lock order is now consistent, so the same gap can no longer produce a
@@ -90,13 +160,15 @@ invalidating: 0 of 300 reads hit it.
 
 ## P3: a stale timeline is corrected on the next edit, not before
 
-**Symptom**: a reload that the timeline was not told about (the mix rows path in
-`UI/DataViewComponent.cpp:800`, for one) leaves it showing the rows it was built from. Editing that
-picture is refused now - every write path calls `refuseIfViewsAreStale`
-(`UI/TimelineComponent.cpp:1059`), which compares `MixProjectLoader::getContentsGeneration()` against
-the generation stamped at populate time, logs, and schedules a repopulation - so nothing writes to a
-row it did not mean. What is left is the display: until the user tries to edit, the timeline shows the
-previous contents and nothing corrects it.
+**Symptom**: a reload that the timeline was not told about leaves it showing the rows it was built
+from. `UI/DataViewComponent.cpp` calls `refreshCache(true)` from four live places - `:291`, `:800`,
+`:811`, `:822` - and none of them tells the timeline. Editing that stale picture is refused - the five
+write paths call `refuseIfViewsAreStale` (defined at `UI/TimelineComponent.cpp:1087`, called from
+`:107`, `:371`, `:554`, `:677` and `:1401`), which compares
+`MixProjectLoader::getContentsGeneration()` against the generation stamped at populate time (`:846`,
+`:1846`), logs, and schedules a repopulation - so nothing writes to a row it did not mean. What is
+left is the display: until the user tries to edit, the timeline shows the previous contents and
+nothing corrects it.
 
 **Fix approach**: notify rather than detect. The loader could tell whoever is showing its rows that
 they changed, which is the same information `getContentsGeneration` exposes, pushed instead of polled.
@@ -113,9 +185,10 @@ were deleted afterwards. The record holds the `filename`, `folderPath` and `file
 tracks had, so a scan could recognise the file and re-attach it to the mix it was captured from.
 
 **What it cannot recover**: the 95 mixes damaged before `MixTracks.track_id` had a foreign key.
-Capture reads what survives in `MixTracks` (`Database/Sqlite/SqliteMixManager.cpp:635`, LEFT JOIN onto
-`Tracks`) and stores only that (`:791`), so for rows that were already gone there is no filename, path
-or size in the record - only the gap in `source_order_in_mix` saying something was there.
+Capture reads what survives in `MixTracks` (`Database/Sqlite/SqliteMixManager.cpp:640`, LEFT JOIN onto
+`Tracks`, and `:641` onto `Folders`) and stores only that (the `INSERT INTO MixRecovery` at `:810`),
+so for rows that were already gone there is no filename, path or size in the record - only the gap in
+`source_order_in_mix` saying something was there.
 
 **Why it was not done with the rest**: re-attaching to a mix is a different decision from re-identifying
 a row. It writes to `MixTracks` at a stored `source_order_in_mix` that may now collide with a surviving
@@ -185,35 +258,39 @@ test are the floor, not the whole check.
 
 ---
 
-## P2: exported MP3s carry an unfinished Info frame and a duplicate one at the end
+## P1: an oversized ID3v2 tag makes the MP3 exporter read past its stack buffer
 
-**Where it came from**: raised as a `[task]` finding by the reviewer of the JUCE 9.0.0 -> 9.0.2
-upgrade (codex, 2026-09-13), thread `01a09bbf-582a-7443-80ea-02e320a39761`, after the same mistake
-was found and fixed in that change's new test fixture. Recorded verbatim:
+**Where it came from**: raised as a `[task]` finding by the reviewer of the Info frame fix (codex,
+2026-09-13), thread `01a09c2e-0c00-7d83-ad8a-ca4039c77af3`. Recorded verbatim:
 
-> **[task]** `Audio/ExportMixToMp3.cpp:263-274` writes the completed LAME Info frame at EOF after
-> flushing. LAME requires that frame to replace the placeholder immediately after the ID3v2 tag.
-> Exported MP3s therefore retain an unfinished initial Info frame and append a duplicate near EOF,
-> making duration, seeking, and gapless metadata unreliable. This is deferrable because the export
-> implementation predates the JUCE upgrade and is untouched by this change. Track a fix that records
-> the placeholder offset, seeks back to overwrite it, restores the EOF position for ID3v1, and
-> executes an export-format regression check.
+> **[task]** `ExportMixToMp3.cpp:87` uses a fixed 10 KiB ID3v2 buffer without checking whether
+> `lame_get_id3v2_tag()` returned a larger required size. In that case LAME copies nothing, but line
+> 89 reads `id3bytes` from the smaller stack array, causing an out-of-bounds read that can crash or
+> place unrelated stack data in the export. The multiline comment input is not length-limited. This
+> predates the reviewed diff and is distinct from placing the finished Info frame, so it is
+> deferrable; record a task to query/allocate the required size or reject an oversized tag before
+> writing.
 
-**Why it is deferrable**: it predates the upgrade and nothing in that change touches the exporter.
-It is P2 rather than P3 because it is a live, user-visible defect in shipped output rather than
-something that cannot happen today: every MP3 this application has exported with a VBR tag enabled
-carries it, and the symptom - a wrong duration, seeking that lands in the wrong place - shows up in
-whatever player the user opens the file in, not in jucyaudio.
+**Confirmed against LAME's contract**: `lame.h` says of `lame_get_id3v2_tag` - "Function returns
+number of bytes copied into buffer, or number of bytes rquired if buffer 'size' is too small.
+Function fails, if returned value is larger than 'size'." So on overflow the return is a size, not a
+count, nothing was written into the array, and handing that number to `write()` reads whatever
+follows a 10 KiB stack buffer straight into the user's file.
 
-**What the same mistake looked like next door**: the audio format self test's MP3 fixture prepended
-the finished tag frame instead of overwriting the placeholder. The resulting file held 42 frames
-while its own Xing header declared 40, with exactly one extra 417-byte placeholder frame between the
-real tag and the audio. That is the shape to look for when checking an exported file.
+**Why P1**: it is an out-of-bounds read, and this file reserves P2 for defects that are *not*
+memory-unsafe. P3's "cannot happen today" does not apply either - it needs only a long enough tag,
+and the comment field has no length limit anywhere between the settings dialog and here. What it
+costs is either a crash or a slice of this process's stack written into a file the user then hands to
+someone else. Reaching 10 KiB of ID3v2 takes a deliberately large comment rather than ordinary use,
+which is the one thing keeping it from being the first item in this file.
 
-**Fix approach**: as the finding says - record the offset the placeholder was written at, seek back
-to overwrite it once `lame_encode_flush` has run, then restore the end-of-file position so the ID3v1
-tag still lands last. `m_outputStream` is a `juce::FileOutputStream`, so it can seek. The regression
-check should parse an exported file and assert one Xing/Info frame, a declared byte count matching
-the bytes actually present, and a declared frame count matching the frames actually parsed.
+**Fix approach**: the guard the same function already applies to the info frame - compare the return
+against the buffer size and fail before writing - or size the buffer from a first call with
+`size` zero and allocate. The first is three lines and mirrors code that is already there; the second
+is better behaviour, since it exports the tag the user asked for rather than refusing. The same
+question applies to `lame_get_id3v1_tag`, though ID3v1 is a fixed 128 bytes so that one cannot
+overflow.
 
-**Key files**: `Audio/ExportMixToMp3.cpp:223`, `:257`, `:263-274`.
+**Not fixed with the Info frame change** because the review protocol keeps `[task]` findings out of
+the change they were raised against, and the human should get the choice between refusing and
+allocating.

@@ -1215,6 +1215,9 @@ namespace jucyaudio
             struct Mp3FixtureShape
             {
                 bool firstFrameCarriesVbrTag{false};
+                bool startsWithId3v2{false};    // an ID3v2 tag at offset zero
+                bool id3v2WrittenTwice{false};  // and a second one straight after it
+                int id3v1Footers{0};            // 0, 1, or - if both LAME and the caller wrote one - 2
                 uint32_t declaredBytes{0};  // what the Xing header says the audio occupies
                 uint32_t presentBytes{0};   // what is really there from the first sync to the end
                 uint32_t declaredFrames{0}; // audio frames, per the Xing header - the tag frame is extra
@@ -1232,6 +1235,11 @@ namespace jucyaudio
             ///
             /// Only enough of the MPEG header is decoded to step from one frame to the next: version,
             /// layer, bitrate, sample rate and the padding bit.
+            ///
+            /// @param skipBytes Where to start looking for the first frame. A leading ID3v2 tag is
+            ///        stepped over whether or not it is included here, so a caller with no reason to
+            ///        know the layout can pass 0; the generated fixture passes more, because it has
+            ///        padding past its tag that a search would otherwise walk into.
             Mp3FixtureShape describeMp3Fixture(const std::filesystem::path &path, uint32_t skipBytes)
             {
                 Mp3FixtureShape shape;
@@ -1244,25 +1252,76 @@ namespace jucyaudio
                 }
                 const std::vector<unsigned char> bytes{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
 
-                // Find the first frame sync at or after the point the declared tag ends.
-                size_t offset = skipBytes;
-                while (offset + 1 < bytes.size() && !(bytes[offset] == 0xFF && (bytes[offset + 1] & 0xE0) == 0xE0))
+                // A real exported file ends with a 128-byte ID3v1 footer. It is not audio, and counting
+                // it would make the frame walk stop short of the end and report that as damage. Two of
+                // them means LAME wrote one during its flush and the caller wrote another, which is
+                // what happens when nobody turned the automatic tags off.
+                const auto footerAt = [&bytes](size_t end)
+                {
+                    return end >= 128 && std::equal(bytes.begin() + static_cast<std::ptrdiff_t>(end - 128),
+                                             bytes.begin() + static_cast<std::ptrdiff_t>(end - 125),
+                                             "TAG");
+                };
+                size_t audioEnd = bytes.size();
+                while (footerAt(audioEnd))
+                {
+                    ++shape.id3v1Footers;
+                    audioEnd -= 128;
+                }
+
+                // Step over a leading ID3v2 tag. Its length is a syncsafe integer - seven bits per
+                // byte - so the size field itself can never look like a frame sync, but the tag's
+                // contents can, which is why this is decoded rather than searched past.
+                const auto id3v2LengthAt = [&bytes](size_t at) -> size_t
+                {
+                    if (at + 10 > bytes.size() || bytes[at] != 'I' || bytes[at + 1] != 'D' || bytes[at + 2] != '3')
+                    {
+                        return 0;
+                    }
+                    size_t declared = 0;
+                    for (size_t i = at + 6; i < at + 10; ++i)
+                    {
+                        declared = (declared << 7) | (bytes[i] & 0x7Fu);
+                    }
+                    return declared + 10;
+                };
+
+                size_t floorOffset = skipBytes;
+                if (const auto firstTag = id3v2LengthAt(0); firstTag > 0)
+                {
+                    shape.startsWithId3v2 = true;
+                    // A second tag straight after the first is the signature of LAME having queued its
+                    // own copy in front of the placeholder frame.
+                    if (const auto secondTag = id3v2LengthAt(firstTag); secondTag > 0)
+                    {
+                        shape.id3v2WrittenTwice = true;
+                        floorOffset = std::max(floorOffset, firstTag + secondTag);
+                    }
+                    else
+                    {
+                        floorOffset = std::max(floorOffset, firstTag);
+                    }
+                }
+
+                // Find the first frame sync at or after that point.
+                size_t offset = floorOffset;
+                while (offset + 1 < audioEnd && !(bytes[offset] == 0xFF && (bytes[offset + 1] & 0xE0) == 0xE0))
                 {
                     ++offset;
                 }
-                if (offset + 4 > bytes.size())
+                if (offset + 4 > audioEnd)
                 {
                     shape.problem = "no frame sync was found";
                     return shape;
                 }
 
                 const size_t firstSync = offset;
-                shape.presentBytes = static_cast<uint32_t>(bytes.size() - firstSync);
+                shape.presentBytes = static_cast<uint32_t>(audioEnd - firstSync);
 
                 static constexpr int bitrates[16]{0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0};
                 static constexpr int sampleRates[4]{44100, 48000, 32000, 0};
 
-                while (offset + 4 <= bytes.size())
+                while (offset + 4 <= audioEnd)
                 {
                     const uint32_t header = (static_cast<uint32_t>(bytes[offset]) << 24) | (static_cast<uint32_t>(bytes[offset + 1]) << 16) |
                         (static_cast<uint32_t>(bytes[offset + 2]) << 8) | static_cast<uint32_t>(bytes[offset + 3]);
@@ -1288,7 +1347,7 @@ namespace jucyaudio
                     }
 
                     const auto frameBytes = static_cast<size_t>(144 * (bitrates[bitrateIndex] * 1000) / sampleRates[sampleRateIndex]) + padding;
-                    if (frameBytes == 0 || offset + frameBytes > bytes.size())
+                    if (frameBytes == 0 || offset + frameBytes > audioEnd)
                     {
                         break;
                     }
@@ -1335,9 +1394,9 @@ namespace jucyaudio
                     offset += frameBytes;
                 }
 
-                if (offset != bytes.size())
+                if (offset != audioEnd)
                 {
-                    shape.problem = std::format("the frame walk stopped at byte {} of {}", offset, bytes.size());
+                    shape.problem = std::format("the frame walk stopped at byte {} of {}", offset, audioEnd);
                 }
                 return shape;
             }
@@ -5533,6 +5592,19 @@ namespace jucyaudio
                 {
                     audio::ActiveExportSettings mp3Settings{};
                     mp3Settings.outputPath = exportRoot / "gap.mp3";
+
+                    // Metadata, deliberately. Without it LAME emits no ID3v2 tag, the placeholder
+                    // frame lands at offset zero, and the offset bookkeeping this suite exists to
+                    // check is right whether or not anyone kept it. With a tag in front, an exporter
+                    // that recorded the wrong offset writes the finished frame over that tag instead
+                    // of over the placeholder.
+                    mp3Settings.artist = "JucyAudio Self Test";
+                    mp3Settings.album = "Export Format Checks";
+                    mp3Settings.title = "Info frame placement";
+                    mp3Settings.trackNumber = "1";
+                    mp3Settings.year = "2026";
+                    mp3Settings.genre = "Other";
+                    mp3Settings.comment = "Long enough that the ID3v2 tag cannot be mistaken for nothing.";
                     auto mp3Partial{mp3Settings.outputPath};
                     mp3Partial += ".jucyaudio-part";
 
@@ -5540,6 +5612,43 @@ namespace jucyaudio
                     report.check(mp3Export.success, std::format("the mix exports to MP3 (said: '{}')", mp3Export.message));
                     report.check(std::filesystem::exists(mp3Settings.outputPath, ec), "the MP3 was written");
                     report.check(!std::filesystem::exists(mp3Partial, ec), "and its partial was committed rather than left behind");
+
+                    // What LAME's tag frame says about the file it heads, read back off the bytes.
+                    //
+                    // The encoder reserves an empty frame at the head of the audio and requires the
+                    // finished tag - the one that knows how many frames and bytes there turned out to
+                    // be - to replace it. This exporter appended it after the last audio frame instead,
+                    // so every file it produced carried a placeholder in front declaring nothing and a
+                    // duplicate behind. Players read the one in front, which is why the symptom was a
+                    // wrong duration and seeking that landed in the wrong place, in other people's
+                    // players rather than anywhere this application would notice.
+                    //
+                    // Both counts are checked because either alone can be right by accident: a zeroed
+                    // placeholder declares 0 for both, and so does a frame that was never filled in.
+                    if (std::filesystem::exists(mp3Settings.outputPath, ec))
+                    {
+                        const auto exported = describeMp3Fixture(mp3Settings.outputPath, 0);
+
+                        // The tag has to be there, or this check is back to testing the offset-zero
+                        // case where a wrong offset cannot be told from a right one.
+                        report.check(exported.startsWithId3v2, "the exported MP3 carries the ID3v2 tag its settings asked for");
+                        report.check(!exported.id3v2WrittenTwice,
+                            "and carries it once - LAME was told not to write the tag this exporter writes itself");
+                        report.check(exported.id3v1Footers == 1, std::format("one ID3v1 footer, not two ({} found)", exported.id3v1Footers));
+
+                        report.check(exported.problem.empty(),
+                            std::format("the exported MP3's frames walk from the first sync to the end of the audio{}",
+                                exported.problem.empty() ? "" : std::format(" - {}", exported.problem)));
+                        report.check(exported.firstFrameCarriesVbrTag, "its first frame is LAME's tag frame");
+                        report.check(exported.declaredBytes == exported.presentBytes,
+                            std::format("and that frame is the finished one, not the placeholder - it declares {} bytes and {} are there",
+                                exported.declaredBytes,
+                                exported.presentBytes));
+                        report.check(exported.parsedFrames == exported.declaredFrames + 1,
+                            std::format("its frame count agrees too - {} audio frames plus the tag frame, {} walked",
+                                exported.declaredFrames,
+                                exported.parsedFrames));
+                    }
 
                     const auto mp3SizeBefore = std::filesystem::file_size(mp3Settings.outputPath, ec);
 

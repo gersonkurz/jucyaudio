@@ -70,6 +70,20 @@ namespace jucyaudio
             lame_global_flags *m_lameFlags = nullptr;
             std::unique_ptr<juce::FileOutputStream> m_outputStream;
             std::vector<unsigned char> m_mp3Buffer;
+
+            /// @brief Where in the file LAME's placeholder tag frame sits, so the finished one can
+            ///        replace it.
+            ///
+            /// lame.h is explicit about this: "LAME inserted an empty frame in the beginning of mp3
+            /// audio data, which you have to replace by the final LAME-tag frame after encoding. In
+            /// case there is no ID3v2 tag, usually this frame will be the very first data in your mp3
+            /// file. If you put some other leading data into your file, you'll have to do some
+            /// bookkeeping about where to write this buffer."
+            ///
+            /// This exporter writes an ID3v2 tag first, so it is exactly the case that comment
+            /// describes, and this member is that bookkeeping. Negative until the ID3v2 tag has been
+            /// written and the position is known.
+            juce::int64 m_lameTagFrameOffset{-1};
         };
     } // namespace audio
 } // namespace jucyaudio

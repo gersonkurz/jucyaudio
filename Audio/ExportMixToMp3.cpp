@@ -70,6 +70,21 @@ namespace jucyaudio
             // Add ID3 tags
             id3tag_init(m_lameFlags);
 
+            // This exporter writes both ID3 tags itself - the v2 below, the v1 after the last frame -
+            // so LAME must be told not to write them as well. lame.h: "normaly lame_init_param writes
+            // ID3v2 tags into the audio stream. Call lame_set_write_id3tag_automatic(gfp, 0) before
+            // lame_init_param to turn off this behaviour and get ID3v2 tag with above function write
+            // it yourself into your file."
+            //
+            // Without this the file gets each tag twice, and the second ID3v2 is queued by
+            // lame_init_bitstream *in front of* the placeholder frame. That would put
+            // m_lameTagFrameOffset at the start of LAME's copy of the tag rather than at the
+            // placeholder, and the seek at the end of the render would write the finished frame over
+            // that tag. It only went unnoticed because an export with no metadata produces no ID3v2 at
+            // all, which puts the placeholder at offset zero and makes the bookkeeping right by
+            // accident.
+            lame_set_write_id3tag_automatic(m_lameFlags, 0);
+
             id3tag_set_artist(m_lameFlags, m_settings.artist.c_str());
             id3tag_set_album(m_lameFlags, m_settings.album.c_str());
             id3tag_set_title(m_lameFlags, m_settings.title.c_str());
@@ -90,6 +105,11 @@ namespace jucyaudio
             {
                 return fail("MTE: could not write the ID3v2 tag to " + pathToString(renderTargetPath()));
             }
+
+            // Everything LAME emits from here on starts with the placeholder frame it reserves for
+            // its own tag, so this is where the finished tag has to go back. See the comment on the
+            // member: with an ID3v2 tag in front, that offset is not zero and nothing else records it.
+            m_lameTagFrameOffset = m_outputStream->getPosition();
             spdlog::debug("LAME initialized: SR={}, Channels={}, Mode={}", lame_get_in_samplerate(m_lameFlags), lame_get_num_channels(m_lameFlags),
                           (int)lame_get_mode(m_lameFlags));
             // Allocate MP3 buffer
@@ -261,11 +281,53 @@ namespace jucyaudio
             }
 
             m_outputStream->flush();
+
+            // The finished tag frame REPLACES the placeholder at the head of the audio; it is not
+            // appended. Appending it, which is what this did, left every exported file with an
+            // unfinished leading frame whose frame and byte counts are zero, and a duplicate of the
+            // real one after the last audio frame. Players read the leading one, so the duration was
+            // whatever they could infer and seeking landed wherever that put it.
             unsigned char info[8100];
-            size_t infoBytes = lame_get_lametag_frame(m_lameFlags, info, sizeof info);
-            if (!m_outputStream->write(info, infoBytes))
+            const size_t infoBytes = lame_get_lametag_frame(m_lameFlags, info, sizeof info);
+            if (infoBytes > sizeof info)
             {
-                return fail("MTE: could not write the LAME info frame to " + pathToString(renderTargetPath()));
+                // Documented failure mode: the return is the required size when the buffer is too
+                // small, and nothing was copied.
+                return fail(std::format("MTE: the LAME info frame needs {} bytes and only {} were offered", infoBytes, sizeof info));
+            }
+
+            // Zero means the VBR tag was turned off, by the caller or by LAME itself. Then there is no
+            // placeholder to replace and nothing to write - seeking back would overwrite real audio.
+            if (infoBytes > 0)
+            {
+                if (m_lameTagFrameOffset < 0)
+                {
+                    return fail("MTE: the LAME info frame has nowhere to go - the placeholder offset was never recorded");
+                }
+
+                const auto endOfAudio = m_outputStream->getPosition();
+                if (endOfAudio - m_lameTagFrameOffset < static_cast<juce::int64>(infoBytes))
+                {
+                    return fail(std::format("MTE: the encoded audio is {} bytes, too short to hold the {}-byte frame LAME reserved",
+                        endOfAudio - m_lameTagFrameOffset,
+                        infoBytes));
+                }
+
+                if (!m_outputStream->setPosition(m_lameTagFrameOffset))
+                {
+                    return fail("MTE: could not seek back to the LAME info frame in " + pathToString(renderTargetPath()));
+                }
+                if (!m_outputStream->write(info, infoBytes))
+                {
+                    return fail("MTE: could not write the LAME info frame to " + pathToString(renderTargetPath()));
+                }
+
+                // Back to the end, so the ID3v1 footer still lands last rather than over the audio.
+                // setPosition flushes on the way, so a failure here is reported rather than buffered.
+                if (!m_outputStream->setPosition(endOfAudio))
+                {
+                    return fail("MTE: could not return to the end of " + pathToString(renderTargetPath()) + " after writing the LAME info frame");
+                }
             }
 
             // (optional) ID3v1 footer:
