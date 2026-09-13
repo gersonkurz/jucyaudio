@@ -30,7 +30,7 @@ The project uses **CMake** and the **just** task runner for automation.
 
 ### Dependencies
 Managed via CMake's `FetchContent`. Major dependencies include:
-- JUCE 8, spdlog (logging), tomlplusplus, taglib (metadata), SoundTouch (BPM), LAME (MP3), projectM v4 (visualizer), GLEW (OpenGL).
+- JUCE 9, spdlog (logging), tomlplusplus, taglib (metadata), SoundTouch (BPM), LAME (MP3), projectM v4 (visualizer), GLEW (OpenGL).
 
 ## Coding Conventions & Style
 

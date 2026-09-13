@@ -41,15 +41,20 @@
 
 #include <spdlog/spdlog.h>
 
+#include <lame.h>
+
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
 #include <format>
 #include <map>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -897,6 +902,477 @@ namespace jucyaudio
                 const int64_t m_refuseAfterBytes;
                 WriteRefusalLog &m_log;
             };
+
+            // The audio format suite's fixtures. Both are deliberately malformed in one specific
+            // way each, because that is the point: a decoder that only handles well-formed input
+            // passes every other check in this project.
+            constexpr uint32_t kOddSampleCount = 101;        // odd, so the data chunk needs a pad byte
+            constexpr uint32_t kId3HeaderBytes = 10;
+            constexpr uint32_t kDeclaredId3Padding = 1024;   // the tag body the ID3v2 header declares
+            constexpr uint32_t kExtraPaddingAfterId3 = 2048; // bytes past it, before the first sync
+            constexpr int kMp3SamplesToRead = 4096;
+            constexpr uint32_t kListFixtureSampleCount = 6;
+            // The over-claiming fixture: the header says this many samples, the file holds six bytes.
+            constexpr uint32_t kOverclaimedSampleCount = 1000;
+            // One second in at 44.1 kHz. MP3 frames hold 1152 samples, and the encoder adds its own
+            // delay and padding, so the decoded length is a little over this - never under it, which
+            // is what the check asserts.
+            constexpr int64_t kMp3EncodedSamples = 44100;
+
+            /// @brief Writes an 8-bit mono WAV whose data chunk has an odd length and is not padded.
+            ///
+            /// RIFF requires every chunk to occupy an even number of bytes, with a pad byte added when
+            /// the payload is odd. Files in the wild routinely omit the final one, because nothing
+            /// follows it - the writer had no next chunk to align. A reader that adds the pad
+            /// unconditionally then looks for the next chunk one byte past the end of the file.
+            ///
+            /// 8-bit rather than 16-bit because an odd byte count is the point, and 16-bit samples
+            /// cannot produce one. The audio is a square wave rather than silence so that a decode
+            /// which quietly returns nothing can be told apart from one that works.
+            bool writeOddLengthWavWithoutFinalPadByte(const std::filesystem::path &path, uint32_t sampleCount)
+            {
+                std::ofstream out{path, std::ios::binary};
+                if (!out)
+                {
+                    return false;
+                }
+
+                const auto u32 = [&out](uint32_t v)
+                {
+                    const unsigned char bytes[4]{static_cast<unsigned char>(v & 0xFF),
+                        static_cast<unsigned char>((v >> 8) & 0xFF),
+                        static_cast<unsigned char>((v >> 16) & 0xFF),
+                        static_cast<unsigned char>((v >> 24) & 0xFF)};
+                    out.write(reinterpret_cast<const char *>(bytes), 4);
+                };
+                const auto u16 = [&out](uint16_t v)
+                {
+                    const unsigned char bytes[2]{static_cast<unsigned char>(v & 0xFF), static_cast<unsigned char>((v >> 8) & 0xFF)};
+                    out.write(reinterpret_cast<const char *>(bytes), 2);
+                };
+
+                const uint32_t sampleRate = 44100;
+                out.write("RIFF", 4);
+                u32(36 + sampleCount); // odd, because sampleCount is
+                out.write("WAVE", 4);
+                out.write("fmt ", 4);
+                u32(16);
+                u16(1); // PCM
+                u16(1); // mono
+                u32(sampleRate);
+                u32(sampleRate); // byte rate: one channel, one byte per sample
+                u16(1);          // block align
+                u16(8);          // bits per sample
+                out.write("data", 4);
+                u32(sampleCount);
+
+                // 8-bit PCM is unsigned, so 128 is silence. This alternates either side of it.
+                for (uint32_t i = 0; i < sampleCount; ++i)
+                {
+                    const unsigned char sample = (i % 2) == 0 ? static_cast<unsigned char>(200) : static_cast<unsigned char>(56);
+                    out.write(reinterpret_cast<const char *>(&sample), 1);
+                }
+
+                // And here the file ends. No pad byte, which is the malformation under test.
+                return out.good();
+            }
+
+            /// @brief Writes a WAV whose final chunk is an odd-length LIST that is not padded.
+            ///
+            /// An unpadded odd chunk at the very end is common - nothing follows it, so nothing needed
+            /// the alignment - and a parser that adds the pad unconditionally computes a chunk end one
+            /// byte past the file, then reads the last chunk against a boundary that is not there.
+            ///
+            /// Deliberately the same construction JUCE's own regression test uses, down to the cue
+            /// label, so this suite checks the case upstream describes rather than one of its own
+            /// invention. The data chunk here is even-length; the odd one is the LIST.
+            ///
+            /// This one does NOT discriminate between JUCE 9.0.0 and 9.0.2: it was run on both and
+            /// passed on both. On a file stream an over-read past the end already returns nothing, so
+            /// the clamp the upstream fix adds changes no outcome here. It is kept as a regression
+            /// guard for a shape that currently works, not as evidence for the upgrade.
+            ///
+            /// @param labelOut Receives the cue label the fixture carries, so the check does not have
+            ///        to repeat the literal.
+            bool writeWavWithUnpaddedFinalListChunk(const std::filesystem::path &path, std::string &labelOut)
+            {
+                std::ofstream out{path, std::ios::binary};
+                if (!out)
+                {
+                    return false;
+                }
+
+                const auto u32 = [&out](uint32_t v)
+                {
+                    const unsigned char bytes[4]{static_cast<unsigned char>(v & 0xFF),
+                        static_cast<unsigned char>((v >> 8) & 0xFF),
+                        static_cast<unsigned char>((v >> 16) & 0xFF),
+                        static_cast<unsigned char>((v >> 24) & 0xFF)};
+                    out.write(reinterpret_cast<const char *>(bytes), 4);
+                };
+                const auto u16 = [&out](uint16_t v)
+                {
+                    const unsigned char bytes[2]{static_cast<unsigned char>(v & 0xFF), static_cast<unsigned char>((v >> 8) & 0xFF)};
+                    out.write(reinterpret_cast<const char *>(bytes), 2);
+                };
+
+                // WAVE(4) + fmt (8+16) + data (8+6) + LIST (8+19) = 69 bytes of body.
+                constexpr uint32_t bodyBytes = 4 + 24 + 14 + 27;
+                out.write("RIFF", 4);
+                u32(bodyBytes);
+                out.write("WAVE", 4);
+
+                out.write("fmt ", 4);
+                u32(16);
+                u16(1);     // PCM
+                u16(1);     // mono
+                u32(44100); // sample rate
+                u32(44100); // byte rate
+                u16(1);     // block align
+                u16(8);     // bits per sample
+
+                out.write("data", 4);
+                u32(kListFixtureSampleCount);
+                for (uint32_t i = 0; i < kListFixtureSampleCount; ++i)
+                {
+                    // Either side of 128, which is silence for unsigned 8-bit.
+                    const unsigned char sample = (i % 2) == 0 ? static_cast<unsigned char>(200) : static_cast<unsigned char>(56);
+                    out.write(reinterpret_cast<const char *>(&sample), 1);
+                }
+
+                // 4 + 8 + 7 = 19: odd, and the file ends straight after it.
+                out.write("LIST", 4);
+                u32(19);
+                out.write("adtl", 4);
+                out.write("labl", 4);
+                u32(7); // a cue id plus three bytes of text
+                u32(1); // the cue id
+                out.write("ab\0", 3);
+
+                labelOut = "ab";
+                return out.good();
+            }
+
+            /// @brief Writes a WAV whose data chunk declares far more bytes than the file contains.
+            ///
+            /// Truncation is the ordinary way an audio file goes wrong: an interrupted copy, a full
+            /// disk, a download that stopped. The header still says how long the audio was meant to be.
+            /// A reader that believes it hands back a length it cannot supply, and whatever reads those
+            /// samples gets whatever was after the end of the file.
+            ///
+            /// This matters here more than the shape of any one chunk, because the scanner opens
+            /// whatever is in the user's folders and has no say in how it was produced.
+            bool writeWavWithOverclaimingDataChunk(const std::filesystem::path &path, uint32_t declaredSamples, uint32_t actualBytes)
+            {
+                std::ofstream out{path, std::ios::binary};
+                if (!out)
+                {
+                    return false;
+                }
+
+                const auto u32 = [&out](uint32_t v)
+                {
+                    const unsigned char bytes[4]{static_cast<unsigned char>(v & 0xFF),
+                        static_cast<unsigned char>((v >> 8) & 0xFF),
+                        static_cast<unsigned char>((v >> 16) & 0xFF),
+                        static_cast<unsigned char>((v >> 24) & 0xFF)};
+                    out.write(reinterpret_cast<const char *>(bytes), 4);
+                };
+                const auto u16 = [&out](uint16_t v)
+                {
+                    const unsigned char bytes[2]{static_cast<unsigned char>(v & 0xFF), static_cast<unsigned char>((v >> 8) & 0xFF)};
+                    out.write(reinterpret_cast<const char *>(bytes), 2);
+                };
+
+                // The RIFF size describes what is really here, so only the data chunk lies.
+                const uint32_t bodyBytes = 4 + 24 + 8 + actualBytes;
+                out.write("RIFF", 4);
+                u32(bodyBytes);
+                out.write("WAVE", 4);
+
+                out.write("fmt ", 4);
+                u32(16);
+                u16(1);     // PCM
+                u16(1);     // mono
+                u32(44100); // sample rate
+                u32(44100); // byte rate
+                u16(1);     // block align
+                u16(8);     // bits per sample
+
+                out.write("data", 4);
+                u32(declaredSamples); // the lie
+                for (uint32_t i = 0; i < actualBytes; ++i)
+                {
+                    const unsigned char sample = (i % 2) == 0 ? static_cast<unsigned char>(200) : static_cast<unsigned char>(56);
+                    out.write(reinterpret_cast<const char *>(&sample), 1);
+                }
+
+                return out.good();
+            }
+
+            /// @brief Encodes a second of a 440 Hz tone as a VBR MP3, Xing header first.
+            ///
+            /// LAME is already linked for the MP3 export, so the fixture is generated rather than
+            /// checked in - the test carries its own input and depends on nothing in the user's
+            /// library, which is how every other fixture here works.
+            ///
+            /// The Xing/LAME header frame matters: it is what makes a reader treat the file as VBR at
+            /// all, and it is the frame whose discovery the padding is meant to disturb. Encoding
+            /// emits a PLACEHOLDER for it at the head of the stream, and the finished frame - which
+            /// only exists once the whole stream has been encoded and its frame and byte counts are
+            /// known - is fetched afterwards and written OVER that placeholder. It does not go in
+            /// front of it: doing that leaves the unfinished placeholder in the file as a second
+            /// frame, and the fixture then carries a malformation nobody asked for on top of the ID3
+            /// padding it is supposed to isolate. That is not hypothetical - it is what this function
+            /// did until a reviewer parsed the output and found 42 frames behind a header declaring
+            /// 40.
+            ///
+            /// @return An empty string on success, otherwise what went wrong.
+            std::string encodeVbrMp3Frames(std::vector<unsigned char> &out)
+            {
+                lame_t flags = lame_init();
+                if (flags == nullptr)
+                {
+                    return "lame_init() failed";
+                }
+
+                const auto closeAnd = [&flags](std::string why) -> std::string
+                {
+                    lame_close(flags);
+                    return why;
+                };
+
+                constexpr int sampleRate = 44100;
+                lame_set_in_samplerate(flags, sampleRate);
+                lame_set_num_channels(flags, 1);
+                lame_set_mode(flags, MONO);
+                lame_set_VBR(flags, vbr_default);
+                lame_set_VBR_q(flags, 4);
+                lame_set_bWriteVbrTag(flags, 1);
+                lame_set_quality(flags, 5);
+
+                if (lame_init_params(flags) < 0)
+                {
+                    return closeAnd("lame_init_params() failed");
+                }
+
+                std::vector<short> pcm(sampleRate);
+                for (int i = 0; i < sampleRate; ++i)
+                {
+                    constexpr double pi = 3.14159265358979323846;
+                    pcm[static_cast<size_t>(i)] = static_cast<short>(std::sin(2.0 * pi * 440.0 * i / sampleRate) * 12000.0);
+                }
+
+                // LAME's own guidance for the worst case: 1.25x the sample count plus 7200.
+                std::vector<unsigned char> buffer(static_cast<size_t>(sampleRate * 1.25) + 7200);
+                // Mono still wants both pointers; LAME reads the right channel only when it was told
+                // there are two.
+                const int encoded = lame_encode_buffer(flags, pcm.data(), pcm.data(), sampleRate, buffer.data(), static_cast<int>(buffer.size()));
+                if (encoded < 0)
+                {
+                    return closeAnd(std::format("lame_encode_buffer() returned {}", encoded));
+                }
+                out.assign(buffer.begin(), buffer.begin() + encoded);
+
+                std::vector<unsigned char> flushBuffer(7200);
+                const int flushed = lame_encode_flush(flags, flushBuffer.data(), static_cast<int>(flushBuffer.size()));
+                if (flushed < 0)
+                {
+                    return closeAnd(std::format("lame_encode_flush() returned {}", flushed));
+                }
+                out.insert(out.end(), flushBuffer.begin(), flushBuffer.begin() + flushed);
+
+                // The finished Xing/LAME header REPLACES the placeholder frame that encoding already
+                // emitted at the head of the stream. Inserting it instead leaves the placeholder in
+                // place, and the fixture then carries two malformations rather than the one it is
+                // supposed to isolate - an unfinished leading frame as well as the ID3 padding.
+                const size_t tagSize = lame_get_lametag_frame(flags, nullptr, 0);
+                if (tagSize == 0)
+                {
+                    return closeAnd("lame_get_lametag_frame() reported no tag frame, so the fixture would not be VBR");
+                }
+                if (out.size() < tagSize)
+                {
+                    return closeAnd(std::format("the encoder produced {} bytes, too few to hold the {}-byte tag frame it reserved", out.size(), tagSize));
+                }
+
+                std::vector<unsigned char> tag(tagSize);
+                if (lame_get_lametag_frame(flags, tag.data(), tag.size()) != tagSize)
+                {
+                    return closeAnd("lame_get_lametag_frame() would not write the Xing header");
+                }
+                std::copy(tag.begin(), tag.end(), out.begin());
+
+                lame_close(flags);
+                if (out.empty())
+                {
+                    return "the encoder produced no frames";
+                }
+                return {};
+            }
+
+            /// @brief What the MP3 fixture actually turned out to be, read back off the bytes.
+            struct Mp3FixtureShape
+            {
+                bool firstFrameCarriesVbrTag{false};
+                uint32_t declaredBytes{0};  // what the Xing header says the audio occupies
+                uint32_t presentBytes{0};   // what is really there from the first sync to the end
+                uint32_t declaredFrames{0}; // audio frames, per the Xing header - the tag frame is extra
+                uint32_t parsedFrames{0};   // frames actually walked, the tag frame included
+                std::string problem;        // empty when the walk succeeded
+            };
+
+            /// @brief Walks the frames of a generated MP3 and reports what shape it came out.
+            ///
+            /// Exists because a fixture can be malformed in a way its author did not intend, and then
+            /// a check built on it proves something other than what it claims. This one was: the
+            /// finished Xing frame was inserted in front of the placeholder rather than over it, so the
+            /// file carried a stray unfinished frame as well as the ID3 padding under test, and 42
+            /// frames sat behind a header declaring 40. Nothing caught it, because nothing looked.
+            ///
+            /// Only enough of the MPEG header is decoded to step from one frame to the next: version,
+            /// layer, bitrate, sample rate and the padding bit.
+            Mp3FixtureShape describeMp3Fixture(const std::filesystem::path &path, uint32_t skipBytes)
+            {
+                Mp3FixtureShape shape;
+
+                std::ifstream in{path, std::ios::binary};
+                if (!in)
+                {
+                    shape.problem = "the fixture could not be reopened";
+                    return shape;
+                }
+                const std::vector<unsigned char> bytes{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+
+                // Find the first frame sync at or after the point the declared tag ends.
+                size_t offset = skipBytes;
+                while (offset + 1 < bytes.size() && !(bytes[offset] == 0xFF && (bytes[offset + 1] & 0xE0) == 0xE0))
+                {
+                    ++offset;
+                }
+                if (offset + 4 > bytes.size())
+                {
+                    shape.problem = "no frame sync was found";
+                    return shape;
+                }
+
+                const size_t firstSync = offset;
+                shape.presentBytes = static_cast<uint32_t>(bytes.size() - firstSync);
+
+                static constexpr int bitrates[16]{0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0};
+                static constexpr int sampleRates[4]{44100, 48000, 32000, 0};
+
+                while (offset + 4 <= bytes.size())
+                {
+                    const uint32_t header = (static_cast<uint32_t>(bytes[offset]) << 24) | (static_cast<uint32_t>(bytes[offset + 1]) << 16) |
+                        (static_cast<uint32_t>(bytes[offset + 2]) << 8) | static_cast<uint32_t>(bytes[offset + 3]);
+
+                    // The sync bits are checked at every frame, not only at the one that was searched
+                    // for. Without this the walk accepts any eleven bits it happens to land on as long
+                    // as the fields after them read plausibly, so a fixture whose frame lengths are
+                    // subtly wrong could still walk to the end of the file and look consistent.
+                    if ((header & 0xFFE00000u) != 0xFFE00000u)
+                    {
+                        break;
+                    }
+
+                    const auto version = (header >> 19) & 3u;   // 3 is MPEG 1
+                    const auto layer = (header >> 17) & 3u;     // 1 is Layer III
+                    const auto bitrateIndex = (header >> 12) & 0xFu;
+                    const auto sampleRateIndex = (header >> 10) & 3u;
+                    const auto padding = (header >> 9) & 1u;
+
+                    if (version != 3 || layer != 1 || bitrateIndex == 0 || bitrateIndex == 15 || sampleRateIndex == 3)
+                    {
+                        break;
+                    }
+
+                    const auto frameBytes = static_cast<size_t>(144 * (bitrates[bitrateIndex] * 1000) / sampleRates[sampleRateIndex]) + padding;
+                    if (frameBytes == 0 || offset + frameBytes > bytes.size())
+                    {
+                        break;
+                    }
+
+                    if (shape.parsedFrames == 0)
+                    {
+                        // The Xing or Info identifier sits at a fixed offset from the header, after the
+                        // side information, and which offset depends on the channel mode. Searching the
+                        // frame is enough here and does not need that table.
+                        const auto begin = bytes.begin() + static_cast<std::ptrdiff_t>(offset);
+                        const auto end = begin + static_cast<std::ptrdiff_t>(frameBytes);
+                        for (const char *needle : {"Xing", "Info"})
+                        {
+                            const auto found = std::search(begin, end, needle, needle + 4);
+                            if (found != end)
+                            {
+                                shape.firstFrameCarriesVbrTag = true;
+                                const auto flagsAt = found + 4;
+                                if (flagsAt + 4 <= end)
+                                {
+                                    const auto read32 = [](std::vector<unsigned char>::const_iterator at)
+                                    {
+                                        return (static_cast<uint32_t>(*at) << 24) | (static_cast<uint32_t>(*(at + 1)) << 16) |
+                                            (static_cast<uint32_t>(*(at + 2)) << 8) | static_cast<uint32_t>(*(at + 3));
+                                    };
+                                    const auto flags = read32(flagsAt);
+                                    auto field = flagsAt + 4;
+                                    if ((flags & 1u) != 0 && field + 4 <= end)
+                                    {
+                                        shape.declaredFrames = read32(field);
+                                        field += 4;
+                                    }
+                                    if ((flags & 2u) != 0 && field + 4 <= end)
+                                    {
+                                        shape.declaredBytes = read32(field);
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    ++shape.parsedFrames;
+                    offset += frameBytes;
+                }
+
+                if (offset != bytes.size())
+                {
+                    shape.problem = std::format("the frame walk stopped at byte {} of {}", offset, bytes.size());
+                }
+                return shape;
+            }
+
+            /// @brief Writes frames behind an ID3v2 header that declares less padding than is there.
+            ///
+            /// The header says its body is @p declaredPadding bytes. After those, @p extraPadding more
+            /// zero bytes follow before the first frame sync. A reader that resumes exactly where the
+            /// declared tag ends lands on zeros rather than on a sync word, and has to scan forward to
+            /// find the audio. Real encoders produce this; the extra bytes are usually the remains of a
+            /// tag that was edited to be smaller without rewriting the file.
+            bool writeMp3WithPaddingAfterId3v2(const std::filesystem::path &path,
+                const std::vector<unsigned char> &frames,
+                uint32_t declaredPadding,
+                uint32_t extraPadding)
+            {
+                std::ofstream out{path, std::ios::binary};
+                if (!out)
+                {
+                    return false;
+                }
+
+                unsigned char header[kId3HeaderBytes]{'I', 'D', '3', 3, 0, 0, 0, 0, 0, 0};
+                // ID3v2 sizes are syncsafe: seven bits per byte, so no byte can look like a frame sync.
+                header[6] = static_cast<unsigned char>((declaredPadding >> 21) & 0x7F);
+                header[7] = static_cast<unsigned char>((declaredPadding >> 14) & 0x7F);
+                header[8] = static_cast<unsigned char>((declaredPadding >> 7) & 0x7F);
+                header[9] = static_cast<unsigned char>(declaredPadding & 0x7F);
+                out.write(reinterpret_cast<const char *>(header), kId3HeaderBytes);
+
+                const std::vector<char> zeros(static_cast<size_t>(declaredPadding) + extraPadding, 0);
+                out.write(zeros.data(), static_cast<std::streamsize>(zeros.size()));
+                out.write(reinterpret_cast<const char *>(frames.data()), static_cast<std::streamsize>(frames.size()));
+                return out.good();
+            }
 
             /// @param title Names the suite. Passed in rather than fixed, because two suites write two
             /// files and a results file that misnames itself is worse than one with no title at all.
@@ -6144,6 +6620,192 @@ namespace jucyaudio
 
             writeResultsFile(resultsPath, "jucyaudio transaction self test", report);
             spdlog::info("[SelfTest] Transaction test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
+            return report.failures() == 0 ? 0 : 1;
+        }
+
+        int runAudioFormatSelfTest(const std::filesystem::path &selfTestRoot)
+        {
+            Report report;
+            const auto resultsPath = selfTestRoot / "audioformat-results.txt";
+            const auto workingDir = selfTestRoot / "audioformat";
+
+            std::error_code ec;
+            std::filesystem::remove_all(workingDir, ec);
+            std::filesystem::create_directories(workingDir, ec);
+            if (ec)
+            {
+                report.abort(std::format("Could not create {}: {}", pathToString(workingDir), ec.message()));
+                writeResultsFile(resultsPath, "jucyaudio audio format self test", report);
+                return 1;
+            }
+
+            juce::AudioFormatManager formatManager;
+            formatManager.registerBasicFormats();
+
+            // A WAV whose last chunk has an odd length and no pad byte after it.
+            {
+                const auto wavPath = workingDir / "odd-data-no-pad.wav";
+                const bool written = writeOddLengthWavWithoutFinalPadByte(wavPath, kOddSampleCount);
+                report.check(written, std::format("the odd-length WAV fixture could be written ({} samples, no trailing pad byte)", kOddSampleCount));
+
+                if (written)
+                {
+                    const auto actualSize = std::filesystem::file_size(wavPath, ec);
+                    report.check(!ec && (actualSize % 2) == 1,
+                        std::format("the fixture really is odd-sized on disk ({} bytes)", ec ? static_cast<std::uintmax_t>(0) : actualSize));
+
+                    std::unique_ptr<juce::AudioFormatReader> reader{
+                        formatManager.createReaderFor(juce::File{juce::String{pathToString(wavPath)}})};
+                    report.check(reader != nullptr, "a reader opens the WAV that is missing its final pad byte");
+
+                    if (reader != nullptr)
+                    {
+                        report.check(reader->lengthInSamples == static_cast<juce::int64>(kOddSampleCount),
+                            std::format("the reader reports all {} samples (said {})", kOddSampleCount, static_cast<int64_t>(reader->lengthInSamples)));
+
+                        juce::AudioBuffer<float> buffer{static_cast<int>(reader->numChannels), static_cast<int>(kOddSampleCount)};
+                        buffer.clear();
+                        const bool read = reader->read(&buffer, 0, static_cast<int>(kOddSampleCount), 0, true, false);
+                        report.check(read, "every sample of it reads back");
+
+                        // The fixture is a square wave. A decode that quietly produced nothing fails
+                        // here even though the read above said it succeeded.
+                        report.check(buffer.getMagnitude(0, static_cast<int>(kOddSampleCount)) > 0.0f,
+                            "and what reads back is the fixture's audio, not silence");
+                    }
+                }
+            }
+
+            // The same omission one chunk later: a final LIST chunk of odd length, unpadded. Kept as a
+            // regression guard - it passed on both 9.0.0 and 9.0.2, so it is not evidence for the
+            // upgrade, only a check that a shape which works today goes on working.
+            {
+                const auto wavPath = workingDir / "odd-list-no-pad.wav";
+                std::string expectedLabel;
+                const bool written = writeWavWithUnpaddedFinalListChunk(wavPath, expectedLabel);
+                report.check(written, "the WAV with an unpadded odd-length final LIST chunk could be written");
+
+                if (written)
+                {
+                    std::unique_ptr<juce::AudioFormatReader> reader{
+                        formatManager.createReaderFor(juce::File{juce::String{pathToString(wavPath)}})};
+                    report.check(reader != nullptr, "a reader opens it");
+
+                    if (reader != nullptr)
+                    {
+                        report.check(reader->lengthInSamples == static_cast<juce::int64>(kListFixtureSampleCount),
+                            std::format("its {} samples are all there (said {})", kListFixtureSampleCount, static_cast<int64_t>(reader->lengthInSamples)));
+
+                        // The metadata behind the missing pad byte. A parser that runs the last chunk to
+                        // a boundary one byte past the file could read the label against the wrong end
+                        // and come back with nothing, having reported a perfectly good reader and the
+                        // right sample count. Both tested versions read it correctly.
+                        const auto label = reader->metadataValues.getValue("CueLabel0Text", juce::String{}).toStdString();
+                        report.check(label == expectedLabel, std::format("and the cue label behind the missing pad byte reads back as '{}' (said '{}')", expectedLabel, label));
+                    }
+                }
+            }
+
+            // A truncated WAV whose header still describes the whole thing.
+            {
+                const auto wavPath = workingDir / "overclaiming-data.wav";
+                constexpr uint32_t actualBytes = 6;
+                const bool written = writeWavWithOverclaimingDataChunk(wavPath, kOverclaimedSampleCount, actualBytes);
+                report.check(written, std::format("the truncated WAV could be written - its data chunk claims {} bytes and {} are there", kOverclaimedSampleCount, actualBytes));
+
+                if (written)
+                {
+                    std::unique_ptr<juce::AudioFormatReader> reader{
+                        formatManager.createReaderFor(juce::File{juce::String{pathToString(wavPath)}})};
+
+                    // The invariant is that the samples which do not exist are not reported, not that
+                    // the reader answers in one particular way. Refusing the file is correct; so is
+                    // opening it and reporting nothing; so would be clamping to the six samples that
+                    // are really there. Only a length past the end of the file is wrong, so that is
+                    // what the check draws the line at - a reader that legitimately clamped would pass
+                    // here rather than fail a test pinned to zero.
+                    const auto reported = reader == nullptr ? int64_t{-1} : static_cast<int64_t>(reader->lengthInSamples);
+                    report.check(reader == nullptr || reader->lengthInSamples <= static_cast<juce::int64>(actualBytes),
+                        std::format("a data chunk claiming more than the file holds is not believed (reader {}, length {}, at most {} real samples)",
+                            reader == nullptr ? "refused" : "opened",
+                            reported,
+                            actualBytes));
+                }
+            }
+
+            // A VBR MP3 with bytes between the end of the ID3v2 tag and the first frame sync.
+            {
+                const auto mp3Path = workingDir / "vbr-padded-id3v2.mp3";
+                std::vector<unsigned char> frames;
+                const auto encodeError = encodeVbrMp3Frames(frames);
+                report.check(encodeError.empty(),
+                    std::format("a VBR MP3 could be encoded for the fixture ({} bytes of frames){}",
+                        frames.size(),
+                        encodeError.empty() ? std::string{} : std::format(" - {}", encodeError)));
+
+                if (encodeError.empty())
+                {
+                    const bool written = writeMp3WithPaddingAfterId3v2(mp3Path, frames, kDeclaredId3Padding, kExtraPaddingAfterId3);
+                    report.check(written,
+                        std::format("the fixture could be written - a {}-byte ID3v2 tag followed by {} bytes that are not a frame sync",
+                            kDeclaredId3Padding + kId3HeaderBytes,
+                            kExtraPaddingAfterId3));
+
+                    if (written)
+                    {
+                        // Before asking what a reader makes of the fixture, check the fixture is the
+                        // one shape it is supposed to be. A file malformed in a second, unintended way
+                        // would still fail on 9.0.0 and pass on 9.0.2, and the mutation proof would be
+                        // evidence for the wrong thing. This is exactly how the first version of this
+                        // suite was wrong: the finished Xing frame was put in front of the placeholder
+                        // rather than over it, and 42 frames sat behind a header declaring 40.
+                        const auto shape = describeMp3Fixture(mp3Path, kId3HeaderBytes + kDeclaredId3Padding + kExtraPaddingAfterId3);
+                        report.check(shape.problem.empty(), std::format("the fixture's frames walk end to end{}", shape.problem.empty() ? "" : std::format(" - {}", shape.problem)));
+                        report.check(shape.firstFrameCarriesVbrTag, "its first frame is the Xing header, so it reads as VBR");
+                        report.check(shape.declaredBytes == shape.presentBytes,
+                            std::format("the Xing header's byte count matches what is there ({} declared, {} present)", shape.declaredBytes, shape.presentBytes));
+                        report.check(shape.parsedFrames == shape.declaredFrames + 1,
+                            std::format("and its frame count does too - {} audio frames plus the tag frame, {} walked", shape.declaredFrames, shape.parsedFrames));
+
+                        std::unique_ptr<juce::AudioFormatReader> reader{
+                            formatManager.createReaderFor(juce::File{juce::String{pathToString(mp3Path)}})};
+                        report.check(reader != nullptr, "a reader opens the VBR MP3 that has padding after its ID3v2 header");
+
+                        if (reader != nullptr)
+                        {
+                            // Not ">0". A reader that stops at the padding still finds some frames -
+                            // on JUCE 9.0.0 this fixture reports 20736 samples, 18 frames of the 40
+                            // that are there - so the check is that the whole second is there.
+                            report.check(reader->lengthInSamples >= kMp3EncodedSamples,
+                                std::format("the reader finds every frame past the padding ({} samples, at least {} expected)",
+                                    static_cast<int64_t>(reader->lengthInSamples),
+                                    kMp3EncodedSamples));
+
+                            const auto toRead = static_cast<int>(std::min<juce::int64>(reader->lengthInSamples, kMp3SamplesToRead));
+                            if (toRead > 0)
+                            {
+                                juce::AudioBuffer<float> buffer{static_cast<int>(reader->numChannels), toRead};
+                                buffer.clear();
+                                const bool read = reader->read(&buffer, 0, toRead, 0, true, false);
+                                report.check(read, std::format("{} samples of it decode", toRead));
+
+                                // A reader that opened the file, reported a length and then handed back
+                                // an empty buffer - which is what losing the frames behind the padding
+                                // looks like from outside - fails here rather than passing three checks
+                                // and saying nothing.
+                                report.check(buffer.getMagnitude(0, toRead) > 0.0f, "and what decodes is the tone that was encoded, not silence");
+                            }
+                            else
+                            {
+                                report.check(false, "there was something to read");
+                            }
+                        }
+                    }
+                }
+            }
+
+            writeResultsFile(resultsPath, "jucyaudio audio format self test", report);
+            spdlog::info("[SelfTest] Audio format test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
             return report.failures() == 0 ? 0 : 1;
         }
     } // namespace tests

@@ -215,5 +215,37 @@ namespace jucyaudio
          */
         int runTransactionSelfTest(const std::filesystem::path &selfTestRoot);
 
+        /**
+         * @brief Headless check that the audio readers accept two malformations that occur in the wild.
+         *
+         * Exists because the JUCE upgrade that brought these fixes in is a dependency bump: nothing in
+         * this repository changed, so nothing here would otherwise execute the decoders at all, and the
+         * changelog would be claiming two format fixes on the strength of an upstream release note.
+         *
+         * All four fixtures are generated, not checked in:
+         *
+         * 1. A WAV whose data chunk has an odd length and no pad byte after it.
+         * 2. A WAV whose final LIST chunk has an odd length and no pad byte, cue label behind it.
+         * 3. A WAV whose data chunk declares far more bytes than the file holds - the ordinary shape
+         *    of a truncated download or an interrupted copy.
+         * 4. A VBR MP3 whose ID3v2 header under-declares the padding in front of the first frame, so
+         *    the sync word is not where the tag length says it is and has to be scanned for.
+         *
+         * Two of them discriminate between JUCE 9.0.0 and 9.0.2, which is why the suite exists: on
+         * 9.0.0 the truncated WAV reports the 1000 samples its header claims over a six-byte file, and
+         * the padded MP3 decodes 20736 of the 44100 samples it was given. The two unpadded-chunk cases
+         * pass on both versions and are kept as regression guards, not as evidence.
+         *
+         * Each is opened through AudioFormatManager, the reported length is checked, the samples are
+         * read, and the audio is asserted to be non-silent - a reader that opens the file and then
+         * decodes nothing is the failure this is watching for, and it passes every weaker check.
+         *
+         * Needs no database. Uses its own directory under the self test root.
+         *
+         * @param selfTestRoot The root returned by prepareSelfTestEnvironment().
+         * @return 0 if every check passed, 1 otherwise.
+         */
+        int runAudioFormatSelfTest(const std::filesystem::path &selfTestRoot);
+
     } // namespace tests
 } // namespace jucyaudio

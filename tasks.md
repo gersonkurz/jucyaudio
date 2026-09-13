@@ -1,8 +1,8 @@
 # JucyAudio - Open Tasks
 
-Ordered by priority: **P1** (fix before tagging 2.0) → **P3** (whenever). Nothing is P1 right now:
-the memory-safety and deadlock items are done, and so is the schema divergence that left every new
-library without search, markers and the EQ/reverb presets. P2 items are reachable correctness or
+Ordered by priority: **P1** (fix before tagging 2.0) → **P3** (whenever). One P1 is open - the macOS half of the
+JUCE 9.0.2 upgrade has not been built. The memory-safety and deadlock items are done, and so is the
+schema divergence that left every new library without search, markers and the EQ/reverb presets. P2 items are reachable correctness or
 user-visible defects that are not memory-unsafe; P3 items cannot happen today, are bounded to a
 logged stale-state effect, or need a design decision first.
 
@@ -123,3 +123,97 @@ row, and it needs a rule for what to do when only some of a mix's lost tracks co
 question arises for the `Tracks` case.
 
 **Key files**: `Database/TrackScanner.cpp`, `Database/Sqlite/SqliteTrackDatabase.cpp`.
+
+---
+
+## P3: macOS links both JUCE's embedded zlib and system `libz`
+
+**Where it came from**: raised as a `[task]` finding by the reviewer of the JUCE 9.0.0 -> 9.0.2
+upgrade (codex, 2026-09-13), thread `01a09bbf-582a-7443-80ea-02e320a39761`. Recorded verbatim:
+
+> **[task]** `CMakeLists.txt:735`, `:759`, and `:763` compile JUCE's embedded zlib while also
+> linking static TagLib and system `libz` on macOS. JUCE documents this configuration as risking
+> symbol conflicts, ODR violations, or linker errors. The defect is deferrable because JUCE 9.0.0's
+> CMake integration already compiled `juce_core_zlib.c`, so this upgrade did not introduce it. Track
+> a follow-up to choose one zlib implementation - normally macOS-only `JUCE_INCLUDE_ZLIB_CODE=0`
+> with the system headers/library - and validate both macOS architectures plus compressed-ID3
+> decoding. [JUCE breaking-change guidance](https://github.com/juce-framework/JUCE/blob/9.0.2/BREAKING_CHANGES.md#version-901)
+
+**Why it is deferrable**: it predates the 9.0.2 bump. `modules/juce_core/juce_core_zlib.c` already
+exists as a C translation unit at the `9.0.0` tag with the same `#include ".../zlib/deflate.c"` set,
+and `extras/Build/CMake/JUCEModuleSupport.cmake` differs between the two tags only by the new
+`juce_gui_extra` webview-interop block. So the un-namespaced zlib symbols are the status quo on
+macOS, not something the upgrade introduced. Windows is unaffected: the configure log says
+`Could NOT find ZLIB (missing: ZLIB_LIBRARY ZLIB_INCLUDE_DIR)`, so TagLib builds without zlib there
+and nothing puts a system zlib on the Windows link line.
+
+**Fix approach**: set `JUCE_INCLUDE_ZLIB_CODE=0` plus `JUCE_ZLIB_INCLUDE_PATH` on macOS only, so the
+one system `libz` serves both JUCE and TagLib. Validate on arm64 and x86_64, and specifically
+exercise compressed-ID3 decoding, which is the path that actually calls into zlib.
+
+---
+
+## P1: the JUCE 9.0.2 upgrade has not been built or self-tested on macOS
+
+**What is missing**: `just build && just selftest` on macOS against the `9.0.2` pin. Windows x64
+Release is green - all eight suites pass, including the new audio format suite that proves the two
+decoder behaviours the upgrade was taken for. No macOS machine was available to the session that
+made the change, so that half of the cross-platform invariant in `CLAUDE.md` and the "successful
+non-GUI builds on Windows and macOS paths" release gate in `docs/release-plan-2.0.md:37` is
+unverified.
+
+**How it was decided**: raised as a `[blocking]` finding by the reviewer of the upgrade (codex,
+2026-09-13), thread `01a09bbf-582a-7443-80ea-02e320a39761`, which said to run it on macOS or to
+resolve it through the protocol's explicit human deferral path. The human chose to defer it
+explicitly on 2026-09-13, accepting the risk on the record, and this entry is the follow-up that
+deferral requires.
+
+**Why the risk is bounded rather than unknown**: the change is a dependency version, three
+documentation lines, and a new self test suite. No production C++ changed, and the macOS link block
+in `CMakeLists.txt` is untouched. The test code is cross-platform and is wired into the macOS
+`selftest` recipe as well as the Windows one, so it is part of what an eventual macOS run covers. All
+five breaking changes in JUCE 9.0.1 and 9.0.2 were checked against this tree and four cannot apply
+(`AudioDeviceSelectorComponent::getMidiInputSelectorListBox`, `OpenGLImageType`,
+`OpenGLContext::setImageCacheSize` and the `WebBrowserComponent` package move, the last of which is
+moot under `JUCE_WEB_BROWSER=0`). The fifth is the zlib linkage recorded separately below, which
+predates this upgrade.
+
+**What would actually catch something**: the CoreAudio changes in 9.0.2 - the default sample rate
+and buffer size selection, and Multi-Output device handling. Those are macOS-only, are not exercised
+by any self test on any platform, and need a human at a Mac with an audio device. The build and self
+test are the floor, not the whole check.
+
+---
+
+## P2: exported MP3s carry an unfinished Info frame and a duplicate one at the end
+
+**Where it came from**: raised as a `[task]` finding by the reviewer of the JUCE 9.0.0 -> 9.0.2
+upgrade (codex, 2026-09-13), thread `01a09bbf-582a-7443-80ea-02e320a39761`, after the same mistake
+was found and fixed in that change's new test fixture. Recorded verbatim:
+
+> **[task]** `Audio/ExportMixToMp3.cpp:263-274` writes the completed LAME Info frame at EOF after
+> flushing. LAME requires that frame to replace the placeholder immediately after the ID3v2 tag.
+> Exported MP3s therefore retain an unfinished initial Info frame and append a duplicate near EOF,
+> making duration, seeking, and gapless metadata unreliable. This is deferrable because the export
+> implementation predates the JUCE upgrade and is untouched by this change. Track a fix that records
+> the placeholder offset, seeks back to overwrite it, restores the EOF position for ID3v1, and
+> executes an export-format regression check.
+
+**Why it is deferrable**: it predates the upgrade and nothing in that change touches the exporter.
+It is P2 rather than P3 because it is a live, user-visible defect in shipped output rather than
+something that cannot happen today: every MP3 this application has exported with a VBR tag enabled
+carries it, and the symptom - a wrong duration, seeking that lands in the wrong place - shows up in
+whatever player the user opens the file in, not in jucyaudio.
+
+**What the same mistake looked like next door**: the audio format self test's MP3 fixture prepended
+the finished tag frame instead of overwriting the placeholder. The resulting file held 42 frames
+while its own Xing header declared 40, with exactly one extra 417-byte placeholder frame between the
+real tag and the audio. That is the shape to look for when checking an exported file.
+
+**Fix approach**: as the finding says - record the offset the placeholder was written at, seek back
+to overwrite it once `lame_encode_flush` has run, then restore the end-of-file position so the ID3v1
+tag still lands last. `m_outputStream` is a `juce::FileOutputStream`, so it can seek. The regression
+check should parse an exported file and assert one Xing/Info frame, a declared byte count matching
+the bytes actually present, and a declared frame count matching the frames actually parsed.
+
+**Key files**: `Audio/ExportMixToMp3.cpp:223`, `:257`, `:263-274`.
