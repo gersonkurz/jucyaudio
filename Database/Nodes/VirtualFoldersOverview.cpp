@@ -146,7 +146,7 @@ namespace jucyaudio
                 const auto &folder = m_rootFolders[rowIndex];
                 result.type = RowActivationResultType::NavigateToNode;
                 result.newNode = new VirtualFolderNode{this, folder};
-                result.newNode->retain(); // Caller must release
+                result.newNode->retain(REFCOUNT_DEBUG_ARGS); // Caller must release
                 spdlog::info("VirtualFoldersOverview::onRowActivated - navigating to folder '{}' (ID: {})", folder.name, folder.folderId);
             }
 

@@ -92,6 +92,19 @@ if(DEFINED ENV{JUCYAUDIO_OFFLINE_BUILD} OR JUCYAUDIO_OFFLINE_BUILD)
     set(FETCHCONTENT_FULLY_DISCONNECTED ON)
 endif()
 
+# Refcount debugging: makes every navigation-node retain and release log where it came from, which is
+# what scripts/refcountd reads. Off by default because it writes a line per call and a session
+# produces a great many.
+#
+# It has to be a switch rather than a thing you can only get by editing a header, because manual
+# retain/release is one of the few things here with no compiler or test to catch a mistake - see the
+# navigation node section of CLAUDE.md - and a debugging aid nobody can turn on is one nobody uses.
+# It had rotted for exactly that reason: six call sites had drifted away from the macro, so defining
+# this did not build at all until 2026-09-15.
+#
+#   cmake --preset x64-release -DJUCYAUDIO_REFCOUNT_DEBUGGING=ON
+option(JUCYAUDIO_REFCOUNT_DEBUGGING "Log every navigation-node retain/release, for scripts/refcountd" OFF)
+
 FetchContent_Declare(
     JUCE
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
@@ -838,6 +851,12 @@ else()
         # Disable JUCE assertions in Debug builds to avoid overly strict thread checking
         $<$<CONFIG:Debug>:JUCE_DISABLE_ASSERTIONS=1>
     )
+endif()
+
+# One definition for both platforms, so the switch means the same thing everywhere.
+if(JUCYAUDIO_REFCOUNT_DEBUGGING)
+    message(STATUS "Refcount debugging enabled - every node retain/release will be logged")
+    target_compile_definitions(jucyaudio PRIVATE USE_REFCOUNT_DEBUGGING)
 endif()
 
 # Platform-specific settings

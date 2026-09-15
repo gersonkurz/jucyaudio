@@ -643,7 +643,7 @@ namespace jucyaudio
                     {
                         // Tell MainComponent to navigate to the new node
                         m_mainComponent.navigateToNode(result.newNode);
-                        result.newNode->release(); // We own the reference, must release
+                        result.newNode->release(REFCOUNT_DEBUG_ARGS); // We own the reference, must release
                     }
                     break;
                     

@@ -3,6 +3,7 @@
 from __future__ import annotations
 import os
 import re
+import sys
 from typing import NamedTuple
 import typer
 from loguru import logger
@@ -67,11 +68,59 @@ def parse_refcount_message(entry: LogEntry) -> RefCountEvent | None:
         )
     return None
 
+def refuse(what: str, *, not_built: bool) -> None:
+    """Say why this log cannot answer the question, and how to get one that can.
+
+    Both remediations are printed rather than the one for the current platform, because the log being
+    analysed is not necessarily from the machine analysing it, and a Windows-only instruction is what
+    the first version of this message gave a macOS reader.
+    """
+    print(f"\nNO DATA: {what}")
+    if not_built:
+        print("\nThe usual reason is that the app was not built with the instrumentation. On Windows:")
+        print("    cmake --preset x64-release -DJUCYAUDIO_REFCOUNT_DEBUGGING=ON")
+        print("    cmake --build build-x64-release --config Release --parallel")
+        print("\nand on macOS, which does not use the presets:")
+        print("    cmake -B build-arm64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 \\")
+        print("          -DJUCYAUDIO_REFCOUNT_DEBUGGING=ON")
+        print("    cmake --build build-arm64 -j8")
+    print("\nThe log level has to be debug, in jucyaudio.toml under the config root:")
+    print("    [Logging]")
+    print("    log_level = 'debug'")
+    print("\nThe log is truncated at every start, so the run you care about has to be the last one.")
+    print("See scripts/refcountd/README.md.")
+    raise typer.Exit(code=2)
+
+
+def default_log_path() -> str:
+    """Where the app writes its log, following the same rules the app does.
+
+    JUCYAUDIO_CONFIG wins if it is set - Main.cpp exports it at startup and honours it for everything
+    else - otherwise the platform default config root, with Logs/jucyaudio.log underneath.
+
+    This used to be hardcoded to %APPDATA%/jucyaudioApp_Dev/Logs, a path the app stopped writing to
+    long enough ago that nobody noticed this tool asserting on it.
+    """
+    configured = os.environ.get("JUCYAUDIO_CONFIG")
+    if configured:
+        root = configured
+    elif os.name == "nt":
+        root = os.path.join(os.environ["LOCALAPPDATA"], "jucyaudio")
+    elif sys.platform == "darwin":
+        root = os.path.expanduser("~/Library/Application Support/jucyaudio")
+    else:
+        root = os.path.expanduser("~/.config/jucyaudio")
+    return os.path.join(root, "Logs", "jucyaudio.log")
+
+
 @app.command()
-def main() -> None:
+def main(
+    logfile: str = typer.Argument(None, help="Log to read. Defaults to the app's own log."),
+) -> None:
     """Main entry point for refcountd memory leak detector."""
-    logfile_name: str = os.path.join(os.environ["APPDATA"], "jucyaudioApp_Dev", "Logs", "jucyaudio.log")
-    assert os.path.exists(logfile_name), f"Logfile {logfile_name} does not exist."
+    logfile_name: str = logfile or default_log_path()
+    if not os.path.exists(logfile_name):
+        raise typer.BadParameter(f"No log at {logfile_name}. Pass one as an argument, or set JUCYAUDIO_CONFIG.")
 
     # Track the final reference count for each pointer
     final_ref_counts = {}
@@ -116,26 +165,55 @@ def main() -> None:
     print(f"BaseNode events parsed: {parsed_events}")
     print(f"Unique pointers tracked: {len(final_ref_counts)}")
     
+    # Two ways this log can be useless, and both of them used to read as good news.
+    #
+    # This is the failure the tool was itself guilty of, and it has three variants. Reporting "no
+    # leaks" over a log that proves nothing tells you your code is clean when what it means is that
+    # you were not looking - which is how issue #48 stayed invisible: a build that logged nothing, a
+    # define that would not compile, a tool that asserted on the wrong path, each one silent.
+    total_retains = sum(1 for event in events if event.action == "retain")
+
+    if parsed_events == 0:
+        refuse("this log contains no retain/release events, so nothing was checked.", not_built=True)
+
+    if total_retains == 0:
+        # The subtle one, and the reason this check is not just parsed_events == 0.
+        #
+        # A retain logs at debug. So does a release that leaves the count above zero. The *final*
+        # release, the one that deletes the node, logs at warning. So a run left at the default info
+        # level records only the nodes that were successfully freed, and nothing else - every leak is
+        # a node that never reached that line and therefore never appears at all.
+        #
+        # Such a log parses, passes the check above, contains only zero counts, and reports a clean
+        # bill of health over a set of objects selected for having no problem.
+        refuse(
+            f"this log has {parsed_events} event(s) but not one retain, so it holds no debug-level"
+            " refcount evidence.\n"
+            "Retains are logged at debug; only the final release is logged at warning, and a warning\n"
+            "survives any level. So this lists the nodes that were freed and cannot show you one that\n"
+            "was not - a leak is invisible in it by construction.",
+            not_built=False,
+        )
+
     # Find memory leaks (pointers with non-zero final reference count)
     leaks = {ptr: count for ptr, count in final_ref_counts.items() if count > 0}
     
     if leaks:
-        print(f"\n⚠️  MEMORY LEAKS DETECTED: {len(leaks)} pointers")
+        print(f"\n!!  MEMORY LEAKS DETECTED: {len(leaks)} pointers")
         print(f"{'Pointer':<16} {'Final Count':<12} {'First Seen At'}")
         print("-" * 70)
         for ptr, count in sorted(leaks.items(), key=lambda x: x[1], reverse=True):
             location = pointer_locations.get(ptr, "unknown")
             print(f"{ptr:<16} {count:>8}       {location}")
     else:
-        print("\n✅ NO MEMORY LEAKS DETECTED - All tracked objects properly released!")
+        print("\nOK: NO MEMORY LEAKS DETECTED - All tracked objects properly released!")
     
     # Show objects that were properly cleaned up (final count = 0)
     cleaned_up = {ptr: count for ptr, count in final_ref_counts.items() if count == 0}
     if cleaned_up:
-        print(f"\n✅ PROPERLY CLEANED UP: {len(cleaned_up)} objects reached ref count 0")
+        print(f"\nOK: PROPERLY CLEANED UP: {len(cleaned_up)} objects reached ref count 0")
     
     # Show statistics
-    total_retains = sum(1 for event in events if event.action == "retain")
     total_releases = sum(1 for event in events if event.action == "release")
     print("\nStatistics:")
     print(f"  Total retains observed: {total_retains}")

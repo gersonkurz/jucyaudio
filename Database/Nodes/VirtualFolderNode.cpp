@@ -382,7 +382,7 @@ namespace jucyaudio
                     result.newNode = parent;
                     if (result.newNode)
                     {
-                        result.newNode->retain(); // Caller must release
+                        result.newNode->retain(REFCOUNT_DEBUG_ARGS); // Caller must release
                     }
                 }
                 else
@@ -401,7 +401,7 @@ namespace jucyaudio
                             {
                                 result.type = RowActivationResultType::NavigateToNode;
                                 result.newNode = new VirtualFolderNode{getParent(), *parentInfo};
-                                result.newNode->retain(); // Caller must release
+                                result.newNode->retain(REFCOUNT_DEBUG_ARGS); // Caller must release
                             }
                         }
                         else
@@ -414,7 +414,7 @@ namespace jucyaudio
                             result.newNode = parent;
                             if (result.newNode)
                             {
-                                result.newNode->retain(); // Caller must release
+                                result.newNode->retain(REFCOUNT_DEBUG_ARGS); // Caller must release
                             }
                         }
                     }
@@ -439,7 +439,7 @@ namespace jucyaudio
                     result.type = RowActivationResultType::NavigateToNode;
                     // The parent of the child folder is THIS node, not our parent!
                     result.newNode = new VirtualFolderNode{this, childFolder};
-                    result.newNode->retain(); // Caller must release
+                    result.newNode->retain(REFCOUNT_DEBUG_ARGS); // Caller must release
                 }
                 else
                 {
