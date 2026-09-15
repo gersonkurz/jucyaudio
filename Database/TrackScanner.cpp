@@ -200,14 +200,27 @@ namespace jucyaudio
                     continue;
                 }
 
-                // Present and readable as a directory, before anything under it counts as inspected.
-                // An unplugged drive answers the same way a deleted folder does, and the difference
-                // matters to every row underneath.
+                // Enumerable, not merely present, before anything under it counts as inspected.
+                //
+                // is_directory was not enough, and the difference is the whole hazard: it answers what
+                // the path IS, not whether its contents can be listed. A root whose permissions deny
+                // listing is still a directory, so it passed - and then the walk below yielded nothing,
+                // which from the outside is indistinguishable from an empty root. Every row underneath
+                // landed in the leftovers and was deleted or marked.
+                //
+                // So eligibility comes from doing the thing the walk is about to do: open the directory
+                // for enumeration and see whether that is allowed. One error_code covers all three ways
+                // a root can be unusable - gone, not a directory, or not listable.
+                //
+                // The root only. A subdirectory that cannot be listed part-way down is a different and
+                // narrower case, and this does not claim to cover it.
                 std::error_code rootEc;
-                if (!std::filesystem::is_directory(rootFolderPath, rootEc))
+                const std::filesystem::directory_iterator rootProbe{rootFolderPath, rootEc};
+                if (rootEc)
                 {
-                    spdlog::warn("Root {} is not there or cannot be read; skipping it, and nothing under it counts as looked at.",
-                        pathToString(rootFolderPath));
+                    spdlog::warn("Root {} is not there or cannot be listed ({}); skipping it, and nothing under it counts as looked at.",
+                        pathToString(rootFolderPath),
+                        rootEc.message());
                     continue;
                 }
 
@@ -512,11 +525,42 @@ namespace jucyaudio
                 }
             }
 
-            // Count actual missing tracks (not folder buckets)
+            // What is left in existingTrackCache is every track whose file was not found - but "not
+            // found" only means "gone" where somebody actually looked.
+            //
+            // A root that could not be resolved, or that lives on a drive nobody plugged in, is skipped
+            // without walking anything beneath it. Its folders never reach inspectedFolders, and its
+            // tracks were never erased from this cache, because no file under it was visited. They look
+            // identical to a deleted file from here and they are not one.
+            //
+            // The eligibility rule is already written down twice in this file - once above
+            // inspectedFolders itself, once above sourceConfirmedGone, which consults it before
+            // reassigning a track's identity. This is the third place that needed it and the only one
+            // where getting it wrong deletes rows: below, m_removeMissingFiles hands these ids to
+            // removeTracks, and the delete cascades into mix membership.
+            //
+            // Folder by folder rather than track by track, because the set is keyed by folder and a
+            // root is missing or present as a whole.
             size_t missingTrackCount = 0;
-            for (const auto& item : existingTrackCache)
+            size_t strandedTrackCount = 0;
+            for (const auto &item : existingTrackCache)
             {
-                missingTrackCount += item.second.size();
+                if (inspectedFolders.contains(item.first))
+                {
+                    missingTrackCount += item.second.size();
+                }
+                else
+                {
+                    strandedTrackCount += item.second.size();
+                }
+            }
+
+            if (strandedTrackCount > 0)
+            {
+                // Warn, not fail. A scan of a library whose external drive is unplugged is an ordinary
+                // thing to do and should still scan everything else; what it must not do is quietly
+                // conclude that the unreachable half was deleted.
+                spdlog::warn("{} track(s) sit in folders no root reached this run - left alone rather than treated as missing.", strandedTrackCount);
             }
 
             if (missingTrackCount > 0)
@@ -528,8 +572,13 @@ namespace jucyaudio
                     spdlog::info("User opted to remove missing files. Collecting IDs for deletion...");
 
                     std::vector<TrackId> idsToDelete;
-                    for (const auto& item : existingTrackCache)
+                    for (const auto &item : existingTrackCache)
                     {
+                        if (!inspectedFolders.contains(item.first))
+                        {
+                            continue;
+                        }
+
                         for (const auto &track : item.second)
                         {
                             idsToDelete.push_back(track.second);
@@ -569,9 +618,14 @@ namespace jucyaudio
                     // already flagged when the scan started, and rewriting a 1 over a 1 is thousands of
                     // pointless updates on a library this size.
                     size_t newlyMarked = 0;
-                    for (const auto& item : existingTrackCache)
+                    for (const auto &item : existingTrackCache)
                     {
-                        for (const auto& track : item.second)
+                        if (!inspectedFolders.contains(item.first))
+                        {
+                            continue;
+                        }
+
+                        for (const auto &track : item.second)
                         {
                             if (previouslyMissing.contains(track.second))
                             {

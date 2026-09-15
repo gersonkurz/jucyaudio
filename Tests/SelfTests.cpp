@@ -924,6 +924,48 @@ namespace jucyaudio
             // is what the check asserts.
             constexpr int64_t kMp3EncodedSamples = 44100;
 
+            /// @brief Makes a directory refuse to be listed, and puts it back.
+            ///
+            /// Needed because "cannot be read" has two shapes and only one of them is a missing path.
+            /// A directory whose permissions deny listing is still a directory: `is_directory` says
+            /// yes, and enumerating it yields nothing. That is the shape a scan must not read as "the
+            /// files are gone", and removing the directory - which is what the rest of this section
+            /// does - cannot produce it.
+            ///
+            /// The only platform-specific code in this file, and it is here rather than in a shared
+            /// seam because nothing outside this check wants it. Windows has no portable way to do
+            /// this: `std::filesystem::permissions` only toggles the read-only attribute there and
+            /// leaves listing untouched, so it has to be an ACL, and the cheapest way to set one
+            /// without dragging in the security APIs is the tool Windows ships for it. Elsewhere the
+            /// portable call does work.
+            ///
+            /// @return False if the denial could not be applied, so a caller can say the check did not
+            ///         run instead of reporting a pass it did not earn.
+            bool setDirectoryListable(const std::filesystem::path &path, bool listable)
+            {
+#if JUCE_WINDOWS
+                // *S-1-1-0 is Everyone, by SID so it does not depend on the machine's language.
+                const auto command = std::format("icacls \"{}\" {} >nul 2>&1", pathToString(path), listable ? "/remove:d *S-1-1-0" : "/deny *S-1-1-0:(RX)");
+                if (std::system(command.c_str()) != 0)
+                {
+                    return false;
+                }
+#else
+                std::error_code ec;
+                std::filesystem::permissions(
+                    path, listable ? std::filesystem::perms::owner_all : std::filesystem::perms::none, std::filesystem::perm_options::replace, ec);
+                if (ec)
+                {
+                    return false;
+                }
+#endif
+                // Asked rather than assumed: the command can report success and leave the directory
+                // readable anyway - an administrator with backup privilege bypasses the deny.
+                std::error_code checkEc;
+                const std::filesystem::directory_iterator probe{path, checkEc};
+                return listable ? !checkEc : static_cast<bool>(checkEc);
+            }
+
             /// @brief Writes an 8-bit mono WAV whose data chunk has an odd length and is not padded.
             ///
             /// RIFF requires every chunk to occupy an even number of bytes, with a pad byte added when
@@ -2734,7 +2776,151 @@ namespace jucyaudio
                             report.check(stranded.has_value(), "the row under the unreachable root still exists");
                             report.check(stranded.has_value() && stranded->folderId == secondRootFolderId,
                                 "and still names the folder it was in - it was not handed to the copy");
+
+                            // --- and a scan that is allowed to delete does not delete it either ---
+                            //
+                            // Everything above runs with removeMissingFiles off, so it proves the
+                            // stranded row keeps its identity and nothing more. The row was still
+                            // reaching the missing branch, which walked every leftover without asking
+                            // whether anybody had looked in its folder - so a destructive scan handed it
+                            // to removeTracks, and the delete cascaded into mix membership.
+                            //
+                            // Both directions in one scan, because a guard that simply stopped deleting
+                            // would pass the first half on its own: a file that really was deleted, under
+                            // the root that is still there, has to go.
+                            if (stranded.has_value())
+                            {
+                                // Put the stranded track in the mix, so the cascade has something to take
+                                // if the row is deleted.
+                                {
+                                    auto mixTracksNow = theTrackLibrary.getMixManager().getMixTracks(mixInfo.mixId);
+                                    MixTrack strandedInMix{};
+                                    strandedInMix.trackId = strandedId;
+                                    strandedInMix.orderInMix = static_cast<int>(mixTracksNow.size());
+                                    mixTracksNow.push_back(strandedInMix);
+                                    report.check(theTrackLibrary.getMixManager().createOrUpdateMix(mixInfo, mixTracksNow),
+                                        "the stranded track could be added to the mix");
+                                }
+
+                                const auto mixHolds = [](MixId mixId, TrackId trackId)
+                                {
+                                    const auto rows = theTrackLibrary.getMixManager().getMixTracks(mixId);
+                                    return std::any_of(rows.begin(),
+                                        rows.end(),
+                                        [trackId](const MixTrack &row)
+                                        {
+                                            return row.trackId == trackId;
+                                        });
+                                };
+                                report.check(mixHolds(mixInfo.mixId, strandedId), "and the mix holds it before the destructive scan");
+
+                                // A file under the healthy root that really is deleted, so the same scan
+                                // has real work to do.
+                                // Whatever is still on disk under the healthy root - reconstructed from
+                                // the row rather than assumed, because these fixtures live in a subfolder
+                                // and earlier sections have moved and deleted some of them.
+                                TrackId reallyGoneId{-1};
+                                std::filesystem::path reallyGonePath;
+                                for (const auto &row : trackRowsUnder(db, rootFolderId))
+                                {
+                                    const auto folder = db.reconstructFullPath(row.folderId);
+                                    if (folder.empty())
+                                    {
+                                        continue;
+                                    }
+                                    const auto onDisk = folder / row.filename;
+                                    if (std::filesystem::exists(onDisk))
+                                    {
+                                        reallyGoneId = row.trackId;
+                                        reallyGonePath = onDisk;
+                                        break;
+                                    }
+                                }
+                                std::error_code deleteEc;
+                                if (reallyGoneId > 0)
+                                {
+                                    std::filesystem::remove(reallyGonePath, deleteEc);
+                                }
+                                report.check(reallyGoneId > 0 && !deleteEc,
+                                    std::format("a file under the healthy root ('{}') could be deleted for real", pathToString(reallyGonePath)));
+
+                                if (reallyGoneId > 0 && !deleteEc)
+                                {
+                                    report.check(runScan({rootFolderId, secondRootFolderId}, true, report, "destructive, one root unreachable"),
+                                        "a scan that may delete reports success with a root it could not look at");
+
+                                    report.check(!db.getTrackById(reallyGoneId).has_value(),
+                                        "the file that really was deleted, under the root that was walked, is gone from the database");
+
+                                    const auto afterDestructive = db.getTrackById(strandedId);
+                                    report.check(
+                                        afterDestructive.has_value(), "the row under the unreachable root survived a scan that was allowed to delete it");
+                                    report.check(afterDestructive.has_value() && !afterDestructive->is_missing,
+                                        "and was not marked missing either - nobody looked in its folder");
+                                    report.check(mixHolds(mixInfo.mixId, strandedId), "so the mix still holds it, rather than losing it to the delete cascade");
+                                }
+                            }
                         }
+                    }
+
+                    // --- the other shape of unreachable: present, and not listable ---
+                    //
+                    // Everything above takes the root away, so `is_directory` answers no. A root whose
+                    // permissions deny listing answers yes and then enumerates to nothing, which is why
+                    // eligibility had to come from opening the directory rather than from its type.
+                    // Without that, this root looks walked, and every row under it looks deleted.
+                    {
+                        const auto lockedRoot = selfTestRoot / "locked-root";
+                        const auto lockedName = std::string{"locked.wav"};
+
+                        std::error_code lockedEc;
+                        std::filesystem::remove_all(lockedRoot, lockedEc);
+                        const bool built =
+                            makeDirectory(lockedRoot) && writeSilentWav(lockedRoot / lockedName, static_cast<uint32_t>(44100 * kFixtureDurationMs / 1000));
+
+                        const auto lockedRootInfo = built ? db.getLibraryRootManager().addRoot(pathToString(lockedRoot)) : std::nullopt;
+                        const auto lockedFolderId = built ? db.getFolderDatabase().findOrCreateFolderByPath(lockedRoot) : FolderId{-1};
+                        report.check(built && lockedRootInfo.has_value() && lockedFolderId > 0, "a third root could be added with a file in it");
+
+                        if (lockedRootInfo.has_value() && lockedFolderId > 0)
+                        {
+                            report.check(
+                                runScan({lockedFolderId}, false, report, "the third root, still listable"), "the scan that discovers it reports success");
+
+                            TrackId lockedId{-1};
+                            for (const auto &row : trackRowsUnder(db, lockedFolderId))
+                            {
+                                if (row.filename == lockedName)
+                                {
+                                    lockedId = row.trackId;
+                                }
+                            }
+                            report.check(lockedId > 0, "its file has a row");
+
+                            const bool denied = lockedId > 0 && setDirectoryListable(lockedRoot, false);
+                            report.check(denied, "the root could be made unlistable while still being a directory");
+
+                            if (denied)
+                            {
+                                std::error_code stillEc;
+                                report.check(std::filesystem::is_directory(lockedRoot, stillEc),
+                                    "it still answers is_directory, which is what the old eligibility check asked");
+
+                                report.check(runScan({lockedFolderId}, true, report, "destructive, the third root unlistable"),
+                                    "a scan that may delete reports success with a root it could not list");
+
+                                const auto afterLocked = db.getTrackById(lockedId);
+                                report.check(afterLocked.has_value(), "the row under the unlistable root survived it");
+                                report.check(afterLocked.has_value() && !afterLocked->is_missing, "and was not marked missing either");
+
+                                // Put the permissions back before anything tries to clean up.
+                                report.check(setDirectoryListable(lockedRoot, true), "the root could be made listable again");
+                            }
+
+                            db.getLibraryRootManager().removeRoot(lockedRootInfo->id);
+                        }
+
+                        std::filesystem::remove_all(lockedRoot, lockedEc);
                     }
 
                     if (addedRoot.has_value())
