@@ -912,6 +912,10 @@ namespace jucyaudio
             constexpr uint32_t kExtraPaddingAfterId3 = 2048; // bytes past it, before the first sync
             constexpr int kMp3SamplesToRead = 4096;
             constexpr uint32_t kListFixtureSampleCount = 6;
+            // The fixed buffer the MP3 exporter used to read the ID3v2 tag into, and a comment long
+            // enough to make a tag that does not fit in it.
+            constexpr uint32_t kOldId3v2BufferBytes = 10 * 1024;
+            constexpr size_t kOversizedCommentBytes = 12 * 1024;
             // The over-claiming fixture: the header says this many samples, the file holds six bytes.
             constexpr uint32_t kOverclaimedSampleCount = 1000;
             // One second in at 44.1 kHz. MP3 frames hold 1152 samples, and the encoder adds its own
@@ -1216,6 +1220,8 @@ namespace jucyaudio
             {
                 bool firstFrameCarriesVbrTag{false};
                 bool startsWithId3v2{false};    // an ID3v2 tag at offset zero
+                uint32_t id3v2Bytes{0};         // its length, header included, as the tag declares it
+                uint32_t firstSyncAt{0};        // where the audio actually starts
                 bool id3v2WrittenTwice{false};  // and a second one straight after it
                 int id3v1Footers{0};            // 0, 1, or - if both LAME and the caller wrote one - 2
                 uint32_t declaredBytes{0};  // what the Xing header says the audio occupies
@@ -1290,6 +1296,7 @@ namespace jucyaudio
                 if (const auto firstTag = id3v2LengthAt(0); firstTag > 0)
                 {
                     shape.startsWithId3v2 = true;
+                    shape.id3v2Bytes = static_cast<uint32_t>(firstTag);
                     // A second tag straight after the first is the signature of LAME having queued its
                     // own copy in front of the placeholder frame.
                     if (const auto secondTag = id3v2LengthAt(firstTag); secondTag > 0)
@@ -1316,6 +1323,7 @@ namespace jucyaudio
                 }
 
                 const size_t firstSync = offset;
+                shape.firstSyncAt = static_cast<uint32_t>(firstSync);
                 shape.presentBytes = static_cast<uint32_t>(audioEnd - firstSync);
 
                 static constexpr int bitrates[16]{0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0};
@@ -5604,7 +5612,19 @@ namespace jucyaudio
                     mp3Settings.trackNumber = "1";
                     mp3Settings.year = "2026";
                     mp3Settings.genre = "Other";
-                    mp3Settings.comment = "Long enough that the ID3v2 tag cannot be mistaken for nothing.";
+
+                    // Deliberately past the 10 KiB the exporter used to reserve on the stack. Nothing
+                    // limits the length of this field between the export dialog and
+                    // lame_get_id3v2_tag, and when the tag outgrew that buffer LAME copied nothing and
+                    // returned the size it wanted, which then went to write() as a length - reading
+                    // off the end of the stack and into the file. A tag this size is unusual but it is
+                    // the user's to ask for, so the export has to carry it rather than refuse or
+                    // truncate it.
+                    mp3Settings.comment.reserve(kOversizedCommentBytes + 64);
+                    while (mp3Settings.comment.size() < kOversizedCommentBytes)
+                    {
+                        mp3Settings.comment += "This comment is here to outgrow a ten kilobyte buffer. ";
+                    }
                     auto mp3Partial{mp3Settings.outputPath};
                     mp3Partial += ".jucyaudio-part";
 
@@ -5632,6 +5652,17 @@ namespace jucyaudio
                         // The tag has to be there, or this check is back to testing the offset-zero
                         // case where a wrong offset cannot be told from a right one.
                         report.check(exported.startsWithId3v2, "the exported MP3 carries the ID3v2 tag its settings asked for");
+                        report.check(exported.id3v2Bytes > kOldId3v2BufferBytes,
+                            std::format("that tag is larger than the {} bytes the exporter used to reserve on the stack, so this is the case that used to read past it ({} bytes)",
+                                kOldId3v2BufferBytes,
+                                exported.id3v2Bytes));
+                        // The placeholder frame follows the tag immediately, so the first sync lands
+                        // exactly at the tag's declared end when the whole tag was written. A short or
+                        // garbage tag puts it somewhere else.
+                        report.check(exported.firstSyncAt == exported.id3v2Bytes,
+                            std::format("the whole tag was written - the audio starts at byte {}, where the tag says it ends ({})",
+                                exported.firstSyncAt,
+                                exported.id3v2Bytes));
                         report.check(!exported.id3v2WrittenTwice,
                             "and carries it once - LAME was told not to write the tag this exporter writes itself");
                         report.check(exported.id3v1Footers == 1, std::format("one ID3v1 footer, not two ({} found)", exported.id3v1Footers));

@@ -99,11 +99,33 @@ namespace jucyaudio
             {
                 return fail(std::format("MTE: lame_init_params() failed with code: {}", lame_ret));
             }
-            unsigned char id3v2[10 * 1024];
-            size_t id3bytes = lame_get_id3v2_tag(m_lameFlags, id3v2, sizeof id3v2);
-            if (!m_outputStream->write(id3v2, id3bytes))
+            // Ask how large the tag is, then make room for exactly that.
+            //
+            // The buffer used to be a fixed 10 KiB, which is a read past its end waiting to happen:
+            // lame.h says the return is "number of bytes copied into buffer, or number of bytes
+            // rquired if buffer 'size' is too small", and `id3tag.c` bears that out - it returns
+            // tag_size without touching the buffer when the buffer is short. So an oversized tag left
+            // the array untouched and handed write() a length larger than the array, which reads off
+            // the end of the stack and into the user's file. A comment field has no length limit
+            // between the export dialog and here, so the size is the user's to choose.
+            //
+            // Querying with a null buffer is the documented way to ask, and is what LAME's own
+            // id3tag_write_v2 does with the same pair of calls.
+            const size_t id3v2Needed = lame_get_id3v2_tag(m_lameFlags, nullptr, 0);
+            if (id3v2Needed > 0)
             {
-                return fail("MTE: could not write the ID3v2 tag to " + pathToString(renderTargetPath()));
+                std::vector<unsigned char> id3v2(id3v2Needed);
+                const size_t id3bytes = lame_get_id3v2_tag(m_lameFlags, id3v2.data(), id3v2.size());
+                if (id3bytes > id3v2Needed)
+                {
+                    // The same test LAME makes after its own second call: a return larger than the
+                    // buffer means the tag grew between the two and nothing was copied.
+                    return fail(std::format("MTE: the ID3v2 tag asked for {} bytes and then wanted {}", id3v2Needed, id3bytes));
+                }
+                if (!m_outputStream->write(id3v2.data(), id3bytes))
+                {
+                    return fail("MTE: could not write the ID3v2 tag to " + pathToString(renderTargetPath()));
+                }
             }
 
             // Everything LAME emits from here on starts with the placeholder frame it reserves for

@@ -1,19 +1,18 @@
 # JucyAudio - Open Tasks
 
-Ordered by priority: **P1** (fix before tagging 2.0) → **P3** (whenever). Two P1s are open: the macOS
-half of the JUCE 9.0.2 upgrade has not been built, and it needs a machine nobody has had to hand yet;
-and the MP3 exporter reads past a stack buffer when the ID3v2 tag it is handed is larger than 10 KiB.
-The deadlock items are done, and so is the schema divergence that left every new library without
-search, markers and the EQ/reverb presets. P2 items are reachable correctness or user-visible defects
-that are not memory-unsafe; P3 items cannot happen today, are bounded to a logged stale-state effect,
-or need a design decision first.
+Ordered by priority: **P1** (fix before tagging 2.0) → **P3** (whenever). One P1 is open: the macOS
+half of the JUCE 9.0.2 upgrade has not been built, and it needs a machine nobody has had to hand yet.
+The memory-safety and deadlock items are done, and so is the schema divergence that left every new
+library without search, markers and the EQ/reverb presets. P2 items are reachable correctness or
+user-visible defects that are not memory-unsafe; P3 items cannot happen today, are bounded to a
+logged stale-state effect, or need a design decision first.
 
-Reprioritized on 2026-09-13, after reading every entry against the code it describes. Two moved. The
-MP3 Info frame entry went P2 -> P1 and is **fixed in that same change**, so it is gone from this file
-rather than sitting here relabelled. The folder cache entry went P3 -> P2; its own section says why.
-The oversized-ID3v2 entry was added the same day by the reviewer of that fix, and is P1 rather than
-the P2 it was first filed as: it is an out-of-bounds read, and the line above says in as many words
-that P2 is for defects which are **not** memory-unsafe.
+Reprioritized on 2026-09-13, after reading every entry against the code it describes. Two moved, and
+both of those are now fixed and gone from this file rather than sitting here relabelled: the MP3 Info
+frame entry, which went P2 -> P1, and the oversized-ID3v2 read the reviewer of that fix found next
+door, filed P1 because it was an out-of-bounds read and the line above reserves P2 for defects that
+are **not** memory-unsafe. The folder cache entry went P3 -> P2 and is still open; its own section
+says why.
 
 ---
 
@@ -255,42 +254,3 @@ predates this upgrade.
 and buffer size selection, and Multi-Output device handling. Those are macOS-only, are not exercised
 by any self test on any platform, and need a human at a Mac with an audio device. The build and self
 test are the floor, not the whole check.
-
----
-
-## P1: an oversized ID3v2 tag makes the MP3 exporter read past its stack buffer
-
-**Where it came from**: raised as a `[task]` finding by the reviewer of the Info frame fix (codex,
-2026-09-13), thread `01a09c2e-0c00-7d83-ad8a-ca4039c77af3`. Recorded verbatim:
-
-> **[task]** `ExportMixToMp3.cpp:87` uses a fixed 10 KiB ID3v2 buffer without checking whether
-> `lame_get_id3v2_tag()` returned a larger required size. In that case LAME copies nothing, but line
-> 89 reads `id3bytes` from the smaller stack array, causing an out-of-bounds read that can crash or
-> place unrelated stack data in the export. The multiline comment input is not length-limited. This
-> predates the reviewed diff and is distinct from placing the finished Info frame, so it is
-> deferrable; record a task to query/allocate the required size or reject an oversized tag before
-> writing.
-
-**Confirmed against LAME's contract**: `lame.h` says of `lame_get_id3v2_tag` - "Function returns
-number of bytes copied into buffer, or number of bytes rquired if buffer 'size' is too small.
-Function fails, if returned value is larger than 'size'." So on overflow the return is a size, not a
-count, nothing was written into the array, and handing that number to `write()` reads whatever
-follows a 10 KiB stack buffer straight into the user's file.
-
-**Why P1**: it is an out-of-bounds read, and this file reserves P2 for defects that are *not*
-memory-unsafe. P3's "cannot happen today" does not apply either - it needs only a long enough tag,
-and the comment field has no length limit anywhere between the settings dialog and here. What it
-costs is either a crash or a slice of this process's stack written into a file the user then hands to
-someone else. Reaching 10 KiB of ID3v2 takes a deliberately large comment rather than ordinary use,
-which is the one thing keeping it from being the first item in this file.
-
-**Fix approach**: the guard the same function already applies to the info frame - compare the return
-against the buffer size and fail before writing - or size the buffer from a first call with
-`size` zero and allocate. The first is three lines and mirrors code that is already there; the second
-is better behaviour, since it exports the tag the user asked for rather than refusing. The same
-question applies to `lame_get_id3v1_tag`, though ID3v1 is a fixed 128 bytes so that one cannot
-overflow.
-
-**Not fixed with the Info frame change** because the review protocol keeps `[task]` findings out of
-the change they were raised against, and the human should get the choice between refusing and
-allocating.
