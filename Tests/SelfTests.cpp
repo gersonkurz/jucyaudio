@@ -19,20 +19,21 @@
 #include <Tests/SelfTests.h>
 #include <Tests/SchemaV12Fixture.h>
 
-#include <Audio/Includes/ActiveExportSettings.h>
 #include <Audio/ExportMixToWav.h>
+#include <Audio/Includes/ActiveExportSettings.h>
 #include <Audio/MixExporter.h>
 #include <Audio/MixRecoveryM3U.h>
+#include <Database/DatabaseBackupManager.h>
 #include <Database/Includes/AlbumInfo.h>
 #include <Database/Includes/IAlbumManager.h>
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/MixRecoveryEntry.h>
 #include <Database/Includes/TrackQueryArgs.h>
-#include <Database/DatabaseBackupManager.h>
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/TrackLibrary.h>
+#include <Database/TrackScanner.h>
 #include <UI/Settings.h>
 #include <UI/TimelineComponent.h>
 #include <Utils/AssortedUtils.h>
@@ -6311,6 +6312,95 @@ namespace jucyaudio
                 report.check(!scratchFolders.removeEmptyFolders(), "removeEmptyFolders refuses when the table it reads is gone");
                 report.check(countFolderRows() == folderRowsBefore,
                     std::format("it deleted nothing then either ({} rows)", countFolderRows()));
+
+                // --- What a caller can now find out about a cache that did not build ---
+                //
+                // Tracks is gone at this point, so a rebuild fails at the read that fills the track
+                // pass. The cache has to be invalidated first: removeEmptyFolders refused before it
+                // committed, so it never invalidated anything, and the cache built when these folders
+                // were seeded is still marked valid. Without this the fast path at the top of
+                // buildCacheIfNeeded returns the old good cache and none of the checks below mean
+                // anything - which is exactly what they did on the first run of this test.
+                scratchFolders.invalidateCache();
+                //
+                // The old shape of this was that nobody could tell. buildCacheIfNeeded returned bool
+                // and all eight call sites dropped it, initialize() returned void, and every accessor
+                // answered out of whatever the maps held when the read gave up - so a folder came back
+                // from a build that failed exactly as it does from one that worked.
+                {
+                    const auto cacheResult = scratchFolders.initialize();
+                    report.check(!cacheResult.isOk(), "initialize() reports a folder cache that could not be built");
+                    report.check(!cacheResult.errorMessage.empty(),
+                        std::format("and says what went wrong rather than only that it did ('{}')", cacheResult.errorMessage));
+
+                    std::unordered_set<FolderId> reported;
+                    const auto walkResult = scratchFolders.getAllChildFolders(seeded, reported);
+                    report.check(!walkResult.isOk(), "the reporting form of getAllChildFolders says the tree it walked was partial");
+
+                    // Deliberately still answering. The point of the pair is that a caller who wants to
+                    // show what could be read still can, and only the caller who must not act on a
+                    // partial tree refuses - the same bargain ITrackDatabase::getTracks strikes.
+                    const auto quiet = scratchFolders.getAllChildFolders(seeded);
+                    report.check(quiet.size() == reported.size(),
+                        std::format("the quiet form answers the same as ever, status and all ({} folder(s) either way)", quiet.size()));
+                }
+
+                // --- And the caller that must not act on it ---
+                //
+                // What a short scope actually costs, stated carefully, because the obvious guess is
+                // wrong and this check is only worth what its reasoning is. existingTrackCache holds
+                // the tracks the scan has in scope; every file found on disk is erased from it, and
+                // whatever is left at the end is treated as gone. So a scope that is too short means
+                // FEWER tracks in that cache, fewer leftovers, and therefore LESS deletion - it
+                // under-reports rather than destroys. A scan on a partial tree does not lose data; it
+                // returns true having examined a subset of the library and told nobody.
+                //
+                // That is what the guard buys and all it buys: the difference between a scan that
+                // admits it could not determine its scope and one that reports success for work it did
+                // not do. The genuinely destructive cousin - a root that could not be walked, whose
+                // tracks DO reach the leftovers because the scope query does not care whether the disk
+                // is plugged in - is a different defect and is tracked as issue #42.
+                //
+                // Both directions are checked, because a guard that refuses everything would pass the
+                // first one on its own.
+                {
+                    std::atomic<bool> neverCancel{false};
+                    // A real folder id rather than an empty list, so the scope query has something to
+                    // resolve and the assertion below is about a scope that was actually asked for.
+                    const auto runScan = [&neverCancel](ITrackDatabase &db, const std::vector<FolderId> &scope)
+                    {
+                        TrackScanner scanner{db};
+                        return scanner.scan(scope, false, true, nullptr, nullptr, &neverCancel);
+                    };
+
+                    report.check(!runScan(scratch, seeded), "a scan refuses a scope it could not determine rather than reporting success for a subset");
+
+                    // The control, on its own database. This one's Tracks was dropped outright rather
+                    // than renamed, so there is nothing here to repair - and a check that only ever sees
+                    // the broken case would pass just as well against a guard that refused everything.
+                    {
+                        const auto healthyDbPath = selfTestRoot / "foldercache-healthy" / "jucyaudio.db";
+                        std::error_code healthyEc;
+                        std::filesystem::remove_all(healthyDbPath.parent_path(), healthyEc);
+                        std::filesystem::create_directories(healthyDbPath.parent_path(), healthyEc);
+
+                        SqliteTrackDatabase healthy;
+                        const auto healthyConnected = healthy.connect(healthyDbPath);
+                        report.check(healthyConnected.isOk(),
+                            std::format("a database whose reads all work could be created (said: '{}')", healthyConnected.errorMessage));
+
+                        if (healthyConnected.isOk())
+                        {
+                            report.check(healthy.getFolderDatabase().initialize().isOk(), "its folder cache builds");
+                            // Its own folder, so this scan resolves a non-empty scope too and the two
+                            // halves differ only in whether the cache behind them could be built.
+                            const auto healthyFolder = healthy.getFolderDatabase().findOrCreateFolderByPath(healthyDbPath.parent_path() / "one");
+                            report.check(healthyFolder > 0, std::format("a folder could be created in it (id {})", healthyFolder));
+                            report.check(runScan(healthy, {healthyFolder}),
+                                "and the same scan runs against it, so the refusal is the broken cache and not scanning as such");
+                        }
+                    }
+                }
             }
 
             // How a sabotaged read actually ended, asked of the exact query the cache runs.

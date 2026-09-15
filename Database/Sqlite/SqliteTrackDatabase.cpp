@@ -1037,7 +1037,14 @@ namespace jucyaudio
                 m_db.close();
                 return schemaResult;
             }
-            m_folderDatabase.initialize();
+            // Reported, not fatal. A library whose folder cache will not build is still openable -
+            // the tracks are all there, and the next rebuild may well succeed - but until now nothing
+            // anywhere said it had happened, and connect() returning success was the whole of what a
+            // caller heard.
+            if (const auto cacheResult = m_folderDatabase.initialize(); !cacheResult.isOk())
+            {
+                spdlog::error("connect: the database opened but its folder cache did not build: {}", cacheResult.errorMessage);
+            }
             return DbResult::success();
         }
 

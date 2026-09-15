@@ -94,7 +94,24 @@ namespace jucyaudio
 
             const auto &folderDatabase{m_db.getFolderDatabase()};
             TrackQueryArgs args{};
-            const auto folderSet{folderDatabase.getAllChildFolders(folderIdsToScan)};
+
+            // The scan scope. A partial answer here does not destroy anything - existingTrackCache
+            // holds what this set selects, every file found on disk is erased from it, and what is
+            // left is treated as gone, so a short scope means fewer leftovers and LESS deletion. What
+            // it does mean is a scan that examines a subset of the library and returns true anyway:
+            // tracks under the folders it never selected are neither checked nor reported, and the
+            // caller is told the scan succeeded. Refusing is the difference between doing less than
+            // claimed and saying so.
+            //
+            // The destructive version of this is a root that could not be walked, whose tracks DO
+            // reach the leftovers because the scope came from the database and does not know the disk
+            // is unplugged. That is issue #42, and it is not this guard.
+            std::unordered_set<FolderId> folderSet;
+            if (const auto scopeResult = folderDatabase.getAllChildFolders(folderIdsToScan, folderSet); !scopeResult.isOk())
+            {
+                spdlog::error("Scan refused: the scan scope could not be determined - {}", scopeResult.errorMessage);
+                return false;
+            }
             args.folderIds = std::vector<FolderId>{folderSet.begin(), folderSet.end()};
             args.recursive = true;
             args.usePaging = false;
@@ -194,10 +211,17 @@ namespace jucyaudio
                     continue;
                 }
 
-                for (const auto folderInRoot : folderDatabase.getAllChildFolders({rootFolderId}))
+                // Same again, from the other side. inspectedFolders is what says a folder was really
+                // looked at, so a partial answer here under-reports what was inspected and hands the
+                // difference to the leftovers.
+                std::unordered_set<FolderId> foldersInRoot;
+                if (const auto rootResult = folderDatabase.getAllChildFolders({rootFolderId}, foldersInRoot); !rootResult.isOk())
                 {
-                    inspectedFolders.insert(folderInRoot);
+                    spdlog::error(
+                        "Scan refused: the folders under root {} could not be determined - {}", pathToString(rootFolderPath), rootResult.errorMessage);
+                    return false;
                 }
+                inspectedFolders.insert(foldersInRoot.begin(), foldersInRoot.end());
 
                 spdlog::info("Scanning folder: {}", pathToString(rootFolderPath));
                 juce::RangedDirectoryIterator iter{juce::File(pathToString(rootFolderPath)), true, "*.mp3;*.wav;*.flac;*.ogg", juce::File::findFiles};

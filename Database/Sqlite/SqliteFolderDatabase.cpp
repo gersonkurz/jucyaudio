@@ -6,6 +6,7 @@
 #include <Utils/AssortedUtils.h> // For pathToString etc.
 #include <algorithm>
 #include <cassert>
+#include <format>
 #include <spdlog/spdlog.h>
 
 namespace jucyaudio
@@ -467,17 +468,36 @@ namespace jucyaudio
 
         std::unordered_set<FolderId> SqliteFolderDatabase::getAllChildFolders(const std::vector<FolderId> &folderIdsToScan) const
         {
-            buildCacheIfNeeded();
-
+            // Deliberately unchanged, status and all. Callers of this form cannot be told anything -
+            // there is nowhere to put it - so it keeps answering exactly as it always did, out of
+            // whatever the cache holds. The overload below is where a caller goes to find out.
             std::unordered_set<FolderId> allChildIds;
+            std::ignore = getAllChildFolders(folderIdsToScan, allChildIds);
+            return allChildIds;
+        }
+
+        DbResult SqliteFolderDatabase::getAllChildFolders(const std::vector<FolderId> &folderIdsToScan, std::unordered_set<FolderId> &results) const
+        {
+            results.clear();
+
+            // The build happens first and its answer is kept, but the walk runs either way: a caller
+            // that wants to show what could be read still can, and the one that must not act on a
+            // partial tree has the status to refuse on. Same shape as ITrackDatabase::getTracks.
+            const bool built = buildCacheIfNeeded();
             {
                 std::lock_guard cacheLock{m_cacheMutex};
                 for (const auto &folderId : folderIdsToScan)
                 {
-                    getChildFoldersRecursive(allChildIds, folderId);
+                    getChildFoldersRecursive(results, folderId);
                 }
             }
-            return allChildIds;
+
+            if (!built)
+            {
+                return DbResult::failure(DbResultStatus::ErrorDB,
+                    std::format("the folder cache could not be built, so the {} folder(s) below are a partial tree rather than the whole one", results.size()));
+            }
+            return DbResult::success();
         }
 
         bool SqliteFolderDatabase::updateRootPathValuesInDatabase(const std::unordered_map<FolderId, std::string> &pathUpdates) const

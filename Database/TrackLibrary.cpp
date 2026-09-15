@@ -59,8 +59,11 @@ namespace jucyaudio
 
             // First, initialize the folder database cache
             auto& folderDb = m_builtinDatabase.getFolderDatabase();
-            folderDb.initialize();
-            
+            if (const auto cacheResult = folderDb.initialize(); !cacheResult.isOk())
+            {
+                spdlog::error("TrackLibrary initialisation: the folder cache did not build: {}", cacheResult.errorMessage);
+            }
+
             // Then refresh root statuses
             auto& rootManager = m_builtinDatabase.getLibraryRootManager();
             rootManager.refreshRootStatuses();

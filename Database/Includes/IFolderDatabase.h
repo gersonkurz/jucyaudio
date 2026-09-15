@@ -1,9 +1,10 @@
 #pragma once
 
+#include <Database/Includes/Constants.h>
 #include <Database/Includes/FolderInfo.h>
 #include <optional>
-#include <vector>
 #include <unordered_set>
+#include <vector>
 
 namespace jucyaudio
 {
@@ -33,7 +34,18 @@ namespace jucyaudio
 
             virtual bool hasChildren(FolderId parentId) const = 0;
 
-            virtual void initialize() {}
+            /**
+             * @brief Builds whatever the implementation caches, and says whether it worked.
+             *
+             * Returned rather than discarded because a cache that cannot be built is not a library
+             * with no folders in it: the reads that fill it can fail, and every accessor afterwards
+             * answers out of whatever was read before the failure. A caller that ignores this is
+             * choosing to serve that, which is a decision worth making on purpose.
+             */
+            virtual DbResult initialize()
+            {
+                return DbResult::success();
+            }
 
             /**
              * @brief Adds a new folder to the database.
@@ -44,6 +56,23 @@ namespace jucyaudio
             virtual bool addFolder(FolderInfo &folder) = 0;
 
             virtual std::unordered_set<FolderId> getAllChildFolders(const std::vector<FolderId> &folderIdsToScan) const = 0;
+
+            /**
+             * @brief The same walk, but it says whether the cache underneath it was whole.
+             *
+             * The form above cannot: an incomplete set and a complete one are the same type, and a
+             * folder cache built from reads that failed partway holds a prefix of the tree. Callers
+             * that only display the answer can live with that. Callers that decide what to scan, what
+             * is in scope, or what is missing cannot - a short set there means folders nobody looked
+             * at, and a track under one of them is indistinguishable from a deleted file.
+             *
+             * @param results Cleared first, then filled with whatever the cache could answer -
+             *        including a partial tree when the build failed, so a caller that wants to show
+             *        what it got still can.
+             * @return Ok when the cache was built whole, otherwise the failure, with @p results
+             *         holding what was readable.
+             */
+            virtual DbResult getAllChildFolders(const std::vector<FolderId> &folderIdsToScan, std::unordered_set<FolderId> &results) const = 0;
 
             virtual bool removeEmptyFolders() const = 0;
 

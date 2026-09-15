@@ -39,10 +39,16 @@ namespace jucyaudio
             void invalidateCache() const override;
             FolderId findOrCreateFolderByPath(const std::filesystem::path &path) override;
             std::unordered_set<FolderId> getAllChildFolders(const std::vector<FolderId> &folderIdsToScan) const override;
+            DbResult getAllChildFolders(const std::vector<FolderId> &folderIdsToScan, std::unordered_set<FolderId> &results) const override;
 
-            void initialize() override
+            DbResult initialize() override
             {
-                buildCacheIfNeeded();
+                if (!buildCacheIfNeeded())
+                {
+                    return DbResult::failure(
+                        DbResultStatus::ErrorDB, "the folder cache could not be built; every folder lookup until it can will answer out of a partial tree");
+                }
+                return DbResult::success();
             }
 
             /**

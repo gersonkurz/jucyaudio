@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix shuffle and repeat mode persistence by saving to TOML backend
 - Fix virtual dispatch bug in VirtualFolderNode causing off-by-one errors
 - Fix visualizer FIFO tap point unification in PlaybackController
+- A scan now refuses when the folder cache it reads its scope from could not be built, instead of reporting success after examining only the part of the library that cache could still describe
 - Fix an MP3 export with a large ID3v2 tag writing stack memory into the file instead of the tag, and truncating the tag the user asked for
 - Fix exported MP3s carrying an unfinished LAME Info frame at the head and a duplicate at the end, which made duration and seeking unreliable in other players
 - Fix reading MP3 VBR files with padding after the ID3v2 header (via JUCE 9.0.2)
