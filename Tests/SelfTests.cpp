@@ -2710,6 +2710,148 @@ namespace jucyaudio
                 }
             }
 
+            // --- 11b. A scan leaves the folder counts telling the truth. ---
+            //
+            // trackCount is an aggregate over a folder's descendants, worked out once while the cache is
+            // built. The scan writes tracks straight past that cache, and a folder it discovers is added
+            // surgically with the -1 that FolderInfo starts life with, so after a scan the cache no
+            // longer agrees with the database about what is where.
+            //
+            // Nothing inside the library corrected that. The one thing that did was the library roots
+            // dialog, which invalidated the cache itself after calling scanLibrary - so the tree a user
+            // sees was right, and every other caller got stale counts. That is the defect this covers:
+            // an invariant of the scan enforced by one of its callers rather than by the scan. It is
+            // checked here, at the API, because that is the level it was missing from.
+            //
+            // Read without invalidating anything first, because that is the state a user is in when they
+            // look at the tree after a scan. A check that invalidated first would pass against the defect.
+            {
+                const auto countedRoot = workRoot / "counted";
+                const auto countedDeep = countedRoot / "deep";
+
+                std::error_code countEc;
+                const bool built = makeDirectory(countedRoot) && makeDirectory(countedDeep) &&
+                                   writeSilentWav(countedDeep / "counted.wav", static_cast<uint32_t>(44100 * kFixtureDurationMs / 1000));
+                report.check(built, "a nested folder with one file could be added to the library on disk");
+
+                if (built)
+                {
+                    const auto rootCountBefore = db.getFolderDatabase().getFolderById(rootFolderId);
+                    report.check(rootCountBefore.has_value(), "the root folder's count could be read before the scan");
+
+                    report.check(runScan({rootFolderId}, false, report, "a new nested folder appears"), "the scan that discovers it reports success");
+
+                    // After the scan and before anything else touches the cache.
+                    const auto deepId = db.getFolderDatabase().findOrCreateFolderByPath(countedDeep);
+                    const auto countedId = db.getFolderDatabase().findOrCreateFolderByPath(countedRoot);
+                    report.check(deepId > 0 && countedId > 0, "the scan created rows for both new folders");
+
+                    const auto deep = db.getFolderDatabase().getFolderById(deepId);
+                    report.check(deep.has_value() && deep->trackCount == 1,
+                        std::format("the folder the file landed in says it holds 1 track (says {})", deep.has_value() ? deep->trackCount : -99));
+
+                    // The count is recursive, so the folder above it sees the same track.
+                    const auto counted = db.getFolderDatabase().getFolderById(countedId);
+                    report.check(counted.has_value() && counted->trackCount == 1,
+                        std::format("and its parent counts it too (says {})", counted.has_value() ? counted->trackCount : -99));
+
+                    const auto rootCountAfter = db.getFolderDatabase().getFolderById(rootFolderId);
+                    report.check(rootCountBefore.has_value() && rootCountAfter.has_value() && rootCountAfter->trackCount == rootCountBefore->trackCount + 1,
+                        std::format("and the library root is one higher than it was ({} -> {})",
+                            rootCountBefore.has_value() ? rootCountBefore->trackCount : -99,
+                            rootCountAfter.has_value() ? rootCountAfter->trackCount : -99));
+                }
+
+                // --- and a scan that does not run to the end leaves them honest too ---
+                //
+                // scanLoop has a dozen ways out - a cancellation between two files, a failed write, a
+                // root whose folders could not be determined - and every one of them can happen after
+                // rows have already changed. So the refresh belongs to the attempt, not to the happy
+                // path: it sits in TrackScanner::scan where scanLoop returns, and this is the check
+                // that says so. Invalidating at the end of scanLoop instead passes every check above
+                // and fails this one.
+                //
+                // Cancelled rather than failed because it is the exit that can be staged exactly: the
+                // cancellation is raised from the progress callback, which fires every hundredth file,
+                // so it lands well inside the walk with rows already written. The count below asserts
+                // that - an early cancellation that inserted nothing would leave the cache and the
+                // database trivially agreeing, and prove none of this.
+                {
+                    const auto cancelRoot = workRoot / "cancelme";
+
+                    // Enough files to reach the progress callback, which fires every hundredth, and
+                    // tiny ones: nothing reads their audio, they only have to be walked.
+                    constexpr int kFilesToWalk = 150;
+                    bool built = makeDirectory(cancelRoot);
+                    for (int i = 0; built && i < kFilesToWalk; ++i)
+                    {
+                        built = writeSilentWav(cancelRoot / std::format("c{:03}.wav", i), 4410);
+                    }
+                    report.check(built, std::format("{} small files could be written for the cancelled scan", kFilesToWalk));
+
+                    if (built)
+                    {
+                        std::atomic<bool> cancel{false};
+                        bool scanSaidSuccess = true;
+                        int progressReports = 0;
+                        std::vector<FolderId> scope{rootFolderId};
+                        theTrackLibrary.scanLibrary(
+                            scope,
+                            false,
+                            false,
+                            [&cancel, &progressReports](int, const std::string &)
+                            {
+                                // Not the first one. That is "Initializing scan...", raised before any
+                                // root is walked, and cancelling there stops the scan before it creates
+                                // anything - which would leave this checking a folder the test made
+                                // itself rather than one the scan did. The second is the hundredth file,
+                                // by which point the walk is well inside the directory above and its
+                                // folder row exists. The next file sees the flag and stops.
+                                if (++progressReports >= 2)
+                                {
+                                    cancel = true;
+                                }
+                            },
+                            [&scanSaidSuccess](bool success, const std::string &)
+                            {
+                                scanSaidSuccess = success;
+                            },
+                            &cancel);
+
+                        report.check(!scanSaidSuccess, "a cancelled scan reports failure");
+
+                        const auto cancelFolderId = db.getFolderDatabase().findOrCreateFolderByPath(cancelRoot);
+                        report.check(cancelFolderId > 0, "the cancelled scan still created the folder row it walked into");
+
+                        // Whatever the cancellation left behind, the cache has to agree with the
+                        // database about it. Counted in SQL rather than through the cache, because the
+                        // cache is the thing under test.
+                        int64_t rowsInDatabase = -1;
+                        {
+                            SqliteDatabase counter;
+                            if (counter.open(pathToString(databasePath)))
+                            {
+                                SqliteStatement stmt{counter, "SELECT COUNT(*) FROM Tracks WHERE folder_id = ?;"};
+                                if (stmt.isValid() && stmt.addParam(cancelFolderId) && stmt.getNextResult())
+                                {
+                                    rowsInDatabase = stmt.getInt64(0);
+                                }
+                            }
+                        }
+                        // Greater than zero, not merely countable. Tracks being inserted before the
+                        // cancellation is what makes this a test rather than a tautology.
+                        report.check(rowsInDatabase > 0,
+                            std::format("the cancellation landed after rows had already been written ({} in the database)", rowsInDatabase));
+
+                        const auto cancelled = db.getFolderDatabase().getFolderById(cancelFolderId);
+                        report.check(cancelled.has_value() && cancelled->trackCount == rowsInDatabase,
+                            std::format("and the cache agrees with the database about that folder ({} cached, {} in the database)",
+                                cancelled.has_value() ? cancelled->trackCount : -99,
+                                rowsInDatabase));
+                    }
+                }
+            }
+
             // --- 12. A root nobody could look at is not evidence that its files are gone. ---
             //
             // A leftover only means "the walk did not find it", and the walk finds nothing under a root

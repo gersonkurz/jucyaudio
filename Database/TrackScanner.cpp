@@ -33,6 +33,26 @@ namespace jucyaudio
 
             const auto success = scanLoop(folderIdsToScan);
 
+            // Whatever happened in there, the folder cache can no longer be trusted.
+            //
+            // A folder's trackCount is an aggregate over its descendants, worked out once while the
+            // cache is built by walking every track's ancestor chain. scanLoop writes tracks straight
+            // past that cache, and a folder it discovers is added surgically with the -1 that
+            // FolderInfo starts life with. m_isCacheValid stays true throughout, so nothing rebuilds.
+            //
+            // Here rather than at the end of scanLoop, because scanLoop has a dozen ways out - a
+            // cancellation between files, a failed write, a root whose folders could not be
+            // determined - and every one of them can happen after rows have already changed. An
+            // invalidation on the fallthrough path only would leave exactly those runs stale, which is
+            // the shape of bug this is meant to remove rather than relocate.
+            //
+            // Unconditional for the same reason. Tracking whether anything was written would mean a
+            // flag maintained at each of the half-dozen sites that change folder membership - two
+            // insert paths, the move, the delete - and a seventh added later would reintroduce this
+            // silently. The cost is one rebuild after a scan that has just walked the whole disk, and
+            // it is lazy: the next access pays for it, not this thread.
+            m_db.getFolderDatabase().invalidateCache();
+
             if (m_completionCb)
             {
                 m_completionCb(success, success ? "Scan completed successfully." : "Scan failed or was cancelled.");

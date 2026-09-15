@@ -53,17 +53,16 @@ namespace jucyaudio
                 {
                     // FIXED: This call now matches the expected signature
                     theTrackLibrary.scanLibrary(m_idsToScan, m_bForceRescan, m_bRemoveMissingFiles, progressCb, completionCb, &shouldCancel);
-                    
-                    // After scan completes, invalidate folder cache to recalculate track counts
+
+                    // The scan invalidates the folder cache itself now, so the counts read below are the
+                    // rebuilt ones. This used to do it here, which worked for this caller and only this
+                    // caller - anything else that scanned got stale counts, and the invariant lived in the
+                    // UI rather than with the thing that broke it.
                     auto &db = theTrackLibrary.getTrackDatabase();
                     auto &rootManager = db.getLibraryRootManager();
                     auto &folderDb = db.getFolderDatabase();
-                    //auto &albumManager = db.getAlbumManager();
-                    
-                    // Force the folder database to rebuild its cache with updated track counts
-                    folderDb.invalidateCache();
-                    
-                    // Now get the updated track counts from the rebuilt cache
+
+                    // The first of these rebuilds the cache; the rest are answered from it.
                     for (size_t i = 0; i < m_rootIdsToScan.size(); ++i)
                     {
                         if (i < m_idsToScan.size())
