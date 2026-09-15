@@ -230,7 +230,23 @@ Run either with `uv run` from its own directory.
 
 - `AGENTS.md` - parallel guidance for non-Claude agents; declares this file as source of truth. Update if collaboration philosophy changes.
 - `GEMINI.md` - parallel guidance for Gemini; same caveat.
-- `tasks.md` - open bugs and feature requests at repo root, with file-level pointers. Useful starting point for "what's broken" / "what's next".
+
+Open bugs and feature requests are **not** in this repository. They live in GitHub issues on
+`gersonkurz/jucyaudio` and are the starting point for "what's broken" / "what's next". Defects carry
+the P1/P2/P3 labels described under Loop parameters below; ideas and long-term wishes carry
+`enhancement`.
+
+Two files held them until 2026-09-15 and were both removed when they were migrated, so that the
+tracker is the only place open work lives:
+
+- `tasks.md` - seven defect entries, now issues #31 to #37. Their prose and their verified
+  file-and-line references went over as they stood. What was rewritten, and the only thing that was,
+  is cross-references that only worked while every entry shared one document: "recorded separately
+  below", "the entry above", "P3 in this file means". Those became issue links or lost the
+  positional wording. One of them was already dangling before the move - #32 pointed at a sibling
+  entry that had been fixed and deleted, the mix editor's statusless read - and now names what it
+  meant instead: closed by `bd761e1`, covered by section 5 of the scan suite.
+- `docs/issues.md` - four feature requests, now issues #38 to #41, quoted verbatim.
 
 REMEMBER THE MOST IMPORTANT RULE: ALWAYS use direct English, as a competent engineer explaining it to a colleague. Remove dramatic framing, suspense-building, hype, and buzzy metaphors (e.g. 'load-bearing assumption', 'here's the kicker', 'the most instructive part', 'this changes everything'). Plain sentences, no reveals. Keep every technical fact, number, file path, command, and code block exactly intact — only the style changes, not the substance, and do not shorten beyond what removing fluff removes. Output only the rewritten text with no preamble or commentary.
 
@@ -240,7 +256,19 @@ REMEMBER THE MOST IMPORTANT RULE: ALWAYS use direct English, as a competent engi
 
 Loop parameters:
 - Verify: `just build` && `just selftest`
-- Yardstick docs: docs/ROADMAP.md, docs/release-plan-2.0.md, docs/issues.md, tasks.md
+- Yardstick docs: docs/ROADMAP.md, docs/release-plan-2.0.md
+- Task list: GitHub issues on `gersonkurz/jucyaudio` — file each [task] finding
+  as an issue, labelled P1 (fix before tagging 2.0), P2 (reachable correctness
+  or user-visible defect that is not memory-unsafe) or P3 (cannot happen today,
+  bounded to a logged stale-state effect, or needs a design decision first).
+  An open unassigned issue is not started; assigned to @gersonkurz means work is
+  underway; closed means done and committed, with a comment naming the commit.
+  Filing one is not a tree change, so it needs no post-approval exemption.
+  Because the tracker is outside the repo and the reviewer runs read-only, a
+  response that records a [task] finding must quote the issue number, its label
+  and the text as filed. The reviewer read those entries and caught defects in
+  them while they were a file in the tree; quoting them back is what keeps that
+  possible now that it cannot.
 - Review focus: C++ lifetime/ownership/UB and audio/message-thread safety;
   cross-platform is an invariant — every change must build and behave on both
   Windows and macOS (JUCE 9), platform-specific code only in existing

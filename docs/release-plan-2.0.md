@@ -14,7 +14,8 @@ Ship 2.0 once all MUST-HAVE features are complete and a minimum quality gate is 
 
 - Windows MSI installer via the `msis` tool (`C:\NGBT\MSIS\msis-3.x`, WiX 6 backend) — replaces the
   legacy NSIS scripts under `setup/*.nsi`. See Section 5.
-- Bug fixes tracked in `tasks.md`.
+- Bug fixes tracked in [GitHub issues](https://github.com/gersonkurz/jucyaudio/issues); the ones that
+  must be fixed before tagging 2.0 carry the `P1` label.
 
 **Completed MUST-HAVE Features:**
 

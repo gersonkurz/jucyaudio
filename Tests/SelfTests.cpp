@@ -4074,7 +4074,7 @@ namespace jucyaudio
                     // one calls buildCacheIfNeeded and then reads m_folderInfoFromId whatever it
                     // returned, and that map is filled before every path that returns false - so a
                     // folder comes back from a build that failed exactly as it does from one that
-                    // worked. Recorded in tasks.md.
+                    // worked. Tracked as issue #32.
                     report.check(migrated.getFolderDatabase().getFolderById(10).has_value(),
                         "the migrated folder rows read back through the cache");
                 }
@@ -4560,7 +4560,9 @@ namespace jucyaudio
             // Two shapes are climbed, because they are missing different things and take different
             // branches. They are not every shape a version-12 database could have - one migrated from
             // below v11 carries other rung-only objects, and rungs 2 to 12 are not exercised by either
-            // of these; that is the same limit as the fixture's own, recorded in tasks.md:
+            // of these; that is the same limit as the fixture's own. Not tracked anywhere: the task
+            // that asked for a frozen old-schema fixture was closed by the work this comment sits in,
+            // and the residual limit was accepted with it rather than carried forward:
             //  - created from scratch, which never got the search tables (the v12 rung made those, and
             //    initialSqlStatements did not) - the divergence v32 exists to repair, frozen as it was;
             //  - migrated up from an earlier version, which ran that rung and does have them. It is the
@@ -6049,7 +6051,7 @@ namespace jucyaudio
                 std::format("the same path always came back as the same row ({} did not)", pathsThatChangedId.load()));
             // A count, not a check. An accessor builds the cache, releases both mutexes and then takes
             // the cache mutex to read, so the invalidator can empty it in between and the read misses -
-            // the known window recorded in tasks.md, and not something this change set out to close.
+            // the known window tracked as issue #36, and not something this change set out to close.
             // Asserting zero here would fail a correct implementation on an unlucky schedule.
             report.note(std::format("{} of {} reads found the cache emptied under them, which is the known accessor window",
                 readsThatLostTheRoot.load(),
