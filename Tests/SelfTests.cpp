@@ -6824,6 +6824,65 @@ namespace jucyaudio
                     report.check(Access::commit(dialog), "committing an unchanged name succeeds without doing anything");
                 }
 
+                // --- entering modal state twice drops the second callback on the floor ---
+                //
+                // The premise SingletonComponentDialog's modal path rests on, executed rather than
+                // read. It used to call launchOptions.launchAsync(), which is create() followed by
+                // enterModalState(true, nullptr, true) (juce_DialogWindow.cpp:125-130), and then call
+                // enterModalState again with a heap-allocated cleanup callback. Component::enterModalState
+                // guards its body with `if (! isCurrentlyModal (false))`, so the second call reached
+                // the else branch - a jassertfalse and nothing else. mcm.attachCallback never ran, so
+                // nothing owned that callback and nothing deleted it.
+                //
+                // A plain juce::Component is used rather than a DialogWindow: enterModalState calls
+                // setVisible(true), and a component that is not on the desktop shows nothing. This
+                // suite must not put a window on screen.
+                {
+                    struct Recorder final : public juce::ModalComponentManager::Callback
+                    {
+                        Recorder(int &finishedCount, int &destroyedCount)
+                            : finished{finishedCount},
+                              destroyed{destroyedCount}
+                        {
+                        }
+                        ~Recorder() override
+                        {
+                            ++destroyed;
+                        }
+                        void modalStateFinished(int) override
+                        {
+                            ++finished;
+                        }
+                        int &finished;
+                        int &destroyed;
+                    };
+
+                    int firstFinished = 0;
+                    int firstDestroyed = 0;
+                    int secondFinished = 0;
+                    int secondDestroyed = 0;
+
+                    juce::Component probe;
+                    probe.enterModalState(false, new Recorder{firstFinished, firstDestroyed}, false);
+                    report.check(probe.isCurrentlyModal(false), "a component that has entered modal state says so");
+
+                    // The second entry. Its callback is kept here because nothing else will own it -
+                    // which is the whole point - and is deleted below rather than leaked by the suite.
+                    auto *orphan = new Recorder{secondFinished, secondDestroyed};
+                    probe.enterModalState(false, orphan, false);
+
+                    probe.exitModalState(0);
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+                    report.check(firstFinished == 1, std::format("the callback of the first entry is invoked ({} time(s))", firstFinished));
+                    report.check(firstDestroyed == 1, std::format("and deleted by the modal manager that took it ({} time(s))", firstDestroyed));
+                    report.check(secondFinished == 0, std::format("the second entry's callback is never invoked ({} time(s))", secondFinished));
+                    report.check(
+                        secondDestroyed == 0, std::format("nor deleted - nothing took ownership of it, which is the leak ({} deletion(s))", secondDestroyed));
+
+                    delete orphan;
+                }
+
                 // --- Escape reaches the dialog even while the caret is in a text field ---
                 //
                 // Reported from use: "Create Working Set" could not be dismissed with Escape until the

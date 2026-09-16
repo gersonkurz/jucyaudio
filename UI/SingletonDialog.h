@@ -249,7 +249,18 @@ namespace jucyaudio
                     launchOptions.escapeKeyTriggersCloseButton = true;
                     launchOptions.useNativeTitleBar = true;
 
-                    auto *dialogWindow = launchOptions.launchAsync();
+                    // create(), not launchAsync(), because the enterModalState below is the one this
+                    // wants and launchAsync already does its own.
+                    //
+                    // launchAsync is exactly create() followed by enterModalState(true, nullptr,
+                    // true) (juce_DialogWindow.cpp:125-130). So the window arrived here already
+                    // modal, and Component::enterModalState guards its whole body with
+                    // `if (! isCurrentlyModal (false))` - the second call fell into the else branch,
+                    // which is a jassertfalse and nothing else. mcm.attachCallback never ran, so
+                    // nothing took ownership of the DialogCleanupCallback below and nothing ever
+                    // deleted it: one leak per modal dialog opened, plus an assertion in Debug, plus
+                    // an unregisterDialog that never happened.
+                    auto *dialogWindow = launchOptions.create();
                     if (!dialogWindow)
                     {
                         delete component; // Clean up if launch fails
@@ -259,8 +270,8 @@ namespace jucyaudio
                     registerDialog(dialogId, dialogWindow);
                     dialogWindow->setAlwaysOnTop(true);
 
-                    // For modal dialogs, use enterModalState with a callback for cleanup.
-                    // This is the robust JUCE way to handle modality and cleanup.
+                    // The one modal entry, and the only owner of the callback: ModalComponentManager
+                    // takes it here and runs modalStateFinished on every dismissal, including a delete.
                     struct DialogCleanupCallback : public juce::ModalComponentManager::Callback
                     {
                         juce::String id;
