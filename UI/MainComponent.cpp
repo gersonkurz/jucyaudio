@@ -2869,24 +2869,50 @@ namespace jucyaudio
             const auto mixNode{static_cast<MixNode *>(selectedNode)};
             const auto mixInfo{mixNode->getMixInfo()};
 
+            // Retained across the dialog, because it can rename the mix now and the node has to still
+            // be there afterwards to be told about it.
+            //
+            // Released by the lifetime of this handle rather than by a line in the callback, and that
+            // distinction is the whole point. juce::DialogWindow's close button and its window-level
+            // Escape both go through DefaultDialogWindow::closeButtonPressed, which calls
+            // setVisible(false) and nothing else - the content's callback is never invoked, the owned
+            // dialog is destroyed, and a release written inside that callback simply does not happen.
+            // A shared_ptr captured by the callback is destroyed with it on every one of those paths,
+            // and exactly once.
+            selectedNode->retain(REFCOUNT_DEBUG_ARGS);
+            const std::shared_ptr<INavigationNode> nodeRef{selectedNode,
+                [](INavigationNode *node)
+                {
+                    node->release(REFCOUNT_DEBUG_ARGS);
+                }};
+
             // Create and show the export dialog instead of just a file chooser
             auto *dialog = new ExportMixDialog{mixInfo,
-                [this, mixInfo](ExportMixDialog::Result result, const audio::ActiveExportSettings &settings)
+                [this, nodeRef, originalName = mixInfo.name](
+                    ExportMixDialog::Result result, const database::MixInfo &finalMixInfo, const audio::ActiveExportSettings &settings)
                 {
+                    // Before anything else, because whatever happens next should say the new name.
+                    // The dialog has already written it to the database; this is the tree catching up,
+                    // which otherwise waits for a refresh that may not come.
+                    if (finalMixInfo.name != originalName)
+                    {
+                        m_navigationTree.onNodeRenamed(nodeRef.get(), finalMixInfo.name);
+                    }
+
                     if (result == ExportMixDialog::Result::ExportNow)
                     {
-                        this->onExportMixSettingsReceived(mixInfo, settings);
+                        this->onExportMixSettingsReceived(finalMixInfo, settings);
                     }
                     else if (result == ExportMixDialog::Result::ScheduleForLater)
                     {
-                        if (theTrackLibrary.getMixManager().scheduleMixForExport(mixInfo.mixId, settings))
+                        if (theTrackLibrary.getMixManager().scheduleMixForExport(finalMixInfo.mixId, settings))
                         {
-                            spdlog::info("Mix '{}' scheduled for export", mixInfo.name);
+                            spdlog::info("Mix '{}' scheduled for export", finalMixInfo.name);
                             m_navigationTree.onMixExportStatusChanged();
                         }
                         else
                         {
-                            spdlog::error("Failed to schedule mix '{}' for export", mixInfo.name);
+                            spdlog::error("Failed to schedule mix '{}' for export", finalMixInfo.name);
                         }
                     }
                 }};

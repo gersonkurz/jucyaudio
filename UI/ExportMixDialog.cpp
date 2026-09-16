@@ -18,6 +18,7 @@ namespace jucyaudio
               m_fileLabel{"fileLabel", "Output File:"},
               m_exportFolderLabel{"exportFolderLabel", "Export To Folder:"},
               m_newFolderButton{"New Folder..."},
+              m_mixNameLabel{"mixNameLabel", "Mix Name:"},
               m_tagsHeaderLabel{"tagsHeader", "ID3 Tags (MP3 only):"},
               m_artistLabel{"artistLabel", "Artist:"},
               m_albumLabel{"albumLabel", "Album:"},
@@ -64,6 +65,13 @@ namespace jucyaudio
 
             m_filenameComponent->addListener(this);
             addAndMakeVisible(m_filenameComponent.get());
+
+            // The mix name. Above the tags rather than among them, because it is not one: editing it
+            // renames the mix in the library, which outlives the file being written here.
+            addAndMakeVisible(m_mixNameLabel);
+            addAndMakeVisible(m_mixNameEditor);
+            m_mixNameEditor.setText(mixInfo.name, juce::dontSendNotification);
+            m_mixNameEditor.addListener(this);
 
             // ID3 tag fields
             addAndMakeVisible(m_tagsHeaderLabel);
@@ -135,6 +143,13 @@ namespace jucyaudio
                 m_scheduleCheckbox.setToggleState(true, juce::dontSendNotification);
                 m_exportButton.setButtonText("Schedule");
 
+                // Everything just restored was chosen deliberately last time, so renaming the mix now
+                // must not overwrite any of it. Without this the three name-derived fields would look
+                // untouched and a rename would quietly discard a pending export's settings.
+                m_trackTitleEdited = true;
+                m_trackNumberEdited = true;
+                m_outputFileEdited = true;
+
                 // Select the saved export folder
                 if (!s.exportFolder.empty())
                 {
@@ -152,8 +167,9 @@ namespace jucyaudio
             // Set initial visibility based on file extension
             updateTagFieldsVisibility();
 
-            // Set size after all components are created (increased for schedule checkbox)
-            setSize(600, 580);
+            // Set size after all components are created (increased for schedule checkbox, then again
+            // for the mix name row: 25 for the row plus 20 of spacing below it)
+            setSize(600, 625);
 
             // Set initial focus
             juce::Component::SafePointer<ExportMixDialog> safeThis = this;
@@ -198,6 +214,12 @@ namespace jucyaudio
             m_fileLabel.setBounds(area.removeFromTop(20));
             area.removeFromTop(5);
             m_filenameComponent->setBounds(area.removeFromTop(25));
+            area.removeFromTop(20);
+
+            // Mix name
+            auto mixNameRow = area.removeFromTop(25);
+            m_mixNameLabel.setBounds(mixNameRow.removeFromLeft(80));
+            m_mixNameEditor.setBounds(mixNameRow.reduced(2, 0));
             area.removeFromTop(20);
 
             // ID3 Tags section
@@ -282,6 +304,27 @@ namespace jucyaudio
 
         void ExportMixDialog::textEditorTextChanged(juce::TextEditor &editor)
         {
+            // The mix name is not one of the settings - it names the mix, not the file - so it is
+            // handled first and separately. Everything it feeds is re-derived here rather than at
+            // export time, so the user can see what renaming did before committing to it.
+            if (&editor == &m_mixNameEditor)
+            {
+                applyMixNameDefaults(editor.getText());
+                return;
+            }
+
+            // A field the user typed into stops following the name. No guard: everything this dialog
+            // writes into these two goes in with dontSendNotification, so reaching here means the user
+            // did it.
+            if (&editor == &m_trackTitleEditor)
+            {
+                m_trackTitleEdited = true;
+            }
+            else if (&editor == &m_trackNumberEditor)
+            {
+                m_trackNumberEdited = true;
+            }
+
             // Update settings as user types
             if (&editor == &m_artistEditor)
                 m_settings.artist = editor.getText().toStdString();
@@ -317,6 +360,8 @@ namespace jucyaudio
         {
             if (component == m_filenameComponent.get())
             {
+                // The user has chosen where this goes, so renaming the mix no longer moves it.
+                m_outputFileEdited = true;
                 updateTagFieldsVisibility();
             }
         }
@@ -462,6 +507,144 @@ namespace jucyaudio
             }
         }
 
+        juce::String ExportMixDialog::leadingTrackNumber(const juce::String &mixName)
+        {
+            // "4025 - Automix 2025-10-26" exports as track 4025. Anything else has no track number:
+            // guessing one from a name that does not carry one would be worse than leaving it blank.
+            const auto firstSpace = mixName.indexOfChar(' ');
+            if (firstSpace <= 0)
+            {
+                return {};
+            }
+
+            const auto possibleNumber = mixName.substring(0, firstSpace);
+            return possibleNumber.containsOnly("0123456789") ? possibleNumber : juce::String{};
+        }
+
+        juce::String ExportMixDialog::effectiveMixName(const juce::String &editorText)
+        {
+            return editorText.trim();
+        }
+
+        juce::File ExportMixDialog::exportFileForName(const juce::File &current, const juce::String &mixName)
+        {
+            if (current == juce::File{} || mixName.isEmpty())
+            {
+                return {};
+            }
+
+            // createLegalFileName is what turns free text into one filename component: it strips the
+            // separators and the characters the platform refuses. It is not enough on its own - it
+            // leaves ".." alone, and that is a legal filename that means something else - so the result
+            // is checked against the directory it is supposed to be in afterwards.
+            const auto extension = current.getFileExtension();
+            const auto stem = juce::File::createLegalFileName(mixName).trim();
+            if (stem.isEmpty() || stem == "." || stem == "..")
+            {
+                return {};
+            }
+
+            const auto parent = current.getParentDirectory();
+            const auto candidate = parent.getChildFile(stem + extension);
+
+            // The belt to that brace: whatever the name was, the file has to be directly in the folder
+            // the user chose. isAChildOf would also accept a deeper path; getParentDirectory equality
+            // will not.
+            if (candidate.getParentDirectory() != parent)
+            {
+                return {};
+            }
+            return candidate;
+        }
+
+        void ExportMixDialog::applyMixNameDefaults(const juce::String &rawName)
+        {
+            const auto mixName = effectiveMixName(rawName);
+
+            // Every write here is dontSendNotification, and that is load-bearing rather than tidy.
+            //
+            // juce::TextEditor::textChanged posts the listener call with postCommandMessage - it is
+            // delivered later, not during setText. A flag set around the call has therefore already
+            // been cleared by the time textEditorTextChanged runs, so a guard of that shape cannot tell
+            // this dialog's writes from the user's. It silently marked both derived fields as
+            // user-edited during construction, which stopped them ever following a rename: the feature
+            // did not work and looked like it did.
+            //
+            // Not notifying removes the question instead of answering it. A notification now means the
+            // user typed, always, so m_settings is updated here by hand for the fields written here.
+            if (!m_trackTitleEdited)
+            {
+                m_trackTitleEditor.setText(mixName, juce::dontSendNotification);
+                m_settings.title = mixName.toStdString();
+            }
+
+            if (!m_trackNumberEdited)
+            {
+                const auto trackNumber = leadingTrackNumber(mixName);
+                m_trackNumberEditor.setText(trackNumber, juce::dontSendNotification);
+                m_settings.trackNumber = trackNumber.toStdString();
+            }
+
+            if (!m_outputFileEdited && m_filenameComponent != nullptr)
+            {
+                // Renaming the mix and then exporting it under the old filename is the half-done rename
+                // this feature exists to avoid - it is why one renames before exporting at all. An
+                // empty answer means the name cannot be made into a filename that stays in the chosen
+                // folder, and then the file the user already has is better than anything this could
+                // invent.
+                if (const auto renamed = exportFileForName(m_filenameComponent->getCurrentFile(), mixName); renamed != juce::File{})
+                {
+                    m_filenameComponent->setCurrentFile(renamed, false, juce::dontSendNotification);
+                }
+            }
+
+            // The caption says which mix this is; it should not still say the old one.
+            m_titleLabel.setText(std::format("Export Mix: {}", mixName.toStdString()), juce::dontSendNotification);
+        }
+
+        bool ExportMixDialog::commitMixNameIfChanged(std::string &errorOut)
+        {
+            errorOut.clear();
+
+            // Two comparisons, and they catch different things.
+            //
+            // The raw one first. A mix stored as " Mix " differs from its own trimmed form, so
+            // normalising before comparing would rename it to something nobody typed just because it
+            // was exported. Asking whether the editor still holds exactly what was stored answers that
+            // whether the user never touched the field or typed in it and put it back - a flag
+            // recording that they had once touched it gets the second case wrong.
+            if (m_mixNameEditor.getText().toStdString() == m_mixInfo.name)
+            {
+                return true;
+            }
+
+            // Then the effective one, which catches a change that is only padding: typing " Mix "
+            // where "Mix" was stored is not a rename worth making.
+            const auto newName = effectiveMixName(m_mixNameEditor.getText());
+            if (newName.toStdString() == m_mixInfo.name)
+            {
+                return true;
+            }
+
+            if (newName.isEmpty())
+            {
+                errorOut = "The mix needs a name.";
+                return false;
+            }
+
+            if (!database::theTrackLibrary.getMixManager().renameMix(m_mixInfo.mixId, newName.toStdString()))
+            {
+                // The likeliest reason by far, and the only one worth naming: Mixes.name is
+                // UNIQUE COLLATE NOCASE, so another mix already answers to this.
+                errorOut = "The mix could not be renamed - another mix may already have that name - so nothing was exported.";
+                return false;
+            }
+
+            spdlog::info("Renamed mix {} from '{}' to '{}' on export.", m_mixInfo.mixId, m_mixInfo.name, newName.toStdString());
+            m_mixInfo.name = newName.toStdString();
+            return true;
+        }
+
         void ExportMixDialog::loadDefaultTags()
         {
             // Load defaults from settings
@@ -476,22 +659,11 @@ namespace jucyaudio
                 m_albumEditor.setText(exportSettings.defaultAlbum.get());
             }
 
-            m_trackTitleEditor.setText(m_mixInfo.name); // Use mix name as default title
-
-            // Extract track number from mix name (e.g., "4025 - Automix 2025-10-26" → "4025")
-            juce::String trackNumber;
-            const juce::String mixName{m_mixInfo.name};
-            const auto firstSpace = mixName.indexOfChar(' ');
-            if (firstSpace > 0)
-            {
-                const auto possibleNumber = mixName.substring(0, firstSpace);
-                // Check if it's all digits
-                if (possibleNumber.containsOnly("0123456789"))
-                {
-                    trackNumber = possibleNumber;
-                }
-            }
-            m_trackNumberEditor.setText(trackNumber);
+            // Title, track number and the caption all come from the mix name, through the same path a
+            // rename takes, so a dialog that opens and a dialog that has been renamed in agree about
+            // what a name implies. Nothing has been typed yet, so nothing is preserved and the flags
+            // are all still false.
+            applyMixNameDefaults(juce::String{m_mixInfo.name});
 
             m_yearEditor.setText(exportSettings.defaultYear.get());
 
@@ -547,6 +719,19 @@ namespace jucyaudio
                 }
             }
 
+            // Before anything is written or scheduled, and after the questions that can still send the
+            // user back. A rename on a dialog that then failed validation would be a change they did
+            // not get to confirm; a rename that fails stops the export, because exporting under a name
+            // the library disagrees with is the confusion this feature exists to remove.
+            //
+            // Scheduling renames too. The name belongs to the mix rather than to the file, so it should
+            // be true in the library now, not whenever the queued export happens to run.
+            if (std::string renameError; !commitMixNameIfChanged(renameError))
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Mix Not Renamed", renameError);
+                return;
+            }
+
             m_settings.outputPath = file.getFullPathName().toStdString();
             m_settings.exportFolder = m_exportFolderCombo.getText().toStdString();
 
@@ -588,7 +773,10 @@ namespace jucyaudio
         {
             if (m_callback)
             {
-                m_callback(result, m_settings);
+                // m_mixInfo carries the new name when commitMixNameIfChanged accepted one, and the
+                // old one otherwise. The caller needs it either way: it runs the export, it logs, and
+                // it owns the navigation node that would otherwise keep showing the old name.
+                m_callback(result, m_mixInfo, m_settings);
                 m_callback = nullptr; // Clear callback after use
             }
 

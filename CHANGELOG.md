@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - User preference toggle for smart transitions
 
 ### Changed
+- The export dialog can rename the mix, so renaming and exporting no longer need two dialogs. The track title, track number and output filename follow the new name unless you have edited them yourself
 - Updated JUCE from 9.0.0 to 9.0.2
 
 ### Fixed

@@ -34,6 +34,7 @@
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/TrackLibrary.h>
 #include <Database/TrackScanner.h>
+#include <UI/ExportMixDialog.h>
 #include <UI/Settings.h>
 #include <UI/TimelineComponent.h>
 #include <Utils/AssortedUtils.h>
@@ -62,6 +63,112 @@
 
 namespace jucyaudio
 {
+    namespace ui
+    {
+        /// @brief What the export dialog checks below reach through.
+        ///
+        /// Everything here is a getter or a simulated user action; no test logic lives in it.
+        struct ExportMixDialogTestAccess
+        {
+            static juce::TextEditor &mixName(ExportMixDialog &d)
+            {
+                return d.m_mixNameEditor;
+            }
+            static juce::TextEditor &title(ExportMixDialog &d)
+            {
+                return d.m_trackTitleEditor;
+            }
+            static juce::TextEditor &trackNumber(ExportMixDialog &d)
+            {
+                return d.m_trackNumberEditor;
+            }
+            static juce::File outputFile(const ExportMixDialog &d)
+            {
+                return d.m_filenameComponent != nullptr ? d.m_filenameComponent->getCurrentFile() : juce::File{};
+            }
+            static const database::MixInfo &mixInfo(const ExportMixDialog &d)
+            {
+                return d.m_mixInfo;
+            }
+            static bool commit(ExportMixDialog &d)
+            {
+                std::string ignored;
+                return d.commitMixNameIfChanged(ignored);
+            }
+
+            /// @brief The same, keeping what it would have told the user.
+            static bool commit(ExportMixDialog &d, std::string &errorOut)
+            {
+                return d.commitMixNameIfChanged(errorOut);
+            }
+
+            // The three static helpers are private again now that this exists; these keep them
+            // reachable without widening the dialog's own interface for a test.
+            static juce::String leadingTrackNumber(const juce::String &name)
+            {
+                return ExportMixDialog::leadingTrackNumber(name);
+            }
+            static juce::String effectiveMixName(const juce::String &text)
+            {
+                return ExportMixDialog::effectiveMixName(text);
+            }
+
+            /// @brief The Export button, through the code it actually runs.
+            static void pressExport(ExportMixDialog &d)
+            {
+                d.handleExport();
+            }
+
+            /// @brief The Cancel button, likewise.
+            static void pressCancel(ExportMixDialog &d)
+            {
+                d.handleCancel();
+            }
+
+            static void setSchedule(ExportMixDialog &d, bool scheduled)
+            {
+                d.m_scheduleCheckbox.setToggleState(scheduled, juce::dontSendNotification);
+            }
+
+            /// @brief Picks the first export folder, which handleExport refuses to proceed without.
+            static bool selectAnExportFolder(ExportMixDialog &d)
+            {
+                if (d.m_exportFolderCombo.getNumItems() == 0)
+                {
+                    return false;
+                }
+                d.m_exportFolderCombo.setSelectedItemIndex(0, juce::sendNotification);
+                return d.m_exportFolderCombo.getSelectedId() != 0;
+            }
+
+            static void setOutputFile(ExportMixDialog &d, const juce::File &file)
+            {
+                d.m_filenameComponent->setCurrentFile(file, false, juce::dontSendNotification);
+            }
+
+            /// @brief What picking a file in the component does, including the notification.
+            ///
+            /// The one above deliberately does not notify - it is for arranging a starting state. This
+            /// one is the user choosing, which is what makes the dialog stop renaming the file.
+            static void chooseOutputFile(ExportMixDialog &d, const juce::File &file)
+            {
+                d.m_filenameComponent->setCurrentFile(file, false, juce::dontSendNotification);
+                d.filenameComponentChanged(d.m_filenameComponent.get());
+            }
+
+            /// @brief What JUCE does when the user types, minus the wait.
+            ///
+            /// TextEditor posts textEditorTextChanged with postCommandMessage rather than calling it,
+            /// so this sets the text without a notification and then makes the call JUCE would have
+            /// delivered. Same order, same argument, no message loop.
+            static void type(ExportMixDialog &d, juce::TextEditor &editor, const juce::String &text)
+            {
+                editor.setText(text, juce::dontSendNotification);
+                d.textEditorTextChanged(editor);
+            }
+        };
+    } // namespace ui
+
     namespace tests
     {
         using namespace database;
@@ -6228,6 +6335,310 @@ namespace jucyaudio
             // The timeline is a local and takes its components with it; this drops the loader pointer
             // first so nothing outlives the loader either.
             timeline.releaseMixLoader();
+
+            // --- What the export dialog takes from the mix name ---
+            //
+            // The dialog can rename the mix, and three of its fields are functions of that name: the
+            // track title is the name, the track number is the number in front of it, and the output
+            // file is the name plus an extension. Each follows a rename until the user types into it,
+            // and then stops.
+            {
+                using jucyaudio::ui::ExportMixDialog;
+                using Access = jucyaudio::ui::ExportMixDialogTestAccess;
+
+                const auto numberOf = [](const char *name)
+                {
+                    return Access::leadingTrackNumber(juce::String{name}).toStdString();
+                };
+
+                report.check(numberOf("4025 - Automix 2025-10-26") == "4025", "a mix name that starts with a number exports as that track number");
+                report.check(numberOf("7 - Seven") == "7", "one digit is enough");
+
+                // Each of these has no track number, for a different reason.
+                report.check(numberOf("Automix 2025-10-26").empty(), "a name that starts with a word has none");
+                report.check(numberOf("4025-Automix").empty(), "and neither has one whose number is not a word of its own");
+                report.check(numberOf("2025-10-26 Automix").empty(), "a date is not a track number, because it is not all digits");
+                report.check(numberOf("4025").empty(), "nor is a name that is only a number - there is nothing after it to be the title");
+                report.check(numberOf("").empty(), "an empty name gives an empty number rather than anything surprising");
+                report.check(numberOf(" 4025 Automix").empty(), "and a leading space means the first word is empty, not a number");
+
+                // One effective name, used for the comparison, the rename and every derivation.
+                report.check(Access::effectiveMixName(" 7 - Set ").toStdString() == "7 - Set",
+                    "the name the dialog means is the trimmed one, so padding cannot mean two things at once");
+
+                // --- and now the dialog itself ---
+                //
+                // Constructed and driven directly. The message loop is pumped after construction on
+                // purpose: TextEditor posts its change notifications rather than calling them, and the
+                // first version of this feature marked both derived fields as user-edited when those
+                // posted notifications finally arrived, so nothing ever followed a rename. Without the
+                // pump that bug is invisible here and the check is worthless.
+                {
+                    // Its own mix, with no tracks, so the rename below has something real to write to
+                    // and nothing else in this suite depends on what happens to it.
+                    MixInfo dialogMix{};
+                    dialogMix.name = "4025 - Automix";
+                    std::vector<MixTrack> noTracks;
+                    report.check(theTrackLibrary.getMixManager().createOrUpdateMix(dialogMix, noTracks) && dialogMix.mixId > 0,
+                        "a mix could be created for the export dialog checks");
+
+                    ExportMixDialog dialog{dialogMix, nullptr};
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+                    report.check(Access::title(dialog).getText().toStdString() == "4025 - Automix", "the dialog opens with the mix name as the track title");
+                    report.check(Access::trackNumber(dialog).getText().toStdString() == "4025", "and the number in front of it as the track number");
+
+                    const auto fileBefore = Access::outputFile(dialog);
+
+                    // Rename it. Nothing has been typed into the derived fields, so all three follow.
+                    Access::type(dialog, Access::mixName(dialog), "4026 - Later Automix");
+                    report.check(Access::title(dialog).getText().toStdString() == "4026 - Later Automix", "renaming the mix carries the track title with it");
+                    report.check(Access::trackNumber(dialog).getText().toStdString() == "4026", "and the track number");
+                    report.check(Access::outputFile(dialog).getFileNameWithoutExtension().toStdString() == "4026 - Later Automix",
+                        std::format("and the output file ({})", Access::outputFile(dialog).getFileName().toStdString()));
+                    report.check(
+                        Access::outputFile(dialog).getParentDirectory() == fileBefore.getParentDirectory(), "without moving it out of the folder it was in");
+
+                    // Type into the title, and it stops following.
+                    Access::type(dialog, Access::title(dialog), "A Title Of My Own");
+                    Access::type(dialog, Access::mixName(dialog), "4027 - Later Still");
+                    report.check(Access::title(dialog).getText().toStdString() == "A Title Of My Own",
+                        "a track title the user typed is not overwritten by a later rename");
+                    report.check(Access::trackNumber(dialog).getText().toStdString() == "4027", "while the fields they left alone still follow");
+
+                    // The output file, the other way it stops following: chosen through the component
+                    // rather than typed, so it is filenameComponentChanged that has to notice.
+                    {
+                        const auto chosen = Access::outputFile(dialog).getParentDirectory().getChildFile("Chosen By Hand.mp3");
+                        Access::chooseOutputFile(dialog, chosen);
+                        Access::type(dialog, Access::mixName(dialog), "4028 - Renamed Again");
+                        report.check(Access::outputFile(dialog).getFileNameWithoutExtension().toStdString() == "Chosen By Hand",
+                            std::format("an output file the user picked is not renamed out from under them ({})",
+                                Access::outputFile(dialog).getFileName().toStdString()));
+                        report.check(Access::trackNumber(dialog).getText().toStdString() == "4028", "while the track number, still untouched, follows");
+                    }
+
+                    // A name that is a path is a name, not a path.
+                    const auto parentBefore = Access::outputFile(dialog).getParentDirectory();
+                    Access::type(dialog, Access::mixName(dialog), "../escaped");
+                    report.check(Access::outputFile(dialog).getParentDirectory() == parentBefore,
+                        std::format("a mix name that looks like a path does not move the export out of its folder ({})",
+                            pathToString(std::filesystem::path{Access::outputFile(dialog).getFullPathName().toStdString()})));
+
+                    // And the commit. Back to a plain name first.
+                    Access::type(dialog, Access::mixName(dialog), "  Renamed On Export  ");
+                    report.check(Access::commit(dialog), "committing a changed name reports success");
+                    report.check(
+                        Access::mixInfo(dialog).name == "Renamed On Export", "the dialog now holds the trimmed name, which is what the caller is handed");
+
+                    const auto renamed = theTrackLibrary.getMixManager().getMix(dialogMix.mixId);
+                    report.check(renamed.name == "Renamed On Export", std::format("and the mix in the database has it too (says '{}')", renamed.name));
+
+                    // Committing again with nothing changed is a no-op rather than a second rename.
+                    report.check(Access::commit(dialog), "committing an unchanged name succeeds without doing anything");
+                }
+
+                // --- a name nobody touched is not renamed, however it is spelled ---
+                //
+                // The name this dialog works in is the trimmed one, so a mix stored with padding
+                // differs from its own effective name the moment the two are compared. Comparing them
+                // is what the first version did, and exporting such a mix quietly renamed it to
+                // something the user never typed.
+                {
+                    MixInfo paddedMix{};
+                    paddedMix.name = "  Padded Mix  ";
+                    std::vector<MixTrack> noTracks;
+                    const bool created = theTrackLibrary.getMixManager().createOrUpdateMix(paddedMix, noTracks) && paddedMix.mixId > 0;
+                    report.check(created, "a mix whose stored name has padding could be created");
+
+                    if (created)
+                    {
+                        ExportMixDialog padded{paddedMix, nullptr};
+                        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+                        report.check(Access::commit(padded), "committing without touching the name succeeds");
+                        report.check(theTrackLibrary.getMixManager().getMix(paddedMix.mixId).name == "  Padded Mix  ",
+                            std::format(
+                                "and leaves the stored name exactly as it was (says '{}')", theTrackLibrary.getMixManager().getMix(paddedMix.mixId).name));
+
+                        // Typed in and put back. "Has the user been in this field" is the wrong
+                        // question - what matters is whether the name in it now differs from the one
+                        // stored, and after an edit and an undo it does not.
+                        Access::type(padded, Access::mixName(padded), "Something Else");
+                        Access::type(padded, Access::mixName(padded), "  Padded Mix  ");
+                        report.check(Access::commit(padded), "committing after an edit that was undone succeeds");
+                        report.check(theTrackLibrary.getMixManager().getMix(paddedMix.mixId).name == "  Padded Mix  ",
+                            std::format("and still leaves the stored name alone (says '{}')", theTrackLibrary.getMixManager().getMix(paddedMix.mixId).name));
+
+                        // Editing the padding, on the other hand, is editing. The field no longer
+                        // holds what was stored, so the effective name is written - which normalises
+                        // the stored name rather than preserving padding nobody can see. Pinned
+                        // because the code decides it either way and the decision should be visible:
+                        // untouched is preserved, touched is normalised.
+                        Access::type(padded, Access::mixName(padded), "   Padded Mix   ");
+                        report.check(Access::commit(padded), "committing a name whose padding was edited succeeds");
+                        report.check(theTrackLibrary.getMixManager().getMix(paddedMix.mixId).name == "Padded Mix",
+                            std::format("and stores the effective name, because the field was edited (says '{}')",
+                                theTrackLibrary.getMixManager().getMix(paddedMix.mixId).name));
+                    }
+                }
+
+                // --- a rename that cannot happen stops the export ---
+                //
+                // Mixes.name is UNIQUE COLLATE NOCASE, so a second mix wanting the first one's name is
+                // a refusal the database produces on its own - no table has to be broken for it.
+                {
+                    MixInfo takenName{};
+                    takenName.name = "Name Already Taken";
+                    MixInfo wantsIt{};
+                    wantsIt.name = "Wants That Name";
+                    std::vector<MixTrack> noTracks;
+                    const bool created = theTrackLibrary.getMixManager().createOrUpdateMix(takenName, noTracks) &&
+                                         theTrackLibrary.getMixManager().createOrUpdateMix(wantsIt, noTracks) && takenName.mixId > 0 && wantsIt.mixId > 0;
+                    report.check(created, "two mixes could be created, one holding the name the other will ask for");
+
+                    if (created)
+                    {
+                        ExportMixDialog clashing{wantsIt, nullptr};
+                        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+                        Access::type(clashing, Access::mixName(clashing), "Name Already Taken");
+                        std::string refusal;
+                        report.check(!Access::commit(clashing, refusal), "a rename onto a name another mix already has is refused");
+                        report.check(!refusal.empty(), std::format("and says why, for the caller to show ('{}')", refusal));
+                        report.check(theTrackLibrary.getMixManager().getMix(wantsIt.mixId).name == "Wants That Name", "and the mix keeps the name it had");
+                        report.check(Access::mixInfo(clashing).name == "Wants That Name", "so the dialog still reports the old name to its caller");
+                    }
+                }
+
+                // --- Export, Schedule and Cancel, through the buttons rather than around them ---
+                //
+                // handleExport is where the rename is committed, so a check that calls
+                // commitMixNameIfChanged directly proves it works and not that anything calls it. These
+                // go through the same code the buttons run, and watch what the callback is handed.
+                {
+                    MixInfo buttonMix{};
+                    buttonMix.name = "Button Mix";
+                    std::vector<MixTrack> noTracks;
+                    const bool created = theTrackLibrary.getMixManager().createOrUpdateMix(buttonMix, noTracks) && buttonMix.mixId > 0;
+                    report.check(created, "a mix could be created for the button checks");
+
+                    const auto exportTarget = juce::File{juce::String{pathToString(selfTestRoot / "dialog-export.mp3")}};
+
+                    if (created)
+                    {
+                        // Cancel first: it must not rename, whatever has been typed.
+                        {
+                            int calls = 0;
+                            ExportMixDialog::Result seen{ExportMixDialog::Result::ExportNow};
+                            std::string seenName;
+                            ExportMixDialog dialog{buttonMix,
+                                [&](ExportMixDialog::Result result, const MixInfo &info, const audio::ActiveExportSettings &)
+                                {
+                                    ++calls;
+                                    seen = result;
+                                    seenName = info.name;
+                                }};
+                            juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+                            Access::type(dialog, Access::mixName(dialog), "Cancelled Rename");
+                            Access::pressCancel(dialog);
+
+                            report.check(
+                                calls == 1 && seen == ExportMixDialog::Result::Cancelled, std::format("Cancel reports itself once ({} call(s))", calls));
+                            report.check(seenName == "Button Mix", "and hands the caller the name the mix still has");
+                            report.check(theTrackLibrary.getMixManager().getMix(buttonMix.mixId).name == "Button Mix",
+                                "Cancel renames nothing, however much was typed into the name");
+                        }
+
+                        // What the dialog actually handed over, so the reopen check compares against
+                        // what was submitted rather than what it assumes was.
+                        audio::ActiveExportSettings submitted{};
+                        bool scheduledInDatabase = false;
+
+                        // Schedule: renames, because the name belongs to the mix and not to the file.
+                        //
+                        // handleExport refuses without an export folder, and a scratch library has
+                        // none, so one is made here rather than the check being skipped.
+                        report.check(theTrackLibrary.getMixManager().createExportFolder("SelfTest Exports", "for the export dialog checks"),
+                            "an export folder could be created");
+                        {
+                            int calls = 0;
+                            ExportMixDialog::Result seen{ExportMixDialog::Result::Cancelled};
+                            std::string seenName;
+                            ExportMixDialog dialog{buttonMix,
+                                [&](ExportMixDialog::Result result, const MixInfo &info, const audio::ActiveExportSettings &settings)
+                                {
+                                    ++calls;
+                                    seen = result;
+                                    seenName = info.name;
+
+                                    // What MainComponent.cpp:2908 does with a ScheduleForLater, and the
+                                    // only thing anywhere that writes pending_export_settings: the
+                                    // dialog hands the settings over, it does not persist them. The
+                                    // reopen check below reads back what this writes.
+                                    if (result == ExportMixDialog::Result::ScheduleForLater)
+                                    {
+                                        submitted = settings;
+                                        scheduledInDatabase = theTrackLibrary.getMixManager().scheduleMixForExport(info.mixId, settings);
+                                    }
+                                }};
+                            juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+                            const bool folderSelected = Access::selectAnExportFolder(dialog);
+                            report.check(folderSelected, "an export folder could be selected");
+                            if (folderSelected)
+                            {
+                                Access::setOutputFile(dialog, exportTarget);
+                                Access::setSchedule(dialog, true);
+                                Access::type(dialog, Access::mixName(dialog), "Scheduled Rename");
+                                Access::pressExport(dialog);
+
+                                report.check(calls == 1 && seen == ExportMixDialog::Result::ScheduleForLater,
+                                    std::format("scheduling reports itself once ({} call(s))", calls));
+                                report.check(seenName == "Scheduled Rename", "and hands the caller the new name");
+                                report.check(theTrackLibrary.getMixManager().getMix(buttonMix.mixId).name == "Scheduled Rename",
+                                    "a scheduled export renames the mix now rather than when it runs");
+                            }
+                        }
+
+                        // Reopening a mix that has a pending export restores what was chosen last time,
+                        // and a rename must leave every bit of it alone. The scheduled export above
+                        // wrote exactly such a row, so this reads one back rather than staging one.
+                        {
+                            report.check(scheduledInDatabase, "scheduling wrote the pending settings, the way the app writes them");
+
+                            const auto pending = theTrackLibrary.getMixManager().getPendingExportSettings(buttonMix.mixId);
+                            report.check(pending.has_value(), "and they read back");
+
+                            const auto scheduled = theTrackLibrary.getMixManager().getMix(buttonMix.mixId);
+                            const juce::File submittedFile{juce::String{submitted.outputPath.string()}};
+
+                            ExportMixDialog reopened{scheduled, nullptr};
+                            juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+                            report.check(Access::outputFile(reopened) == submittedFile,
+                                std::format("reopening restores the output file the scheduled export was given ({})",
+                                    Access::outputFile(reopened).getFileName().toStdString()));
+
+                            const auto restoredTitle = Access::title(reopened).getText().toStdString();
+                            const auto restoredNumber = Access::trackNumber(reopened).getText().toStdString();
+                            report.check(restoredTitle == submitted.title, std::format("and the track title it was given (says '{}')", restoredTitle));
+
+                            // Why the restore marks all three fields edited: everything here was chosen
+                            // deliberately last time, so a rename now must not quietly discard it.
+                            Access::type(reopened, Access::mixName(reopened), "4099 - Renamed After Scheduling");
+                            report.check(Access::outputFile(reopened) == submittedFile,
+                                std::format("and renaming does not move the pending export's output file ({})",
+                                    Access::outputFile(reopened).getFileName().toStdString()));
+                            report.check(Access::title(reopened).getText().toStdString() == restoredTitle,
+                                std::format("nor rewrite the track title it restored (says '{}')", Access::title(reopened).getText().toStdString()));
+                            report.check(Access::trackNumber(reopened).getText().toStdString() == restoredNumber,
+                                std::format("nor the track number (says '{}')", Access::trackNumber(reopened).getText().toStdString()));
+                        }
+                    }
+                }
+            }
 
             writeResultsFile(resultsPath, "jucyaudio timeline self test", report);
             spdlog::info("[SelfTest] Timeline test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
