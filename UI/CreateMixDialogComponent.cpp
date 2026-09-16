@@ -153,6 +153,19 @@ namespace jucyaudio
             m_nameEditor.setText(generateDefaultMixName(), false);
             m_nameEditor.selectAll();
             m_nameEditor.addListener(this);
+            // Escape, while the caret is in this field. juce::TextEditor consumes the key
+            // (consumeEscAndReturnKeys defaults to true, juce_TextEditor.h:825), so it never reaches
+            // the DialogWindow and escapeKeyTriggersCloseButton has nothing to act on. Focusing the
+            // field on open is right - this dialog exists to take a name - so the fix is to let the
+            // dialog hear the key, not to move the focus.
+            //
+            // onEscapeKey rather than the listener override: it is what MetaDataEditorDialogBase
+            // already uses, it is one line at the site that wires the editor, and it needs no
+            // interface. JUCE invokes it alongside the listeners.
+            m_nameEditor.onEscapeKey = [this]
+            {
+                handleCancel();
+            };
 
             // Buttons
             addAndMakeVisible(m_okButton);

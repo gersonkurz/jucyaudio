@@ -16,8 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <Tests/SelfTests.h>
 #include <Tests/SchemaV12Fixture.h>
+#include <Tests/SelfTests.h>
 
 #include <Audio/ExportMixToMp3.h>
 #include <Audio/ExportMixToWav.h>
@@ -35,8 +35,13 @@
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/TrackLibrary.h>
 #include <Database/TrackScanner.h>
+#include <UI/CreateMixDialogComponent.h>
+
+#include <UI/CreateWorkingSetDialogComponent.h>
+#include <UI/EditMixMetaDataDialog.h>
 #include <UI/ExportMixDialog.h>
 #include <UI/LibraryRootsComponent.h>
+#include <UI/MarkerEditDialog.h>
 #include <UI/Settings.h>
 #include <UI/TimelineComponent.h>
 #include <Utils/AssortedUtils.h>
@@ -46,7 +51,6 @@
 #include <spdlog/spdlog.h>
 
 #include <lame.h>
-
 
 #include <algorithm>
 #include <atomic>
@@ -1113,6 +1117,28 @@ namespace jucyaudio
                 const int64_t m_refuseAfterBytes;
                 WriteRefusalLog &m_log;
             };
+
+            /// @brief The first juce::TextEditor inside a component, wherever it sits.
+            ///
+            /// The dialogs below keep their editors private, and the property under test is about the
+            /// key reaching the dialog rather than about any particular field, so walking the child
+            /// tree asks the question without friending anything or widening an API for a test.
+            juce::TextEditor *firstTextEditor(juce::Component &component)
+            {
+                for (int i = 0; i < component.getNumChildComponents(); ++i)
+                {
+                    auto *child = component.getChildComponent(i);
+                    if (auto *editor = dynamic_cast<juce::TextEditor *>(child))
+                    {
+                        return editor;
+                    }
+                    if (auto *nested = firstTextEditor(*child))
+                    {
+                        return nested;
+                    }
+                }
+                return nullptr;
+            }
 
             // The audio format suite's fixtures. Both are deliberately malformed in one specific
             // way each, because that is the point: a decoder that only handles well-formed input
@@ -6796,6 +6822,134 @@ namespace jucyaudio
 
                     // Committing again with nothing changed is a no-op rather than a second rename.
                     report.check(Access::commit(dialog), "committing an unchanged name succeeds without doing anything");
+                }
+
+                // --- Escape reaches the dialog even while the caret is in a text field ---
+                //
+                // Reported from use: "Create Working Set" could not be dismissed with Escape until the
+                // user tabbed out of the name field. juce::TextEditor::consumeEscAndReturnKeys defaults
+                // to true (juce_TextEditor.h:825) and TextEditor::keyPressed returns it for the escape
+                // key, so the key never reaches the DialogWindow and escapeKeyTriggersCloseButton -
+                // which these dialogs all set - has nothing to act on.
+                //
+                // Focusing the field on open is the right behaviour and is not what changed. What
+                // changed is that Escape now works while the focus is where it should be, through the
+                // listener callback JUCE offers for exactly this, the way ExportMixDialog already did.
+                {
+                    const auto escape = juce::KeyPress{juce::KeyPress::escapeKey};
+
+                    // The metadata dialogs, through their shared base. These were never broken -
+                    // MetaDataEditorDialogBase already wires m_nameEditor.onEscapeKey, which is why
+                    // Escape worked on them while Create Working Set needed a tab-out first, and how
+                    // the idiom used by the three dialogs that were broken was chosen. The check is
+                    // here to hold that wiring in place. closeDialog(false) invokes the finished
+                    // callback before it touches any window, so it needs no window.
+                    {
+                        MixInfo escapeMix{};
+                        escapeMix.name = "Escape Me";
+                        std::vector<MixTrack> noTracks;
+                        const bool created = theTrackLibrary.getMixManager().createOrUpdateMix(escapeMix, noTracks) && escapeMix.mixId > 0;
+                        report.check(created, "a mix could be created for the Escape checks");
+
+                        if (created)
+                        {
+                            int calls = 0;
+                            bool sawNameChanged = true;
+                            jucyaudio::ui::EditMixMetaDataDialog metadata{escapeMix,
+                                [&calls, &sawNameChanged](bool nameChanged, std::string_view)
+                                {
+                                    ++calls;
+                                    sawNameChanged = nameChanged;
+                                }};
+                            juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+                            auto *editor = firstTextEditor(metadata);
+                            report.check(editor != nullptr, "the mix metadata dialog has a text field to press Escape in");
+
+                            if (editor != nullptr)
+                            {
+                                report.check(editor->keyPressed(escape), "the field consumes Escape, which is why the dialog has to be told");
+
+                                // escapePressed() is postCommandMessage, not a direct call
+                                // (juce_TextEditor.cpp:623), so the listener hears about it from the
+                                // message loop rather than from keyPressed. Same shape as the
+                                // textChanged notification ExportMixDialog documents.
+                                juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+                                report.check(calls == 1, std::format("and the dialog closes anyway ({} call(s))", calls));
+                                report.check(!sawNameChanged, "as a cancel rather than a save - Escape is the discard key");
+                            }
+                        }
+                    }
+
+                    // The two dialogs that take a name. Their cancel is exitModalState on a parent
+                    // DialogWindow, which this suite does not construct, so what is checked here is
+                    // that the handler is wired at all - the line the fix adds, and the line whose
+                    // absence was the defect. What that handler then does is the same handleCancel
+                    // the Cancel button has always called.
+                    {
+                        jucyaudio::ui::CreateWorkingSetDialogComponent workingSet{5, [](const juce::String &, WorkingSetId) {}};
+                        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+                        auto *editor = firstTextEditor(workingSet);
+                        report.check(editor != nullptr, "the create-working-set dialog has a text field");
+                        report.check(editor != nullptr && editor->onEscapeKey != nullptr, "and something listening for Escape in it");
+                    }
+
+                    // Create Mix, which unlike its sibling can be driven all the way here:
+                    // closeThisDialog(false) invokes the callback before it looks for a parent
+                    // window, so the cancel is observable without one.
+                    {
+                        int calls = 0;
+                        bool sawSuccess = true;
+                        std::vector<TrackInfo> noTracksForMix;
+                        jucyaudio::ui::CreateMixDialogComponent createMix{noTracksForMix,
+                            -1,
+                            [&calls, &sawSuccess](bool success, const database::MixInfo &)
+                            {
+                                ++calls;
+                                sawSuccess = success;
+                            }};
+                        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+                        auto *editor = firstTextEditor(createMix);
+                        report.check(editor != nullptr, "the create-mix dialog has a text field to press Escape in");
+
+                        if (editor != nullptr)
+                        {
+                            report.check(editor->keyPressed(escape), "its field consumes Escape as well");
+
+                            // Delivered through the message loop - see the note above.
+                            juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+                            report.check(calls == 1, std::format("and the dialog closes anyway ({} call(s))", calls));
+                            report.check(!sawSuccess, "as a cancel, so nothing is created");
+                        }
+                    }
+
+                    // The marker dialog, whose comment field is multi-line - which changes what Return
+                    // does in it and nothing about Escape.
+                    {
+                        int cancels = 0;
+                        jucyaudio::ui::MarkerEditDialog marker;
+                        marker.onCancel = [&cancels]
+                        {
+                            ++cancels;
+                        };
+                        marker.setupForNewMarker(std::chrono::milliseconds{1000});
+                        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+                        auto *editor = firstTextEditor(marker);
+                        report.check(editor != nullptr, "the marker dialog has a text field to press Escape in");
+
+                        if (editor != nullptr)
+                        {
+                            report.check(editor->keyPressed(escape), "its field consumes Escape too");
+
+                            // Delivered through the message loop - see the note above.
+                            juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+                            report.check(cancels == 1, std::format("and the dialog cancels anyway ({} call(s))", cancels));
+                        }
+                    }
                 }
 
                 // --- a mix whose stored name is a path opens inside the Music folder ---
