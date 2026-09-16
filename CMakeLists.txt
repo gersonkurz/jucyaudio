@@ -773,7 +773,7 @@ else()
         mp3lame-static
         libprojectM::projectM
 
-        z  # zlib
+        z  # zlib - the SDK's libz, shared by TagLib and JUCE (see JUCE_INCLUDE_ZLIB_CODE below)
 
         # CoreFoundation for Unicode normalization/case folding
         "-framework CoreFoundation"
@@ -863,6 +863,24 @@ endif()
 if(APPLE)
     target_compile_definitions(jucyaudio PRIVATE
         JUCE_USE_OGGVORBIS=1
+        # One zlib in the binary. TagLib's find_package(ZLIB) finds the SDK's libz here and builds
+        # its compressed-frame decoder against it, so libz is on the link line regardless. Since
+        # JUCE 9.0.1 the copy JUCE embeds compiles as C, which puts a second inflate/deflate/crc32
+        # into the executable as plain global symbols next to the ones libz exports - the ODR
+        # conflict BREAKING_CHANGES.md warns about. So JUCE reads zlib.h from the SDK and calls
+        # libz too, and the executable defines none of those symbols itself. Windows is different:
+        # nothing finds a zlib there, TagLib builds without one, and JUCE keeps its embedded copy.
+        JUCE_INCLUDE_ZLIB_CODE=0
+    )
+
+    # What that definition buys, checked after every link rather than trusted. The self test can show
+    # that both users inflate and deflate correctly, but not whether the executable still carries a
+    # second copy; only the symbol table shows that. The script fails the build on a defined _inflate,
+    # and also when it could not inspect the executable at all.
+    add_custom_command(TARGET jucyaudio POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DEXECUTABLE=$<TARGET_FILE:jucyaudio> -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckSingleZlib.cmake
+        VERBATIM
+        COMMENT "Checking that the executable links exactly one zlib"
     )
 endif()
 

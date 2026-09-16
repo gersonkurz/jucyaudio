@@ -30,6 +30,7 @@
 #include <Database/Includes/MixInfo.h>
 #include <Database/Includes/MixRecoveryEntry.h>
 #include <Database/Includes/TrackQueryArgs.h>
+#include <Database/Scanners/Id3TagScanner.h>
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/Sqlite/SqliteTransaction.h>
@@ -51,6 +52,15 @@
 #include <spdlog/spdlog.h>
 
 #include <lame.h>
+
+// TagLib, for the compressed-frame fixture: read the way the scanner reads, then ask the tag what it
+// parsed. tzlib.h is not part of TagLib's public API, but the build already puts the toolkit
+// directory on the include path for exactly this kind of internal header, and it is the only place
+// TagLib says whether it was built with a zlib at all.
+#include "id3v2frame.h"
+#include "id3v2tag.h"
+#include "mpegfile.h"
+#include "tzlib.h"
 
 #include <algorithm>
 #include <atomic>
@@ -1719,6 +1729,107 @@ namespace jucyaudio
                 out.write(reinterpret_cast<const char *>(frames.data()), static_cast<std::streamsize>(frames.size()));
                 return out.good();
             }
+
+            /// @brief Deflates @p bytes into a zlib stream, the way an ID3v2 writer compresses a frame.
+            ///
+            /// Through JUCE's deflate rather than zlib's API directly, so the fixture is written by one
+            /// of the two zlib users in this binary and read back by the other. On macOS both are meant
+            /// to be the SDK's libz; a fixture deflated and inflated by TagLib alone would say nothing
+            /// about the copy JUCE calls, and the other way round nothing about TagLib's.
+            std::vector<unsigned char> deflateForId3(const std::vector<unsigned char> &bytes)
+            {
+                juce::MemoryOutputStream compressed;
+                {
+                    // windowBits 0 is zlib's MAX_WBITS: a zlib-wrapped stream, which is what
+                    // inflateInit() expects and TagLib's decoder calls. The stream is finished when the
+                    // compressor goes out of scope.
+                    juce::GZIPCompressorOutputStream deflater{compressed, 9, 0};
+                    deflater.write(bytes.data(), bytes.size());
+                }
+                const auto *data = static_cast<const unsigned char *>(compressed.getData());
+                return {data, data + compressed.getDataSize()};
+            }
+
+            /// @brief Inflates a zlib stream through JUCE, for the round trip within JUCE alone.
+            std::vector<unsigned char> inflateThroughJuce(const std::vector<unsigned char> &compressed)
+            {
+                juce::MemoryInputStream source{compressed.data(), compressed.size(), false};
+                juce::GZIPDecompressorInputStream inflater{&source, false, juce::GZIPDecompressorInputStream::zlibFormat};
+                juce::MemoryOutputStream inflated;
+                inflated.writeFromInputStream(inflater, -1);
+                const auto *data = static_cast<const unsigned char *>(inflated.getData());
+                return {data, data + inflated.getDataSize()};
+            }
+
+            /// @brief Writes an ID3v2.4 tag whose title frame is zlib-compressed, then the frames.
+            ///
+            /// The shape a v2.4 writer produces with compression on: the frame header's second flag
+            /// byte carries the compression bit (0x08) and the data length indicator (0x01) the spec
+            /// requires next to it, the four syncsafe bytes after the header give the uncompressed
+            /// length, and the body is a zlib stream over the text field - its encoding byte first, 3
+            /// for UTF-8, then the title. TagLib is the only reader of this in the project; JUCE's MP3
+            /// reader steps over the whole tag by the size in its header and never looks inside.
+            ///
+            /// @param compressed Receives the zlib stream that went into the frame, for the JUCE-only
+            ///        round trip beside the TagLib one.
+            bool writeMp3WithCompressedTitleFrame(const std::filesystem::path &path,
+                const std::vector<unsigned char> &frames,
+                const std::string &title,
+                std::vector<unsigned char> &compressed)
+            {
+                std::vector<unsigned char> field{3}; // UTF-8
+                field.insert(field.end(), title.begin(), title.end());
+                compressed = deflateForId3(field);
+
+                const auto appendSyncsafe = [](std::vector<unsigned char> &out, uint32_t value)
+                {
+                    out.push_back(static_cast<unsigned char>((value >> 21) & 0x7F));
+                    out.push_back(static_cast<unsigned char>((value >> 14) & 0x7F));
+                    out.push_back(static_cast<unsigned char>((value >> 7) & 0x7F));
+                    out.push_back(static_cast<unsigned char>(value & 0x7F));
+                };
+
+                std::vector<unsigned char> frame{'T', 'I', 'T', '2'};
+                appendSyncsafe(frame, static_cast<uint32_t>(4 + compressed.size())); // body: indicator + stream
+                frame.push_back(0);
+                frame.push_back(0x08 | 0x01); // compression, data length indicator
+                appendSyncsafe(frame, static_cast<uint32_t>(field.size()));
+                frame.insert(frame.end(), compressed.begin(), compressed.end());
+
+                std::vector<unsigned char> tag{'I', 'D', '3', 4, 0, 0};
+                appendSyncsafe(tag, static_cast<uint32_t>(frame.size()));
+                tag.insert(tag.end(), frame.begin(), frame.end());
+
+                std::ofstream out{path, std::ios::binary};
+                if (!out)
+                {
+                    return false;
+                }
+                out.write(reinterpret_cast<const char *>(tag.data()), static_cast<std::streamsize>(tag.size()));
+                out.write(reinterpret_cast<const char *>(frames.data()), static_cast<std::streamsize>(frames.size()));
+                return out.good();
+            }
+
+            /// @brief A tag manager that knows no tags. The scanner asks it about genres; the fixture
+            /// carries none, so it is never reached, but the scanner needs one to be constructed.
+            class NoTagManager final : public database::ITagManager
+            {
+            public:
+                std::optional<TagId> getOrCreateTagId(const std::string &, bool) override
+                {
+                    return std::nullopt;
+                }
+
+                std::optional<std::string> getTagNameById(TagId) const override
+                {
+                    return std::nullopt;
+                }
+
+                std::vector<database::TagInfo> getAllTags(const std::optional<std::string> &) const override
+                {
+                    return {};
+                }
+            };
 
             /// @param title Names the suite. Passed in rather than fixed, because two suites write two
             /// files and a results file that misnames itself is worse than one with no title at all.
@@ -8483,6 +8594,81 @@ namespace jucyaudio
                             {
                                 report.check(false, "there was something to read");
                             }
+                        }
+                    }
+                }
+            }
+
+            // An ID3v2.4 tag whose title frame is zlib-compressed.
+            //
+            // The one path in this binary that calls zlib for a user's file: TagLib inflates the frame
+            // body before it parses the text. On macOS TagLib is built against the SDK's libz, and
+            // JUCE's embedded zlib is switched off there so that the executable does not define a second
+            // inflate beside the one libz exports. The fixture is deflated by JUCE and inflated by
+            // TagLib - a round trip between the two users, not within one - so it passes only if both
+            // are bound to a working zlib, whichever copy that is on the platform at hand.
+            {
+                const auto mp3Path = workingDir / "compressed-title-frame.mp3";
+                const std::string title{"Compressed Title \xc3\xa9\xc3\xa8 Self Test"}; // with two non-ASCII characters
+                std::vector<unsigned char> frames;
+                const auto encodeError = encodeVbrMp3Frames(frames);
+                report.check(encodeError.empty(),
+                    std::format("an MP3 could be encoded to carry the compressed frame{}", encodeError.empty() ? std::string{} : std::format(" - {}", encodeError)));
+
+                if (encodeError.empty())
+                {
+                    std::vector<unsigned char> compressed;
+                    const bool written = writeMp3WithCompressedTitleFrame(mp3Path, frames, title, compressed);
+                    report.check(written,
+                        std::format("the fixture could be written - a v2.4 TIT2 frame whose {}-byte text field is a {}-byte zlib stream",
+                            title.size() + 1,
+                            compressed.size()));
+
+                    if (written)
+                    {
+                        // JUCE's half on its own first, so that a failure below is attributable: what
+                        // JUCE deflated, JUCE inflates back.
+                        const auto roundTrip = inflateThroughJuce(compressed);
+                        // Compared as strings, not element by element: the title has bytes above 0x7F,
+                        // and char against unsigned char makes those unequal while looking right.
+                        const std::string inflatedText{roundTrip.begin() + (roundTrip.empty() ? 0 : 1), roundTrip.end()};
+                        report.check(!roundTrip.empty() && roundTrip.front() == 3 && inflatedText == title,
+                            std::format("JUCE inflates its own stream back to the {} bytes it deflated (got {}: '{}')", title.size() + 1, roundTrip.size(), inflatedText));
+
+                        // The fixture is the shape under test: TagLib parses the frame and sees the
+                        // compression flag. Without this a scanner that read the title would prove
+                        // only that plain frames work.
+                        {
+                            TagLib::MPEG::File file{mp3Path.c_str()};
+                            const auto *tag = file.ID3v2Tag();
+                            const bool flagged = tag != nullptr && !tag->frameList("TIT2").isEmpty() && tag->frameList("TIT2").front()->header()->compression();
+                            report.check(flagged, "TagLib parses the frame and sees its compression flag, so the fixture is the shape under test");
+                        }
+
+                        // Then the production path: the scanner that fills a TrackInfo during a library
+                        // scan, through the interface the scan drives it by.
+                        NoTagManager noTags;
+                        database::scanners::Id3TagScanner scanner{noTags};
+                        database::ITrackInfoScanner &viaInterface = scanner;
+                        database::TrackInfo info{};
+                        const auto established = viaInterface.processTrack(info, mp3Path);
+                        report.check(database::includes(established, database::ScannedFields::Tags), "the scanner reads the tag");
+                        report.check(database::includes(established, database::ScannedFields::AudioProperties) && info.duration > Duration_t{0},
+                            std::format("and the audio behind it ({} ms)", info.duration.count()));
+
+                        if (TagLib::zlib::isAvailable())
+                        {
+                            report.check(info.title == title,
+                                std::format("and the compressed title inflates to what was written (scanner said '{}')", info.title));
+                        }
+                        else
+                        {
+                            // TagLib without a zlib does not attempt the frame: its factory hands back an
+                            // UnknownFrame, whose text is empty, so the scanner reports the tag as read
+                            // with an empty title. That is a real defect (issue #58, Windows) but not the
+                            // one this suite is about, so it is recorded here rather than asserted.
+                            report.note(std::format("TagLib was built without zlib on this platform, so a compressed frame reads as empty metadata (scanner said '{}')",
+                                info.title));
                         }
                     }
                 }
