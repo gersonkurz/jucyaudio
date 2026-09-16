@@ -2745,12 +2745,20 @@ namespace jucyaudio
                 m_statusPanel.getStatusBar().postMessage("Error retrieving track count from node.", true);
                 return false;
             }
-            node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid during working set creation
-            return onHandleCreateWorkingSetDialog(trackCount,
-                [this, node](const juce::String &name, WorkingSetId targetWsId)
+            // Same shape as the two metadata dialogs: this one reaches the same
+            // DefaultDialogWindow through SingletonComponentDialog::showComponent, whose modal path
+            // is launchOptions.launchAsync().
+            node->retain(REFCOUNT_DEBUG_ARGS);
+            const std::shared_ptr<const INavigationNode> nodeRef{node,
+                [](const INavigationNode *released)
                 {
-                    onCreateWorkingSetFromNodeCallback(name, targetWsId, node);
-                    node->release(REFCOUNT_DEBUG_ARGS); // Release the node after working set creation
+                    released->release(REFCOUNT_DEBUG_ARGS);
+                }};
+
+            return onHandleCreateWorkingSetDialog(trackCount,
+                [this, nodeRef](const juce::String &name, WorkingSetId targetWsId)
+                {
+                    onCreateWorkingSetFromNodeCallback(name, targetWsId, nodeRef.get());
                 });
         }
 
@@ -2873,12 +2881,13 @@ namespace jucyaudio
             // be there afterwards to be told about it.
             //
             // Released by the lifetime of this handle rather than by a line in the callback, and that
-            // distinction is the whole point. juce::DialogWindow's close button and its window-level
-            // Escape both go through DefaultDialogWindow::closeButtonPressed, which calls
-            // setVisible(false) and nothing else - the content's callback is never invoked, the owned
-            // dialog is destroyed, and a release written inside that callback simply does not happen.
-            // A shared_ptr captured by the callback is destroyed with it on every one of those paths,
-            // and exactly once.
+            // distinction is the whole point. Two dismissals reach neither: the title-bar button,
+            // through DefaultDialogWindow::closeButtonPressed, and window-level Escape, which
+            // DialogWindow::escapeKeyPressed handles itself. They are separate paths - Escape does not
+            // go through the close button - but both are setVisible(false) and nothing else. The
+            // content's callback is never invoked, the owned dialog is destroyed, and a release
+            // written inside that callback simply does not happen. A shared_ptr captured by the
+            // callback is destroyed with it on every one of those paths, and exactly once.
             selectedNode->retain(REFCOUNT_DEBUG_ARGS);
             const std::shared_ptr<INavigationNode> nodeRef{selectedNode,
                 [](INavigationNode *node)
@@ -3106,15 +3115,25 @@ namespace jucyaudio
             {
                 const auto wsInfo = wsNode->getWorkingSetInfo();
 
-                node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid during metadata editing
+                // Released by this handle going out of scope with the callback, not by a line inside
+                // it. See onExportMix for the whole reason; in short, the title-bar button
+                // (DefaultDialogWindow::closeButtonPressed) and window-level Escape
+                // (DialogWindow::escapeKeyPressed) are two separate paths that both end at
+                // setVisible(false) and nothing else, so the callback below never runs on either.
+                node->retain(REFCOUNT_DEBUG_ARGS);
+                const std::shared_ptr<INavigationNode> nodeRef{node,
+                    [](INavigationNode *released)
+                    {
+                        released->release(REFCOUNT_DEBUG_ARGS);
+                    }};
+
                 auto *dialog = new EditWorkingSetMetaDataDialog{wsInfo,
-                    [this, node](bool nameChanged, std::string_view newName)
+                    [this, nodeRef](bool nameChanged, std::string_view newName)
                     {
                         if (nameChanged)
                         {
-                            m_navigationTree.onNodeRenamed(node, newName);
+                            m_navigationTree.onNodeRenamed(nodeRef.get(), newName);
                         }
-                        node->release(REFCOUNT_DEBUG_ARGS); // Release the node after editing
                     }};
 
                 juce::DialogWindow::LaunchOptions launchOptions;
@@ -3163,15 +3182,21 @@ namespace jucyaudio
                                 mixInfo.numberOfTracks, mixInfo.totalDuration.count());
                 }
 
-                node->retain(REFCOUNT_DEBUG_ARGS); // Retain the node to ensure it stays valid during metadata editing
+                // Same shape as onEditWorkingSetMetadata above, and for the same reason.
+                node->retain(REFCOUNT_DEBUG_ARGS);
+                const std::shared_ptr<INavigationNode> nodeRef{node,
+                    [](INavigationNode *released)
+                    {
+                        released->release(REFCOUNT_DEBUG_ARGS);
+                    }};
+
                 auto *dialog = new EditMixMetaDataDialog{mixInfo,
-                    [this, node](bool nameChanged, std::string_view newName)
+                    [this, nodeRef](bool nameChanged, std::string_view newName)
                     {
                         if (nameChanged)
                         {
-                            m_navigationTree.onNodeRenamed(node, newName);
+                            m_navigationTree.onNodeRenamed(nodeRef.get(), newName);
                         }
-                        node->release(REFCOUNT_DEBUG_ARGS); // Release the node after editing
                     }};
 
                 juce::DialogWindow::LaunchOptions launchOptions;
