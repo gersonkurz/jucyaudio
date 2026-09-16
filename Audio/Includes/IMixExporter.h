@@ -50,12 +50,12 @@ namespace jucyaudio
             // Convenience constructors
             static ExportResult Success(int warnings = 0)
             {
-                return {true, warnings, ""};
+                return {true, warnings, "", ""};
             }
 
             static ExportResult Failure(const std::string &msg)
             {
-                return {false, 0, msg};
+                return {false, 0, msg, ""};
             }
 
             explicit operator bool() const { return success; }

@@ -2222,7 +2222,7 @@ namespace jucyaudio
 
                 // Attach points make a mix shorter than the sum of its tracks. Without them every
                 // check here would pass against a plain sum, which is one of the wrong answers.
-                constexpr int64_t kOverlapMs = 20;
+                static constexpr int64_t kOverlapMs = 20;
 
                 // Read from a scanned fixture rather than assumed from kFixtureDurationMs: what the
                 // decoder reports is what the walk uses, and a rounded value would put every expected

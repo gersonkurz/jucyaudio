@@ -152,8 +152,8 @@ namespace jucyaudio
             );)SQL",
             "CREATE INDEX IF NOT EXISTS idx_mixundohistory_mix_id ON MixUndoHistory (mix_id);",
             "CREATE INDEX IF NOT EXISTS idx_mixundohistory_operation_id ON MixUndoHistory (operation_id);",
-            "CREATE TABLE IF NOT EXISTS LibraryRoots (root_id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, "
-            "file_count INTEGER DEFAULT 0, last_scanned INTEGER);",
+            ("CREATE TABLE IF NOT EXISTS LibraryRoots (root_id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, "
+             "file_count INTEGER DEFAULT 0, last_scanned INTEGER);"),
         };
 
         /**

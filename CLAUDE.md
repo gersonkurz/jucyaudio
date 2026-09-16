@@ -253,6 +253,7 @@ REMEMBER THE MOST IMPORTANT RULE: ALWAYS use direct English, as a competent engi
 ## Review loop
 
 @C:/Projects/yaaadabi/protocol.md
+@/Users/gersonkurz/development/yaaadabi/protocol.md
 
 Loop parameters:
 - Verify: `just build` && `just selftest`

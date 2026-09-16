@@ -56,7 +56,7 @@ namespace jucyaudio
             {
                 if (m_plugin->hasEditor())
                 {
-                    editor = m_plugin->createEditorIfNeeded();
+                    editor = m_plugin->createEditorAndMakeActive();
                 }
                 else
                 {
