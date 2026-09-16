@@ -422,6 +422,12 @@ info:
     @echo "CPU cores: {{cpu_count}}"
     @echo "Default build type: {{default_build_type}}"
 
+# Exit-status checks for scripts/refcountd. Not part of `just selftest`, which is the C++ binary -
+# this is the companion Python tool, and it has its own checks because its exit status is what a
+# script reads. Needs uv on PATH; no network, no build.
+test-refcountd:
+    uv run --project scripts/refcountd python scripts/refcountd/test_refcountd.py
+
 # List available recipes
 help:
     @just --list

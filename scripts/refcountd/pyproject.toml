@@ -5,7 +5,6 @@ description = "Analyse logfile to find out refcount information"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "loguru>=0.7.3",
     "typer>=0.16.0",
 ]
 
