@@ -40,7 +40,7 @@ namespace jucyaudio
             {
 #ifdef USE_REFCOUNT_DEBUGGING
                 const auto value = ++m_refCount;
-                spdlog::debug("BaseNode::retain {:p} at {}[{}]: is now {}", (void *)this, file, line, value);
+                spdlog::debug("LongRunningTask::retain {:p} at {}[{}]: is now {}", (void *)this, file, line, value);
 #else
                 ++m_refCount;
 #endif
@@ -52,12 +52,12 @@ namespace jucyaudio
                 const auto value = --m_refCount;
                 if (value == 0)
                 {
-                    spdlog::warn("BaseNode::release {:p} at {}[{}]: is now {} <- delete this", (void *)this, file, line, value);
+                    spdlog::warn("LongRunningTask::release {:p} at {}[{}]: is now {} <- delete this", (void *)this, file, line, value);
                     delete this;
                 }
                 else
                 {
-                    spdlog::debug("BaseNode::release {:p} at {}[{}]: is now {}", (void *)this, file, line, value);
+                    spdlog::debug("LongRunningTask::release {:p} at {}[{}]: is now {}", (void *)this, file, line, value);
                 }
 #else
                 if (--m_refCount == 0)
@@ -79,7 +79,7 @@ namespace jucyaudio
                   m_refCount{1} // Start with refcount 1
             {
 #ifdef USE_REFCOUNT_DEBUGGING
-                spdlog::debug("BaseNode::initialize {:p} at {}[{}]: is now {}", (void *)this, std::string{__FILE__}, __LINE__, (int32_t)m_refCount);
+                spdlog::debug("LongRunningTask::initialize {:p} at {}[{}]: is now {}", (void *)this, std::string{__FILE__}, __LINE__, (int32_t)m_refCount);
 #endif
             }
 

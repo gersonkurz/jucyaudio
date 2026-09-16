@@ -95,13 +95,25 @@ print, and for a while it was what it printed.
 
 ### What counts as an event
 
-Only a message that **begins** with `BaseNode::retain ` or `BaseNode::release `. Two different things
-make that stricter than it looks:
+Only a message that **begins** with `retain ` or `release ` under one of the two names that carry a
+reference count:
 
-- Other messages begin `BaseNode::` and carry no count - `BaseNode::initialize`, which
-  `ILongRunningTask` logs for every task it constructs, and
-  `Not implemented: BaseNode::removeObjectAtRow`. They are ignored, not treated as lines that failed
-  to parse.
+| Name | Reported as | What it is |
+|---|---|---|
+| `BaseNode::` | `node` | a navigation node |
+| `LongRunningTask::` | `task` | a background task (`ILongRunningTask`) |
+
+Both are reference counted the same way and an unbalanced one of either is a real leak, but they have
+different lifetimes and different reasons to leak, so the summary counts them apart and the leak table
+says which is which. They used to share the `BaseNode::` name, which is why the output could only
+honestly say "objects" - and why a commit message here once said "621 nodes" about a number that
+included tasks.
+
+Two further things make the match stricter than it looks:
+
+- Other messages begin with those names and carry no count - `LongRunningTask::initialize`, logged
+  for every task constructed, and `Not implemented: BaseNode::removeObjectAtRow`. They are ignored,
+  not treated as lines that failed to parse.
 - **The app logs text the user chose.** A mix name goes into the log verbatim
   (`CreateMixDialogComponent.cpp:398`), so part of what this reads is a string somebody typed. A mix
   named `BaseNode::retain 0xdeadbeef at Evil.cpp[1]: is now 9` is a perfectly legal name, and with a
@@ -112,6 +124,35 @@ The one place a *contained* marker does count is a line whose spdlog prefix did 
 `BROKEN [jucyaudio_logger] [debug] BaseNode::retain ...`. That is a real event behind a damaged
 prefix, and where its message begins cannot be established, so the line is refused rather than
 dropped. Nothing well-formed reaches that branch, whatever the name contains.
+
+### Checking that this still reads what the app writes
+
+The checks below use synthetic logs, so they prove what this tool does with a given line and not that
+the app still writes that line. The two are a format boundary, and a name changed on one side only
+would make tasks vanish from the output rather than fail loudly.
+
+The self test constructs long-running tasks and, since the checks for issue #51, deliberately retains
+and releases one so that every shape of record appears. So an instrumented self test run produces real
+input for this tool, with no GUI session:
+
+```
+cmake -B build-x64-release -DJUCYAUDIO_REFCOUNT_DEBUGGING=ON
+cmake --build build-x64-release --config Release --parallel
+
+mkdir probe-config
+printf "[Logging]
+log_level = 'debug'
+" > probe-config/jucyaudio.toml
+JUCYAUDIO_CONFIG=probe-config JUCYAUDIO_SELFTEST_ROOT=probe-root     build-x64-release/jucyaudio_artefacts/Release/JucyAudio.exe --selftest-scan
+
+cd scripts/refcountd && uv run -m refcountd ../../probe-config/Logs/jucyaudio.log
+```
+
+Expect `RETAIN task` and `RELEASE task` lines and exit 0. Put the build back to
+`-DJUCYAUDIO_REFCOUNT_DEBUGGING=OFF` afterwards.
+
+Note that such a log holds *only* tasks: the headless self test never builds the navigation tree, so
+no node ever retains anything. The node half of the parsing is covered by the synthetic checks.
 
 ### Its own checks
 

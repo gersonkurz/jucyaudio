@@ -29,6 +29,11 @@ RETAIN = "[2026-09-16 17:31:46.385] [jucyaudio_logger] [debug] BaseNode::retain 
 RELEASE = "[2026-09-16 17:31:47.835] [jucyaudio_logger] [debug] BaseNode::release {ptr} at C:\\p\\Node.cpp[20]: is now {n}"
 FINAL = "[2026-09-16 17:31:48.000] [jucyaudio_logger] [warning] BaseNode::release {ptr} at C:\\p\\Node.cpp[30]: is now 0 <- delete this"
 
+# The other reference-counted thing. It used to log under BaseNode:: too, which made a task
+# indistinguishable from a node in the output and a count over both callable only "objects".
+TASK_RETAIN = "[2026-09-16 17:31:46.000] [jucyaudio_logger] [debug] LongRunningTask::retain {ptr} at C:\\p\\Task.h[43]: is now {n}"
+TASK_FINAL = "[2026-09-16 17:31:49.000] [jucyaudio_logger] [warning] LongRunningTask::release {ptr} at C:\\p\\Task.h[55]: is now 0 <- delete this"
+
 failures: list[str] = []
 
 
@@ -36,6 +41,25 @@ def check(condition: bool, description: str) -> None:
     print(f"{'PASS' if condition else 'FAIL'}  {description}")
     if not condition:
         failures.append(description)
+
+
+def leak_rows(out: str) -> list[list[str]]:
+    """The rows of the leak table, as fields.
+
+    Not "the first line mentioning the address": every event is printed above the table, so that
+    finds a RETAIN line and reports on the event stream while claiming to report on the table.
+    """
+    lines = out.splitlines()
+    try:
+        start = next(i for i, ln in enumerate(lines) if ln.startswith("Kind") and "Address" in ln)
+    except StopIteration:
+        return []
+    rows = []
+    for line in lines[start + 2:]:
+        if not line.strip():
+            break
+        rows.append(line.split())
+    return rows
 
 
 def run(lines: list[str], tmp: Path, name: str) -> tuple[int, str]:
@@ -184,7 +208,78 @@ def main() -> int:
         result = runner.invoke(app, [str(bad)])
         check(result.exit_code == 2, f"a log that is not valid UTF-8 exits 2, not 1 (exit {result.exit_code})")
 
-        # 10. A log that is not there at all.
+        # 10. Both kinds in one log, counted apart. A task is reference counted the same way a
+        #     navigation node is, and an unbalanced one is just as much a leak - but they have
+        #     different lifetimes and different reasons to leak, and a report that calls the sum
+        #     "nodes" is saying something it cannot know. It used to have no choice: both logged
+        #     under BaseNode::.
+        code, out = run(
+            [
+                RETAIN.format(ptr="0x1111", n=2),
+                TASK_RETAIN.format(ptr="0x2222", n=2),
+                FINAL.format(ptr="0x1111"),
+                TASK_FINAL.format(ptr="0x2222"),
+            ],
+            tmp,
+            "bothkinds.log",
+        )
+        check(code == 0, f"a log holding both nodes and tasks is analysed (exit {code})")
+        check("2 objects reached ref count 0" in out, "and both are tracked")
+        check("1 node, 1 task" in out, "and reported apart rather than as one number")
+
+        # 11. A leaking task says it is a task, rather than reading as a node with an odd location.
+        code, out = run(
+            [
+                RETAIN.format(ptr="0x1111", n=2),
+                FINAL.format(ptr="0x1111"),
+                TASK_RETAIN.format(ptr="0x3333", n=2),
+            ],
+            tmp,
+            "taskleak.log",
+        )
+        check(code == 1, f"a leaked task is a leak (exit {code})")
+        rows = [r for r in leak_rows(out) if "0x3333" in r]
+        check(len(rows) == 1, f"and the leak table has a row for it ({len(rows)} row(s))")
+        check(bool(rows) and rows[0][0] == "task", f"whose kind column says task ({rows[0][0] if rows else 'no row'})")
+
+        # 12. Task events only. The summary label used to say "BaseNode events parsed" whatever was
+        #     in the log, which is the same misclassification in the one line a reader looks at first.
+        code, out = run(
+            [TASK_RETAIN.format(ptr="0x4444", n=2), TASK_FINAL.format(ptr="0x4444")],
+            tmp,
+            "tasksonly.log",
+        )
+        check(code == 0, f"a log of nothing but task events is analysed (exit {code})")
+        check("Refcount events parsed: 2" in out, "and the count does not call them BaseNode events")
+        check("BaseNode" not in out, "nor mention that name anywhere")
+
+        # 13. The allocator reusing an address across kinds. An address is not an object: a node
+        #     freed at 0x1111 and a task later allocated there are two objects in one place, and this
+        #     tool keys everything by address. Recording only the last kind made the first vanish.
+        code, out = run(
+            [
+                RETAIN.format(ptr="0x1111", n=2),
+                FINAL.format(ptr="0x1111"),
+                RETAIN.format(ptr="0x2222", n=2),
+                FINAL.format(ptr="0x2222"),
+                TASK_RETAIN.format(ptr="0x1111", n=2),
+            ],
+            tmp,
+            "reuse.log",
+        )
+        check(code == 1, f"a log where an address is reused across kinds, and the task leaks (exit {code})")
+        check("2 nodes, 1 task" in out, "counts both node addresses as nodes")
+        check("used by more than one kind" in out, "and states the overlap rather than letting it look like an error")
+
+        # The leak is the task. The node at that address reached zero and was freed, and the history
+        # of an address is not a list of things leaking at it.
+        check("Objects with leaks: 1 (" not in out, "the leak count does not break down a single leak into two kinds")
+        reuse_rows = [r for r in leak_rows(out) if "0x1111" in r]
+        check(len(reuse_rows) == 1, f"the leak table has one row for the reused address ({len(reuse_rows)} row(s))")
+        check(bool(reuse_rows) and reuse_rows[0][0] == "task",
+              f"and blames the task that is still holding a count, not the node that was freed ({reuse_rows[0][0] if reuse_rows else 'no row'})")
+
+        # 14. A log that is not there at all.
         result = runner.invoke(app, [str(tmp / "nosuchfile.log")])
         check(result.exit_code == 2, f"a missing log is a usage error, exit 2 (exit {result.exit_code})")
 

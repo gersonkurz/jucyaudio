@@ -9,9 +9,18 @@ import typer
 
 app = typer.Typer()
 
-# The only two log records that carry a reference count. A message that does not begin with one of
-# these is not a refcount event, whatever else it may mention.
-EVENT_PREFIXES = ("BaseNode::retain ", "BaseNode::release ")
+# The two kinds of object that carry a reference count, by the name each logs under.
+#
+# They used to share one: ILongRunningTask logged its own retains and releases as "BaseNode::",
+# which made a task indistinguishable from a navigation node in the output. The counts were right -
+# an unbalanced task is a real leak too - but "621 nodes" was not something this tool could say, and
+# it got said anyway. They also leak for different reasons, so telling them apart is worth the
+# column.
+EVENT_KINDS = {"BaseNode": "node", "LongRunningTask": "task"}
+
+# The only log records that carry a reference count. A message that does not begin with one of these
+# is not a refcount event, whatever else it may mention.
+EVENT_PREFIXES = tuple(f"{name}::{action} " for name in EVENT_KINDS for action in ("retain", "release"))
 
 class LogEntry(NamedTuple):
     timestamp: str
@@ -21,6 +30,7 @@ class LogEntry(NamedTuple):
 
 class RefCountEvent(NamedTuple):
     timestamp: str
+    kind: str  # "node" or "task"
     action: str  # "retain" or "release"
     pointer: str
     location: str  # file[line]
@@ -46,11 +56,11 @@ def parse_spdlog_line(line: str) -> LogEntry | None:
     return None
 
 def parse_refcount_message(entry: LogEntry) -> RefCountEvent | None:
-    """Parse a BaseNode retain/release message.
+    """Parse a retain/release message from either kind of reference-counted object.
     
     Examples:
     - "BaseNode::retain 0x1234 at file.cpp[123]: is now 2"
-    - "BaseNode::release 0x1234 at file.cpp[123]: is now 1"
+    - "LongRunningTask::retain 0x1234 at file.cpp[123]: is now 2"
     - "BaseNode::release 0x1234 at file.cpp[123]: is now 0 <- delete this"
     """
     message = entry.message
@@ -59,19 +69,53 @@ def parse_refcount_message(entry: LogEntry) -> RefCountEvent | None:
     # of text it was handed by the user - a mix name, a folder, a track title - and an unanchored
     # search would find an event inside one of those. A name is not a log record: at best that
     # refuses a good log, at worst it parses as a retain that never happened and invents a leak.
-    retain_pattern = r'^BaseNode::(retain|release)\s+(0x[0-9a-fA-F]+)\s+at\s+(.+?):\s+is\s+now\s+(\d+)(?:\s+<-\s+delete\s+this)?'
+    names = "|".join(EVENT_KINDS)
+    retain_pattern = (
+        rf'^({names})::(retain|release)\s+(0x[0-9a-fA-F]+)\s+at\s+(.+?):'
+        r'\s+is\s+now\s+(\d+)(?:\s+<-\s+delete\s+this)?'
+    )
     match = re.match(retain_pattern, message)
     
     if match:
-        action, pointer, location, ref_count = match.groups()
+        name, action, pointer, location, ref_count = match.groups()
         return RefCountEvent(
             timestamp=entry.timestamp,
+            kind=EVENT_KINDS[name],
             action=action,
             pointer=pointer,
             location=location,
             ref_count=int(ref_count)
         )
     return None
+
+def describe_kinds(pointers: dict[str, int], kinds: dict[str, set[str]]) -> str:
+    """" (3 nodes, 1 task)" for a set of addresses, or "" when they are all one kind.
+
+    Written this way round because the plain count is the honest headline - the tool tracks whatever
+    logged a reference count, keyed by address - and the breakdown is what lets a reader say "nodes"
+    and be right.
+
+    The parts do not always sum to the total, and that is not a rounding error. An address freed by
+    one kind and reused by another is one address and two objects, so it counts in both. When that
+    happens the caption says so rather than letting the numbers look like they disagree with
+    themselves.
+
+    That is right for counting addresses and wrong for counting leaks, so the leak line passes a
+    mapping built from the final kind instead: a leak is one object holding one count, and the object
+    that was freed at that address earlier is not leaking.
+    """
+    counted: dict[str, int] = {}
+    for pointer in pointers:
+        for kind in kinds.get(pointer, {"?"}):
+            counted[kind] = counted.get(kind, 0) + 1
+    if len(counted) < 2:
+        return ""
+
+    parts = [f"{count} {name}{'s' if count != 1 else ''}" for name, count in sorted(counted.items())]
+    reused = sum(1 for pointer in pointers if len(kinds.get(pointer, {"?"})) > 1)
+    note = f"; {reused} address(es) used by more than one kind, so these overlap" if reused else ""
+    return f" ({', '.join(parts)}{note})"
+
 
 def refuse(what: str, *, not_built: bool, log_advice: bool = True) -> None:
     """Say why this log cannot answer the question, and how to get one that can.
@@ -138,6 +182,12 @@ def main(
     final_ref_counts = {}
     # Track creation location for each pointer (first seen)
     pointer_locations = {}
+    # What each pointer is - a navigation node or a long-running task. Both are reference counted and
+    # both used to log under the same name, so a count over them could only ever be called "objects".
+    pointer_kinds: dict[str, set[str]] = {}
+    # The kind of the event that supplied each address's final count - who owns the number a leak is
+    # judged by. pointer_kinds above is the history, and the two answer different questions.
+    final_kinds: dict[str, str] = {}
     # Track all events for debugging
     events = []
     
@@ -158,7 +208,7 @@ def main(
                 total_lines += 1
                 # Cheap pre-filter only. What decides whether this is an event is the parsed message
                 # below, because the marker can appear inside a line without the line being one.
-                if "BaseNode::" not in line:
+                if not any(f"{name}::" in line for name in EVENT_KINDS):
                     continue
 
                 entry = parse_spdlog_line(line)
@@ -184,12 +234,31 @@ def main(
                         # Track the actual reference count reported in the log
                         final_ref_counts[event.pointer] = event.ref_count
 
-                        # Track first seen location
+                        # Every kind this address was ever seen as, not the last one.
+                        #
+                        # An address is not an object. A node freed at 0x1111 and a task allocated at
+                        # 0x1111 afterwards are two objects the allocator happened to put in the same
+                        # place, and this tool keys everything by address, so it cannot tell them
+                        # apart. Overwriting here made the earlier one vanish from the breakdown:
+                        # two node addresses and one task reusing one of them reported "1 node, 1
+                        # task". Recording the set keeps both, and the report says when the sum
+                        # therefore exceeds the number of addresses.
+                        pointer_kinds.setdefault(event.pointer, set()).add(event.kind)
+
+                        # And the kind of the most recent event, which is the one whose count is the
+                        # final count above. A leak is one object, not the history of an address: if a
+                        # node at this address was freed and a task allocated there is still retained,
+                        # the thing leaking is the task, and saying "1 node, 1 task" accuses an object
+                        # that was released.
+                        final_kinds[event.pointer] = event.kind
                         if event.pointer not in pointer_locations:
                             pointer_locations[event.pointer] = event.location
 
                         # Print each event as it's processed
-                        print(f"{event.timestamp}: {event.action.upper()} {event.pointer} at {event.location} -> count: {event.ref_count}")
+                        print(
+                            f"{event.timestamp}: {event.action.upper()} {event.kind} {event.pointer} "
+                            f"at {event.location} -> count: {event.ref_count}"
+                        )
                     else:
                         unreadable.append(f"  line {line_num}: {entry.message}")
 
@@ -228,8 +297,8 @@ def main(
     print("MEMORY LEAK ANALYSIS SUMMARY")
     print(f"{'='*60}")
     print(f"Total lines processed: {total_lines}")
-    print(f"BaseNode events parsed: {parsed_events}")
-    print(f"Unique pointers tracked: {len(final_ref_counts)}")
+    print(f"Refcount events parsed: {parsed_events}")
+    print(f"Unique pointers tracked: {len(final_ref_counts)}{describe_kinds(final_ref_counts, pointer_kinds)}")
     
     # Two ways this log can be useless, and both of them used to read as good news.
     #
@@ -285,18 +354,22 @@ def main(
     
     if leaks:
         print(f"\n!!  MEMORY LEAKS DETECTED: {len(leaks)} pointers")
-        print(f"{'Pointer':<16} {'Final Count':<12} {'First Seen At'}")
-        print("-" * 70)
+        print(f"{'Kind':<10} {'Address':<16} {'Final Count':<12} {'First Seen At'}")
+        print("-" * 80)
         for ptr, count in sorted(leaks.items(), key=lambda x: x[1], reverse=True):
             location = pointer_locations.get(ptr, "unknown")
-            print(f"{ptr:<16} {count:>8}       {location}")
+            # The final kind, not the history: this row is about the object that is still
+            # holding a count. That the address was used by something else earlier is the summary's
+            # business, and it says so there.
+            kind = final_kinds.get(ptr, "?")
+            print(f"{kind:<10} {ptr:<16} {count:>8}       {location}")
     else:
         print("\nOK: NO MEMORY LEAKS DETECTED - All tracked objects properly released!")
     
     # Show objects that were properly cleaned up (final count = 0)
     cleaned_up = {ptr: count for ptr, count in final_ref_counts.items() if count == 0}
     if cleaned_up:
-        print(f"\nOK: PROPERLY CLEANED UP: {len(cleaned_up)} objects reached ref count 0")
+        print(f"\nOK: PROPERLY CLEANED UP: {len(cleaned_up)} objects reached ref count 0{describe_kinds(cleaned_up, pointer_kinds)}")
     
     # Show statistics
     total_releases = sum(1 for event in events if event.action == "release")
@@ -304,7 +377,7 @@ def main(
     print(f"  Total retains observed: {total_retains}")
     print(f"  Total releases observed: {total_releases}")
     print(f"  Objects properly deleted: {len(cleaned_up)}")
-    print(f"  Objects with leaks: {len(leaks)}")
+    print(f"  Objects with leaks: {len(leaks)}{describe_kinds(leaks, {ptr: {final_kinds[ptr]} for ptr in leaks})}")
 
     # The answer, as an exit code, because something other than a person reads this too: 0 clean,
     # 1 leaks found, 2 the log could not answer. It used to exit 0 whatever it found, so a script

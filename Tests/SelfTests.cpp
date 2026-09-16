@@ -3511,6 +3511,24 @@ namespace jucyaudio
                     rootManager.removeRoot(rootId);
                 }
 
+                // One of each shape of LongRunningTask:: record, for scripts/refcountd to read back.
+                //
+                // This is a producer, not a check - the assertion is on the other side of the format
+                // boundary, in the tool that parses what this writes. A retain and a release are the
+                // two records that carry a count, and the middle release is the non-final one, which
+                // logs at a different level from the last. Costs nothing when the instrumentation is
+                // off, which is how it ships: the logging is inside the ifdef and what remains is
+                // three atomic operations.
+                //
+                // See the README in scripts/refcountd for how to run the two together.
+                {
+                    auto *probe = new ui::ScanRootsTask{{}, {}, false, false, nullptr};
+                    probe->retain(REFCOUNT_DEBUG_ARGS);
+                    probe->release(REFCOUNT_DEBUG_ARGS);
+                    probe->release(REFCOUNT_DEBUG_ARGS);
+                    report.note("wrote one retain and two releases from a long-running task, for scripts/refcountd");
+                }
+
                 std::filesystem::remove_all(statsRoot, statsEc);
             }
 
