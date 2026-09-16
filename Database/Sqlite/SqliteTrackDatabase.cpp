@@ -1515,8 +1515,8 @@ namespace jucyaudio
                     FOREIGN KEY(mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE,
                     FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
                 );)SQL",
-                "INSERT INTO MixTracks_v32 (mix_id, track_id, order_in_mix, mix_data) "
-                "SELECT mix_id, track_id, order_in_mix, mix_data FROM MixTracks;",
+                ("INSERT INTO MixTracks_v32 (mix_id, track_id, order_in_mix, mix_data) "
+                 "SELECT mix_id, track_id, order_in_mix, mix_data FROM MixTracks;"),
                 "DROP TABLE MixTracks;",
                 "ALTER TABLE MixTracks_v32 RENAME TO MixTracks;",
             };

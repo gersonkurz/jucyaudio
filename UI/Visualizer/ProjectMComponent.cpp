@@ -11,8 +11,11 @@ namespace jucyaudio
         ProjectMComponent::ProjectMComponent()
             : m_audioBuffer(kAudioBufferSize)
         {
-            // Request OpenGL 4.1 Core Profile (projectM v4 requires GLSL 330, which needs OpenGL 3.3+)
-            m_openGLContext.setOpenGLVersionRequired(juce::OpenGLContext::openGL4_1);
+            // Request OpenGL 4.1 Core Profile (projectM v4 requires GLSL 330, which needs OpenGL 3.3+).
+            // Two calls where JUCE 9.0.2's deprecated setOpenGLVersionRequired(openGL4_1) made one:
+            // that overload maps the enum to exactly this version and this profile.
+            m_openGLContext.setPreferredVersion({4, 1});
+            m_openGLContext.setPreferredProfile(juce::OpenGLProfile::core);
             m_openGLContext.setRenderer(this);
             m_openGLContext.setContinuousRepainting(false);  // We use Timer instead
             // Note: attachTo() is deferred to start() when component is visible
