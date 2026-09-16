@@ -29,6 +29,11 @@ namespace jucyaudio
             // m_mp3Buffer and m_outputStream automatically cleaned up
         }
 
+        std::unique_ptr<juce::FileOutputStream> ExportMp3MixImplementation::createRenderStream(const juce::File &target)
+        {
+            return target.createOutputStream();
+        }
+
         bool ExportMp3MixImplementation::onSetupAudioFormatManagerAndWriter()
         {
             m_formatManager.registerBasicFormats(); // For reading input formats
@@ -43,7 +48,7 @@ namespace jucyaudio
                 outputFile.deleteFile();
             }
 
-            m_outputStream = std::unique_ptr<juce::FileOutputStream>(outputFile.createOutputStream());
+            m_outputStream = createRenderStream(outputFile);
             if (!m_outputStream)
             {
                 return fail("MTE: Could not create output file stream for " + pathToString(renderTargetPath()));

@@ -19,6 +19,7 @@
 #include <Tests/SelfTests.h>
 #include <Tests/SchemaV12Fixture.h>
 
+#include <Audio/ExportMixToMp3.h>
 #include <Audio/ExportMixToWav.h>
 #include <Audio/Includes/ActiveExportSettings.h>
 #include <Audio/MixExporter.h>
@@ -910,6 +911,9 @@ namespace jucyaudio
             {
                 int64_t bytesAccepted{0};
                 int refusals{0};
+                // Only the MP3 exporter seeks, and only to reach the LAME info frame, so this doubles
+                // as "the render finished and finalisation began".
+                int seeks{0};
             };
 
             class RefusingOutputStream final : public juce::OutputStream
@@ -1007,6 +1011,104 @@ namespace jucyaudio
                 }
 
             private:
+                const int64_t m_refuseAfterBytes;
+                WriteRefusalLog &m_log;
+            };
+
+            /// @brief The same idea as RefusingOutputStream, as a juce::FileOutputStream.
+            ///
+            /// It has to be one: ExportMp3MixImplementation::releaseOutput calls getStatus() on its
+            /// stream, which juce::OutputStream does not have, so a plain OutputStream cannot stand in
+            /// here the way it can for the WAV writer. Writing through to the real file keeps
+            /// getStatus meaningful - the refusal is this class's, not the file system's, which is the
+            /// point: what is under test is the exporter's handling of a write that comes back false,
+            /// not its handling of a broken disk.
+            /// @brief When the stream starts refusing.
+            ///
+            /// Two triggers rather than one because the five writes are not equally easy to reach. A
+            /// byte count lands in the middle of the render, where the per-block write is. It cannot
+            /// reach the finalisation writes, which come after an unknown number of encoded bytes - so
+            /// those are reached by the seek instead: this exporter seeks exactly once, to put the
+            /// finished LAME info frame over the placeholder, so "after the first seek" names that
+            /// moment exactly and does not move when the fixture's length changes.
+            enum class RefusalTrigger
+            {
+                AfterBytes,
+                AfterSeek,
+            };
+
+            class RefusingFileOutputStream final : public juce::FileOutputStream
+            {
+            public:
+                RefusingFileOutputStream(const juce::File &target, RefusalTrigger trigger, int64_t refuseAfterBytes, WriteRefusalLog &log)
+                    : juce::FileOutputStream{target},
+                      m_trigger{trigger},
+                      m_refuseAfterBytes{refuseAfterBytes},
+                      m_log{log}
+                {
+                }
+
+                /// Counted, not refused. The seek has to succeed for the write after it to be the
+                /// thing under test - a refused seek fails at its own check, one line earlier.
+                bool setPosition(juce::int64 newPosition) override
+                {
+                    ++m_log.seeks;
+                    return juce::FileOutputStream::setPosition(newPosition);
+                }
+
+                bool write(const void *data, size_t numBytes) override
+                {
+                    const bool refusing = m_trigger == RefusalTrigger::AfterSeek ? m_log.seeks > 0 : m_log.bytesAccepted >= m_refuseAfterBytes;
+                    if (refusing)
+                    {
+                        ++m_log.refusals;
+                        return false;
+                    }
+
+                    if (!juce::FileOutputStream::write(data, numBytes))
+                    {
+                        return false;
+                    }
+
+                    m_log.bytesAccepted += static_cast<int64_t>(numBytes);
+                    return true;
+                }
+
+            private:
+                const RefusalTrigger m_trigger;
+                const int64_t m_refuseAfterBytes;
+                WriteRefusalLog &m_log;
+            };
+
+            /// @brief The real MP3 export, writing to a stream that starts refusing mid-render.
+            ///
+            /// Only createRenderStream is replaced. LAME's initialisation, the ID3v2 tag write, the
+            /// tag-frame bookkeeping, onRunMixingLoop, every write check in it, releaseOutput and
+            /// run() are the shipping implementations.
+            class WriteRefusingMp3Export final : public audio::ExportMp3MixImplementation
+            {
+            public:
+                WriteRefusingMp3Export(MixId mixId,
+                    const audio::ActiveExportSettings &settings,
+                    RefusalTrigger trigger,
+                    int64_t refuseAfterBytes,
+                    WriteRefusalLog &log,
+                    audio::MixExporterProgressCallback progressCallback)
+                    : audio::ExportMp3MixImplementation{mixId, settings, progressCallback},
+                      m_trigger{trigger},
+                      m_refuseAfterBytes{refuseAfterBytes},
+                      m_log{log}
+                {
+                }
+
+            protected:
+                std::unique_ptr<juce::FileOutputStream> createRenderStream(const juce::File &target) override
+                {
+                    return std::make_unique<RefusingFileOutputStream>(target, m_trigger, m_refuseAfterBytes, m_log);
+                }
+
+            private:
+                const RefusalTrigger m_trigger;
                 const int64_t m_refuseAfterBytes;
                 WriteRefusalLog &m_log;
             };
@@ -6148,12 +6250,144 @@ namespace jucyaudio
                         report.check(!std::filesystem::exists(mp3Partial, ec), "and the cancelled MP3 render left no partial behind");
                     }
 
+                    // --- A refused write, through the MP3 path ---
+                    //
+                    // The same three things the WAV check proves, against code that shares none of it:
+                    // LAME rather than a juce::AudioFormatWriter, this exporter's own output stream,
+                    // and its own releaseOutput override. Five writes here lead to a `return fail(...)`
+                    // and until now not one of those branches had ever run - nothing reachable through
+                    // exportMixToFile can make a write refuse, because every injectable failure is
+                    // caught at setup before a byte of audio is written.
+                    //
+                    // 64 KB in, deliberately. The ID3v2 tag written at setup is larger than 12 KB here,
+                    // so a stream that refused from the first byte would fail the setup step instead
+                    // and test a path that is already covered. This one refuses during the render.
+                    constexpr int64_t kRefuseAfterBytes{64 * 1024};
+                    {
+                        WriteRefusalLog mp3Log;
+                        std::vector<std::string> mp3Errors;
+                        {
+                            // Its own settings object, held for the whole run: ExportMixImplementation
+                            // keeps a reference to it.
+                            audio::ActiveExportSettings refusingMp3Settings{mp3Settings};
+
+                            WriteRefusingMp3Export refusing{toneMixInfo.mixId,
+                                refusingMp3Settings,
+                                RefusalTrigger::AfterBytes,
+                                kRefuseAfterBytes,
+                                mp3Log,
+                                [&mp3Errors](float, const std::string &message)
+                                {
+                                    if (message.starts_with("Error: "))
+                                    {
+                                        mp3Errors.push_back(message);
+                                    }
+                                    return true;
+                                }};
+                            const auto refused = refusing.run();
+                            report.check(
+                                !refused.success, std::format("an MP3 export whose writes start failing reports failure (said: '{}')", refused.message));
+
+                            report.check(refused.message.find("Run Mixing Loop") != std::string::npos,
+                                std::format("and fails in the mixing loop rather than later (said: '{}')", refused.message));
+                        }
+
+                        // Which of the five writes refused, not merely that the step failed. This is
+                        // the part the step name cannot carry: all five of this exporter's write checks
+                        // live inside Run Mixing Loop, so deleting the per-block one only moves the
+                        // failure to the flush write a moment later and the step name does not change.
+                        // Only the message fail() reported tells them apart.
+                        report.check(!mp3Errors.empty(), "the failing export reported an error through its progress callback");
+                        if (!mp3Errors.empty())
+                        {
+                            report.check(mp3Errors.front().find("Failed to write encoded MP3 data") != std::string::npos,
+                                std::format("and the first thing that failed is the per-block write, not a later one (said: '{}')", mp3Errors.front()));
+                        }
+
+                        // Exactly one, for the same reason: the loop has to stop at the first refused
+                        // write. With that check removed it keeps encoding and every subsequent write
+                        // is refused too, which is a far larger number.
+                        report.check(
+                            mp3Log.refusals == 1, std::format("and it stopped at the first refusal rather than encoding on ({} refusals)", mp3Log.refusals));
+
+                        // Without this the checks below would pass on an export that failed for some
+                        // other reason, or never reached the encoder at all.
+                        report.check(mp3Log.bytesAccepted >= kRefuseAfterBytes,
+                            std::format("and did so during the render, not at the ID3v2 tag ({} bytes accepted)", mp3Log.bytesAccepted));
+
+                        report.check(
+                            std::filesystem::exists(mp3Settings.outputPath, ec) && std::filesystem::file_size(mp3Settings.outputPath, ec) == mp3SizeBefore,
+                            std::format("the MP3 that was already there is untouched ({} bytes)", mp3SizeBefore));
+                        report.check(!std::filesystem::exists(mp3Partial, ec), "and the truncated partial was discarded rather than committed");
+                    }
+
+                    // --- The same, refused at the LAME info frame instead ---
+                    //
+                    // The other end of the render. A whole export is encoded and flushed successfully,
+                    // and the write that refuses is the one putting the finished info frame back over
+                    // LAME's placeholder - the write whose *success* path this suite already checks in
+                    // detail, and whose failure path had never run.
+                    //
+                    // Worth its own block rather than folded into the one above, because it is a
+                    // different branch reached through different code: everything from the encoder's
+                    // last flush onwards has already succeeded when it fires.
+                    {
+                        WriteRefusalLog frameLog;
+                        std::vector<std::string> frameErrors;
+                        {
+                            audio::ActiveExportSettings frameSettings{mp3Settings};
+
+                            WriteRefusingMp3Export refusing{toneMixInfo.mixId,
+                                frameSettings,
+                                RefusalTrigger::AfterSeek,
+                                0,
+                                frameLog,
+                                [&frameErrors](float, const std::string &message)
+                                {
+                                    if (message.starts_with("Error: "))
+                                    {
+                                        frameErrors.push_back(message);
+                                    }
+                                    return true;
+                                }};
+                            const auto refused = refusing.run();
+                            report.check(
+                                !refused.success, std::format("an MP3 export whose info-frame write is refused reports failure (said: '{}')", refused.message));
+                        }
+
+                        // That the render got all the way to finalisation, which is what makes this a
+                        // different check from the one above rather than the same one later.
+                        report.check(
+                            frameLog.seeks > 0, std::format("the export encoded and flushed a whole file before it seeked back ({} seeks)", frameLog.seeks));
+                        report.check(frameLog.bytesAccepted > kRefuseAfterBytes,
+                            std::format("and wrote more than the block-refusal check ever got to ({} bytes accepted)", frameLog.bytesAccepted));
+
+                        // Exactly one, for the reason the block above needs the same assertion: if the
+                        // info-frame failure were logged but the encoder carried on, the ID3v1 write
+                        // would refuse as well and fail the export by itself, satisfying every other
+                        // check here. Two refusals would mean this block was pinning that write instead.
+                        report.check(
+                            frameLog.refusals == 1, std::format("and stopped there rather than carrying on to the footer ({} refusals)", frameLog.refusals));
+
+                        report.check(!frameErrors.empty(), "the failing export reported an error through its progress callback");
+                        if (!frameErrors.empty())
+                        {
+                            report.check(frameErrors.front().find("could not write the LAME info frame") != std::string::npos,
+                                std::format("and names the info-frame write as what failed (said: '{}')", frameErrors.front()));
+                        }
+
+                        report.check(
+                            std::filesystem::exists(mp3Settings.outputPath, ec) && std::filesystem::file_size(mp3Settings.outputPath, ec) == mp3SizeBefore,
+                            std::format("the MP3 that was already there is untouched ({} bytes)", mp3SizeBefore));
+                        report.check(
+                            !std::filesystem::exists(mp3Partial, ec), "and the fully encoded partial was discarded rather than committed, tag frame and all");
+                    }
+
                     // Break it again and re-export over the MP3 that is now there.
                     {
                         SqliteDatabase saboteur;
-                        const bool staged = saboteur.open(pathToString(databasePath)) &&
-                            saboteur.execute("PRAGMA foreign_keys = OFF;") &&
-                            saboteur.execute(std::format("DELETE FROM Tracks WHERE track_id = {};", middleTrackId).c_str());
+                        const bool staged = saboteur.open(pathToString(databasePath)) && saboteur.execute("PRAGMA foreign_keys = OFF;") &&
+                                            saboteur.execute(std::format("DELETE FROM Tracks WHERE track_id = {};", middleTrackId).c_str());
                         report.check(staged, "the middle track could be removed again for the MP3 check");
                     }
 

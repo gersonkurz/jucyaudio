@@ -25,7 +25,15 @@ namespace jucyaudio
     namespace audio
     {
         using namespace database;
-        class ExportMp3MixImplementation final : public ExportMixImplementation
+        /// @brief The MP3 half of the export, written through LAME rather than a juce::AudioFormatWriter.
+        ///
+        /// Not final, for the same reason ExportWavMixImplementation is not: five of the writes below
+        /// lead to a `return fail(...)` when the stream refuses, and nothing reachable through
+        /// exportMixToFile can make one refuse. Every injectable failure - an unwritable target, a
+        /// partial path that is a directory - is caught at the setup step, before a byte of audio is
+        /// written. So the propagation from a refused write to a failed export, and from there to the
+        /// previous export surviving untouched, went unproven on this side while the WAV side had it.
+        class ExportMp3MixImplementation : public ExportMixImplementation
         {
         public:
             ExportMp3MixImplementation(MixId mixId, const ActiveExportSettings &settings, MixExporterProgressCallback progressCallback)
@@ -34,6 +42,22 @@ namespace jucyaudio
             }
             ~ExportMp3MixImplementation() override;
             JUCE_DECLARE_NON_COPYABLE(ExportMp3MixImplementation)
+
+        protected:
+            /// @brief Makes the stream the render is written to, and is the only thing a test replaces.
+            ///
+            /// The WAV half needed no hook for this job: the writer its check substitutes is
+            /// m_writer, which lives in the base class and is already protected, so removing one
+            /// keyword was the whole cost. This class owns its own stream instead - it has to, because
+            /// releaseOutput calls getStatus() on it, which juce::OutputStream does not have - and a
+            /// derived class cannot reach it. Hence this.
+            ///
+            /// Everything downstream of it is the shipping path when a test overrides this: the ID3v2
+            /// write, LAME's initialisation and tag-frame bookkeeping, the mixing loop, each of its
+            /// write checks, releaseOutput, and run()'s decision to discard the partial rather than
+            /// commit it.
+            virtual std::unique_ptr<juce::FileOutputStream> createRenderStream(const juce::File &target);
+
         private:
             bool onSetupAudioFormatManagerAndWriter() override;
             bool onRunMixingLoop() override; // Override to use LAME instead of JUCE writer
