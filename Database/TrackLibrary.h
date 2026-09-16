@@ -52,11 +52,17 @@ namespace jucyaudio
             }
 
             // --- Scanning API exposed by TrackLibrary ---
+            /// @param scannedRoots If given, receives the roots that were actually walked - see
+            ///        TrackScanner::scan, which states the two conditions on it: pass it empty, and
+            ///        read it only when this returns true. A skipped root is not in it, and a scan
+            ///        that skipped one still succeeds.
             bool scanLibrary(std::vector<FolderId> &foldersToScan,
                 bool forceRescanAllFiles,
                 bool removeMissingFiles,
                 ProgressCallback progressCb,
-                             CompletionCallback completionCb, std::atomic<bool> *shouldCancel);
+                CompletionCallback completionCb,
+                std::atomic<bool> *shouldCancel,
+                std::unordered_set<FolderId> *scannedRoots = nullptr);
 
             const auto &getLastError() const
             {

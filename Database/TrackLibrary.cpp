@@ -97,7 +97,9 @@ namespace jucyaudio
             bool forceRescanAllFiles,
             bool removeMissingFiles,
             ProgressCallback progressCb,
-            CompletionCallback completionCb, std::atomic<bool> *shouldCancel)
+            CompletionCallback completionCb,
+            std::atomic<bool> *shouldCancel,
+            std::unordered_set<FolderId> *scannedRoots)
         {
             if (!m_isInitialised || !m_scanner)
             {
@@ -106,8 +108,7 @@ namespace jucyaudio
                 m_lastErrorMessage = "Library or scanner not initialised.";
                 return false;
             }
-            return m_scanner->scan(foldersToScan, forceRescanAllFiles, removeMissingFiles,
-                                   progressCb, completionCb, shouldCancel);
+            return m_scanner->scan(foldersToScan, forceRescanAllFiles, removeMissingFiles, progressCb, completionCb, shouldCancel, scannedRoots);
         }
 
         DbResult TrackLibrary::saveWaveform(TrackId trackId, const std::vector<unsigned char>& blob)

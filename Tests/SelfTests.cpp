@@ -3427,6 +3427,87 @@ namespace jucyaudio
                             afterSuccess.has_value() && before.has_value() && afterSuccess.value() > before.value(), "forwards, to the time it finished");
                     }
 
+                    // --- and a root the scan skipped is not a scanned root either ---
+                    //
+                    // The other half, and a different mechanism. A root that is gone, is not a
+                    // directory, or cannot be listed is stepped over and the scan still reports
+                    // success (TrackScanner.cpp, the two continues in the root loop) - deliberately,
+                    // because the roots that were there really were scanned, and failing the whole
+                    // run over one unplugged drive was the worse behaviour that a6d888e removed.
+                    //
+                    // So the check above cannot catch this one: the scan succeeds, and every root in
+                    // the batch used to be stamped including the one nobody looked at.
+                    {
+                        const auto lockedStatsRoot = selfTestRoot / "scanstats-locked";
+                        std::error_code lockedEc;
+                        std::filesystem::remove_all(lockedStatsRoot, lockedEc);
+
+                        const bool lockedBuilt = makeDirectory(lockedStatsRoot) &&
+                                                 writeSilentWav(lockedStatsRoot / "locked.wav", static_cast<uint32_t>(44100 * kFixtureDurationMs / 1000));
+                        report.check(lockedBuilt, "a second root could be built for the skipped-root check");
+
+                        const auto lockedRootInfo = lockedBuilt ? rootManager.addRoot(pathToString(lockedStatsRoot)) : std::nullopt;
+                        const auto lockedFolderId = lockedBuilt ? db.getFolderDatabase().findOrCreateFolderByPath(lockedStatsRoot) : FolderId{-1};
+                        report.check(lockedRootInfo.has_value() && lockedFolderId > 0, "and added as a library root");
+
+                        if (lockedRootInfo.has_value() && lockedFolderId > 0)
+                        {
+                            const auto lockedId = lockedRootInfo->id;
+                            const auto marker = std::chrono::system_clock::now() - std::chrono::hours{2};
+                            report.check(rootManager.updateScanStats(rootId, marker) && rootManager.updateScanStats(lockedId, marker),
+                                "both roots could be given the same known last_scanned");
+
+                            const auto storedFor = [&rootManager](LibraryRootId id) -> std::optional<Timestamp_t>
+                            {
+                                for (const auto &root : rootManager.getAllRoots())
+                                {
+                                    if (root.id == id)
+                                    {
+                                        return root.lastScanned;
+                                    }
+                                }
+                                return std::nullopt;
+                            };
+
+                            const auto healthyBefore = storedFor(rootId);
+                            const auto skippedBefore = storedFor(lockedId);
+
+                            const bool denied = setDirectoryListable(lockedStatsRoot, false);
+                            report.check(denied, "the second root could be made unlistable");
+
+                            if (denied)
+                            {
+                                std::atomic<bool> noCancel{false};
+                                bool taskSaidSuccess = false;
+
+                                auto *task = new ui::ScanRootsTask{{statsFolderId, lockedFolderId}, {rootId, lockedId}, false, false, nullptr};
+                                task->run(
+                                    nullptr,
+                                    [&taskSaidSuccess](bool success, const std::string &)
+                                    {
+                                        taskSaidSuccess = success;
+                                    },
+                                    noCancel);
+                                task->release(REFCOUNT_DEBUG_ARGS);
+
+                                report.check(taskSaidSuccess, "a scan that skips an unlistable root still reports success");
+
+                                const auto healthyAfter = storedFor(rootId);
+                                report.check(healthyAfter.has_value() && healthyAfter != healthyBefore, "the root that was walked has its last_scanned moved");
+
+                                const auto skippedAfter = storedFor(lockedId);
+                                report.check(skippedAfter == skippedBefore, "and the root nobody could look at keeps the date it had");
+
+                                // Before anything tries to clean up.
+                                report.check(setDirectoryListable(lockedStatsRoot, true), "the second root could be made listable again");
+                            }
+
+                            rootManager.removeRoot(lockedId);
+                        }
+
+                        std::filesystem::remove_all(lockedStatsRoot, lockedEc);
+                    }
+
                     rootManager.removeRoot(rootId);
                 }
 

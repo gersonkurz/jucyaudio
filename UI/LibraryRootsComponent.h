@@ -41,19 +41,22 @@ namespace jucyaudio
                 }
                 try
                 {
-                    const bool scanSucceeded =
-                        database::theTrackLibrary.scanLibrary(m_idsToScan, m_bForceRescan, m_bRemoveMissingFiles, progressCb, completionCb, &shouldCancel);
+                    // Two answers, because a scan has two ways of not covering a root and they are
+                    // not the same thing.
+                    std::unordered_set<FolderId> scannedRoots;
+                    const bool scanSucceeded = database::theTrackLibrary.scanLibrary(
+                        m_idsToScan, m_bForceRescan, m_bRemoveMissingFiles, progressCb, completionCb, &shouldCancel, &scannedRoots);
 
-                    // The answer decides whether anything is recorded. It used to be discarded, so a
+                    // The first: the scan as a whole did not finish. It used to be discarded, so a
                     // scan that was cancelled or refused still stamped every selected root with the
                     // current time, and the "Last Scanned" column said the opposite of what happened.
                     //
-                    // Nothing is recorded rather than something partial, because scanLibrary reports
-                    // one result for the whole batch: a root it finished before the failure cannot be
-                    // told from one it never reached. Leaving every timestamp alone understates - the
-                    // column keeps a date that was true - where stamping them overstates. The failure
-                    // itself already reaches the user through completionCb, which holds the task
-                    // dialog open with the message.
+                    // Nothing is recorded rather than something partial, because the overall answer is
+                    // one bool for the whole batch: a root finished before the failure cannot be told
+                    // from one never reached. Leaving every timestamp alone understates - the column
+                    // keeps a date that was true - where stamping them overstates. The failure itself
+                    // already reaches the user through completionCb, which holds the task dialog open
+                    // with the message.
                     if (!scanSucceeded)
                     {
                         spdlog::warn("ScanRootsTask: the scan did not complete, so no root's last_scanned was updated");
@@ -75,6 +78,19 @@ namespace jucyaudio
                             {
                                 const auto rootId = m_rootIdsToScan[i];
                                 const auto folderId = m_idsToScan[i];
+
+                                // The second way a root goes uncovered: the scan succeeded, and
+                                // skipped this one. A root that is gone, is not a directory, or
+                                // cannot be listed is stepped over and the scan still reports
+                                // success - deliberately, because the roots that were there really
+                                // were scanned and failing the whole run over one unplugged drive
+                                // was the worse behaviour. But stamping the unplugged one as freshly
+                                // scanned is the same lie the check above exists to stop.
+                                if (!scannedRoots.contains(folderId))
+                                {
+                                    spdlog::info("Root {} was skipped by the scan, so its last_scanned is left alone", rootId);
+                                    continue;
+                                }
 
                                 // Get the folder info which now has the correct recursive track count
                                 const auto folderInfo = folderDb.getFolderById(folderId);

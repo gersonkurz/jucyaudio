@@ -52,16 +52,30 @@ namespace jucyaudio
             TrackScanner(const TrackScanner &) = delete;
             TrackScanner &operator=(const TrackScanner &) = delete;
 
+            /// @param scannedRoots If given, receives the roots that were actually walked. A scan can
+            ///        skip a root - one whose path cannot be reconstructed, or one that is gone, not a
+            ///        directory, or not listable - and still succeed, because the roots that were
+            ///        present really were scanned and their files really are accounted for. The
+            ///        caller needs to know which is which: the alternative is stamping a root that
+            ///        nobody looked at as freshly scanned.
+            ///
+            ///        Two conditions on it. Pass an empty set - ids are inserted, never cleared. And
+            ///        read it only when this returns true: an id goes in when its root is accepted,
+            ///        before the walk of that root finishes, so after a failure the set holds the
+            ///        roots that were started rather than the ones that were completed. On failure
+            ///        there is no per-root answer to be had, which is why the one caller records
+            ///        nothing at all then.
             bool scan(const std::vector<FolderId> &folderIdsToScan,
                 bool forceRescanAllFiles,
                 bool removeMissingFiles,
                 ProgressCallback progressCb,
                 CompletionCallback completionCb,
-                std::atomic<bool> *shouldCancel);
+                std::atomic<bool> *shouldCancel,
+                std::unordered_set<FolderId> *scannedRoots = nullptr);
 
         private:
-            bool scanLoop(const std::vector<FolderId> &foldersToScan);
-            
+            bool scanLoop(const std::vector<FolderId> &foldersToScan, std::unordered_set<FolderId> *scannedRoots);
+
             ITrackDatabase &m_db;
 
             std::vector<std::unique_ptr<ITrackInfoScanner>> m_scanners;

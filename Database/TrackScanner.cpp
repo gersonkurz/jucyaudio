@@ -23,7 +23,8 @@ namespace jucyaudio
             bool removeMissingFiles,
             ProgressCallback progressCb,
             CompletionCallback completionCb,
-            std::atomic<bool> *shouldCancel)
+            std::atomic<bool> *shouldCancel,
+            std::unordered_set<FolderId> *scannedRoots)
         {
             m_progressCb = progressCb;
             m_completionCb = completionCb;
@@ -31,7 +32,7 @@ namespace jucyaudio
             m_forceRescanAll = forceRescanAllFiles;
             m_removeMissingFiles = removeMissingFiles;
 
-            const auto success = scanLoop(folderIdsToScan);
+            const auto success = scanLoop(folderIdsToScan, scannedRoots);
 
             // Whatever happened in there, the folder cache can no longer be trusted.
             //
@@ -64,7 +65,7 @@ namespace jucyaudio
             return success;
         }
 
-        bool TrackScanner::scanLoop(const std::vector<FolderId> &folderIdsToScan)
+        bool TrackScanner::scanLoop(const std::vector<FolderId> &folderIdsToScan, std::unordered_set<FolderId> *scannedRoots)
         {
             spdlog::info("Hierarchical scan loop started. Force rescan: {}", m_forceRescanAll);
             if (m_progressCb)
@@ -255,6 +256,14 @@ namespace jucyaudio
                     return false;
                 }
                 inspectedFolders.insert(foldersInRoot.begin(), foldersInRoot.end());
+
+                // Past both of the ways a root is skipped above, so this root is one the walk really
+                // reached. Recorded here rather than after the walk because a failure further down
+                // fails the whole scan, and the caller is told not to record anything at all then.
+                if (scannedRoots != nullptr)
+                {
+                    scannedRoots->insert(rootFolderId);
+                }
 
                 spdlog::info("Scanning folder: {}", pathToString(rootFolderPath));
                 juce::RangedDirectoryIterator iter{juce::File(pathToString(rootFolderPath)), true, "*.mp3;*.wav;*.flac;*.ogg", juce::File::findFiles};
