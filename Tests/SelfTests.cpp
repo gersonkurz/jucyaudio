@@ -36,6 +36,7 @@
 #include <Database/TrackLibrary.h>
 #include <Database/TrackScanner.h>
 #include <UI/ExportMixDialog.h>
+#include <UI/LibraryRootsComponent.h>
 #include <UI/Settings.h>
 #include <UI/TimelineComponent.h>
 #include <Utils/AssortedUtils.h>
@@ -3279,6 +3280,131 @@ namespace jucyaudio
                         db.getLibraryRootManager().removeRoot(addedRoot->id);
                     }
                 }
+            }
+
+            // --- 13. A scan that did not complete is not a completed scan ---
+            //
+            // "Last Scanned" is a column the user reads, and ScanRootsTask used to stamp it on every
+            // selected root whatever the scan returned - so a scan that was cancelled or refused told
+            // them the opposite of what happened. The two changes that landed this week made that
+            // reachable rather than theoretical: a scan now refuses a scope it could not determine
+            // (8b85c54) and skips a root it could not walk (a6d888e).
+            //
+            // Driven through the real ScanRootsTask::run rather than a copy of its logic, which is
+            // why that class is in a header now. A check that made the decision itself would pass
+            // whatever run() actually did with the result.
+            //
+            // Nothing is recorded on failure rather than something partial: scanLibrary reports one
+            // result for the whole batch, so a root it finished before the failure cannot be told
+            // from one it never reached. Leaving every timestamp alone keeps a date that was true.
+            {
+                const auto statsRoot = selfTestRoot / "scanstats-root";
+                std::error_code statsEc;
+                std::filesystem::remove_all(statsRoot, statsEc);
+
+                // Enough to reach the progress callback, which fires every hundredth file, so the
+                // cancellation lands inside the walk rather than before it starts.
+                constexpr int kStatsFiles = 150;
+                bool statsBuilt = makeDirectory(statsRoot);
+                for (int i = 0; statsBuilt && i < kStatsFiles; ++i)
+                {
+                    statsBuilt = writeSilentWav(statsRoot / std::format("s{:03}.wav", i), 4410);
+                }
+                report.check(statsBuilt, std::format("{} files could be written for the scan-stats checks", kStatsFiles));
+
+                const auto statsRootInfo = statsBuilt ? db.getLibraryRootManager().addRoot(pathToString(statsRoot)) : std::nullopt;
+                const auto statsFolderId = statsBuilt ? db.getFolderDatabase().findOrCreateFolderByPath(statsRoot) : FolderId{-1};
+                report.check(statsRootInfo.has_value() && statsFolderId > 0, "a library root could be added for the scan-stats checks");
+
+                if (statsRootInfo.has_value() && statsFolderId > 0)
+                {
+                    auto &rootManager = db.getLibraryRootManager();
+                    const auto rootId = statsRootInfo->id;
+
+                    // Reads the stored value back, so every comparison below is between two values
+                    // that have been through the database. last_scanned is stored as whole seconds,
+                    // and comparing a round-tripped value against an in-memory one would fail on the
+                    // rounding rather than on the behaviour.
+                    const auto storedScanTime = [&rootManager, rootId]() -> std::optional<Timestamp_t>
+                    {
+                        for (const auto &root : rootManager.getAllRoots())
+                        {
+                            if (root.id == rootId)
+                            {
+                                return root.lastScanned;
+                            }
+                        }
+                        return std::nullopt;
+                    };
+
+                    // A known time to watch, an hour old. updateScanStats takes one, so this needs no
+                    // waiting and no assumption about how fast the clock ticks.
+                    report.check(rootManager.updateScanStats(rootId, std::chrono::system_clock::now() - std::chrono::hours{1}),
+                        "the root's last_scanned could be set to a known time");
+
+                    const auto before = storedScanTime();
+                    report.check(before.has_value(), "and reads back");
+
+                    // A cancelled scan. The task is built and released the way the component builds
+                    // and releases it.
+                    {
+                        std::atomic<bool> cancel{false};
+                        int reports = 0;
+                        bool taskSaidSuccess = true;
+
+                        auto *task = new ui::ScanRootsTask{{statsFolderId}, {rootId}, false, false, nullptr};
+                        task->run(
+                            [&cancel, &reports](int, const std::string &)
+                            {
+                                // Not the first, which is raised before any root is walked. The
+                                // second is the hundredth file, well inside the walk.
+                                if (++reports >= 2)
+                                {
+                                    cancel = true;
+                                }
+                            },
+                            [&taskSaidSuccess](bool success, const std::string &)
+                            {
+                                taskSaidSuccess = success;
+                            },
+                            cancel);
+                        task->release(REFCOUNT_DEBUG_ARGS);
+
+                        report.check(!taskSaidSuccess, "a cancelled scan reports failure to the task");
+                        report.check(reports >= 2, std::format("and was cancelled inside the walk, not before it ({} progress reports)", reports));
+
+                        const auto afterCancel = storedScanTime();
+                        report.check(afterCancel == before, "and leaves last_scanned exactly as it was, rather than stamping the attempt");
+                    }
+
+                    // And the other half, so the check above cannot pass on a task that never records
+                    // anything at all.
+                    {
+                        std::atomic<bool> noCancel{false};
+                        bool taskSaidSuccess = false;
+
+                        auto *task = new ui::ScanRootsTask{{statsFolderId}, {rootId}, false, false, nullptr};
+                        task->run(
+                            nullptr,
+                            [&taskSaidSuccess](bool success, const std::string &)
+                            {
+                                taskSaidSuccess = success;
+                            },
+                            noCancel);
+                        task->release(REFCOUNT_DEBUG_ARGS);
+
+                        report.check(taskSaidSuccess, "a scan that runs to the end reports success");
+
+                        const auto afterSuccess = storedScanTime();
+                        report.check(afterSuccess.has_value() && afterSuccess != before, "and does move last_scanned");
+                        report.check(
+                            afterSuccess.has_value() && before.has_value() && afterSuccess.value() > before.value(), "forwards, to the time it finished");
+                    }
+
+                    rootManager.removeRoot(rootId);
+                }
+
+                std::filesystem::remove_all(statsRoot, statsEc);
             }
 
             // --- Where a mix's tracks sit does not depend on whether they can be resolved ---
