@@ -53,9 +53,22 @@ namespace jucyaudio
             // File selection
             addAndMakeVisible(m_fileLabel);
 
-            // Create filename component
+            // The file this opens on, built the same way a rename builds a changed one: one legal
+            // component, directly in the Music folder.
+            //
+            // Handing the raw name to getChildFile did not do that. getChildFile *resolves* ".."
+            // rather than rejecting it, so a mix stored as "../escaped" opened the dialog already
+            // pointing outside Music - and exportFileForName cannot undo that, because what it
+            // guarantees is that the file stays in the folder it is already in. By then that folder
+            // was the wrong one, and every check in it passed.
+            const auto musicFolder = juce::File::getSpecialLocation(juce::File::userMusicDirectory);
+            const auto placeholder = musicFolder.getChildFile("export.mp3");
+            const auto namedFile = exportFileForName(placeholder, juce::String{mixInfo.name});
+
+            // The fallback is for a name with nothing legal left in it - empty, "..", or only
+            // separators. Rare, and it has to land somewhere.
             m_filenameComponent = std::make_unique<juce::FilenameComponent>("exportFile",
-                juce::File::getSpecialLocation(juce::File::userMusicDirectory).getChildFile(mixInfo.name + ".mp3"),
+                namedFile != juce::File{} ? namedFile : placeholder,
                 false,               // canEditFilename
                 false,               // isDirectory
                 true,                // isSaving

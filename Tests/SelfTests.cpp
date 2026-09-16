@@ -6798,6 +6798,47 @@ namespace jucyaudio
                     report.check(Access::commit(dialog), "committing an unchanged name succeeds without doing anything");
                 }
 
+                // --- a mix whose stored name is a path opens inside the Music folder ---
+                //
+                // The other half of "a name that is a path is a name". The rename check above covers a
+                // name typed into the dialog; this covers one the dialog was opened with, which used
+                // to go straight to userMusicDirectory.getChildFile. getChildFile *resolves* ".."
+                // rather than rejecting it, so such a mix opened already pointing outside Music - and
+                // the guard on renaming could not undo it, because what that guarantees is the file
+                // staying in the folder it is already in.
+                {
+                    const auto musicFolder = juce::File::getSpecialLocation(juce::File::userMusicDirectory);
+
+                    for (const auto *hostileName : {"../escaped", "..", "../../deeper/still", "/", "   "})
+                    {
+                        MixInfo hostileMix{};
+                        hostileMix.name = hostileName;
+                        std::vector<MixTrack> noTracks;
+                        // Reported rather than skipped over. Nothing rejects a name like these today,
+                        // so a failure here means the database could not be written - and a silent
+                        // continue would drop the checks below while leaving the suite green, which
+                        // is the shape of every false clean this project has spent the week removing.
+                        // If mix naming ever does start refusing these, this says so out loud and the
+                        // case can be dropped deliberately.
+                        const bool created = theTrackLibrary.getMixManager().createOrUpdateMix(hostileMix, noTracks) && hostileMix.mixId > 0;
+                        report.check(created, std::format("a mix stored as '{}' could be created for the check", hostileName));
+                        if (!created)
+                        {
+                            continue;
+                        }
+
+                        ExportMixDialog hostile{hostileMix, nullptr};
+                        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+                        const auto opened = Access::outputFile(hostile);
+                        report.check(opened.getParentDirectory() == musicFolder,
+                            std::format("a mix stored as '{}' opens inside the Music folder ({})",
+                                hostileName,
+                                pathToString(std::filesystem::path{opened.getFullPathName().toStdString()})));
+                        report.check(opened.getFileName().isNotEmpty(), std::format("and on a file with a name ('{}')", opened.getFileName().toStdString()));
+                    }
+                }
+
                 // --- a name nobody touched is not renamed, however it is spelled ---
                 //
                 // The name this dialog works in is the trimmed one, so a mix stored with padding
