@@ -8656,20 +8656,21 @@ namespace jucyaudio
                         report.check(database::includes(established, database::ScannedFields::AudioProperties) && info.duration > Duration_t{0},
                             std::format("and the audio behind it ({} ms)", info.duration.count()));
 
-                        if (TagLib::zlib::isAvailable())
-                        {
-                            report.check(info.title == title,
-                                std::format("and the compressed title inflates to what was written (scanner said '{}')", info.title));
-                        }
-                        else
-                        {
-                            // TagLib without a zlib does not attempt the frame: its factory hands back an
-                            // UnknownFrame, whose text is empty, so the scanner reports the tag as read
-                            // with an empty title. That is a real defect (issue #58, Windows) but not the
-                            // one this suite is about, so it is recorded here rather than asserted.
-                            report.note(std::format("TagLib was built without zlib on this platform, so a compressed frame reads as empty metadata (scanner said '{}')",
-                                info.title));
-                        }
+                        // Asserted on both platforms now, where this used to assert on macOS and
+                        // record a note on Windows.
+                        //
+                        // Without a zlib TagLib does not attempt the frame at all: its factory hands
+                        // back an UnknownFrame whose text is empty, so the scanner reports the tag as
+                        // read and writes an empty title - silent data loss on a scan that says it
+                        // succeeded. That was Windows until issue #58, because nothing there answered
+                        // find_package(ZLIB). It now borrows the zlib JUCE already compiles into this
+                        // executable; see the comment in CMakeLists.txt next to the HAVE_ZLIB define.
+                        //
+                        // isAvailable() is checked first and separately, because it is the difference
+                        // between "the decoder was not built" and "the decoder is wrong". Those want
+                        // different fixes, and one assertion on the title alone cannot tell them apart.
+                        report.check(TagLib::zlib::isAvailable(), "TagLib on this platform was built with a zlib");
+                        report.check(info.title == title, std::format("and the compressed title inflates to what was written (scanner said '{}')", info.title));
                     }
                 }
             }

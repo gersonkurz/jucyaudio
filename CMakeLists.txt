@@ -279,6 +279,32 @@ if(taglib_POPULATED)
     )
 endif()
 
+# Give TagLib a zlib on Windows, so it can read a compressed ID3v2 frame.
+#
+# TagLib's find_package(ZLIB) finds nothing here - there is no system zlib to find - so its config.h
+# gets /* #undef HAVE_ZLIB */, zlib::isAvailable() returns false, and a compressed frame is handed
+# back as an UnknownFrame whose text is empty. The scanner then copies an empty title and still
+# reports the tag as read, which is silent data loss on a scan that says it succeeded (issue #58).
+#
+# The zlib it needs is already here. JUCE compiles a complete zlib 1.3.2 into this executable on
+# Windows, as C since 9.0.1, so inflate, inflateEnd and inflateInit_ are plain external symbols in
+# juce_core_zlib.obj. TagLib's decompressor uses only those three (taglib/toolkit/tzlib.cpp) - it
+# never calls uncompress(), which matters, because uncompr.c is one of the two files JUCE leaves out.
+# So the define below compiles TagLib's decoder and the calls resolve at the final link. Nothing is
+# downloaded, nothing else is compiled, and the executable still holds exactly one zlib.
+#
+# Only tzlib.cpp tests HAVE_ZLIB, and config.h's "/* #undef HAVE_ZLIB */" is a comment rather than a
+# real #undef, so defining it here is not overridden when that header is included.
+#
+# macOS does the same thing from the other side: there TagLib finds the SDK's libz and JUCE is told
+# to use it too (JUCE_INCLUDE_ZLIB_CODE=0, below), so both callers share one zlib. This is that
+# arrangement with the roles swapped - here JUCE owns the copy and TagLib borrows it.
+if(WIN32 AND TARGET tag)
+    FetchContent_GetProperties(JUCE)
+    target_compile_definitions(tag PRIVATE HAVE_ZLIB)
+    target_include_directories(tag PRIVATE ${juce_SOURCE_DIR}/modules/juce_core/zip/zlib)
+endif()
+
 # Get projectM source directory for library paths
 FetchContent_GetProperties(projectm)
 if(projectm_POPULATED)
@@ -868,8 +894,10 @@ if(APPLE)
         # JUCE 9.0.1 the copy JUCE embeds compiles as C, which puts a second inflate/deflate/crc32
         # into the executable as plain global symbols next to the ones libz exports - the ODR
         # conflict BREAKING_CHANGES.md warns about. So JUCE reads zlib.h from the SDK and calls
-        # libz too, and the executable defines none of those symbols itself. Windows is different:
-        # nothing finds a zlib there, TagLib builds without one, and JUCE keeps its embedded copy.
+        # libz too, and the executable defines none of those symbols itself. Windows reaches the
+        # same place from the other side: nothing there answers find_package(ZLIB), so JUCE keeps its
+        # embedded copy and TagLib is pointed at it instead - see the HAVE_ZLIB block above. Either
+        # way there is one zlib and both callers use it.
         JUCE_INCLUDE_ZLIB_CODE=0
     )
 

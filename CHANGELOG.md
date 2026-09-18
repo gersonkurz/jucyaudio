@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix virtual dispatch bug in VirtualFolderNode causing off-by-one errors
 - Fix visualizer FIFO tap point unification in PlaybackController
 - Folder track counts are refreshed by the scan itself rather than by the one caller that remembered to, so a scan that was cancelled or failed partway no longer leaves them stale
+- Windows now reads zlib-compressed ID3v2 metadata instead of leaving it empty
 - A scan no longer deletes or flags tracks under a library root it could not reach, such as one on a drive that is not plugged in; their files were never looked for, so their absence was never evidence
 - A scan now refuses when the folder cache it reads its scope from could not be built, instead of reporting success after examining only the part of the library that cache could still describe
 - Fix an MP3 export with a large ID3v2 tag writing stack memory into the file instead of the tag, and truncating the tag the user asked for
