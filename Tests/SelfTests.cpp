@@ -105,6 +105,21 @@ namespace jucyaudio
                 return chain.m_faultsDropped.load(std::memory_order_relaxed);
             }
 
+            /// @brief The host's own view of which plugins have thrown, in chain order.
+            static std::vector<bool> faultedFlags(const PluginChain &chain)
+            {
+                std::vector<bool> flags;
+                const auto state = chain.m_state.load();
+                if (state)
+                {
+                    for (const auto &flag : state->faulted)
+                    {
+                        flags.push_back(flag.load(std::memory_order_acquire));
+                    }
+                }
+                return flags;
+            }
+
             /// @brief Takes the guard, so the next record or drain finds it busy.
             ///
             /// This is how the failed-acquisition branches are reached without a second thread: they
@@ -7214,8 +7229,15 @@ namespace jucyaudio
                     chain.processBlock(block);
 
                     report.check(thrower->blocksProcessed() == 1, "the chain reached the plugin that throws");
-                    report.check(thrower->isSuspended(), "which is suspended, so it is not asked again");
-                    report.check(unknownThrower->isSuspended(), "and so is the one that threw something not derived from std::exception");
+
+                    // Stopped by the host's own flag, not by juce::AudioProcessor::suspendProcessing.
+                    // That writes under callbackLock, and the message thread takes the same lock from
+                    // the bypass button, from MasterPluginChainPersistence and from prepareToPlay - so
+                    // calling it here let the audio callback wait on the message thread (issue #61).
+                    const auto flags = jucyaudio::audio::PluginChainTestAccess::faultedFlags(chain);
+                    report.check(flags.size() == 2 && flags[0] && flags[1], "both plugins that threw are marked faulted by the host");
+                    report.check(!thrower->isSuspended(), "without the audio thread calling suspendProcessing, which locks");
+                    report.check(!unknownThrower->isSuspended(), "including for the one that threw something not derived from std::exception");
 
                     // The property. Before this change processBlock logged and left nothing behind.
                     report.check(chain.pendingFaultCount() == 2,
@@ -7223,7 +7245,7 @@ namespace jucyaudio
 
                     // A second block asks neither of them again, so nothing further is recorded.
                     chain.processBlock(block);
-                    report.check(thrower->blocksProcessed() == 1, "a suspended plugin is not processed again");
+                    report.check(thrower->blocksProcessed() == 1, "a faulted plugin is not processed again");
                     report.check(chain.pendingFaultCount() == 2, "and nothing further is recorded");
 
                     // The name travels with the fault, so a plugin removed before the report is
@@ -7246,6 +7268,11 @@ namespace jucyaudio
                     chain.reportPendingFaults();
                     report.check(chain.pendingFaultCount() == 0, "reporting them clears them");
                     report.check(!replacement->isSuspended(), "and the plugin that replaced them was never touched");
+
+                    // A new chain is a clean slate: the flags belong to the ChainState that was
+                    // replaced, so the plugin taking its place starts unfaulted.
+                    const auto afterReplace = jucyaudio::audio::PluginChainTestAccess::faultedFlags(chain);
+                    report.check(afterReplace.size() == 1 && !afterReplace[0], "and a replacement chain starts with nothing marked faulted");
                 }
 
                 // --- a fault that cannot be recorded is counted, not lost ---
@@ -7272,17 +7299,19 @@ namespace jucyaudio
                     report.check(chain.pendingFaultCount() == 8,
                         std::format("a burst larger than the buffer records what fits ({} pending)", chain.pendingFaultCount()));
 
-                    for (const auto &plugin : many)
-                    {
-                        report.check(plugin->isSuspended(), "every plugin that threw is suspended, recorded or not");
-                        break; // one is enough to say it; the loop below checks the rest
-                    }
+                    // Every one of them is stopped, recorded or not: a fault the buffer had no room
+                    // for costs a diagnostic, never correctness.
+                    const auto burstFlags = jucyaudio::audio::PluginChainTestAccess::faultedFlags(chain);
+                    const auto stopped = static_cast<size_t>(std::count(burstFlags.begin(), burstFlags.end(), true));
+                    report.check(
+                        stopped == many.size(), std::format("every plugin that threw is marked faulted, recorded or not ({} of {})", stopped, many.size()));
+
                     size_t suspended = 0;
                     for (const auto &plugin : many)
                     {
                         suspended += plugin->isSuspended() ? 1 : 0;
                     }
-                    report.check(suspended == many.size(), std::format("all ten of them ({} suspended)", suspended));
+                    report.check(suspended == 0, std::format("and none of them by the locking call the audio thread used to make ({} suspended)", suspended));
 
                     // The two that did not fit are counted rather than forgotten, which is what makes
                     // the buffer bounded rather than lossy-and-quiet.
@@ -7292,6 +7321,37 @@ namespace jucyaudio
                     chain.reportPendingFaults();
                     report.check(chain.pendingFaultCount() == 0, "and the report drains the buffer");
                     report.check(jucyaudio::audio::PluginChainTestAccess::droppedFaults(chain) == 0, "and the dropped count with it");
+                }
+
+                // --- preparing the chain again gives a plugin that threw another chance ---
+                //
+                // The fault flags are host state, not user state, so something has to clear them or a
+                // plugin that threw once is dead until the chain is rebuilt. prepareToPlay is where
+                // that belongs: it already un-suspends every plugin and prepares it at the new sample
+                // rate and block size, which is the case where a plugin that could not cope before
+                // may cope now.
+                {
+                    audio::PluginChain chain;
+                    auto flaky = std::make_shared<jucyaudio::ui::ThrowingPlugin>("Flaky Probe", true);
+                    chain.setChain({flaky});
+
+                    juce::AudioBuffer<float> block{2, 64};
+                    block.clear();
+                    chain.processBlock(block);
+
+                    auto flags = jucyaudio::audio::PluginChainTestAccess::faultedFlags(chain);
+                    report.check(flags.size() == 1 && flags[0], "a plugin that threw is marked faulted");
+                    chain.processBlock(block);
+                    report.check(flaky->blocksProcessed() == 1, "and stays skipped while the flag is set");
+
+                    chain.prepareToPlay(44100.0, 512);
+                    flags = jucyaudio::audio::PluginChainTestAccess::faultedFlags(chain);
+                    report.check(flags.size() == 1 && !flags[0], "preparing the chain again clears the fault");
+
+                    chain.processBlock(block);
+                    report.check(flaky->blocksProcessed() == 2, std::format("so the plugin is asked once more ({} blocks)", flaky->blocksProcessed()));
+                    report.check(chain.pendingFaultCount() == 2, "and throwing again is recorded again");
+                    chain.reportPendingFaults();
                 }
 
                 // --- neither side waits for the other, and nothing is lost when they collide ---
@@ -7324,7 +7384,10 @@ namespace jucyaudio
                     chain.setChain({second});
                     chain.processBlock(block);
                     report.check(second->blocksProcessed() == 1, "a plugin still throws while the guard is held");
-                    report.check(second->isSuspended(), "and is suspended even though its fault could not be recorded");
+
+                    const auto collidedFlags = jucyaudio::audio::PluginChainTestAccess::faultedFlags(chain);
+                    report.check(collidedFlags.size() == 1 && collidedFlags[0], "and is marked faulted even though its fault could not be recorded");
+                    report.check(!second->isSuspended(), "still without the locking call on the audio thread");
 
                     const auto droppedWhileHeld = jucyaudio::audio::PluginChainTestAccess::droppedFaults(chain);
                     report.check(droppedWhileHeld == 1, std::format("the record it could not make is counted ({} dropped)", droppedWhileHeld));

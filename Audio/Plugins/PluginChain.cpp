@@ -80,6 +80,11 @@ namespace jucyaudio
                 newState->pluginNames.emplace_back(name);
             }
 
+            // Sized here rather than filled in the loop: std::atomic<bool> is not movable, so the
+            // vector cannot be emplaced into alongside the other two. Every flag starts false, which
+            // is what makes a new chain a clean slate for a plugin that threw in the old one.
+            newState->faulted = std::vector<std::atomic<bool>>(newState->plugins.size());
+
             m_state.store(std::move(newState));
         }
 
@@ -117,6 +122,14 @@ namespace jucyaudio
             state->sampleRate = sampleRate;
             state->blockSize = blockSize;
             state->prepared = true;
+
+            // Everything below un-suspends each plugin and prepares it again, so a plugin that threw
+            // at the old sample rate or block size gets another chance. The host's fault flags are
+            // cleared to match; leaving them set would skip a plugin the loop just revived.
+            for (auto &flag : state->faulted)
+            {
+                flag.store(false, std::memory_order_release);
+            }
 
             for (const auto &plugin : state->plugins)
             {
@@ -237,11 +250,11 @@ namespace jucyaudio
 
                 if (fault.hasDetail)
                 {
-                    spdlog::error("PluginChain: Plugin '{}' threw in processBlock and was suspended: {}", name, fault.detail);
+                    spdlog::error("PluginChain: Plugin '{}' threw in processBlock and was disabled by the host: {}", name, fault.detail);
                 }
                 else
                 {
-                    spdlog::error("PluginChain: Plugin '{}' threw an unknown exception in processBlock and was suspended", name);
+                    spdlog::error("PluginChain: Plugin '{}' threw an unknown exception in processBlock and was disabled by the host", name);
                 }
             }
 
@@ -274,7 +287,7 @@ namespace jucyaudio
             for (size_t index = 0; index < state->plugins.size(); ++index)
             {
                 const auto &plugin = state->plugins[index];
-                if (plugin && !plugin->isSuspended())
+                if (plugin && !state->faulted[index].load(std::memory_order_acquire) && !plugin->isSuspended())
                 {
                     try
                     {
@@ -285,12 +298,17 @@ namespace jucyaudio
                         // Recorded, not logged: this runs on the audio thread. See recordFault. The
                         // name comes from the chain, where it was captured off this thread.
                         recordFault(state->pluginNames[index], ex.what());
-                        plugin->suspendProcessing(true);
+
+                        // And stopped by the host's own flag, not by suspendProcessing: that writes
+                        // under callbackLock, which the message thread holds whenever the bypass
+                        // button, MasterPluginChainPersistence or prepareToPlay touches this plugin.
+                        // See ChainState::faulted.
+                        state->faulted[index].store(true, std::memory_order_release);
                     }
                     catch (...)
                     {
                         recordFault(state->pluginNames[index], nullptr);
-                        plugin->suspendProcessing(true);
+                        state->faulted[index].store(true, std::memory_order_release);
                     }
                 }
             }

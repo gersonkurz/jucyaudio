@@ -73,6 +73,27 @@ namespace jucyaudio
                 std::vector<std::shared_ptr<juce::AudioPluginInstance>> plugins;
                 /// Parallel to plugins, filled in setChain. See PluginName.
                 std::vector<PluginName> pluginNames;
+
+                /// @brief The host's own view of which plugins have thrown. Parallel to plugins.
+                ///
+                /// The audio thread cannot use juce::AudioProcessor::suspendProcessing to stop a
+                /// plugin that threw: that writes under callbackLock
+                /// (juce_AudioProcessor.cpp:583), and the message thread takes the same lock from
+                /// the bypass button (UI/Plugins/PluginChainEditor.cpp:170), from
+                /// MasterPluginChainPersistence and from prepareToPlay - so the callback could wait
+                /// on it. These flags say the same thing without a lock, and processBlock consults
+                /// them where it used to rely on isSuspended alone.
+                ///
+                /// Host state, not user state: isSuspended stays what the user set, which is also
+                /// what MasterPluginChainPersistence saves. A fault is cleared by setChain, which
+                /// builds a new ChainState, and by prepareToPlay, which is already where a plugin
+                /// gets another chance at a new sample rate or block size.
+                ///
+                /// Sized in setChain to match plugins. std::atomic<bool> is neither copyable nor
+                /// movable, so the vector is constructed at its final size rather than filled
+                /// alongside the other two.
+                std::vector<std::atomic<bool>> faulted;
+
                 bool prepared{false};
                 double sampleRate{0.0};
                 int blockSize{0};
@@ -101,8 +122,8 @@ namespace jucyaudio
             /// PlaybackController::getNextAudioBlock - so a plugin throwing meant a juce::String
             /// allocation, spdlog formatting, a sink mutex and, because the flush threshold equals the
             /// log threshold (Utils/LoggingUtils.cpp:18), an fflush, all on the audio thread at the
-            /// moment the user is listening. Once per offending plugin, since suspendProcessing follows
-            /// immediately - but once is a dropout.
+            /// moment the user is listening. Once per offending plugin, since the host's fault flag is
+            /// set immediately after - but once is a dropout.
             ///
             /// An atomic_flag, tried once, rather than a mutex. try_lock does not block on the way
             /// in - but the matching unlock does not get off that lightly: if another thread has
