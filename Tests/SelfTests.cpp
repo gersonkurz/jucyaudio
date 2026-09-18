@@ -44,6 +44,7 @@
 #include <UI/LibraryRootsComponent.h>
 #include <UI/MarkerEditDialog.h>
 #include <UI/Settings.h>
+#include <UI/SingletonDialog.h>
 #include <UI/TimelineComponent.h>
 #include <Utils/AssortedUtils.h>
 
@@ -81,6 +82,27 @@ namespace jucyaudio
 {
     namespace ui
     {
+        /// @brief The registry behind SingletonComponentDialog, read without validating it.
+        ///
+        /// getValidDialogWindow erases a dead entry as a side effect of being asked, so through it an
+        /// eager unregister and a lazy clean-up are the same answer. The check this serves is about
+        /// *when* the entry goes, so it has to see the map as it is.
+        struct SingletonComponentDialogTestAccess
+        {
+            static bool registered(const juce::String &dialogId)
+            {
+                const juce::ScopedLock lock{SingletonComponentDialog::s_dialogLock};
+                return SingletonComponentDialog::s_openDialogs.find(dialogId) != SingletonComponentDialog::s_openDialogs.end();
+            }
+
+            static juce::DialogWindow *window(const juce::String &dialogId)
+            {
+                const juce::ScopedLock lock{SingletonComponentDialog::s_dialogLock};
+                const auto it = SingletonComponentDialog::s_openDialogs.find(dialogId);
+                return it != SingletonComponentDialog::s_openDialogs.end() ? it->second.getComponent() : nullptr;
+            }
+        };
+
         /// @brief What the export dialog checks below reach through.
         ///
         /// Everything here is a getter or a simulated user action; no test logic lives in it.
@@ -6941,6 +6963,7 @@ namespace jucyaudio
             {
                 using jucyaudio::ui::ExportMixDialog;
                 using Access = jucyaudio::ui::ExportMixDialogTestAccess;
+                using Singleton = jucyaudio::ui::SingletonComponentDialogTestAccess;
 
                 const auto numberOf = [](const char *name)
                 {
@@ -7034,6 +7057,55 @@ namespace jucyaudio
                     report.check(Access::commit(dialog), "committing an unchanged name succeeds without doing anything");
                 }
 
+                // --- a dismissed singleton dialog leaves the registry at dismissal ---
+                //
+                // The regression check issue #55 could not have. Its fix was one line - create()
+                // instead of launchAsync(), so the enterModalState already written below it is the
+                // only one - and the leak it stopped is invisible from outside: the orphaned callback
+                // is unreachable and uncounted, and the jassertfalse is Debug-only while this builds
+                // Release.
+                //
+                // What *is* visible is the timing. Owned, the callback runs modalStateFinished on
+                // dismissal and unregisters the dialog there. Orphaned, the entry sits in the map
+                // until something asks for that id again. getValidDialogWindow cannot show the
+                // difference because it erases a dead entry while answering, so this reads the raw
+                // map through SingletonComponentDialogTestAccess.
+                //
+                // This is the one check in the suite that puts a window on screen: enterModalState
+                // calls setVisible(true), and a juce::TopLevelWindow becoming visible goes on the
+                // desktop. It is created and dismissed inside this block.
+                {
+                    const juce::String probeId{"SelfTestModalProbe"};
+                    report.check(!Singleton::registered(probeId), "the registry does not already hold the probe id");
+
+                    juce::DialogWindow::LaunchOptions probeOptions;
+                    probeOptions.resizable = false;
+                    jucyaudio::ui::SingletonComponentDialog::showComponent(probeId, "Self Test Modal Probe", new juce::Component{}, probeOptions, true);
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+                    report.check(Singleton::registered(probeId), "showing a modal singleton dialog registers it");
+
+                    auto *probeWindow = Singleton::window(probeId);
+                    report.check(probeWindow != nullptr, "and the registry holds the window it made");
+
+                    if (probeWindow != nullptr)
+                    {
+                        report.check(probeWindow->isCurrentlyModal(false), "which is modal, once");
+
+                        // Dismissed the way the window itself would be, rather than through
+                        // closeDialog - closeDialog unregisters by hand before deleting, so it erases
+                        // the entry whether the callback was owned or not, and would pass either way.
+                        probeWindow->exitModalState(0);
+                        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+
+                        report.check(!Singleton::registered(probeId),
+                            "and dismissing it unregisters the dialog there and then, which only the owned cleanup callback does");
+                    }
+
+                    // Whatever happened above, do not leave an entry behind for the next run.
+                    jucyaudio::ui::SingletonComponentDialog::closeDialog(probeId);
+                }
+
                 // --- entering modal state twice drops the second callback on the floor ---
                 //
                 // The premise SingletonComponentDialog's modal path rests on, executed rather than
@@ -7046,7 +7118,8 @@ namespace jucyaudio
                 //
                 // A plain juce::Component is used rather than a DialogWindow: enterModalState calls
                 // setVisible(true), and a component that is not on the desktop shows nothing. This
-                // suite must not put a window on screen.
+                // check describes JUCE's behaviour and needs no window to do it - unlike the lifecycle
+                // check above, which drives the real showComponent and does put one on screen.
                 {
                     struct Recorder final : public juce::ModalComponentManager::Callback
                     {

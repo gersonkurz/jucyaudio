@@ -214,6 +214,8 @@ namespace jucyaudio
          * Helper class for showing component-based dialogs with singleton behavior.
          * This is for dialogs that are just Components shown in a DialogWindow.
          */
+        struct SingletonComponentDialogTestAccess;
+
         class SingletonComponentDialog
         {
         public:
@@ -361,21 +363,33 @@ namespace jucyaudio
             }
 
         private:
+            // The self test reads s_openDialogs directly, which nothing else may do.
+            //
+            // What it checks is that a dismissed dialog leaves the registry *at dismissal* - which is
+            // the one externally visible consequence of the cleanup callback being owned by the modal
+            // manager, and the thing that stopped happening when showComponent entered modal state
+            // twice (issue #55). getValidDialogWindow cannot answer that question: it erases a dead
+            // entry as a side effect of being asked, so an eager unregister and a lazy clean-up look
+            // identical through it. Only the raw map tells them apart.
+            friend struct SingletonComponentDialogTestAccess;
+
             static inline std::unordered_map<juce::String, juce::Component::SafePointer<juce::DialogWindow>> s_openDialogs;
             static inline juce::CriticalSection s_dialogLock;
 
-            static bool isDialogOpen(const juce::String &dialogId)
-            {
-                const juce::ScopedLock lock{s_dialogLock};
-                return s_openDialogs.find(dialogId) != s_openDialogs.end();
-            }
-
-            static juce::DialogWindow *getDialogWindow(const juce::String &dialogId)
-            {
-                const juce::ScopedLock lock{s_dialogLock};
-                auto it = s_openDialogs.find(dialogId);
-                return it != s_openDialogs.end() ? it->second.getComponent() : nullptr;
-            }
+            // isDialogOpen and getDialogWindow used to sit here, and they were wrong in different
+            // ways. isDialogOpen tested find() != end() and never asked the SafePointer anything, so
+            // it answered true for a window that had already been destroyed. getDialogWindow did ask -
+            // getComponent() returns null for a dead window, so its answer was right - but it left the
+            // stale entry in the map for the next reader. getValidDialogWindow below does both: null
+            // check and erase.
+            //
+            // Neither had a caller anywhere, nor could have had one outside the class: they are
+            // private. Deleted rather than corrected, because the corrected versions would have been
+            // two more wrappers around the function directly beneath them.
+            //
+            // Deleted rather than corrected because the correct versions would have been two more
+            // wrappers around the function directly beneath them, and whoever needs "is it open" next
+            // will find that one first.
 
             static juce::DialogWindow *getValidDialogWindow(const juce::String &dialogId)
             {
