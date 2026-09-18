@@ -74,25 +74,29 @@ namespace jucyaudio
                 /// Parallel to plugins, filled in setChain. See PluginName.
                 std::vector<PluginName> pluginNames;
 
-                /// @brief The host's own view of which plugins have thrown. Parallel to plugins.
+                /// @brief The plugins the host will not run, for its own reasons. Parallel to plugins.
                 ///
-                /// The audio thread cannot use juce::AudioProcessor::suspendProcessing to stop a
-                /// plugin that threw: that writes under callbackLock
-                /// (juce_AudioProcessor.cpp:583), and the message thread takes the same lock from
-                /// the bypass button (UI/Plugins/PluginChainEditor.cpp:170), from
-                /// MasterPluginChainPersistence and from prepareToPlay - so the callback could wait
-                /// on it. These flags say the same thing without a lock, and processBlock consults
-                /// them where it used to rely on isSuspended alone.
+                /// Two things set a flag here. processBlock sets one when a plugin throws: it cannot
+                /// use juce::AudioProcessor::suspendProcessing for that, because that writes under
+                /// callbackLock (juce_AudioProcessor.cpp:583) and the message thread takes the same
+                /// lock from the bypass button (UI/Plugins/PluginChainEditor.cpp:170) and from
+                /// MasterPluginChainPersistence, so the audio callback could wait on it. prepareToPlay
+                /// sets one when configurePlugin cannot give a plugin a stereo layout.
                 ///
-                /// Host state, not user state: isSuspended stays what the user set, which is also
-                /// what MasterPluginChainPersistence saves. A fault is cleared by setChain, which
-                /// builds a new ChainState, and by prepareToPlay, which is already where a plugin
-                /// gets another chance at a new sample rate or block size.
+                /// Host state, kept apart from user state. isSuspended is the user's bypass and
+                /// nothing else: it is what MasterPluginChainPersistence saves as isEnabled
+                /// (MasterPluginChainPersistence.cpp:103) and what the editor's toggle shows
+                /// (UI/Plugins/PluginChainEditor.cpp:364), so anything the host writes there is a
+                /// user setting silently overwritten and then persisted.
+                ///
+                /// Cleared by setChain, which builds a new ChainState, and at the top of
+                /// prepareToPlay, which then recomputes the layout half - so a plugin that threw, or
+                /// whose layout was refused, gets another chance at a new sample rate or block size.
                 ///
                 /// Sized in setChain to match plugins. std::atomic<bool> is neither copyable nor
                 /// movable, so the vector is constructed at its final size rather than filled
                 /// alongside the other two.
-                std::vector<std::atomic<bool>> faulted;
+                std::vector<std::atomic<bool>> hostDisabled;
 
                 bool prepared{false};
                 double sampleRate{0.0};

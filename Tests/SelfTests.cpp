@@ -105,14 +105,14 @@ namespace jucyaudio
                 return chain.m_faultsDropped.load(std::memory_order_relaxed);
             }
 
-            /// @brief The host's own view of which plugins have thrown, in chain order.
-            static std::vector<bool> faultedFlags(const PluginChain &chain)
+            /// @brief The plugins the host has decided not to run, in chain order.
+            static std::vector<bool> hostDisabledFlags(const PluginChain &chain)
             {
                 std::vector<bool> flags;
                 const auto state = chain.m_state.load();
                 if (state)
                 {
-                    for (const auto &flag : state->faulted)
+                    for (const auto &flag : state->hostDisabled)
                     {
                         flags.push_back(flag.load(std::memory_order_acquire));
                     }
@@ -138,6 +138,98 @@ namespace jucyaudio
 
     namespace ui
     {
+        /// @brief A plugin that refuses every bus layout, for the prepareToPlay checks.
+        ///
+        /// PluginChain::configurePlugin asks for stereo in and stereo out and gives up if
+        /// setBusesLayout says no, which is what isBusesLayoutSupported decides. Everything else is
+        /// the minimum juce::AudioPluginInstance demands.
+        class LayoutRefusingPlugin final : public juce::AudioPluginInstance
+        {
+        public:
+            explicit LayoutRefusingPlugin(juce::String name)
+                : m_name{std::move(name)}
+            {
+            }
+
+            int blocksProcessed() const noexcept
+            {
+                return m_blocksProcessed;
+            }
+
+            const juce::String getName() const override
+            {
+                return m_name;
+            }
+
+            bool isBusesLayoutSupported(const BusesLayout &) const override
+            {
+                return false;
+            }
+
+            void processBlock(juce::AudioBuffer<float> &, juce::MidiBuffer &) override
+            {
+                ++m_blocksProcessed;
+            }
+
+            void prepareToPlay(double, int) override
+            {
+            }
+            void releaseResources() override
+            {
+            }
+            double getTailLengthSeconds() const override
+            {
+                return 0.0;
+            }
+            bool acceptsMidi() const override
+            {
+                return false;
+            }
+            bool producesMidi() const override
+            {
+                return false;
+            }
+            juce::AudioProcessorEditor *createEditor() override
+            {
+                return nullptr;
+            }
+            bool hasEditor() const override
+            {
+                return false;
+            }
+            int getNumPrograms() override
+            {
+                return 1;
+            }
+            int getCurrentProgram() override
+            {
+                return 0;
+            }
+            void setCurrentProgram(int) override
+            {
+            }
+            const juce::String getProgramName(int) override
+            {
+                return {};
+            }
+            void changeProgramName(int, const juce::String &) override
+            {
+            }
+            void getStateInformation(juce::MemoryBlock &) override
+            {
+            }
+            void setStateInformation(const void *, int) override
+            {
+            }
+            void fillInPluginDescription(juce::PluginDescription &) const override
+            {
+            }
+
+        private:
+            juce::String m_name;
+            int m_blocksProcessed{0};
+        };
+
         /// @brief A plugin that throws out of processBlock, for the audio-thread fault checks.
         ///
         /// Everything but processBlock is the minimum juce::AudioPluginInstance demands. The chain
@@ -7234,7 +7326,7 @@ namespace jucyaudio
                     // That writes under callbackLock, and the message thread takes the same lock from
                     // the bypass button, from MasterPluginChainPersistence and from prepareToPlay - so
                     // calling it here let the audio callback wait on the message thread (issue #61).
-                    const auto flags = jucyaudio::audio::PluginChainTestAccess::faultedFlags(chain);
+                    const auto flags = jucyaudio::audio::PluginChainTestAccess::hostDisabledFlags(chain);
                     report.check(flags.size() == 2 && flags[0] && flags[1], "both plugins that threw are marked faulted by the host");
                     report.check(!thrower->isSuspended(), "without the audio thread calling suspendProcessing, which locks");
                     report.check(!unknownThrower->isSuspended(), "including for the one that threw something not derived from std::exception");
@@ -7271,7 +7363,7 @@ namespace jucyaudio
 
                     // A new chain is a clean slate: the flags belong to the ChainState that was
                     // replaced, so the plugin taking its place starts unfaulted.
-                    const auto afterReplace = jucyaudio::audio::PluginChainTestAccess::faultedFlags(chain);
+                    const auto afterReplace = jucyaudio::audio::PluginChainTestAccess::hostDisabledFlags(chain);
                     report.check(afterReplace.size() == 1 && !afterReplace[0], "and a replacement chain starts with nothing marked faulted");
                 }
 
@@ -7301,7 +7393,7 @@ namespace jucyaudio
 
                     // Every one of them is stopped, recorded or not: a fault the buffer had no room
                     // for costs a diagnostic, never correctness.
-                    const auto burstFlags = jucyaudio::audio::PluginChainTestAccess::faultedFlags(chain);
+                    const auto burstFlags = jucyaudio::audio::PluginChainTestAccess::hostDisabledFlags(chain);
                     const auto stopped = static_cast<size_t>(std::count(burstFlags.begin(), burstFlags.end(), true));
                     report.check(
                         stopped == many.size(), std::format("every plugin that threw is marked faulted, recorded or not ({} of {})", stopped, many.size()));
@@ -7339,19 +7431,81 @@ namespace jucyaudio
                     block.clear();
                     chain.processBlock(block);
 
-                    auto flags = jucyaudio::audio::PluginChainTestAccess::faultedFlags(chain);
+                    auto flags = jucyaudio::audio::PluginChainTestAccess::hostDisabledFlags(chain);
                     report.check(flags.size() == 1 && flags[0], "a plugin that threw is marked faulted");
                     chain.processBlock(block);
                     report.check(flaky->blocksProcessed() == 1, "and stays skipped while the flag is set");
 
                     chain.prepareToPlay(44100.0, 512);
-                    flags = jucyaudio::audio::PluginChainTestAccess::faultedFlags(chain);
+                    flags = jucyaudio::audio::PluginChainTestAccess::hostDisabledFlags(chain);
                     report.check(flags.size() == 1 && !flags[0], "preparing the chain again clears the fault");
 
                     chain.processBlock(block);
                     report.check(flaky->blocksProcessed() == 2, std::format("so the plugin is asked once more ({} blocks)", flaky->blocksProcessed()));
                     report.check(chain.pendingFaultCount() == 2, "and throwing again is recorded again");
                     chain.reportPendingFaults();
+                }
+
+                // --- preparing or rebuilding the chain leaves the user's bypass alone ---
+                //
+                // juce::AudioProcessor::suspendProcessing is the user's bypass and nothing else: it is
+                // what MasterPluginChainPersistence saves as isEnabled
+                // (MasterPluginChainPersistence.cpp:103) and what the editor's toggle shows
+                // (UI/Plugins/PluginChainEditor.cpp:364). setChain and prepareToPlay used to call
+                // suspendProcessing(false) on every plugin, so rebuilding the chain re-enabled every
+                // bypassed plugin - and PluginChainEditor::updateChain saves the chain in the same
+                // call, so adding one plugin discarded the user's choices and persisted the loss.
+                // Starting the audio device and running an export reach prepareToPlay and did the
+                // same (issue #62).
+                {
+                    audio::PluginChain chain;
+                    auto bypassed = std::make_shared<jucyaudio::ui::ThrowingPlugin>("Bypassed Probe", true);
+                    auto running = std::make_shared<jucyaudio::ui::ThrowingPlugin>("Running Probe", true);
+                    chain.setChain({bypassed, running});
+
+                    // What the user does: tick bypass on one of them.
+                    bypassed->suspendProcessing(true);
+
+                    // What starting the audio device does.
+                    chain.prepareToPlay(44100.0, 512);
+                    report.check(bypassed->isSuspended(), "preparing the chain leaves a bypassed plugin bypassed");
+                    report.check(!running->isSuspended(), "and does not bypass one that was not");
+
+                    // What adding a plugin in the editor does: setChain on a prepared chain.
+                    auto added = std::make_shared<jucyaudio::ui::ThrowingPlugin>("Added Probe", true);
+                    chain.setChain({bypassed, running, added});
+                    report.check(bypassed->isSuspended(), "and rebuilding it does not un-bypass it either");
+
+                    // The one that matters, because this is what the editor persists a moment later.
+                    juce::AudioBuffer<float> block{2, 64};
+                    block.clear();
+                    chain.processBlock(block);
+                    report.check(
+                        bypassed->blocksProcessed() == 0, std::format("so a bypassed plugin is still not processed ({} blocks)", bypassed->blocksProcessed()));
+                    report.check(running->blocksProcessed() == 1, "while the rest of the chain runs");
+                }
+
+                // --- a layout the chain cannot drive is the host's decision, not the user's ---
+                //
+                // prepareToPlay used to call suspendProcessing(true) for this, which wrote a host
+                // decision into the field that means "the user bypassed this" - and the next save
+                // persisted it. It is a fault flag like any other now, and it is recomputed on every
+                // prepare rather than remembered.
+                {
+                    audio::PluginChain chain;
+                    auto refuses = std::make_shared<jucyaudio::ui::LayoutRefusingPlugin>("Awkward Probe");
+                    chain.setChain({refuses});
+
+                    chain.prepareToPlay(44100.0, 512);
+
+                    const auto flags = jucyaudio::audio::PluginChainTestAccess::hostDisabledFlags(chain);
+                    report.check(flags.size() == 1 && flags[0], "a plugin whose layout is refused is disabled by the host");
+                    report.check(!refuses->isSuspended(), "without writing to the field that holds the user's bypass");
+
+                    juce::AudioBuffer<float> block{2, 64};
+                    block.clear();
+                    chain.processBlock(block);
+                    report.check(refuses->blocksProcessed() == 0, "and it is not processed");
                 }
 
                 // --- neither side waits for the other, and nothing is lost when they collide ---
@@ -7385,7 +7539,7 @@ namespace jucyaudio
                     chain.processBlock(block);
                     report.check(second->blocksProcessed() == 1, "a plugin still throws while the guard is held");
 
-                    const auto collidedFlags = jucyaudio::audio::PluginChainTestAccess::faultedFlags(chain);
+                    const auto collidedFlags = jucyaudio::audio::PluginChainTestAccess::hostDisabledFlags(chain);
                     report.check(collidedFlags.size() == 1 && collidedFlags[0], "and is marked faulted even though its fault could not be recorded");
                     report.check(!second->isSuspended(), "still without the locking call on the audio thread");
 

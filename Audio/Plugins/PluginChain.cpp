@@ -66,7 +66,10 @@ namespace jucyaudio
                         spdlog::warn("PluginChain: Skipping plugin '{}' (unsupported layout)", plugin->getName().toStdString());
                         continue;
                     }
-                    plugin->suspendProcessing(false);
+                    // No suspendProcessing(false) here. It used to un-bypass every plugin whenever
+                    // the chain was rebuilt, and PluginChainEditor::updateChain saves the chain in
+                    // the same call - so adding one plugin discarded the user's bypass choices and
+                    // persisted the loss. See ChainState::hostDisabled.
                     plugin->prepareToPlay(newState->sampleRate, newState->blockSize);
                 }
 
@@ -82,8 +85,8 @@ namespace jucyaudio
 
             // Sized here rather than filled in the loop: std::atomic<bool> is not movable, so the
             // vector cannot be emplaced into alongside the other two. Every flag starts false, which
-            // is what makes a new chain a clean slate for a plugin that threw in the old one.
-            newState->faulted = std::vector<std::atomic<bool>>(newState->plugins.size());
+            // is what makes a new chain a clean slate for a plugin the host stopped in the old one.
+            newState->hostDisabled = std::vector<std::atomic<bool>>(newState->plugins.size());
 
             m_state.store(std::move(newState));
         }
@@ -123,16 +126,17 @@ namespace jucyaudio
             state->blockSize = blockSize;
             state->prepared = true;
 
-            // Everything below un-suspends each plugin and prepares it again, so a plugin that threw
-            // at the old sample rate or block size gets another chance. The host's fault flags are
-            // cleared to match; leaving them set would skip a plugin the loop just revived.
-            for (auto &flag : state->faulted)
+            // Everything the host decided about this chain is recomputed below, at the sample rate
+            // and block size it is being prepared for. A plugin that threw, or whose layout was
+            // refused last time, gets another chance.
+            for (auto &flag : state->hostDisabled)
             {
                 flag.store(false, std::memory_order_release);
             }
 
-            for (const auto &plugin : state->plugins)
+            for (size_t index = 0; index < state->plugins.size(); ++index)
             {
+                const auto &plugin = state->plugins[index];
                 if (!plugin)
                 {
                     continue;
@@ -141,11 +145,17 @@ namespace jucyaudio
                 if (!configurePlugin(*plugin, sampleRate, blockSize))
                 {
                     spdlog::warn("PluginChain: Plugin '{}' does not support stereo layout", plugin->getName().toStdString());
-                    plugin->suspendProcessing(true);
+
+                    // The host's own flag, not suspendProcessing: that field is the user's bypass,
+                    // and a layout this chain cannot drive is not something the user asked for. See
+                    // ChainState::hostDisabled.
+                    state->hostDisabled[index].store(true, std::memory_order_release);
                     continue;
                 }
 
-                plugin->suspendProcessing(false);
+                // And no suspendProcessing(false) either. Preparing the chain - which happens when
+                // the audio device starts and around every export - used to un-bypass every plugin
+                // the user had turned off.
                 plugin->prepareToPlay(sampleRate, blockSize);
             }
         }
@@ -287,7 +297,7 @@ namespace jucyaudio
             for (size_t index = 0; index < state->plugins.size(); ++index)
             {
                 const auto &plugin = state->plugins[index];
-                if (plugin && !state->faulted[index].load(std::memory_order_acquire) && !plugin->isSuspended())
+                if (plugin && !state->hostDisabled[index].load(std::memory_order_acquire) && !plugin->isSuspended())
                 {
                     try
                     {
@@ -301,14 +311,14 @@ namespace jucyaudio
 
                         // And stopped by the host's own flag, not by suspendProcessing: that writes
                         // under callbackLock, which the message thread holds whenever the bypass
-                        // button, MasterPluginChainPersistence or prepareToPlay touches this plugin.
-                        // See ChainState::faulted.
-                        state->faulted[index].store(true, std::memory_order_release);
+                        // button or MasterPluginChainPersistence touches this plugin. See
+                        // ChainState::hostDisabled.
+                        state->hostDisabled[index].store(true, std::memory_order_release);
                     }
                     catch (...)
                     {
                         recordFault(state->pluginNames[index], nullptr);
-                        state->faulted[index].store(true, std::memory_order_release);
+                        state->hostDisabled[index].store(true, std::memory_order_release);
                     }
                 }
             }
