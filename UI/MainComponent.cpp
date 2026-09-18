@@ -1542,6 +1542,11 @@ namespace jucyaudio
             // Tick the timer multiplexer at 60Hz
             m_timerMultiplexer.tick();
 
+            // Plugin faults are recorded on the audio thread and logged here, because logging there
+            // means an allocation, a sink mutex and an fflush inside the callback. This timer runs
+            // whenever the window does, which is whenever there is playback to fault during.
+            audio::theMasterPluginChain.reportPendingFaults();
+
             // Check for audio device changes periodically (every ~1 second at 60Hz)
             static int deviceCheckCounter = 0;
             if (++deviceCheckCounter >= 60)

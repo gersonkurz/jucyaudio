@@ -38,6 +38,7 @@
 #include <Database/TrackScanner.h>
 #include <UI/CreateMixDialogComponent.h>
 
+#include <Audio/Plugins/PluginChain.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/EditMixMetaDataDialog.h>
 #include <UI/ExportMixDialog.h>
@@ -80,8 +81,141 @@
 
 namespace jucyaudio
 {
+    namespace audio
+    {
+        /// @brief The names on the faults PluginChain has recorded but not yet reported.
+        ///
+        /// What reportPendingFaults puts in the log, before it puts it there. Reading it is the only
+        /// way to check *which* plugin a fault is attributed to, which is the half of the recording
+        /// that a count cannot see.
+        struct PluginChainTestAccess
+        {
+            static std::vector<std::string> pendingFaultNames(const PluginChain &chain)
+            {
+                std::vector<std::string> names;
+                for (size_t i = 0; i < chain.m_faultCount; ++i)
+                {
+                    names.emplace_back(chain.m_faults[i].name.data());
+                }
+                return names;
+            }
+
+            static size_t droppedFaults(const PluginChain &chain)
+            {
+                return chain.m_faultsDropped.load(std::memory_order_relaxed);
+            }
+
+            /// @brief Takes the guard, so the next record or drain finds it busy.
+            ///
+            /// This is how the failed-acquisition branches are reached without a second thread: they
+            /// do not care who holds the flag, only that somebody does.
+            static bool holdGuard(PluginChain &chain)
+            {
+                return !chain.m_faultGuard.test_and_set(std::memory_order_acquire);
+            }
+
+            static void releaseGuard(PluginChain &chain)
+            {
+                chain.m_faultGuard.clear(std::memory_order_release);
+            }
+        };
+    } // namespace audio
+
     namespace ui
     {
+        /// @brief A plugin that throws out of processBlock, for the audio-thread fault checks.
+        ///
+        /// Everything but processBlock is the minimum juce::AudioPluginInstance demands. The chain
+        /// only ever calls processBlock, isSuspended, suspendProcessing and getName on it.
+        class ThrowingPlugin final : public juce::AudioPluginInstance
+        {
+        public:
+            explicit ThrowingPlugin(juce::String name, bool throwKnown)
+                : m_name{std::move(name)},
+                  m_throwKnown{throwKnown}
+            {
+            }
+
+            int blocksProcessed() const noexcept
+            {
+                return m_blocksProcessed;
+            }
+
+            const juce::String getName() const override
+            {
+                return m_name;
+            }
+
+            void processBlock(juce::AudioBuffer<float> &, juce::MidiBuffer &) override
+            {
+                ++m_blocksProcessed;
+                if (m_throwKnown)
+                {
+                    throw std::runtime_error("the plugin said no");
+                }
+                throw 42; // not derived from std::exception, so the other handler takes it
+            }
+
+            void prepareToPlay(double, int) override
+            {
+            }
+            void releaseResources() override
+            {
+            }
+            double getTailLengthSeconds() const override
+            {
+                return 0.0;
+            }
+            bool acceptsMidi() const override
+            {
+                return false;
+            }
+            bool producesMidi() const override
+            {
+                return false;
+            }
+            juce::AudioProcessorEditor *createEditor() override
+            {
+                return nullptr;
+            }
+            bool hasEditor() const override
+            {
+                return false;
+            }
+            int getNumPrograms() override
+            {
+                return 1;
+            }
+            int getCurrentProgram() override
+            {
+                return 0;
+            }
+            void setCurrentProgram(int) override
+            {
+            }
+            const juce::String getProgramName(int) override
+            {
+                return {};
+            }
+            void changeProgramName(int, const juce::String &) override
+            {
+            }
+            void getStateInformation(juce::MemoryBlock &) override
+            {
+            }
+            void setStateInformation(const void *, int) override
+            {
+            }
+            void fillInPluginDescription(juce::PluginDescription &) const override
+            {
+            }
+
+        private:
+            juce::String m_name;
+            bool m_throwKnown;
+            int m_blocksProcessed{0};
+        };
+
         /// @brief The registry behind SingletonComponentDialog, read without validating it.
         ///
         /// getValidDialogWindow erases a dead entry as a side effect of being asked, so through it an
@@ -7055,6 +7189,163 @@ namespace jucyaudio
 
                     // Committing again with nothing changed is a no-op rather than a second rename.
                     report.check(Access::commit(dialog), "committing an unchanged name succeeds without doing anything");
+                }
+
+                // --- a plugin that throws is suspended without logging from the audio thread ---
+                //
+                // PluginChain::processBlock is reached from PlaybackController::getNextAudioBlock, so
+                // everything in it runs on the audio callback. Both of its exception handlers used to
+                // call spdlog::error with plugin->getName().toStdString() - a juce::String allocation,
+                // spdlog formatting, a sink mutex, and an fflush, because the flush threshold is set
+                // equal to the log threshold (Utils/LoggingUtils.cpp:18) and error is enabled at every
+                // level this app offers. Once per offending plugin, since suspendProcessing follows
+                // immediately, but once is a dropout at the moment someone is listening.
+                //
+                // The fault is now recorded and reported later. What this checks is the split: that
+                // processBlock leaves something to report rather than having reported it.
+                {
+                    audio::PluginChain chain;
+                    auto thrower = std::make_shared<jucyaudio::ui::ThrowingPlugin>("Throwing Probe", true);
+                    auto unknownThrower = std::make_shared<jucyaudio::ui::ThrowingPlugin>("Silent Probe", false);
+                    chain.setChain({thrower, unknownThrower});
+
+                    juce::AudioBuffer<float> block{2, 64};
+                    block.clear();
+                    chain.processBlock(block);
+
+                    report.check(thrower->blocksProcessed() == 1, "the chain reached the plugin that throws");
+                    report.check(thrower->isSuspended(), "which is suspended, so it is not asked again");
+                    report.check(unknownThrower->isSuspended(), "and so is the one that threw something not derived from std::exception");
+
+                    // The property. Before this change processBlock logged and left nothing behind.
+                    report.check(chain.pendingFaultCount() == 2,
+                        std::format("processBlock recorded both faults rather than reporting them ({} pending)", chain.pendingFaultCount()));
+
+                    // A second block asks neither of them again, so nothing further is recorded.
+                    chain.processBlock(block);
+                    report.check(thrower->blocksProcessed() == 1, "a suspended plugin is not processed again");
+                    report.check(chain.pendingFaultCount() == 2, "and nothing further is recorded");
+
+                    // The name travels with the fault, so a plugin removed before the report is
+                    // still named correctly - and, more to the point, an unrelated plugin is not
+                    // named instead. Looking the name up at report time by address could attribute
+                    // the fault to whatever was allocated over the top of the dead one.
+                    auto replacement = std::make_shared<jucyaudio::ui::ThrowingPlugin>("Innocent Bystander", true);
+                    chain.setChain({replacement});
+                    thrower.reset();
+                    unknownThrower.reset();
+
+                    report.check(chain.pendingFaultCount() == 2, "the faults survive the chain being replaced");
+
+                    const auto names = jucyaudio::audio::PluginChainTestAccess::pendingFaultNames(chain);
+                    report.check(names.size() == 2 && names[0] == "Throwing Probe" && names[1] == "Silent Probe",
+                        std::format("and still name the plugins that threw, not the one that took their place ('{}', '{}')",
+                            names.size() > 0 ? names[0] : std::string{},
+                            names.size() > 1 ? names[1] : std::string{}));
+
+                    chain.reportPendingFaults();
+                    report.check(chain.pendingFaultCount() == 0, "reporting them clears them");
+                    report.check(!replacement->isSuspended(), "and the plugin that replaced them was never touched");
+                }
+
+                // --- a fault that cannot be recorded is counted, not lost ---
+                //
+                // The guard is tried once and never waited on, by either side: waiting is what this
+                // arrangement exists to avoid on the audio thread, and a drain that blocked would put
+                // the wait back by making the audio thread wake it. So a record that arrives while
+                // the drain holds the guard has nowhere to go. It is counted and reported rather than
+                // disappearing, which is the difference between a bounded buffer and a lie.
+                {
+                    audio::PluginChain chain;
+                    std::vector<std::shared_ptr<juce::AudioPluginInstance>> many;
+                    for (int i = 0; i < 10; ++i)
+                    {
+                        many.push_back(std::make_shared<jucyaudio::ui::ThrowingPlugin>(juce::String{"Thrower "} + juce::String{i}, true));
+                    }
+                    chain.setChain(many);
+
+                    juce::AudioBuffer<float> block{2, 64};
+                    block.clear();
+                    chain.processBlock(block);
+
+                    // Ten threw, and the buffer holds eight.
+                    report.check(chain.pendingFaultCount() == 8,
+                        std::format("a burst larger than the buffer records what fits ({} pending)", chain.pendingFaultCount()));
+
+                    for (const auto &plugin : many)
+                    {
+                        report.check(plugin->isSuspended(), "every plugin that threw is suspended, recorded or not");
+                        break; // one is enough to say it; the loop below checks the rest
+                    }
+                    size_t suspended = 0;
+                    for (const auto &plugin : many)
+                    {
+                        suspended += plugin->isSuspended() ? 1 : 0;
+                    }
+                    report.check(suspended == many.size(), std::format("all ten of them ({} suspended)", suspended));
+
+                    // The two that did not fit are counted rather than forgotten, which is what makes
+                    // the buffer bounded rather than lossy-and-quiet.
+                    const auto dropped = jucyaudio::audio::PluginChainTestAccess::droppedFaults(chain);
+                    report.check(dropped == 2, std::format("and the two that did not fit are counted ({} dropped)", dropped));
+
+                    chain.reportPendingFaults();
+                    report.check(chain.pendingFaultCount() == 0, "and the report drains the buffer");
+                    report.check(jucyaudio::audio::PluginChainTestAccess::droppedFaults(chain) == 0, "and the dropped count with it");
+                }
+
+                // --- neither side waits for the other, and nothing is lost when they collide ---
+                //
+                // The block above fills the buffer, which is a different branch: every one of its
+                // records takes the guard successfully. What is checked here is what happens when the
+                // guard is already held - the audio thread's record and the timer's drain both give up
+                // rather than wait, because a wait on either side is what puts the audio thread back
+                // in the kernel. Held by hand rather than by a second thread: the branches do not care
+                // who holds the flag, only that somebody does, and a real race would not be
+                // deterministic.
+                {
+                    audio::PluginChain chain;
+                    auto first = std::make_shared<jucyaudio::ui::ThrowingPlugin>("Guarded Probe", true);
+                    chain.setChain({first});
+
+                    juce::AudioBuffer<float> block{2, 64};
+                    block.clear();
+                    chain.processBlock(block);
+                    report.check(chain.pendingFaultCount() == 1, "one fault is recorded while nothing holds the guard");
+
+                    report.check(jucyaudio::audio::PluginChainTestAccess::holdGuard(chain), "the guard is free to take");
+
+                    // Reading the count does not wait either - it answers 0 rather than block.
+                    report.check(chain.pendingFaultCount() == 0, "a count taken while the guard is held gives up instead of waiting");
+
+                    // The record side. The plugin is still stopped: a fault that could not be written
+                    // down costs a diagnostic, never correctness.
+                    auto second = std::make_shared<jucyaudio::ui::ThrowingPlugin>("Collided Probe", true);
+                    chain.setChain({second});
+                    chain.processBlock(block);
+                    report.check(second->blocksProcessed() == 1, "a plugin still throws while the guard is held");
+                    report.check(second->isSuspended(), "and is suspended even though its fault could not be recorded");
+
+                    const auto droppedWhileHeld = jucyaudio::audio::PluginChainTestAccess::droppedFaults(chain);
+                    report.check(droppedWhileHeld == 1, std::format("the record it could not make is counted ({} dropped)", droppedWhileHeld));
+
+                    auto held = jucyaudio::audio::PluginChainTestAccess::pendingFaultNames(chain);
+                    report.check(held.size() == 1 && held[0] == "Guarded Probe",
+                        std::format("and the fault already in the buffer is untouched ('{}')", held.empty() ? std::string{} : held[0]));
+
+                    // The drain side. It leaves the buffer alone and comes back on the next tick.
+                    chain.reportPendingFaults();
+                    held = jucyaudio::audio::PluginChainTestAccess::pendingFaultNames(chain);
+                    report.check(held.size() == 1 && held[0] == "Guarded Probe",
+                        std::format("a report that finds the guard held drains nothing ({} still pending)", held.size()));
+                    report.check(jucyaudio::audio::PluginChainTestAccess::droppedFaults(chain) == 1, "and leaves the dropped count for the next one");
+
+                    // And once it is free, the deferred report is the one that runs.
+                    jucyaudio::audio::PluginChainTestAccess::releaseGuard(chain);
+                    report.check(chain.pendingFaultCount() == 1, "with the guard free the fault is visible again");
+                    chain.reportPendingFaults();
+                    report.check(chain.pendingFaultCount() == 0, "and the next report drains it");
+                    report.check(jucyaudio::audio::PluginChainTestAccess::droppedFaults(chain) == 0, "along with what was dropped while they collided");
                 }
 
                 // --- a dismissed singleton dialog leaves the registry at dismissal ---

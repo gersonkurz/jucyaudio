@@ -169,6 +169,11 @@ namespace jucyaudio
                     static_cast<int>(context.samplesToProcessInThisBlock)};
                 audio::theMasterPluginChain.processBlock(pluginBuffer);
 
+                // Drained here as well as on the UI timer: this render runs on a task thread, and an
+                // export can happen with no window open to tick that timer. Logging from here is fine
+                // - it is the audio callback that must not.
+                audio::theMasterPluginChain.reportPendingFaults();
+
                 // Write the processed masterOutputBlock to the file.
                 //
                 // Checked, because the answer decides whether the previous export survives: run()
