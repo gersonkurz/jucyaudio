@@ -133,10 +133,14 @@ def refuse(what: str, *, not_built: bool, log_advice: bool = True) -> None:
         print("\nThe usual reason is that the app was not built with the instrumentation. On Windows:")
         print("    cmake --preset x64-release -DJUCYAUDIO_REFCOUNT_DEBUGGING=ON")
         print("    cmake --build build-x64-release --config Release --parallel")
-        print("\nand on macOS, which does not use the presets:")
+        print("\nand on macOS, which does not use the presets - Apple Silicon:")
         print("    cmake -B build-arm64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 \\")
         print("          -DJUCYAUDIO_REFCOUNT_DEBUGGING=ON")
         print("    cmake --build build-arm64 -j8")
+        print("\nor Intel:")
+        print("    cmake -B build-x86_64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64 \\")
+        print("          -DJUCYAUDIO_REFCOUNT_DEBUGGING=ON")
+        print("    cmake --build build-x86_64 -j8")
     if log_advice:
         print("\nThe log level has to be debug, in jucyaudio.toml under the config root:")
         print("    [Logging]")
@@ -146,24 +150,59 @@ def refuse(what: str, *, not_built: bool, log_advice: bool = True) -> None:
     raise typer.Exit(code=2)
 
 
+def expand_path(path: str) -> str:
+    """expandPath from Utils/AssortedUtils.cpp:279, in Python.
+
+    Two details are copied rather than improved on, because the point is to resolve the same string
+    the app resolves:
+
+    - a ${VAR} whose variable is not set is left exactly as it is, not replaced with nothing. The app
+      warns and keeps it, so a path with an unexpanded ${...} in it reaches the error message and
+      shows the reader which variable was missing.
+    - on Windows forward slashes become backslashes, so what is printed looks like the path the app
+      would have used.
+
+    Not copied: making a relative path absolute, because the app does not do that either. A relative
+    JUCYAUDIO_CONFIG resolves against the current directory in both, which is the app's for the app
+    and this tool's for this tool - and this tool is normally run from scripts/refcountd rather than
+    the repo root. Nothing here can close that gap; it is named in the README instead.
+    """
+    def replace(match: re.Match[str]) -> str:
+        value = os.environ.get(match.group(1))
+        return value if value is not None else match.group(0)
+
+    expanded = re.sub(r"\$\{([^}]+)\}", replace, path)
+    return expanded.replace("/", "\\") if os.name == "nt" else expanded
+
+
+def default_config_root_template() -> str:
+    """getDefaultConfigRootTemplate from Utils/AssortedUtils.cpp:332, verbatim.
+
+    A template rather than a resolved path, because that is what the app expands - the same
+    expand_path above runs over it, so the default and an override are resolved by one rule.
+    """
+    if os.name == "nt":
+        return "${LOCALAPPDATA}/jucyaudio"
+    if sys.platform == "darwin":
+        return "${HOME}/Library/Application Support/jucyaudio"
+    return "${HOME}/.config/jucyaudio"
+
+
 def default_log_path() -> str:
     """Where the app writes its log, following the same rules the app does.
 
-    JUCYAUDIO_CONFIG wins if it is set - Main.cpp exports it at startup and honours it for everything
-    else - otherwise the platform default config root, with Logs/jucyaudio.log underneath.
+    JUCYAUDIO_CONFIG wins if it is set and not empty - Main.cpp exports it at startup and honours it
+    for everything else - otherwise the platform default template. Either way the result goes through
+    expand_path, which is what getConfigRoot does (AssortedUtils.cpp:345), and Logs/jucyaudio.log
+    hangs off it.
 
     This used to be hardcoded to %APPDATA%/jucyaudioApp_Dev/Logs, a path the app stopped writing to
-    long enough ago that nobody noticed this tool asserting on it.
+    long enough ago that nobody noticed this tool asserting on it. It then read JUCYAUDIO_CONFIG
+    literally, which is right until someone writes ${SOMETHING} in it - the app expands that and this
+    did not, so the two disagreed about which file they were talking about.
     """
     configured = os.environ.get("JUCYAUDIO_CONFIG")
-    if configured:
-        root = configured
-    elif os.name == "nt":
-        root = os.path.join(os.environ["LOCALAPPDATA"], "jucyaudio")
-    elif sys.platform == "darwin":
-        root = os.path.expanduser("~/Library/Application Support/jucyaudio")
-    else:
-        root = os.path.expanduser("~/.config/jucyaudio")
+    root = expand_path(configured if configured else default_config_root_template())
     return os.path.join(root, "Logs", "jucyaudio.log")
 
 

@@ -13,13 +13,15 @@ from this directory, or `just test-refcountd` from the repo root. Exit 0 means a
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
+import unittest.mock as mock
 from pathlib import Path
 
 from typer.testing import CliRunner
 
-from refcountd.__main__ import app
+from refcountd.__main__ import app, default_config_root_template, default_log_path
 
 runner = CliRunner()
 
@@ -279,7 +281,74 @@ def main() -> int:
         check(bool(reuse_rows) and reuse_rows[0][0] == "task",
               f"and blames the task that is still holding a count, not the node that was freed ({reuse_rows[0][0] if reuse_rows else 'no row'})")
 
-        # 14. A log that is not there at all.
+        # 14. Where the log is looked for, resolved the way the app resolves it.
+        #
+        #     getConfigRoot (Utils/AssortedUtils.cpp:345) runs JUCYAUDIO_CONFIG through expandPath,
+        #     so a config root written with a ${VAR} in it expands. This tool read the value
+        #     literally, so the two disagreed about which file they were even discussing - and the
+        #     reader got "no such file" pointing at a path with ${...} still in it, which reads like
+        #     a build problem and is not one.
+        saved = os.environ.get("JUCYAUDIO_CONFIG")
+        try:
+            os.environ["REFCOUNTD_CHECK_ROOT"] = str(tmp)
+
+            os.environ["JUCYAUDIO_CONFIG"] = "${REFCOUNTD_CHECK_ROOT}/probe"
+            resolved = default_log_path()
+            check("${" not in resolved, f"a ${{VAR}} in JUCYAUDIO_CONFIG is expanded ({resolved})")
+            check(str(tmp) in resolved and resolved.endswith(os.path.join("probe", "Logs", "jucyaudio.log")),
+                  f"to the directory it names, with Logs/jucyaudio.log under it ({resolved})")
+
+            # Unset, and left alone rather than blanked - which is what expandPath does, warning and
+            # keeping the text. Blanking it would silently point at a different directory; keeping it
+            # puts the missing variable in front of whoever reads the error.
+            os.environ["JUCYAUDIO_CONFIG"] = "${REFCOUNTD_NO_SUCH_VARIABLE}/probe"
+            resolved = default_log_path()
+            check("${REFCOUNTD_NO_SUCH_VARIABLE}" in resolved,
+                  f"a ${{VAR}} that is not set is left in the path rather than blanked ({resolved})")
+
+            # And with nothing set, the platform's own template - itself expanded by the same rule,
+            # which is how the app gets there too.
+            #
+            # The whole path is compared, against an expectation built here from a variable this
+            # check controls. Asserting "no ${...} left" and a matching tail would pass with the
+            # wrong root directory, which is most of what could go wrong.
+            #
+            # All three branches, by simulating os.name and sys.platform - the same two the app
+            # switches on with #if defined(_WIN32) / __APPLE__ / else. Only one of them can be the
+            # real platform here, and getDefaultConfigRootTemplate has to be right on the others too.
+            del os.environ["JUCYAUDIO_CONFIG"]
+            platforms = [
+                ("nt", "win32", "LOCALAPPDATA", "${LOCALAPPDATA}/jucyaudio"),
+                ("posix", "darwin", "HOME", "${HOME}/Library/Application Support/jucyaudio"),
+                ("posix", "linux", "HOME", "${HOME}/.config/jucyaudio"),
+            ]
+            for os_name, sys_platform, variable, expected_template in platforms:
+                held = os.environ.get(variable)
+                os.environ[variable] = f"/probe-root-for-{sys_platform}"
+                try:
+                    with mock.patch.object(os, "name", os_name), mock.patch.object(sys, "platform", sys_platform):
+                        template = default_config_root_template()
+                        check(template == expected_template,
+                              f"the {sys_platform} default is the template the app uses ({template})")
+
+                        root = os.environ[variable] + expected_template[len(f"${{{variable}}}"):]
+                        if os_name == "nt":
+                            root = root.replace("/", "\\")
+                        check(default_log_path() == os.path.join(root, "Logs", "jucyaudio.log"),
+                              f"and resolves to exactly that config root ({default_log_path()})")
+                finally:
+                    if held is None:
+                        os.environ.pop(variable, None)
+                    else:
+                        os.environ[variable] = held
+        finally:
+            os.environ.pop("REFCOUNTD_CHECK_ROOT", None)
+            if saved is None:
+                os.environ.pop("JUCYAUDIO_CONFIG", None)
+            else:
+                os.environ["JUCYAUDIO_CONFIG"] = saved
+
+        # 15. A log that is not there at all.
         result = runner.invoke(app, [str(tmp / "nosuchfile.log")])
         check(result.exit_code == 2, f"a missing log is a usage error, exit 2 (exit {result.exit_code})")
 

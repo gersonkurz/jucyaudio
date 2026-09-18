@@ -19,11 +19,18 @@ cmake --preset x64-release -DJUCYAUDIO_REFCOUNT_DEBUGGING=ON
 cmake --build build-x64-release --config Release --parallel
 ```
 
-On macOS, which does not:
+On macOS, which does not - Apple Silicon:
 
 ```
 cmake -B build-arm64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DJUCYAUDIO_REFCOUNT_DEBUGGING=ON
 cmake --build build-arm64 -j8
+```
+
+or Intel, which the justfile also builds and which the universal build ships:
+
+```
+cmake -B build-x86_64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64 -DJUCYAUDIO_REFCOUNT_DEBUGGING=ON
+cmake --build build-x86_64 -j8
 ```
 
 Turn it back off the same way with `-DJUCYAUDIO_REFCOUNT_DEBUGGING=OFF` when you are done, or the
@@ -166,9 +173,19 @@ directory,
 and bytes that are not UTF-8. They assert the exit status, which is the part that was wrong.
 `just selftest` does not run them - that is the C++ binary.
 
-By default it looks where the app writes: `$JUCYAUDIO_CONFIG/Logs/jucyaudio.log` if that variable is
-set, otherwise the platform config root - `%LOCALAPPDATA%\jucyaudio` on Windows,
-`~/Library/Application Support/jucyaudio` on macOS.
+By default it looks where the app writes, resolved the way the app resolves it: `JUCYAUDIO_CONFIG`
+if that variable is set, otherwise the platform's own template - `${LOCALAPPDATA}/jucyaudio` on
+Windows, `${HOME}/Library/Application Support/jucyaudio` on macOS - with `Logs/jucyaudio.log`
+underneath.
+
+Either way the value goes through the same expansion `getConfigRoot` uses
+(`Utils/AssortedUtils.cpp:345`), so a `${VAR}` inside `JUCYAUDIO_CONFIG` expands here as it does
+there. A `${VAR}` that is not set is left in the path rather than blanked, which is also what the app
+does - it puts the missing variable in front of you instead of silently pointing somewhere else.
+
+One thing this cannot match: a **relative** `JUCYAUDIO_CONFIG` resolves against the current directory
+in both, but the app's current directory is not this tool's, and this tool is normally run from
+`scripts/refcountd` rather than the repo root. Use an absolute path, or pass the log as an argument.
 
 ## Reading the output
 
