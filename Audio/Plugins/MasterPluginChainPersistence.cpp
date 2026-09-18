@@ -27,35 +27,6 @@ namespace jucyaudio
                 return sqliteDb;
             }
 
-            bool configureStereoLayout(juce::AudioPluginInstance &plugin)
-            {
-                juce::AudioProcessor::BusesLayout layout;
-                const auto inputBusCount = plugin.getBusCount(true);
-                const auto outputBusCount = plugin.getBusCount(false);
-
-                layout.inputBuses.clearQuick();
-                layout.outputBuses.clearQuick();
-                for (int i = 0; i < inputBusCount; ++i)
-                {
-                    layout.inputBuses.add(juce::AudioChannelSet::disabled());
-                }
-                for (int i = 0; i < outputBusCount; ++i)
-                {
-                    layout.outputBuses.add(juce::AudioChannelSet::disabled());
-                }
-
-                if (inputBusCount > 0)
-                {
-                    layout.inputBuses.set(0, juce::AudioChannelSet::stereo());
-                }
-                if (outputBusCount > 0)
-                {
-                    layout.outputBuses.set(0, juce::AudioChannelSet::stereo());
-                }
-
-                return plugin.setBusesLayout(layout);
-            }
-
             std::vector<unsigned char> memoryBlockToVector(const juce::MemoryBlock &block)
             {
                 const auto size = block.getSize();
@@ -141,50 +112,64 @@ namespace jucyaudio
             const auto blockSize = prep.prepared ? prep.blockSize : 512;
 
             const auto knownTypes = knownList.getTypes();
+
+            auto chain = buildChain(entries,
+                [&](const database::MasterPluginChainEntry &entry) -> std::unique_ptr<juce::AudioPluginInstance>
+                {
+                    const auto matchIt = std::find_if(knownTypes.begin(),
+                        knownTypes.end(),
+                        [&entry](const juce::PluginDescription &desc)
+                        {
+                            return desc.pluginFormatName.toStdString() == entry.pluginFormat && desc.fileOrIdentifier.toStdString() == entry.identifier;
+                        });
+
+                    if (matchIt == knownTypes.end())
+                    {
+                        spdlog::warn(
+                            "MasterChain: Plugin not found in known list (format='{}', id='{}', name='{}')", entry.pluginFormat, entry.identifier, entry.name);
+                        return nullptr;
+                    }
+
+                    juce::String errorMessage;
+                    auto instance = formatManager.createPluginInstance(*matchIt, sampleRate, blockSize, errorMessage);
+                    if (!instance)
+                    {
+                        spdlog::warn("MasterChain: Failed to instantiate '{}' during restore: {}", matchIt->name.toStdString(), errorMessage.toStdString());
+                    }
+                    return instance;
+                });
+
+            theMasterPluginChain.setChain(chain);
+            spdlog::info("MasterChain: Restored {} plugin(s) from database", chain.size());
+            return true;
+        }
+
+        std::vector<std::shared_ptr<juce::AudioPluginInstance>> MasterPluginChainPersistence::buildChain(
+            const std::vector<database::MasterPluginChainEntry> &entries, const PluginInstanceFactory &createInstance)
+        {
             std::vector<std::shared_ptr<juce::AudioPluginInstance>> chain;
             chain.reserve(entries.size());
 
             for (const auto &entry : entries)
             {
-                const auto matchIt = std::find_if(
-                    knownTypes.begin(),
-                    knownTypes.end(),
-                    [&entry](const juce::PluginDescription &desc)
-                    {
-                        return desc.pluginFormatName.toStdString() == entry.pluginFormat &&
-                               desc.fileOrIdentifier.toStdString() == entry.identifier;
-                    });
-
-                if (matchIt == knownTypes.end())
-                {
-                    spdlog::warn(
-                        "MasterChain: Plugin not found in known list (format='{}', id='{}', name='{}')",
-                        entry.pluginFormat,
-                        entry.identifier,
-                        entry.name);
-                    continue;
-                }
-
-                juce::String errorMessage;
-                auto instance = formatManager.createPluginInstance(*matchIt, sampleRate, blockSize, errorMessage);
+                auto instance = createInstance(entry);
                 if (!instance)
                 {
-                    spdlog::warn(
-                        "MasterChain: Failed to instantiate '{}' during restore: {}",
-                        matchIt->name.toStdString(),
-                        errorMessage.toStdString());
+                    // Nothing to keep: the plugin is not installed, or the format manager could not
+                    // make it. Holding a stored entry across a save so that an absent plugin is not
+                    // erased from the chain is a separate question - see issue #64.
                     continue;
                 }
 
-                if (!configureStereoLayout(*instance))
-                {
-                    spdlog::warn(
-                        "MasterChain: Restored plugin '{}' does not support stereo layout",
-                        matchIt->name.toStdString());
-                    continue;
-                }
-
-                instance->setPlayConfigDetails(2, 2, sampleRate, blockSize);
+                // No layout check here, and no setPlayConfigDetails or prepareToPlay either. This
+                // used to refuse a plugin whose buses would not go stereo, before it reached the
+                // vector below, so one startup at an awkward sample rate erased it from the user's
+                // chain and the next save wrote the shortened list back to the database (#64).
+                //
+                // PluginChain::setChain configures the plugin when the chain is prepared and records
+                // a refusal in ChainState::hostDisabled rather than dropping it (#63), so the plugin
+                // keeps its place and is tried again at the next prepare. That leaves the layout in
+                // one place instead of two.
 
                 if (!entry.stateBlob.empty())
                 {
@@ -194,31 +179,20 @@ namespace jucyaudio
                     }
                     catch (const std::exception &ex)
                     {
-                        spdlog::error(
-                            "MasterChain: setStateInformation threw for '{}': {}",
-                            matchIt->name.toStdString(),
-                            ex.what());
+                        spdlog::error("MasterChain: setStateInformation threw for '{}': {}", entry.name, ex.what());
                     }
                     catch (...)
                     {
-                        spdlog::error(
-                            "MasterChain: setStateInformation threw unknown exception for '{}'",
-                            matchIt->name.toStdString());
+                        spdlog::error("MasterChain: setStateInformation threw unknown exception for '{}'", entry.name);
                     }
                 }
 
-                if (prep.prepared)
-                {
-                    instance->prepareToPlay(sampleRate, blockSize);
-                }
-
+                // The user's bypass, restored. This is the one thing that belongs in that field.
                 instance->suspendProcessing(!entry.isEnabled);
                 chain.emplace_back(std::shared_ptr<juce::AudioPluginInstance>{std::move(instance)});
             }
 
-            theMasterPluginChain.setChain(chain);
-            spdlog::info("MasterChain: Restored {} plugin(s) from database", chain.size());
-            return true;
+            return chain;
         }
     } // namespace audio
 } // namespace jucyaudio

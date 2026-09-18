@@ -38,6 +38,7 @@
 #include <Database/TrackScanner.h>
 #include <UI/CreateMixDialogComponent.h>
 
+#include <Audio/Plugins/MasterPluginChainPersistence.h>
 #include <Audio/Plugins/PluginChain.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
 #include <UI/EditMixMetaDataDialog.h>
@@ -218,16 +219,24 @@ namespace jucyaudio
             void getStateInformation(juce::MemoryBlock &) override
             {
             }
-            void setStateInformation(const void *, int) override
+            void setStateInformation(const void *data, int size) override
             {
+                const auto *bytes = static_cast<const unsigned char *>(data);
+                m_restoredState.assign(bytes, bytes + size);
             }
             void fillInPluginDescription(juce::PluginDescription &) const override
             {
             }
 
+            const std::vector<unsigned char> &restoredState() const noexcept
+            {
+                return m_restoredState;
+            }
+
         private:
             juce::String m_name;
             int m_blocksProcessed{0};
+            std::vector<unsigned char> m_restoredState;
         };
 
         /// @brief A plugin that throws out of processBlock, for the audio-thread fault checks.
@@ -7553,6 +7562,77 @@ namespace jucyaudio
                     prepared.processBlock(block);
                     report.check(refusesB->blocksProcessed() == 0, "the plugin whose layout was refused is not processed");
                     report.check(fineB->blocksProcessed() == 1, "and the one after it still is");
+                }
+
+                // --- restoring the saved chain keeps a plugin whose layout is refused ---
+                //
+                // MasterPluginChainPersistence::loadFromDatabase used to run its own stereo-layout
+                // check and skip a plugin that failed it, before the plugin reached the vector
+                // setChain is given. So one startup at an awkward sample rate erased it from the
+                // running chain and the editor, and PluginChainEditor::updateChain - setChain
+                // followed by saveToDatabase - wrote the shortened list back over the stored chain
+                // (issue #64).
+                //
+                // buildChain is the half of the restore that decides; the factory it takes is the
+                // half that goes through juce::AudioPluginFormatManager and cannot be driven here.
+                {
+                    using jucyaudio::audio::MasterPluginChainPersistence;
+
+                    database::MasterPluginChainEntry refused;
+                    refused.orderIndex = 0;
+                    refused.name = "Awkward Restored";
+                    refused.isEnabled = true;
+                    refused.stateBlob = {0xDE, 0xAD, 0xBE, 0xEF};
+
+                    database::MasterPluginChainEntry bypassed;
+                    bypassed.orderIndex = 1;
+                    bypassed.name = "Bypassed Restored";
+                    bypassed.isEnabled = false;
+
+                    database::MasterPluginChainEntry missing;
+                    missing.orderIndex = 2;
+                    missing.name = "Absent Restored";
+                    missing.isEnabled = true;
+
+                    const auto chain = MasterPluginChainPersistence::buildChain({refused, bypassed, missing},
+                        [](const database::MasterPluginChainEntry &entry) -> std::unique_ptr<juce::AudioPluginInstance>
+                        {
+                            if (entry.name == "Absent Restored")
+                            {
+                                // What the real factory returns for a plugin that is not installed
+                                // any more, or that the format manager could not create.
+                                return nullptr;
+                            }
+                            return std::make_unique<jucyaudio::ui::LayoutRefusingPlugin>(juce::String{entry.name});
+                        });
+
+                    report.check(
+                        chain.size() == 2, std::format("a plugin whose layout is refused is still restored into the chain ({} of 3 entries)", chain.size()));
+                    report.check(chain.size() == 2 && chain[0]->getName() == "Awkward Restored" && chain[1]->getName() == "Bypassed Restored",
+                        "in stored order, and the one that could not be created is the only one missing");
+
+                    // Indexed only once the size is known good: a check that reads past the end
+                    // crashes the run instead of failing it, which hides every check after it.
+                    const auto *first = chain.size() > 0 ? dynamic_cast<const jucyaudio::ui::LayoutRefusingPlugin *>(chain[0].get()) : nullptr;
+
+                    // It reaches the state restore too, which it never did while it was dropped.
+                    report.check(
+                        first != nullptr && first->restoredState() == std::vector<unsigned char>{0xDE, 0xAD, 0xBE, 0xEF}, "with its saved state applied");
+
+                    // And the user's bypass is what the suspended flag carries out of the restore.
+                    report.check(chain.size() > 0 && !chain[0]->isSuspended(), "an entry saved as enabled comes back enabled");
+                    report.check(chain.size() > 1 && chain[1]->isSuspended(), "and one saved as disabled comes back bypassed");
+
+                    // The point of keeping it: the chain records the refusal instead of the restore
+                    // acting on it, so the plugin is in the list the editor shows and the database
+                    // keeps.
+                    audio::PluginChain installed;
+                    installed.prepareToPlay(44100.0, 512);
+                    installed.setChain(chain);
+                    report.check(installed.getChainSnapshot().size() == 2, "and installing that chain keeps both");
+
+                    const auto flags = jucyaudio::audio::PluginChainTestAccess::hostDisabledFlags(installed);
+                    report.check(flags.size() == 2 && flags[0] && flags[1], "with the refusal recorded by the chain rather than by the restore");
                 }
 
                 // --- neither side waits for the other, and nothing is lost when they collide ---
