@@ -52,6 +52,10 @@ namespace jucyaudio
 
             newState->plugins.reserve(plugins.size());
             newState->pluginNames.reserve(plugins.size());
+
+            // Collected rather than applied in the loop, because hostDisabled cannot be sized until
+            // the loop has finished counting. See below.
+            std::vector<size_t> refusedLayouts;
             for (const auto &plugin : plugins)
             {
                 if (!plugin)
@@ -61,16 +65,25 @@ namespace jucyaudio
 
                 if (newState->prepared)
                 {
-                    if (!configurePlugin(*plugin, newState->sampleRate, newState->blockSize))
+                    if (configurePlugin(*plugin, newState->sampleRate, newState->blockSize))
                     {
-                        spdlog::warn("PluginChain: Skipping plugin '{}' (unsupported layout)", plugin->getName().toStdString());
-                        continue;
+                        // No suspendProcessing(false) here. It used to un-bypass every plugin
+                        // whenever the chain was rebuilt, and PluginChainEditor::updateChain saves
+                        // the chain in the same call - so adding one plugin discarded the user's
+                        // bypass choices and persisted the loss. See ChainState::hostDisabled.
+                        plugin->prepareToPlay(newState->sampleRate, newState->blockSize);
                     }
-                    // No suspendProcessing(false) here. It used to un-bypass every plugin whenever
-                    // the chain was rebuilt, and PluginChainEditor::updateChain saves the chain in
-                    // the same call - so adding one plugin discarded the user's bypass choices and
-                    // persisted the loss. See ChainState::hostDisabled.
-                    plugin->prepareToPlay(newState->sampleRate, newState->blockSize);
+                    else
+                    {
+                        // Kept, not dropped. This used to `continue`, so whether a plugin was in the
+                        // chain at all depended on whether the chain happened to be prepared at that
+                        // moment - and the editor, which holds its own list and rebuilds it from
+                        // getChainSnapshot, would show a plugin the chain did not have and then lose
+                        // it on the next reopen. Recorded the way prepareToPlay records it instead,
+                        // so the two agree and the plugin is tried again at the next prepare.
+                        spdlog::warn("PluginChain: Plugin '{}' does not support stereo layout", plugin->getName().toStdString());
+                        refusedLayouts.push_back(newState->plugins.size());
+                    }
                 }
 
                 newState->plugins.emplace_back(plugin);
@@ -87,6 +100,10 @@ namespace jucyaudio
             // vector cannot be emplaced into alongside the other two. Every flag starts false, which
             // is what makes a new chain a clean slate for a plugin the host stopped in the old one.
             newState->hostDisabled = std::vector<std::atomic<bool>>(newState->plugins.size());
+            for (const auto index : refusedLayouts)
+            {
+                newState->hostDisabled[index].store(true, std::memory_order_release);
+            }
 
             m_state.store(std::move(newState));
         }

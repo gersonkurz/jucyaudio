@@ -80,8 +80,10 @@ namespace jucyaudio
                 /// use juce::AudioProcessor::suspendProcessing for that, because that writes under
                 /// callbackLock (juce_AudioProcessor.cpp:583) and the message thread takes the same
                 /// lock from the bypass button (UI/Plugins/PluginChainEditor.cpp:170) and from
-                /// MasterPluginChainPersistence, so the audio callback could wait on it. prepareToPlay
-                /// sets one when configurePlugin cannot give a plugin a stereo layout.
+                /// MasterPluginChainPersistence, so the audio callback could wait on it. setChain and
+                /// prepareToPlay set one when configurePlugin cannot give a plugin a stereo layout -
+                /// both of them, so that a refused layout costs the plugin its turn in the loop and
+                /// never its place in the chain.
                 ///
                 /// Host state, kept apart from user state. isSuspended is the user's bypass and
                 /// nothing else: it is what MasterPluginChainPersistence saves as isEnabled

@@ -7508,6 +7508,53 @@ namespace jucyaudio
                     report.check(refuses->blocksProcessed() == 0, "and it is not processed");
                 }
 
+                // --- a refused layout costs a plugin its turn, never its place in the chain ---
+                //
+                // setChain used to `continue` past a plugin whose layout configurePlugin refused, but
+                // only in the branch taken when the chain was already prepared - so whether a plugin
+                // was in the chain at all depended on whether it happened to be prepared at that
+                // moment. The editor holds its own list and rebuilds it from getChainSnapshot
+                // (UI/Plugins/PluginChainEditor.cpp:50), so it would show a plugin the chain did not
+                // have, persist that list, and then lose the plugin the next time it was reopened
+                // (issue #63).
+                //
+                // Both orders are checked, because it is the difference between them that was the
+                // defect.
+                {
+                    // Order one: install first, prepare afterwards. This path never had the check.
+                    audio::PluginChain unprepared;
+                    auto refusesA = std::make_shared<jucyaudio::ui::LayoutRefusingPlugin>("Awkward A");
+                    auto fineA = std::make_shared<jucyaudio::ui::ThrowingPlugin>("Fine A", true);
+                    unprepared.setChain({refusesA, fineA});
+                    report.check(unprepared.getChainSnapshot().size() == 2, "a chain installed before preparation holds both plugins");
+
+                    unprepared.prepareToPlay(44100.0, 512);
+                    const auto afterPrepare = jucyaudio::audio::PluginChainTestAccess::hostDisabledFlags(unprepared);
+                    report.check(unprepared.getChainSnapshot().size() == 2, "and still holds both after preparing");
+                    report.check(afterPrepare.size() == 2 && afterPrepare[0] && !afterPrepare[1], "with only the refused one disabled by the host");
+
+                    // Order two: prepare first, install afterwards. This is the path that dropped it.
+                    audio::PluginChain prepared;
+                    prepared.prepareToPlay(44100.0, 512);
+                    auto refusesB = std::make_shared<jucyaudio::ui::LayoutRefusingPlugin>("Awkward B");
+                    auto fineB = std::make_shared<jucyaudio::ui::ThrowingPlugin>("Fine B", true);
+                    prepared.setChain({refusesB, fineB});
+
+                    const auto snapshot = prepared.getChainSnapshot();
+                    report.check(snapshot.size() == 2, std::format("a chain installed into a prepared chain holds both too ({} plugins)", snapshot.size()));
+                    report.check(snapshot.size() == 2 && snapshot[0] == refusesB && snapshot[1] == fineB, "in the order they were given, refused one included");
+
+                    const auto flags = jucyaudio::audio::PluginChainTestAccess::hostDisabledFlags(prepared);
+                    report.check(flags.size() == 2 && flags[0] && !flags[1], "and the refusal is recorded rather than acted on by removal");
+
+                    // Which is the point: the flag stops it, so dropping it bought nothing.
+                    juce::AudioBuffer<float> block{2, 64};
+                    block.clear();
+                    prepared.processBlock(block);
+                    report.check(refusesB->blocksProcessed() == 0, "the plugin whose layout was refused is not processed");
+                    report.check(fineB->blocksProcessed() == 1, "and the one after it still is");
+                }
+
                 // --- neither side waits for the other, and nothing is lost when they collide ---
                 //
                 // The block above fills the buffer, which is a different branch: every one of its
