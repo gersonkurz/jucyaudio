@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(jucyaudio VERSION 2.1.0)
+project(jucyaudio VERSION 2.2.0)
 
 # On Apple, JUCE compiles its modules as Objective-C++ (.mm) sources inside the
 # jucyaudio target. Enable OBJC/OBJCXX so CMake classifies those sources as
@@ -354,6 +354,19 @@ juce_add_gui_app(jucyaudio
 # Add Windows resource file for icon
 if(WIN32)
     target_sources(jucyaudio PRIVATE windows_icon.rc )
+
+    # JUCE 9.0.2's _juce_add_resources_rc (JUCEUtils.cmake:884) declares the generated
+    # jucyaudio_resources.rc - which carries FILEVERSION and PRODUCTVERSION - with a DEPENDS on the
+    # icon only, never on the Info.txt that juceaide reads it from. So after a version change an
+    # incremental build leaves the .rc alone and keeps stamping the old version into the executable;
+    # only a clean build picks the new one up. That is silent, and it is wrong in the artefact that
+    # ships. Inject the dependency JUCE omits.
+    get_target_property(_jucyaudio_generated_dir jucyaudio JUCE_GENERATED_SOURCES_DIRECTORY)
+    get_target_property(_jucyaudio_info_file jucyaudio JUCE_INFO_FILE)
+    add_custom_command(
+        OUTPUT "${_jucyaudio_generated_dir}/jucyaudio_resources.rc"
+        APPEND
+        DEPENDS "${_jucyaudio_info_file}")
 endif()
 
 # Add all source files

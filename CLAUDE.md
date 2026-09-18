@@ -56,11 +56,11 @@ just package                 # Alias for package-x64
 All Windows build recipes drive the **CMake presets** in `CMakePresets.json` (which pin the
 `Visual Studio 18 2026` generator), so `just build`/`run` and Visual Studio share one configured
 tree under `build-<arch>-<config>` (e.g. `build-x64-release`). This requires **VS 2026**. Presets
-exist for x64 and x86 (debug/release) only — there is no Windows-arm64 preset (2.0 ships x64 only;
+exist for x64 and x86 (debug/release) only — there is no Windows-arm64 preset (2.2 ships x64 only;
 add an arm64 preset if that changes). macOS builds are unaffected — they use the `[macos]` justfile
 recipes (`build-arm64`/`build-x86_64`/`build-universal`), not presets.
 
-The Windows installer is an **MSI** built with the [`msis`](https://github.com/gersonkurz/msis) tool (WiX 6/7 backend) from `setup/jucyaudio-x64.msis`. `package-x64` configures, builds, runs `cmake --install` (which stages a clean, self-contained payload including the app-local MSVC runtime into `install-x64-release/bin/`), then invokes `msis /BUILD /STANDALONE`. Requires `msis` on PATH (`msis /SETUP-WIX` provisions WiX). 2.0 ships x64 only; the legacy NSIS scripts were deleted on 2026-06-28 (`1ef42a4`).
+The Windows installer is an **MSI** built with the [`msis`](https://github.com/gersonkurz/msis) tool (WiX 6/7 backend) from `setup/jucyaudio-x64.msis`. `package-x64` configures, builds, runs `cmake --install` (which stages a clean, self-contained payload including the app-local MSVC runtime into `install-x64-release/bin/`), then invokes `msis /BUILD /STANDALONE`. Requires `msis` on PATH (`msis /SETUP-WIX` provisions WiX). 2.2 ships x64 only; the legacy NSIS scripts were deleted on 2026-06-28 (`1ef42a4`).
 
 **Direct CMake (if just isn't available):**
 ```bash
@@ -257,9 +257,9 @@ REMEMBER THE MOST IMPORTANT RULE: ALWAYS use direct English, as a competent engi
 
 Loop parameters:
 - Verify: `just build` && `just selftest`
-- Yardstick docs: docs/ROADMAP.md, docs/release-plan-2.0.md
+- Yardstick docs: docs/ROADMAP.md, docs/release-plan-2.2.md
 - Task list: GitHub issues on `gersonkurz/jucyaudio` — file each [task] finding
-  as an issue, labelled P1 (fix before tagging 2.0), P2 (reachable correctness
+  as an issue, labelled P1 (fix before tagging 2.2), P2 (reachable correctness
   or user-visible defect that is not memory-unsafe) or P3 (cannot happen today,
   bounded to a logged stale-state effect, or needs a design decision first).
   An open unassigned issue is not started; assigned to @gersonkurz means work is

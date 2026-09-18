@@ -1,22 +1,27 @@
-# JucyAudio 2.0 Joint Release Plan
+# JucyAudio 2.2 Release Plan
 
-Date: 2026-03-07 (branch policy updated 2026-06-27)
+Date: 2026-03-07 (branch policy updated 2026-06-27; renumbered to 2.2 on 2026-09-18)
 Branch baseline: `main` (the 2.0 line was consolidated from `dev/2.0` onto `main` on 2026-06-27; `dev/2.0` deleted)
-Scope: align and ship 2.0 with clear cross-agent review.
+Scope: align and ship the first 2.x release with clear cross-agent review.
+
+**This was `docs/release-plan-2.0.md`.** One unreleased line, renumbered twice and never tagged: the
+tree built `2.0.0`, then `2.1.0` from `0671b4d` (2026-08-08), and `2.2.0` from 2026-09-18. Nothing has
+shipped as any of them - the newest tag is `v1.1.0` - so this is still the same plan for the same
+release, and Sections 10 and 11 keep the history under the numbers it was decided under.
 
 ## 1. Objective
 
-Ship 2.0 once all MUST-HAVE features are complete and a minimum quality gate is met.
+Ship 2.2 once all MUST-HAVE features are complete and a minimum quality gate is met.
 
-## 2. Remaining 2.0 Work
+## 2. Remaining Work
 
-2.0 is **feature-complete** and **packaged**. The x64 MSI shipped on 2026-06-27 and the legacy NSIS
+2.2 is **feature-complete** and **packaged**. The x64 MSI shipped on 2026-06-27 and the legacy NSIS
 scripts were deleted on 2026-06-28 (`1ef42a4`); Section 5 records what was built.
 
 What remains is the release gates in Section 3:
 
 - Bug fixes tracked in [GitHub issues](https://github.com/gersonkurz/jucyaudio/issues); the ones that
-  must be fixed before tagging 2.0 carry the `P1` label.
+  must be fixed before tagging carry the `P1` label.
 - A macOS build and self-test of the current tree. The last recorded one is issue #31; every change
   since has been verified on Windows only.
 - Manual GUI QA (Section 3), and the tag decision in Section 4.
@@ -50,21 +55,22 @@ Reference: `docs/ROADMAP.md`
   2026-06-27; `dev/2.0` is deleted).
 - 1.x hotfix flow is optional and only activated if real issues are reported; forward-port from
   `release/1.x` to `main`.
-- 2.0 ship cut (remaining):
+- 2.2 ship cut (remaining):
   1. Stabilization window on `main`.
-  2. Tag `v2.0.0`.
-  3. Create `release/2.x` for 2.0.x maintenance.
+  2. Tag `v2.2.0`.
+  3. Create `release/2.x` for 2.2.x maintenance.
 
-**Open: which version actually gets tagged.** `CMakeLists.txt` and `setup/jucyaudio-x64.msis` have
-built `2.1.0` since `0671b4d` (2026-08-08), whose commit message says the CHANGELOG and this plan were
-left alone deliberately as release narrative. So the tree produces `jucyaudio-2.1.0-x64.msi` while step
-2 above says `v2.0.0`, and `CHANGELOG.md` still heads its open section `[2.0.0] - Unreleased`. Decide
-before the cut, then make the three agree.
+**Settled on 2026-09-18: the release is 2.2.0.** The build version had run ahead of the release
+narrative - the tree built `2.1.0` from `0671b4d` while this plan still said "tag `v2.0.0`" and
+`CHANGELOG.md` headed `[2.0.0] - Unreleased`. The four places that carry a version now agree:
+`CMakeLists.txt` (the source of truth; everything else in the build derives from `${PROJECT_VERSION}`),
+`setup/jucyaudio-x64.msis` `PRODUCT_VERSION`, `AGENTS.md`, and the `CHANGELOG.md` heading, which is
+now `[2.2.0] - Unreleased` because nothing was ever released as 2.0.0 or 2.1.0.
 
 ## 5. Workstreams
 
-1. Dedupe System — **descoped to 2.1** (2026-06-07). 2.0 ships only the in-working-set metadata dedup.
-   The design for the rest is `docs/features/dedupe.md`; it is not 2.0 scope and has no 2.0 gate.
+1. Dedupe System — **descoped** (2026-06-07). 2.2 ships only the in-working-set metadata dedup.
+   The design for the rest is `docs/features/dedupe.md`; it is not in this release and has no gate here.
 
 2. Windows Installer (NSIS → MSI via `msis`) — **done** (2026-06-27).
 
@@ -81,7 +87,7 @@ before the cut, then make the three agree.
   launch condition would only risk falsely blocking the install. This reverses the original plan,
   per the 2026-06-27 decision below.
 - x64 only, and therefore no per-arch bundle: one `jucyaudio-<version>-x64.msi`. The x86 and arm64
-  validation the original plan called for is not 2.0 scope. `CMakePresets.json` has x64 and x86
+  validation the original plan called for is not in this release. `CMakePresets.json` has x64 and x86
   presets; there is no Windows-arm64 preset.
 - The legacy NSIS scripts were deleted on 2026-06-28 (`1ef42a4`). They had predated projectM and
   shipped only `JucyAudio.exe` + themes; the MSI payload above is what replaced them.
@@ -104,9 +110,10 @@ Exit criteria:
 
 ## 7. Feature Acceptance Criteria (minimum)
 
-None outstanding for 2.0. The only entry was the Dedupe System, descoped to 2.1 on 2026-06-07. Its
-criteria are kept below rather than deleted - `docs/features/dedupe.md` is a design document and does
-not restate them - and they are a gate for 2.1, not for this release.
+None outstanding for this release. The only entry was the Dedupe System, descoped on 2026-06-07 to the
+milestone the roadmap still labels 2.1. Its criteria are kept below rather than deleted -
+`docs/features/dedupe.md` is a design document and does not restate them - and they are a gate for
+that milestone, not for this release.
 
 1. Dedupe System — **deferred to 2.1**
 - Duplicate candidates are reproducible across runs.
@@ -136,7 +143,7 @@ Use this sequence for consistent revisions:
 4. Final Codex merge pass to resolve conflicts and normalize wording.
 
 Prompt template for each assistant:
-- "Revise `docs/release-plan-2.0.md` for 2.0 ship readiness. Keep MUST-HAVE scope fixed. Tighten acceptance criteria, risk controls, and release gates. Avoid adding net-new features."
+- "Revise `docs/release-plan-2.2.md` for ship readiness. Keep MUST-HAVE scope fixed. Tighten acceptance criteria, risk controls, and release gates. Avoid adding net-new features."
 
 ## 10. Cross-Agent Review Ledger
 
@@ -166,6 +173,11 @@ Use this section for iterative revisions from each assistant. Keep entries short
   named the MSI as remaining work, and the first draft of this pass deleted the Dedupe acceptance
   criteria while claiming they lived in `docs/features/dedupe.md`, which they do not. They are kept
   in Section 7, marked deferred.
+- 2026-09-18: Renumbered to 2.2. The release is `v2.2.0`, per the decision in Section 11; this file
+  was `docs/release-plan-2.0.md` and the five references to that name were updated
+  (`CLAUDE.md` Loop parameters, `docs/ROADMAP.md` x3, and the prompt template in Section 9). Sections
+  10 and 11 keep their original numbers, because they record what was decided when, not what the
+  release is called now.
 
 ### Gemini Review
 
@@ -185,3 +197,11 @@ Use this section for iterative revisions from each assistant. Keep entries short
   prerequisite and no bundle — a single `jucyaudio-<version>-x64.msi`.
 - 2026-06-27: Merged `dev/2.0` into `main` (fast-forward via reset + force-push) and deleted `dev/2.0`;
   `main` is now the active branch. `v2.0.0` tag and `release/2.x` deferred until the release gates close.
+- 2026-09-18: The first 2.x release is **2.2.0**, not 2.0.0. The build version had already moved twice
+  without the release narrative following (`0671b4d`, 2026-08-08, deliberately left this plan and the
+  CHANGELOG alone); the narrative now follows the build. Nothing was ever tagged as 2.0.0 or 2.1.0, so
+  the accumulated unreleased work ships as 2.2.0 and `CHANGELOG.md` heads that section accordingly.
+  Note for the feature table in `docs/ROADMAP.md`: its Target column still uses 2.0/2.1/2.2 as planning
+  milestones from the original plan, which the shipping version has now overtaken - "Target 2.2" there
+  means the second milestone after 2.0, not this release. Renumbering those is a product decision and
+  was not taken here.

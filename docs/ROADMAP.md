@@ -5,15 +5,21 @@
 - Active development happens on `main`. The 2.0 line (formerly `dev/2.0`) was consolidated onto
   `main` on 2026-06-27 and `dev/2.0` was deleted.
 - `release/1.x` is retained for 1.x hotfixes (done only if real user-reported issues require them).
-- 2.0 has not been tagged yet — see `docs/release-plan-2.0.md` for the remaining release gates.
+- No 2.x release has been tagged yet. The first one is **2.2.0** (decided 2026-09-18) — see
+  `docs/release-plan-2.2.md` for the remaining release gates.
 
 ## Release Criteria
 
-**Version 2.0 is feature-complete.** All remaining MUST HAVE *features* are DONE. The full
-Dedupe System was descoped to 2.1 (2026-06-07) — only the existing working-set metadata dedup
-ships in 2.0. The **MSI installer** (via the `msis` tool) shipped on 2026-06-27. What remains is
-the release gates — a bug tail, a macOS build and self-test, and manual GUI QA; see the
-[GitHub issues](https://github.com/gersonkurz/jucyaudio/issues) and `docs/release-plan-2.0.md`.
+**The first 2.x release is feature-complete.** All remaining MUST HAVE *features* are DONE. The full
+Dedupe System was descoped (2026-06-07) — only the existing working-set metadata dedup ships. The
+**MSI installer** (via the `msis` tool) shipped on 2026-06-27. What remains is the release gates — a
+bug tail, a macOS build and self-test, and manual GUI QA; see the
+[GitHub issues](https://github.com/gersonkurz/jucyaudio/issues) and `docs/release-plan-2.2.md`.
+
+> **The Target column below is planning milestones, not the shipping version.** It was written when
+> the first release was going to be 2.0, and the build version has since moved to 2.2.0 without those
+> milestones being renumbered — so "Target 2.1" means the milestone after 2.0, not a release that has
+> happened. Renumbering them is a product decision and has not been taken.
 
 | ID   | Feature                | Priority      | Target | Status              |
 |------|------------------------|---------------|--------|---------------------|
@@ -27,7 +33,7 @@ the release gates — a bug tail, a macOS build and self-test, and manual GUI QA
 | 3.3  | Library Organizer      | NICE TO HAVE  | 2.x    |                     |
 | 4.1  | Linux Port             | NICE TO HAVE  | 2.3    |                     |
 
-> **2.2 Dedupe note:** 2.0 ships only the in-working-set metadata dedup ("Remove Duplicates",
+> **Dedupe note (feature 2.2):** 2.2.0 ships only the in-working-set metadata dedup ("Remove Duplicates",
 > keyed on artist/album/title/bpm/duration). SHA-256 file hashing, Chromaprint fingerprinting,
 > and the library-wide review/marking system (`docs/features/dedupe.md`) move to 2.1.
 
@@ -57,11 +63,11 @@ When a bug is fixed in `release/1.x`:
 3. **Resolve conflicts** if the 2.0 code has diverged — and first check whether the fix is already
    present in a different form (as the undo-deadlock fix was). Document adaptations in the message.
 
-### Remaining steps to cut 2.0
+### Remaining steps to cut 2.2
 
-1. Close out the release gates in `docs/release-plan-2.0.md` (stabilization, QA).
-2. Tag `v2.0.0` on `main`.
-3. Create `release/2.x` for future 2.0.x maintenance.
+1. Close out the release gates in `docs/release-plan-2.2.md` (stabilization, QA).
+2. Tag `v2.2.0` on `main`.
+3. Create `release/2.x` for future 2.2.x maintenance.
 
 ---
 
@@ -88,9 +94,10 @@ When a bug is fixed in `release/1.x`:
 2.2. **Dedupe System** (`docs/features/dedupe.md`) — DESCOPED to 2.1
     - **Why**: Solves a major pain point for users with large libraries.
     - **Tech**: SHA-256, Chromaprint.
-    - **2.0 status**: Only the working-set metadata dedup ships in 2.0. Full system moved to 2.1
+    - **Release status**: Only the working-set metadata dedup ships in 2.2.0. Full system deferred
       (2026-06-07) — it was the riskiest, least-started MUST-HAVE and was blocking an otherwise
-      feature-complete release.
+      feature-complete release. The "2.1" it was moved to is a planning milestone, not the 2.1.0 the
+      tree briefly built; see the note under Release Criteria.
 2.3. **Smart Automix** (`docs/features/automix-improvement.md`) — DONE
     - **Why**: Upgrades the "Auto-DJ" from a toy to a useful tool.
     - **Tech**: BTrack (Beat Detection), SoundTouch (Time Stretch).
