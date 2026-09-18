@@ -10,12 +10,16 @@ Ship 2.0 once all MUST-HAVE features are complete and a minimum quality gate is 
 
 ## 2. Remaining 2.0 Work
 
-2.0 is **feature-complete**. What remains is packaging plus a bug tail:
+2.0 is **feature-complete** and **packaged**. The x64 MSI shipped on 2026-06-27 and the legacy NSIS
+scripts were deleted on 2026-06-28 (`1ef42a4`); Section 5 records what was built.
 
-- Windows MSI installer via the `msis` tool (`C:\NGBT\MSIS\msis-3.x`, WiX 6 backend) — replaces the
-  legacy NSIS scripts under `setup/*.nsi`. See Section 5.
+What remains is the release gates in Section 3:
+
 - Bug fixes tracked in [GitHub issues](https://github.com/gersonkurz/jucyaudio/issues); the ones that
   must be fixed before tagging 2.0 carry the `P1` label.
+- A macOS build and self-test of the current tree. The last recorded one is issue #31; every change
+  since has been verified on Windows only.
+- Manual GUI QA (Section 3), and the tag decision in Section 4.
 
 **Completed MUST-HAVE Features:**
 
@@ -51,44 +55,42 @@ Reference: `docs/ROADMAP.md`
   2. Tag `v2.0.0`.
   3. Create `release/2.x` for 2.0.x maintenance.
 
+**Open: which version actually gets tagged.** `CMakeLists.txt` and `setup/jucyaudio-x64.msis` have
+built `2.1.0` since `0671b4d` (2026-08-08), whose commit message says the CHANGELOG and this plan were
+left alone deliberately as release narrative. So the tree produces `jucyaudio-2.1.0-x64.msi` while step
+2 above says `v2.0.0`, and `CHANGELOG.md` still heads its open section `[2.0.0] - Unreleased`. Decide
+before the cut, then make the three agree.
+
 ## 5. Workstreams
 
-1. Dedupe System
-- Finalize matching strategy (hash + acoustic constraints where needed).
-- Add safety UX for conflict review before destructive actions.
+1. Dedupe System — **descoped to 2.1** (2026-06-07). 2.0 ships only the in-working-set metadata dedup.
+   The design for the rest is `docs/features/dedupe.md`; it is not 2.0 scope and has no 2.0 gate.
 
-2. Windows Installer (NSIS → MSI via `msis`)
-- Author `.msis` scripts and build MSIs with the `msis` tool (WiX 6 backend) at `C:\NGBT\MSIS\msis-3.x`.
-- Payload (from `build-<arch>-release/jucyaudio_artefacts/Release/`): `JucyAudio.exe`, `glew.dll`,
-  `projectM-4.dll`, `presets/` (~9,800 files, ~115 MB), `themes/`, and `licenses/`. Exclude the `.pdb`.
-- Replicate NSIS behaviour: desktop + Start Menu shortcuts, "open with jucyaudio" shell extension,
-  Add/Remove Programs entry, license page.
-- Handle the MSVC runtime via a `vcredist 2022` bundle prerequisite (do not hand-ship runtime DLLs).
-- Build a universal bundle `.exe` wrapping the per-arch MSIs; validate x64, x86, and arm64.
-- NOTE: the legacy NSIS script (`setup/setup-x64.nsi`) is stale — it predates projectM and ships only
-  `JucyAudio.exe` + themes, omitting `glew.dll`, `projectM-4.dll`, and `presets/`. The MSI must not
-  inherit that gap.
+2. Windows Installer (NSIS → MSI via `msis`) — **done** (2026-06-27).
 
-## 6. Execution Strategy (remaining MUST-HAVE scope)
+- Built from `setup/jucyaudio-x64.msis` with the `msis` tool (WiX 6/7 backend) at
+  `C:\NGBT\MSIS\msis-3.x`, by `just package-x64`: configure, build, `cmake --install`, then
+  `msis /BUILD /STANDALONE`.
+- Payload: everything `cmake --install` stages into `install-x64-release/bin/` — `JucyAudio.exe`,
+  `projectM-4.dll`, `glew.dll`, the app-local MSVC runtime, `presets/` (~9,800 files, ~115 MB),
+  `themes/` and `licenses/`. The install step stages a clean payload rather than the build tree, so
+  the `.pdb` never enters it.
+- Replicates the NSIS behaviour that mattered: desktop and Start Menu shortcuts, the "open with
+  jucyaudio" shell entry (`setup/shell-integration.reg`), and an Add/Remove Programs entry.
+- No `vcredist` prerequisite: the runtime ships app-local, so the payload is self-contained and a
+  launch condition would only risk falsely blocking the install. This reverses the original plan,
+  per the 2026-06-27 decision below.
+- x64 only, and therefore no per-arch bundle: one `jucyaudio-<version>-x64.msi`. The x86 and arm64
+  validation the original plan called for is not 2.0 scope. `CMakePresets.json` has x64 and x86
+  presets; there is no Windows-arm64 preset.
+- The legacy NSIS scripts were deleted on 2026-06-28 (`1ef42a4`). They had predated projectM and
+  shipped only `JucyAudio.exe` + themes; the MSI payload above is what replaced them.
 
-## Phase A: Design Lock (1 week)
+## 6. Execution Strategy (remaining scope)
 
-- Finalize acceptance criteria for each feature in writing.
-- Freeze schema impacts and migration approach before implementation.
-- Identify hard blockers early (dependency decisions, performance constraints, data safety constraints).
-
-Exit criteria:
-- Each feature has: scope boundary, non-goals, acceptance tests, rollback/fallback behavior.
-
-## Phase B: Implementation
-
-1. Dedupe System
-- Implement read-only detection/reporting mode first.
-- Add action modes second (mark/merge/remove) with explicit confirmation paths.
-
-Exit criteria:
-- All MUST-HAVE code paths implemented behind stable UI/UX flows.
-- All destructive operations protected by preview/confirmation.
+Phases A and B are complete. They covered the MUST-HAVE feature work, whose only open item - the full
+Dedupe System - was descoped to 2.1 on 2026-06-07, taking its implementation plan with it. Its
+acceptance criteria are kept in Section 7, against 2.1. Only Phase C is left.
 
 ## Phase C: Stabilization (1-2 weeks)
 
@@ -102,21 +104,27 @@ Exit criteria:
 
 ## 7. Feature Acceptance Criteria (minimum)
 
-1. Dedupe System
+None outstanding for 2.0. The only entry was the Dedupe System, descoped to 2.1 on 2026-06-07. Its
+criteria are kept below rather than deleted - `docs/features/dedupe.md` is a design document and does
+not restate them - and they are a gate for 2.1, not for this release.
+
+1. Dedupe System — **deferred to 2.1**
 - Duplicate candidates are reproducible across runs.
 - False-positive rate is acceptable on test corpus.
 - No file-destructive action without explicit user confirmation.
 
 ## 8. Risks And Mitigations
 
-- Risk: User trust risk from dedupe destructive paths.
-- Mitigation: default read-only previews, explicit confirmations, detailed logs.
-
 - Risk: Documentation drift from UI.
 - Mitigation: manual doc review pass during stabilization, before tag.
 
 - Risk: Large-library regressions.
 - Mitigation: run smoke checks on representative large DB before release cut.
+
+- Risk: macOS drift. Fixes are being written and verified on Windows; the macOS build and self-test
+  are run separately and less often, so a regression there is found late.
+- Mitigation: build and self-test macOS before the cut, and treat it as a gate in Section 3 rather
+  than as a check done when convenient.
 
 ## 9. Cross-Agent Revision Protocol
 
@@ -148,6 +156,16 @@ Use this section for iterative revisions from each assistant. Keep entries short
 - 2026-06-27: Consolidated the 2.0 line onto `main` and deleted `dev/2.0`. Forward-ported the 1.x
   accidental-reorder fix (the undo-deadlock fix was already present in 2.0 in another form). Shipped the
   x64 MSI build, and migrated theming to base16 (20 schemes + an orange brand default).
+- 2026-09-18: Consistency pass, no new decisions. Sections 2, 5, 6 and 7 still described the Dedupe
+  System as remaining 2.0 scope and the installer as unbuilt, with a `vcredist` prerequisite, a
+  per-arch bundle and x86/arm64 validation - all three reversed by the 2026-06-27 decisions recorded
+  in Section 11, which the body was never updated to match. Section 5 also still warned about NSIS
+  scripts deleted on 2026-06-28 (`1ef42a4`). Added the macOS drift risk to Section 8, and recorded in
+  Section 4 that the tree has built `2.1.0` since `0671b4d` while this plan and `CHANGELOG.md` still
+  say 2.0 - a decision for the human, not taken here. Corrected in review: `docs/ROADMAP.md` still
+  named the MSI as remaining work, and the first draft of this pass deleted the Dedupe acceptance
+  criteria while claiming they lived in `docs/features/dedupe.md`, which they do not. They are kept
+  in Section 7, marked deferred.
 
 ### Gemini Review
 

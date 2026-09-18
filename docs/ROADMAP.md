@@ -11,9 +11,9 @@
 
 **Version 2.0 is feature-complete.** All remaining MUST HAVE *features* are DONE. The full
 Dedupe System was descoped to 2.1 (2026-06-07) — only the existing working-set metadata dedup
-ships in 2.0. The remaining 2.0 work is the **MSI installer** (via the `msis` tool) plus a tail
-of bug fixes; see the [GitHub issues](https://github.com/gersonkurz/jucyaudio/issues) and
-`docs/release-plan-2.0.md`.
+ships in 2.0. The **MSI installer** (via the `msis` tool) shipped on 2026-06-27. What remains is
+the release gates — a bug tail, a macOS build and self-test, and manual GUI QA; see the
+[GitHub issues](https://github.com/gersonkurz/jucyaudio/issues) and `docs/release-plan-2.0.md`.
 
 | ID   | Feature                | Priority      | Target | Status              |
 |------|------------------------|---------------|--------|---------------------|
