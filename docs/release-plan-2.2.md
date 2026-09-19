@@ -86,9 +86,11 @@ now `[2.2.0] - Unreleased` because nothing was ever released as 2.0.0 or 2.1.0.
 - No `vcredist` prerequisite: the runtime ships app-local, so the payload is self-contained and a
   launch condition would only risk falsely blocking the install. This reverses the original plan,
   per the 2026-06-27 decision below.
-- x64 only, and therefore no per-arch bundle: one `jucyaudio-<version>-x64.msi`. The x86 and arm64
-  validation the original plan called for is not in this release. `CMakePresets.json` has x64 and x86
-  presets; there is no Windows-arm64 preset.
+- One MSI per architecture and no per-arch bundle: `jucyaudio-<version>-x64.msi`, and since
+  2026-09-19 `jucyaudio-<version>-arm64.msi` for native Windows on ARM, built from
+  `setup/jucyaudio-arm64.msis` with the same `UPGRADE_CODE`. `CMakePresets.json` has x64, x86 and
+  arm64 presets. The x86 validation the original plan called for is not in this release; arm64 is
+  validated by the headless self test on an ARM64 host, not yet by manual GUI testing.
 - The legacy NSIS scripts were deleted on 2026-06-28 (`1ef42a4`). They had predated projectM and
   shipped only `JucyAudio.exe` + themes; the MSI payload above is what replaced them.
 

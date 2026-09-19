@@ -216,13 +216,21 @@ msis /SETUP-WIX
 Build the installer:
 
 ```powershell
-just package-x64    # configure + build + cmake --install + msis /BUILD /STANDALONE
+just package-x64      # configure + build + cmake --install + msis /BUILD /STANDALONE
+just package-arm64    # the same for native Windows on ARM
+just package          # whichever of the two matches the Developer shell's target architecture
 ```
 
-This produces `releases/jucyaudio-<version>-x64.msi`. Under the hood:
+This produces `releases/jucyaudio-<version>-x64.msi` or `releases/jucyaudio-<version>-arm64.msi`. Under the hood:
 
-1. `cmake --install` stages a clean, **self-contained** payload into `install-x64-release/bin/` — the app, the projectM/GLEW DLLs, the ~9,800 visualizer presets, themes, licenses, **and the app-local MSVC runtime DLLs**. (Dependency install rules are suppressed via `EXCLUDE_FROM_ALL`, so no headers/static libs/debug DLLs leak in.)
-2. `msis /BUILD /STANDALONE setup/jucyaudio-x64.msis` turns that directory into the MSI. Because the runtime ships app-local, no VC++ redistributable prerequisite is required.
+1. `cmake --install` stages a clean, **self-contained** payload into `install-<arch>-release/bin/` — the app, the projectM/GLEW DLLs, the ~9,800 visualizer presets, themes, licenses, **and that architecture's app-local MSVC runtime DLLs**. (Dependency install rules are suppressed via `EXCLUDE_FROM_ALL`, so no headers/static libs/debug DLLs leak in.)
+2. `msis /BUILD /STANDALONE setup/jucyaudio-<arch>.msis` turns that directory into the MSI. Because the runtime ships app-local, no VC++ redistributable prerequisite is required.
 
-The installer creates desktop + Start-Menu shortcuts and an "Open with jucyaudio" shell entry, and registers in Add/Remove Programs. 2.2 ships **x64 only**. The legacy NSIS scripts were deleted on 2026-06-28 (`1ef42a4`); `setup/jucyaudio-x64.msis` replaced them.
+The installer creates desktop + Start-Menu shortcuts and an "Open with jucyaudio" shell entry, and registers in Add/Remove Programs. The two `.msis` scripts share one `UPGRADE_CODE`, so an x64 and an arm64 install are the same product to Windows Installer; there is no combined bundle, and `just publish` builds the MSI for the shell it runs in. The legacy NSIS scripts were deleted on 2026-06-28 (`1ef42a4`); `setup/jucyaudio-x64.msis` replaced them.
+
+### Windows on ARM
+
+The arm64 presets and recipes need the "MSVC ARM64 build tools" component of Visual Studio 2026. Open the **ARM64 Native Tools** Developer shell on an ARM64 machine and `just build`, `just selftest` and `just package` target arm64 on their own; `just build-arm64` / `just package-arm64` select it explicitly from any shell. `just build` follows `VSCMD_ARG_TGT_ARCH` rather than `PROCESSOR_ARCHITECTURE`, because the scoop `just.exe` is an x64 binary and reads the latter as `AMD64` under emulation.
+
+Two properties of a native ARM64 process: the VST3 host can only load plugins built for ARM64 (an ARM64X hybrid counts, since it carries ARM64 code); x64 plugins and ARM64EC-only plugins do not load, because a classic ARM64 process cannot map either; and SoundTouch runs its portable scalar code, because its CMake enables NEON only when `CMAKE_SYSTEM_PROCESSOR` matches `aarch64`/`armv8` and CMake reports `ARM64` on Windows. The x64 build still runs on ARM64 Windows under emulation and keeps x64 plugin compatibility.
 

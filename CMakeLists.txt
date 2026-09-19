@@ -53,13 +53,30 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Architecture Detection and Output Directories
 # ============================================================================
 
-# Architecture detection for output directories
+# Architecture detection for output directories and the package name. On Windows the label comes
+# from the generator platform (the -A argument / the preset's architecture), because pointer size
+# cannot tell x64 from ARM64: both are 64-bit, and an ARM64 tree used to write into x64-Release and
+# package as Windows-x64. The names match the CMakePresets (x64, x86, arm64).
 if(APPLE)
     if(CMAKE_OSX_ARCHITECTURES)
         string(REPLACE ";" "_" ARCH_DIR "${CMAKE_OSX_ARCHITECTURES}")
     else()
         set(ARCH_DIR "${CMAKE_SYSTEM_PROCESSOR}")
     endif()
+elseif(WIN32 AND CMAKE_GENERATOR_PLATFORM)
+    string(TOLOWER "${CMAKE_GENERATOR_PLATFORM}" _generator_platform)
+    if(_generator_platform STREQUAL "win32")
+        set(ARCH_DIR "x86")
+    else()
+        set(ARCH_DIR "${_generator_platform}")
+    endif()
+    unset(_generator_platform)
+elseif(WIN32 AND CMAKE_CXX_COMPILER_ARCHITECTURE_ID)
+    # A single-config generator (Ninja) has no generator platform. CMAKE_SYSTEM_PROCESSOR would be
+    # wrong here too: on Windows it names the host, so an x64 build from an ARM64 Developer shell
+    # would be labelled arm64. The compiler's own architecture id names the target: MSVC reports
+    # x64, X86 or ARM64.
+    string(TOLOWER "${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}" ARCH_DIR)
 elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(ARCH_DIR "x64")
 else()

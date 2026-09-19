@@ -46,21 +46,29 @@ just publish-offline    # macOS only - publish using cached deps
 **Windows-specific:**
 ```bash
 just configure x64-release   # Configure using CMake presets (requires VS 2026)
-just build-x64               # Build x64 (alias of `just build`)
+just build-x64               # Build x64 (what `just build` does in an x64 Developer shell)
 just build-x86               # Build x86
-just build-all               # Build x64 + x86
+just build-arm64             # Build native ARM64 (what `just build` does in an ARM64 Native Tools shell)
+just build-all               # Build x64 + x86 + arm64
 just package-x64             # Build + clean install + MSI installer (x64)
-just package                 # Alias for package-x64
+just package-arm64           # Build + clean install + MSI installer (arm64)
+just package                 # package-x64 or package-arm64, following the Developer shell's target architecture
 ```
 
 All Windows build recipes drive the **CMake presets** in `CMakePresets.json` (which pin the
 `Visual Studio 18 2026` generator), so `just build`/`run` and Visual Studio share one configured
 tree under `build-<arch>-<config>` (e.g. `build-x64-release`). This requires **VS 2026**. Presets
-exist for x64 and x86 (debug/release) only — there is no Windows-arm64 preset (2.2 ships x64 only;
-add an arm64 preset if that changes). macOS builds are unaffected — they use the `[macos]` justfile
-recipes (`build-arm64`/`build-x86_64`/`build-universal`), not presets.
+exist for x64, x86 and arm64 (debug/release). `just build` follows the Developer shell's target
+architecture (`VSCMD_ARG_TGT_ARCH`, falling back to `PROCESSOR_ARCHITECTURE`): an ARM64 Native
+Tools shell builds arm64, an x64 shell builds x64. That order matters because the scoop `just.exe`
+is an x64 binary, and under emulation on Windows on ARM it reads `PROCESSOR_ARCHITECTURE` as
+`AMD64`. `build-arm64` needs the ARM64 build tools component of VS 2026. macOS builds are
+unaffected — they use the `[macos]` justfile recipes (`build-arm64`/`build-x86_64`/`build-universal`),
+not presets.
 
-The Windows installer is an **MSI** built with the [`msis`](https://github.com/gersonkurz/msis) tool (WiX 6/7 backend) from `setup/jucyaudio-x64.msis`. `package-x64` configures, builds, runs `cmake --install` (which stages a clean, self-contained payload including the app-local MSVC runtime into `install-x64-release/bin/`), then invokes `msis /BUILD /STANDALONE`. Requires `msis` on PATH (`msis /SETUP-WIX` provisions WiX). 2.2 ships x64 only; the legacy NSIS scripts were deleted on 2026-06-28 (`1ef42a4`).
+The Windows installer is an **MSI** built with the [`msis`](https://github.com/gersonkurz/msis) tool (WiX 6/7 backend), one per architecture: `setup/jucyaudio-x64.msis` and `setup/jucyaudio-arm64.msis`, which share one `UPGRADE_CODE`. `package-x64` / `package-arm64` (and `package`, which follows the shell's target architecture) configure, build, run `cmake --install` (which stages a clean, self-contained payload including that architecture's app-local MSVC runtime into `install-<arch>-release/bin/`), then invoke `msis /BUILD /STANDALONE`. Requires `msis` on PATH (`msis /SETUP-WIX` provisions WiX). There is no combined bundle; `publish` produces the MSI for the shell it runs in. The legacy NSIS scripts were deleted on 2026-06-28 (`1ef42a4`).
+
+Windows on ARM specifics: the project sources have no architecture-conditional code, and every dependency compiles from source for ARM64. Two consequences of a native ARM64 process to keep in mind: only VST3 plugins built for ARM64 can be hosted (an ARM64X hybrid counts, since it carries ARM64 code); x64 plugins and ARM64EC-only plugins do not load, because a classic ARM64 process cannot map either; and SoundTouch takes its scalar path, because its CMake enables NEON only when `CMAKE_SYSTEM_PROCESSOR` matches `aarch64`/`armv8`, and CMake reports `ARM64` on Windows.
 
 **Direct CMake (if just isn't available):**
 ```bash

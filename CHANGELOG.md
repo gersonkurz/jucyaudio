@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Windows on ARM
+- Native ARM64 build and MSI installer (`just build-arm64`, `just package-arm64`); `just build` and
+  `just package` follow the Developer shell's target architecture
+- The ARM64 build hosts VST3 plugins built for ARM64 only (x64 and ARM64EC-only plugins do not load);
+  the x64 build keeps x64 plugin compatibility under emulation
+
 #### VST3 Plugin Hosting
 - Master bus VST3 plugin chain with real-time audio processing
 - Plugin scanning with dead-man's pedal crash recovery

@@ -12,21 +12,35 @@ set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 # Detect OS: "windows", "macos", or "linux"
 os := os()
 
-# Detect native architecture
+# Detect the target architecture.
+#
+# Windows: the VS Developer shell's VSCMD_ARG_TGT_ARCH comes first. just.exe may be an x64 binary
+# running under emulation on ARM64 Windows (the scoop build is), and WoW64 then rewrites
+# PROCESSOR_ARCHITECTURE to "AMD64", so that variable alone would silently select the x64 preset on
+# an ARM64 machine. VSCMD_ARG_TGT_ARCH is immune to that rewriting, and it also lets an x64 Developer
+# shell on an ARM64 host build x64 on purpose. Outside a Developer shell, PROCESSOR_ARCHITECTURE is
+# the fallback, uppercase as Windows spells it.
 native_arch := if os == "windows" {
-    env_var_or_default("PROCESSOR_ARCHITECTURE", "AMD64")
+    env_var_or_default("VSCMD_ARG_TGT_ARCH", env_var_or_default("PROCESSOR_ARCHITECTURE", "AMD64"))
 } else {
     `uname -m`
 }
 
-# Normalize architecture names
-arch := if native_arch == "AMD64" { "x64" } else if native_arch == "x86_64" { "x64" } else if native_arch == "arm64" { "arm64" } else if native_arch == "aarch64" { "arm64" } else { native_arch }
+# Normalize architecture names to the CMakePresets spelling: x64, x86, arm64
+arch := if native_arch == "AMD64" { "x64" } else if native_arch == "x86_64" { "x64" } else if native_arch == "x64" { "x64" } else if native_arch == "x86" { "x86" } else if native_arch == "ARM64" { "arm64" } else if native_arch == "arm64" { "arm64" } else if native_arch == "aarch64" { "arm64" } else { native_arch }
 
 # Default build type
 default_build_type := "Release"
 
-# Get version from CMakeLists.txt (uses sh from Git)
-version := `grep "project(jucyaudio VERSION" CMakeLists.txt | grep -o "[0-9]*\.[0-9]*\.[0-9]*"`
+# Get version from CMakeLists.txt. On Windows this backtick runs in powershell.exe, so it is a
+# PowerShell expression: piping native grep output through a PowerShell pipeline re-wraps the text
+# at the host's console width, and with no console attached (an IDE task, a CI step) the version came
+# out as fourteen two-character lines, which broke every recipe that puts {{version}} on a command line.
+version := if os == "windows" {
+    `(Select-String -Path CMakeLists.txt -Pattern 'project\(jucyaudio VERSION ([0-9]+\.[0-9]+\.[0-9]+)').Matches[0].Groups[1].Value`
+} else {
+    `grep "project(jucyaudio VERSION" CMakeLists.txt | grep -o "[0-9]*\.[0-9]*\.[0-9]*"`
+}
 
 # CPU count for parallel builds
 cpu_count := if os == "windows" {
@@ -89,8 +103,9 @@ clean:
 # ============================================================================
 
 # Build via the CMakePresets (build-<arch>-<config>), so just, Visual Studio, and
-# `just package-x64` all share one configured tree. Presets pin VS 2026 and exist for
-# x64 and x86 (debug/release); there is no Windows-arm64 preset (2.0 ships x64 only).
+# `just package-<arch>` all share one configured tree. Presets pin VS 2026 and exist for
+# x64, x86 and arm64 (debug/release). `just build` picks the Developer shell's target
+# architecture (see native_arch above); build-x64/build-x86/build-arm64 pick one explicitly.
 [windows]
 _build-windows config arch_target:
     cmake --preset {{arch_target}}-{{lowercase(config)}}
@@ -111,11 +126,18 @@ build-x64 config=default_build_type:
 build-x86 config=default_build_type:
     @just _build-windows {{config}} x86
 
+# Native Windows on ARM. Any VS 2026 host with the ARM64 build tools can produce it; the
+# self test and the MSI have so far only been exercised on an ARM64 host.
+[windows]
+build-arm64 config=default_build_type:
+    @just _build-windows {{config}} arm64
+
 [windows]
 build-all config="Release":
     Write-Host "Building all Windows architectures..."
     just build-x64 {{config}}
     just build-x86 {{config}}
+    just build-arm64 {{config}}
     Write-Host "All builds complete!"
 
 # Run the application (Windows)
@@ -236,26 +258,38 @@ backup-mixes config=default_build_type:
 # Package Commands - Windows
 # ============================================================================
 
-# Build the x64 MSI installer: configure + build + install (the cmake install
-# step stages a clean, self-contained payload incl. the app-local MSVC runtime),
-# then MSIS turns setup\jucyaudio-x64.msis into a standalone .msi. Requires
-# msis.exe on PATH (https://github.com/gersonkurz/msis) and WiX (msis /SETUP-WIX).
-# 2.0 ships x64 only.
+# Build one architecture's MSI installer: configure + build + install (the cmake
+# install step stages a clean, self-contained payload incl. the app-local MSVC
+# runtime for that architecture into install-<arch>-release\bin), then MSIS turns
+# setup\jucyaudio-<arch>.msis into a standalone .msi. Requires msis.exe on PATH
+# (https://github.com/gersonkurz/msis) and WiX (msis /SETUP-WIX). One MSI per
+# architecture, x64 and arm64; there is no combined bundle. Both .msis scripts share
+# one UPGRADE_CODE, so an installed x64 build and an installed arm64 build are the
+# same product to Windows Installer.
+[windows]
+_package-windows arch_target:
+    cmake --preset {{arch_target}}-release
+    cmake --build build-{{arch_target}}-release --config Release
+    cmake --install build-{{arch_target}}-release --config Release
+    if (-not (Test-Path releases)) { New-Item -ItemType Directory -Path releases | Out-Null }
+    Write-Host "Creating MSI installer ({{arch_target}})..."
+    Push-Location setup; msis /BUILD /STANDALONE /SET:PRODUCT_VERSION={{version}} jucyaudio-{{arch_target}}.msis; Pop-Location
+    Move-Item -Force "setup/jucyaudio-{{version}}-{{arch_target}}.msi" "releases/"
+    Write-Host "Installer created: releases/jucyaudio-{{version}}-{{arch_target}}.msi"
+
 [windows]
 package-x64:
-    cmake --preset x64-release
-    cmake --build build-x64-release --config Release
-    cmake --install build-x64-release --config Release
-    if (-not (Test-Path releases)) { New-Item -ItemType Directory -Path releases | Out-Null }
-    Write-Host "Creating MSI installer (x64)..."
-    Push-Location setup; msis /BUILD /STANDALONE /SET:PRODUCT_VERSION={{version}} jucyaudio-x64.msis; Pop-Location
-    Move-Item -Force "setup/jucyaudio-{{version}}-x64.msi" "releases/"
-    Write-Host "Installer created: releases/jucyaudio-{{version}}-x64.msi"
+    @just _package-windows x64
 
-# Alias: default Windows package is the x64 MSI.
+[windows]
+package-arm64:
+    @just _package-windows arm64
+
+# Default Windows package: the MSI for the Developer shell's target architecture
+# (x64 in an x64 shell, arm64 in an ARM64 Native Tools shell).
 [windows]
 package:
-    @just package-x64
+    @just _package-windows {{arch}}
 
 # ============================================================================
 # Package Commands - macOS
@@ -310,17 +344,19 @@ package-x64-offline:
 # Publish Commands
 # ============================================================================
 
-# Publish the Windows release (x64 MSI) with a checksum.
+# Publish the Windows release with a checksum: the MSI for this Developer shell's
+# target architecture. Run it in an x64 shell for the x64 MSI and in an ARM64 Native
+# Tools shell for the arm64 MSI; each run starts releases\ over.
 [windows]
 publish:
     Write-Host "========================================"
-    Write-Host "JucyAudio Release Build - Windows"
+    Write-Host "JucyAudio Release Build - Windows ({{arch}})"
     Write-Host "Version: {{version}}"
     Write-Host "========================================"
     Write-Host ""
     if (Test-Path releases) { Remove-Item -Recurse -Force releases }
     New-Item -ItemType Directory -Path releases | Out-Null
-    just package-x64
+    just package
     Write-Host ""
     Write-Host "Generating checksums..."
     Push-Location releases; \
