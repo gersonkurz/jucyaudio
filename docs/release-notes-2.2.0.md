@@ -4,7 +4,7 @@ An audio player, mix editor and library manager for people with large music coll
 preference for building their own sets.
 
 This is the first release since **1.0.0** (December 2025). 1.1.0 was tagged but never published, so
-everything in it is here too — 237 commits across roughly nine months. Two things happened in that
+everything in it is here too — over 230 commits across roughly nine months. Two things happened in that
 time: the feature set grew a lot, and the parts that touch your files and your database were taken
 apart and made much harder to break.
 
@@ -46,11 +46,19 @@ runtime app-local — no VC++ redistributable to chase.
 | Platform | File |
 |---|---|
 | Windows x64 | `jucyaudio-2.2.0-x64.msi` |
+| Windows arm64 | `jucyaudio-2.2.0-arm64.msi` |
 | macOS Apple Silicon | `JucyAudio-2.2.0-macOS-arm64.dmg` |
 | macOS Intel | `JucyAudio-2.2.0-macOS-x86_64.dmg` |
 
-The Windows installer is self-contained: desktop and Start Menu shortcuts, an "Open with jucyaudio"
+The Windows installers are self-contained: desktop and Start Menu shortcuts, an "Open with jucyaudio"
 shell entry, and an Add/Remove Programs entry. No redistributable is required.
+
+**On Windows on ARM, choose deliberately.** The arm64 build runs natively, and its VST3 host can only
+load plugins built for ARM64 — an ARM64X hybrid counts, but x64 and ARM64EC-only plugins will not load
+at all. The x64 build runs on the same machine under emulation and keeps your existing x64 plugins
+working. So: **arm64 if you use no plugins or have ARM64 ones, x64 if your plugin collection is x64.**
+Both are the same product to Windows Installer — they share an upgrade code — so install one or the
+other, not both.
 
 ---
 
@@ -204,7 +212,8 @@ players; Windows failing to read zlib-compressed ID3v2 metadata; and macOS linki
 
 ## Requirements
 
-- **Windows:** x64. The installer is self-contained.
+- **Windows:** x64, or arm64 for Windows on ARM. See the note under Downloads about VST3 plugin
+  architecture before picking.
 - **macOS:** Apple Silicon or Intel.
 
 ## Building
