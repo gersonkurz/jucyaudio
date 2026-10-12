@@ -122,15 +122,19 @@ namespace jucyaudio
                 }
 
                 // Populate the temp table with all folder IDs
-                if (!const_cast<SqliteStatementConstruction*>(this)->populateQueryScopeFoldersTable(folderIdsToUse))
+                if (populateQueryScopeFoldersTable(folderIdsToUse))
+                {
+                    // Use the temp table in the WHERE clause
+                    addCondition("folder_id IN (SELECT folder_id FROM temp.QueryScopeFolders)");
+                }
+                else
                 {
                     spdlog::error("addWhereClause: Failed to populate QueryScopeFolders temp table");
-                    return;
                 }
-
-                // Use the temp table in the WHERE clause
-                addCondition("folder_id IN (SELECT folder_id FROM temp.QueryScopeFolders)");
             }
+
+            // Here rather than at each caller, so no statement built on this clause can leave them out (#75).
+            addFilterCriteria(writer, args, whereAdded);
         }
 
         void SqliteStatementConstruction::addOrderByClause(StringWriter &writer, const TrackQueryArgs &args)
@@ -158,7 +162,7 @@ namespace jucyaudio
             }
         }
 
-        void SqliteStatementConstruction::addFilterCriteria(StringWriter &writer, const TrackQueryArgs &args)
+        void SqliteStatementConstruction::addFilterCriteria(StringWriter &writer, const TrackQueryArgs &args, bool whereAdded)
         {
             if (args.filterCriteria.empty())
                 return;
@@ -174,7 +178,8 @@ namespace jucyaudio
                 }
 
                 // Build the SQL condition using parameterized placeholders
-                writer.append(" AND ");
+                writer.append(whereAdded ? " AND " : " WHERE ");
+                whereAdded = true;
 
                 if (criterion.op == "..")
                 {
@@ -316,7 +321,7 @@ namespace jucyaudio
                 }
 
                 // Add filter criteria (e.g., year:1991, bpm:>120)
-                addFilterCriteria(writer, args);
+                addFilterCriteria(writer, args, true);
             }
             else
             {
@@ -336,9 +341,6 @@ namespace jucyaudio
                 }
                 writer.append(" FROM Tracks");
                 addWhereClause(writer, args);
-
-                // Add filter criteria (e.g., year:1991, bpm:>120)
-                addFilterCriteria(writer, args);
             }
 
             addOrderByClause(writer, args);
@@ -402,15 +404,12 @@ namespace jucyaudio
                 }
 
                 // Add filter criteria
-                addFilterCriteria(writer, args);
+                addFilterCriteria(writer, args, true);
             }
             else
             {
                 writer.append("SELECT COUNT(*) FROM Tracks");
                 addWhereClause(writer, args);
-
-                // Add filter criteria
-                addFilterCriteria(writer, args);
             }
 
             return finalizeStatement(writer, args);
@@ -463,15 +462,12 @@ namespace jucyaudio
                 }
 
                 // Add filter criteria
-                addFilterCriteria(writer, args);
+                addFilterCriteria(writer, args, true);
             }
             else
             {
                 writer.append("SELECT COUNT(*), COALESCE(SUM(filesize_bytes), 0), COALESCE(SUM(duration), 0) FROM Tracks");
                 addWhereClause(writer, args);
-
-                // Add filter criteria
-                addFilterCriteria(writer, args);
             }
 
             return finalizeStatement(writer, args);
@@ -523,7 +519,7 @@ namespace jucyaudio
                 }
 
                 // Add filter criteria (was previously missing - caused filters to be ignored for FTS queries)
-                addFilterCriteria(writer, args);
+                addFilterCriteria(writer, args, true);
 
                 const auto sqlStatement = writer.asString();
                 if (!m_stmt.bindStatement(sqlStatement))

@@ -283,18 +283,14 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
                     newWorkingSet.id = m_db.getLastInsertRowId(); // Get the new working set ID
                     SqliteStatement stmt{m_db};
                     SqliteStatementConstruction stmtConstruction{stmt};
-                    if (stmtConstruction.createInsertIntoSelectTrackIdsStatement(args, newWorkingSet.id))
-                    {
-                        if (insertTracksInOrder(newWorkingSet.id,
-                                [&stmt]
-                                {
-                                    return stmt.execute();
-                                }))
-                        {
-                            return transaction.commit();
-                        }
-                    }
-                    return transaction.commit();
+                    const auto inserted = stmtConstruction.createInsertIntoSelectTrackIdsStatement(args, newWorkingSet.id) &&
+                        insertTracksInOrder(newWorkingSet.id,
+                            [&stmt]
+                            {
+                                return stmt.execute();
+                            });
+                    // A failure here would otherwise commit an empty set and report it as created (#74).
+                    return inserted ? transaction.commit() : transaction.rollback();
                 }
             }
             return false;

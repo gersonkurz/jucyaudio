@@ -32,6 +32,7 @@ namespace jucyaudio
             void rename(std::string_view newName) override;
             const TrackInfo *getTrackInfoForRow(RowIndex_t rowIndex) const override;
             bool getNumberOfRows(int64_t &outCount) const override;
+            bool getAggregateStats(AggregateStats &outStats) const override;
             void refreshCache(bool flushCache) const override;
 
             /// @brief Whether the last refreshCache actually got the mix out of the database.

@@ -38,6 +38,7 @@
 #include <Database/Sqlite/SqliteTrackDatabase.h>
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/Sqlite/SqliteWorkingSetManager.h>
+#include <Database/Nodes/MixNode.h>
 #include <Database/Nodes/WorkingSetNode.h>
 #include <Database/TrackLibrary.h>
 #include <Database/TrackScanner.h>
@@ -2814,6 +2815,56 @@ namespace jucyaudio
                             std::format("restoring it returns the mix to its uniform length ({} ms, expected {} ms)",
                                 storedLengthOf(durationMix.mixId).count(),
                                 expectedLength(3).count()));
+                    }
+
+                    // (#70) The status line asks the mix's node. It has to answer with the mix's own count
+                    // and length: the track query counted a track held twice once, and summed whole
+                    // files with no overlap.
+                    {
+                        MixInfo repeatMix{};
+                        repeatMix.name = "SelfTest Repeat Mix";
+                        auto repeated = buildTracks(2);
+                        auto again = repeated.front();
+                        again.orderInMix = 2;
+                        repeated.push_back(again);
+                        report.check(mixes.createOrUpdateMix(repeatMix, repeated) && repeatMix.mixId > 0, "#70: a mix holding one track twice could be created");
+
+                        auto *node = new MixNode{nullptr, mixes.getMix(repeatMix.mixId)};
+                        AggregateStats stats{};
+                        const bool answered = node->getAggregateStats(stats);
+                        report.check(answered && stats.totalTracks == 3,
+                            std::format("#70: the mix node counts every entry, the repeated track twice ({}, expected 3)", stats.totalTracks));
+                        report.check(stats.totalDurationMs == expectedLength(3).count(),
+                            std::format("#70: and reports the mix's length, overlaps taken off ({} ms, expected {} ms)",
+                                stats.totalDurationMs,
+                                expectedLength(3).count()));
+
+                        // An append to the mix while its node exists, as Create Auto-Mix does to the selected
+                        // mix: the node is kept and refreshed, not rebuilt. [A B A] + C is [A B A C].
+                        auto appended = repeated;
+                        auto extra = buildTracks(3).back();
+                        extra.orderInMix = 3;
+                        appended.push_back(extra);
+                        report.check(mixes.createOrUpdateMix(repeatMix, appended), "#70: a track could be appended to the mix");
+                        node->refreshCache(true);
+                        AggregateStats afterAppend{};
+                        const bool answeredAppend = node->getAggregateStats(afterAppend);
+                        report.check(answeredAppend && afterAppend.totalTracks == 4,
+                            std::format("#70: the refreshed node reports the appended count ({}, expected 4)", afterAppend.totalTracks));
+                        report.check(afterAppend.totalDurationMs == expectedLength(4).count(),
+                            std::format("#70: and the appended length ({} ms, expected {} ms)", afterAppend.totalDurationMs, expectedLength(4).count()));
+
+                        // Deleting a row in the mix's view goes through the node, and what it reports next has
+                        // to follow. [A B A C] less B is [A A C].
+                        AggregateStats afterRemoval{};
+                        const bool removed = node->removeObjects({orderedIds[1]});
+                        const bool answeredAfter = node->getAggregateStats(afterRemoval);
+                        node->release(REFCOUNT_DEBUG_ARGS);
+                        report.check(removed && answeredAfter && afterRemoval.totalTracks == 3,
+                            std::format("#70: after a row is deleted through the node it reports the new count ({}, expected 3)", afterRemoval.totalTracks));
+                        report.check(afterRemoval.totalDurationMs == expectedLength(3).count(),
+                            std::format("#70: and the new length ({} ms, expected {} ms)", afterRemoval.totalDurationMs, expectedLength(3).count()));
+                        mixes.removeMix(repeatMix.mixId);
                     }
 
                     // (f) A track deleted from the middle of the mix.
@@ -9851,6 +9902,68 @@ namespace jucyaudio
                 report.check(outsideUnchanged && sameMembers({visibleAfter.begin() + 5, visibleAfter.begin() + 45}, selected),
                     "T6a: only the selected visible rows traded places");
                 report.check(hiddenUnchanged, "T6a: no track hidden by the filter changed position");
+            }
+
+            // --- #75: a set created from a view filtered without search text holds only what the filter shows ---
+            {
+                const std::vector<utils::FilterCriterion> after2005{utils::FilterCriterion{"year", ">", "2005", ""}};
+                const auto idsWhere = [&direct](const std::string &condition)
+                {
+                    std::vector<TrackId> ids;
+                    SqliteStatement stmt{direct, std::format("SELECT track_id FROM Tracks WHERE {} ORDER BY track_id;", condition)};
+                    while (stmt.getNextResult())
+                    {
+                        ids.push_back(stmt.getInt64(0));
+                    }
+                    return ids;
+                };
+                const auto membersOf = [&membersOrderedBy](WorkingSetId wsId)
+                {
+                    return membersOrderedBy(wsId, "t.track_id");
+                };
+
+                TrackQueryArgs args{};
+                args.folderIds = {folderId};
+                args.filterCriteria = after2005;
+                WorkingSetInfo created{};
+                report.check(wsManager.createWorkingSetFromQuery(args, "WsOrder #75 folder", created), "#75: a set could be created from a folder view with a filter");
+                const auto expected = idsWhere(std::format("folder_id = {} AND year > 2005", folderId));
+                report.check(!expected.empty() && membersOf(created.id) == expected,
+                    std::format("#75: it holds the {} tracks the filter shows, not the folder's {}", expected.size(), allIds.size()));
+
+                // With offline tracks shown and no folder, set or mix, the filter is the whole WHERE clause.
+                const auto offlineShownBefore = config::theSettings.uiSettings.showOfflineTracks.get();
+                config::theSettings.uiSettings.showOfflineTracks.set(true);
+                TrackQueryArgs libraryArgs{};
+                libraryArgs.filterCriteria = after2005;
+                WorkingSetInfo fromLibrary{};
+                const bool createdFromLibrary = wsManager.createWorkingSetFromQuery(libraryArgs, "WsOrder #75 library", fromLibrary);
+                libraryArgs.usePaging = false;
+                const auto shownInLibrary = trackDb.getTracks(libraryArgs).size();
+                config::theSettings.uiSettings.showOfflineTracks.set(offlineShownBefore);
+                const auto expectedInLibrary = idsWhere("year > 2005");
+                report.check(createdFromLibrary && membersOf(fromLibrary.id) == expectedInLibrary,
+                    std::format("#75: with offline tracks shown, a set from the filtered library holds the {} filtered tracks", expectedInLibrary.size()));
+                report.check(shownInLibrary == expectedInLibrary.size(),
+                    std::format("#75: and the filtered library view itself shows them ({} of {})", shownInLibrary, expectedInLibrary.size()));
+            }
+
+            // --- #74: a set whose tracks could not be inserted is not created ---
+            {
+                // A trigger from the second connection; the library's connection sees the schema change.
+                const bool armed = direct.execute("CREATE TRIGGER wsorder_fail_insert BEFORE INSERT ON WorkingSetTracks "
+                                                  "BEGIN SELECT RAISE(ABORT, 'wsorder self test'); END;");
+                report.check(armed, "#74: an insert into WorkingSetTracks could be made to fail");
+                TrackQueryArgs args{};
+                args.folderIds = {folderId};
+                WorkingSetInfo created{};
+                const bool reported = wsManager.createWorkingSetFromQuery(args, "WsOrder #74", created);
+                direct.execute("DROP TRIGGER IF EXISTS wsorder_fail_insert;");
+
+                SqliteStatement stmt{direct, "SELECT COUNT(*) FROM WorkingSets WHERE name = 'WsOrder #74';"};
+                const auto stored = stmt.getNextResult() ? stmt.getInt64(0) : -1;
+                report.check(!reported, "#74: creation reports failure when its tracks could not be inserted");
+                report.check(stored == 0, std::format("#74: and leaves no working set behind ({} found)", stored));
             }
 
             // --- T7: a v32 library is numbered by the sort each set was displayed by ---

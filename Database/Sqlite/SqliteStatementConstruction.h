@@ -59,7 +59,8 @@ namespace jucyaudio
 
             void addWhereClause(StringWriter &writer, const TrackQueryArgs &trackQueryArgs);
             void addOrderByClause(StringWriter &writer, const TrackQueryArgs &trackQueryArgs);
-            void addFilterCriteria(StringWriter &writer, const TrackQueryArgs &trackQueryArgs);
+            /// @brief Appends the filter criteria; the first one opens the WHERE clause unless @p whereAdded says one is open.
+            void addFilterCriteria(StringWriter &writer, const TrackQueryArgs &trackQueryArgs, bool whereAdded);
             bool finalizeStatement(StringWriter &writer, const TrackQueryArgs &trackQueryArgs, WorkingSetId wsId = 0);
             bool populateQueryScopeFoldersTable(const std::vector<FolderId> &folderIds);
         };

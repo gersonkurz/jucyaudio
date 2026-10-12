@@ -63,12 +63,15 @@ namespace jucyaudio
 
             if (success)
             {
-                // Update cached metadata after removing tracks
-                // Force reload to recalculate track count and total duration
+                // Reload the tracks and the stored count and length, which removeTracksFromMix has just
+                // rewritten; refreshCache(true) does both. Without a cache, only the summary is held.
                 if (m_bCacheInitialized)
                 {
-                    // Reload the mix to get accurate track count and duration
-                    const_cast<MixNode*>(this)->refreshCache(true); // true = flush and reload
+                    refreshCache(true);
+                }
+                else
+                {
+                    const_cast<MixNode *>(this)->refreshMixInfo();
                 }
             }
 
@@ -128,6 +131,13 @@ namespace jucyaudio
                     spdlog::error("[MixNode] Mix {} could not be loaded; its cache holds nothing.", m_mixInfo.mixId);
                 }
 
+                // A flush means the mix changed in the database (tracks appended, removed); its stored
+                // count and length changed with it, and the status line reads them (getAggregateStats).
+                if (flushCache)
+                {
+                    const_cast<MixNode *>(this)->refreshMixInfo();
+                }
+
                 // Marked initialised either way, so callers get one consistent answer rather than a
                 // fresh attempt on every access. isCacheLoaded() is what says whether it worked.
                 m_bCacheInitialized = true;
@@ -148,6 +158,20 @@ namespace jucyaudio
             spdlog::info("[MixNode] Refreshed mix info for mix {}, exportFolder: {}",
                         m_mixInfo.mixId,
                         m_mixInfo.exportFolder.has_value() ? *m_mixInfo.exportFolder : "NULL");
+        }
+
+        bool MixNode::getAggregateStats(AggregateStats &outStats) const
+        {
+            // The mix's own count and length, as refreshMixSummary stored them (#70). The track query
+            // counts a track the mix holds twice once, and sums whole source files, ignoring cue
+            // points and crossfades. The size stays the source files': a mix has no other before export.
+            if (!LibraryNode::getAggregateStats(outStats))
+            {
+                return false;
+            }
+            outStats.totalTracks = m_mixInfo.numberOfTracks;
+            outStats.totalDurationMs = m_mixInfo.totalDuration.count();
+            return true;
         }
 
         void MixNode::updateSummaryMetadata(int trackCount, Duration_t totalDuration)
