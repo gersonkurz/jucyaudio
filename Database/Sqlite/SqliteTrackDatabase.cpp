@@ -1151,7 +1151,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 33;
+            const int latestSchemaVersion = 34;
 
             if (currentVersion == 0)
             {
@@ -3772,6 +3772,44 @@ CREATE TABLE MixUndoHistory (
                 currentVersion = 33;
             }
 
+            if (currentVersion < 34)
+            {
+                spdlog::info("Migrating database from version 33 to 34 - bad_format marks are re-checked...");
+                // Until now BPM analysis marked an MP3 bad_format whenever its pre-check turned the file
+                // down - for size and bitrate policies, and for padding after the ID3v2 tag that the
+                // decoder reads past (#77). The background analyzer never retries a bad_format track, so
+                // those marks kept playable files out of it for good. Which marks were wrong cannot be
+                // told from the table, so all of them go back to unknown: the background analyzer
+                // retries each once, and a file that really cannot be read is marked again.
+                if (SqliteTransaction transaction{m_db})
+                {
+                    if (!m_db.execute("UPDATE Tracks SET status = 'unknown' WHERE status = 'bad_format';"))
+                    {
+                        const auto error{m_db.getLastError()};
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "v34 resetting bad_format marks failed: " + error);
+                    }
+                    const auto reset = m_db.getChangesCount();
+
+                    if (auto result = setDBSchemaVersion(34); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 34.");
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated to version 34 - {} bad_format mark(s) reset for re-checking.", reset);
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 34;
+            }
+
             return DbResult::success();
         }
 
@@ -4101,8 +4139,10 @@ CREATE TABLE MixUndoHistory (
 
             if (SqliteTransaction transaction{m_db})
             {
-                // Clear intro_end/outro_start: legacy data from broken analysis should not persist
-                SqliteStatement stmt{m_db, "UPDATE Tracks SET bpm=?, intro_end=NULL, outro_start=NULL WHERE track_id = ?;"};
+                // Clear intro_end/outro_start: legacy data from broken analysis should not persist.
+                // status 'ok': the file was just decoded, so a bad_format mark it carried is out of date
+                // - playback sets the same when a track plays.
+                SqliteStatement stmt{m_db, "UPDATE Tracks SET bpm=?, intro_end=NULL, outro_start=NULL, status='ok' WHERE track_id = ?;"};
                 if (!stmt.isValid())
                 {
                     m_lastErrorMessage = "Prepare failed for updateTrackBpm(): " + m_db.getLastError();

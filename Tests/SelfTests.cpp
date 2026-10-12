@@ -1975,6 +1975,69 @@ namespace jucyaudio
                 return shape;
             }
 
+            /// @brief A format whose reader opens every file with its extension and then fails every read.
+            ///
+            /// The shape of a file a decoder accepts and then cannot decode. No real file is known to
+            /// produce it reliably, so the BPM skip report suite registers this instead, to execute the
+            /// branch that must not hand a half-read buffer to the analyzer.
+            class FailingReadFormat final : public juce::AudioFormat
+            {
+            public:
+                FailingReadFormat()
+                    : juce::AudioFormat{juce::StringRef{"Failing read"}, juce::StringRef{".failread"}}
+                {
+                }
+
+                juce::Array<int> getPossibleSampleRates() override
+                {
+                    return {44100};
+                }
+
+                juce::Array<int> getPossibleBitDepths() override
+                {
+                    return {16};
+                }
+
+                bool canDoStereo() override
+                {
+                    return false;
+                }
+
+                bool canDoMono() override
+                {
+                    return true;
+                }
+
+                juce::AudioFormatReader *createReaderFor(juce::InputStream *sourceStream, [[maybe_unused]] bool deleteStreamIfOpeningFails) override
+                {
+                    return new Reader{sourceStream};
+                }
+
+                std::unique_ptr<juce::AudioFormatWriter> createWriterFor(std::unique_ptr<juce::OutputStream> &,
+                    const juce::AudioFormatWriterOptions &) override
+                {
+                    return nullptr;
+                }
+
+            private:
+                struct Reader final : juce::AudioFormatReader
+                {
+                    explicit Reader(juce::InputStream *sourceStream)
+                        : juce::AudioFormatReader{sourceStream, "Failing read"}
+                    {
+                        sampleRate = 44100;
+                        bitsPerSample = 16;
+                        lengthInSamples = 44100;
+                        numChannels = 1;
+                    }
+
+                    bool readSamples(int *const *, int, int, juce::int64, int) override
+                    {
+                        return false;
+                    }
+                };
+            };
+
             /// @brief Writes frames behind an ID3v2 header that declares less padding than is there.
             ///
             /// The header says its body is @p declaredPadding bytes. After those, @p extraPadding more
@@ -9975,9 +10038,14 @@ namespace jucyaudio
                 return stop(std::format("Could not create {}: {}", pathToString(workRoot), ec.message()));
             }
 
-            // One file of each kind the task can tell apart, plus one it should simply analyze. The
-            // garbage is the same bytes under two extensions: as .wav it reaches the decoder, which
-            // refuses it; as .mp3 the pre-check refuses it first. missing.wav is a track with no file.
+            // One file of each kind the task can tell apart, and two it should simply analyze:
+            // - good.wav, a valid WAV;
+            // - padded.mp3, a valid VBR MP3 with bytes the ID3v2 tag does not declare between the tag
+            //   and the first frame. The decoder reads it; the pre-check used to reject it (#77);
+            // - noise.wav and bogus.mp3, the same garbage under two extensions. Both reach the decoder
+            //   now, which refuses both;
+            // - lowrate.mp3, a single 32 kbps frame header: the bitrate rule skips it, a policy;
+            // - missing.wav, a track with no file.
             const std::string garbage(4096, '\x5a');
             const auto writeBytes = [](const std::filesystem::path &path, const std::string &bytes)
             {
@@ -9985,8 +10053,17 @@ namespace jucyaudio
                 out << bytes;
                 return static_cast<bool>(out);
             };
+            // MPEG-1 Layer III, no CRC, bitrate index 1 (32 kbps), 44.1 kHz - then zeros.
+            const std::string lowRate = std::string{"\xFF\xFB\x10\xC4", 4} + std::string(2048, '\0');
+            std::vector<unsigned char> frames;
+            const auto encodeError = encodeVbrMp3Frames(frames);
+            if (!encodeError.empty())
+            {
+                return stop("Could not encode the padded MP3 fixture: " + encodeError);
+            }
             if (!writeSilentWav(workRoot / "good.wav", 44100) || !writeBytes(workRoot / "noise.wav", garbage) ||
-                !writeBytes(workRoot / "bogus.mp3", garbage))
+                !writeBytes(workRoot / "bogus.mp3", garbage) || !writeBytes(workRoot / "lowrate.mp3", lowRate) ||
+                !writeMp3WithPaddingAfterId3v2(workRoot / "padded.mp3", frames, kDeclaredId3Padding, kExtraPaddingAfterId3))
             {
                 return stop("Could not write the fixture files.");
             }
@@ -10006,7 +10083,7 @@ namespace jucyaudio
                 SqliteDatabase direct;
                 const bool inserted = direct.open(pathToString(databasePath)) &&
                     direct.execute(std::format("INSERT INTO Tracks (folder_id, filename) VALUES ({0}, 'good.wav'), ({0}, 'noise.wav'), "
-                                               "({0}, 'bogus.mp3'), ({0}, 'missing.wav');",
+                                               "({0}, 'bogus.mp3'), ({0}, 'missing.wav'), ({0}, 'padded.mp3'), ({0}, 'lowrate.mp3');",
                         folderId));
                 if (!inserted)
                 {
@@ -10023,9 +10100,9 @@ namespace jucyaudio
             {
                 idOf[track.filename] = track.trackId;
             }
-            if (idOf.size() != 4)
+            if (idOf.size() != 6)
             {
-                return stop(std::format("Expected 4 fixture tracks, found {}.", idOf.size()));
+                return stop(std::format("Expected 6 fixture tracks, found {}.", idOf.size()));
             }
 
             std::atomic<bool> cancel{false};
@@ -10051,27 +10128,30 @@ namespace jucyaudio
                 reasonOf[entry.track.filename] = entry.reason;
             }
             using background_tasks::SkipReason;
-            report.check(skipped.size() == 3, std::format("three tracks were skipped ({})", skipped.size()));
-            report.check(!reasonOf.contains("good.wav"), "the playable file was analyzed, not skipped");
+            report.check(skipped.size() == 4, std::format("four tracks were skipped ({})", skipped.size()));
+            report.check(!reasonOf.contains("good.wav"), "the playable WAV was analyzed, not skipped");
+            report.check(!reasonOf.contains("padded.mp3"), "the MP3 with undeclared padding after its ID3v2 tag was analyzed, not skipped (#77)");
             report.check(reasonOf.contains("missing.wav") && reasonOf["missing.wav"] == SkipReason::FileMissing, "the track without a file is reported as missing");
             report.check(reasonOf.contains("noise.wav") && reasonOf["noise.wav"] == SkipReason::NoDecoder, "the WAV no decoder accepts is reported as such");
-            report.check(reasonOf.contains("bogus.mp3") && reasonOf["bogus.mp3"] == SkipReason::Mp3PreCheck, "the MP3 the pre-check turns down is reported as such");
+            report.check(reasonOf.contains("bogus.mp3") && reasonOf["bogus.mp3"] == SkipReason::NoDecoder,
+                "the garbage MP3 reaches the decoder and is reported as undecodable, not turned down by the pre-check");
+            report.check(reasonOf.contains("lowrate.mp3") && reasonOf["lowrate.mp3"] == SkipReason::Mp3PreCheck, "the 32 kbps MP3 is skipped by the bitrate rule");
 
             // Only the tracks known to be broken are offered for removal from the working set.
             auto removable = background_tasks::removableTrackIds(skipped);
             std::ranges::sort(removable);
-            std::vector<TrackId> expectedRemovable{idOf["missing.wav"], idOf["noise.wav"]};
+            std::vector<TrackId> expectedRemovable{idOf["missing.wav"], idOf["noise.wav"], idOf["bogus.mp3"]};
             std::ranges::sort(expectedRemovable);
-            report.check(removable == expectedRemovable, "the missing and the undecodable track are offered for removal, the pre-checked MP3 is not");
+            report.check(removable == expectedRemovable, "the missing and the two undecodable tracks are offered for removal, the policy skip is not");
 
             // What the report's two buttons do, through the same function its callback calls. Two working
-            // sets hold all four tracks; the analysis is taken to have run on the first.
+            // sets hold all six tracks; the analysis is taken to have run on the first.
             {
                 auto &wsManager = theTrackLibrary.getWorkingSetManager();
                 WorkingSetInfo analyzed{}, other{};
                 const bool created = wsManager.createWorkingSetFromTrackInfos(tracks, "BpmSkip analyzed", analyzed) &&
                     wsManager.createWorkingSetFromTrackInfos(tracks, "BpmSkip other", other);
-                report.check(created, "two working sets holding all four tracks could be created");
+                report.check(created, "two working sets holding all six tracks could be created");
 
                 const auto membersOf = [&trackDb](WorkingSetId wsId)
                 {
@@ -10086,24 +10166,25 @@ namespace jucyaudio
                     std::ranges::sort(names);
                     return names;
                 };
-                const std::vector<std::string> all{"bogus.mp3", "good.wav", "missing.wav", "noise.wav"};
+                const std::vector<std::string> all{"bogus.mp3", "good.wav", "lowrate.mp3", "missing.wav", "noise.wav", "padded.mp3"};
 
                 const auto kept = background_tasks::applySkippedTracksChoice(wsManager, analyzed.id, skipped, false);
                 report.check(kept == size_t{0} && membersOf(analyzed.id) == all && membersOf(other.id) == all,
                     "Keep All changes no working set");
 
                 const auto removed = background_tasks::applySkippedTracksChoice(wsManager, analyzed.id, skipped, true);
-                report.check(removed == size_t{2}, std::format("Remove reports the two unreadable tracks ({})", removed ? std::to_string(*removed) : "failed"));
-                const std::vector<std::string> remaining{"bogus.mp3", "good.wav"};
-                report.check(membersOf(analyzed.id) == remaining, "Remove takes the missing and the undecodable track out of the analyzed set, and keeps the pre-checked MP3");
+                report.check(removed == size_t{3}, std::format("Remove reports the three unreadable tracks ({})", removed ? std::to_string(*removed) : "failed"));
+                const std::vector<std::string> remaining{"good.wav", "lowrate.mp3", "padded.mp3"};
+                report.check(membersOf(analyzed.id) == remaining, "Remove takes the unreadable tracks out of the analyzed set, and keeps the policy skip");
                 report.check(membersOf(other.id) == all, "and leaves every membership of the other working set alone");
             }
 
             const auto summary = background_tasks::summarizeSkippedTracks(skipped);
-            report.check(summary == "3 skipped: 1 file missing, 1 turned down by the MP3 pre-check, 1 no decoder could open it.",
+            report.check(summary == "4 skipped: 1 file missing, 1 skipped by the MP3 size/bitrate rule, 2 no decoder could open it.",
                 std::format("the summary counts each reason (said: '{}')", summary));
 
-            // The marking is unchanged: every skipped track is bad_format, the analyzed one is not.
+            // What is marked: a track that could not be read is bad_format, which the background analyzer
+            // leaves alone; a policy skip is not, and an analyzed track is ok (#77).
             SqliteDatabase check;
             if (check.open(pathToString(databasePath)))
             {
@@ -10115,12 +10196,73 @@ namespace jucyaudio
                 };
                 report.check(statusOf(idOf["missing.wav"]) == "bad_format" && statusOf(idOf["noise.wav"]) == "bad_format" &&
                         statusOf(idOf["bogus.mp3"]) == "bad_format",
-                    "the skipped tracks are marked bad_format, as before");
-                report.check(statusOf(idOf["good.wav"]) != "bad_format", "the analyzed track is not");
+                    "the unreadable tracks are marked bad_format");
+                report.check(statusOf(idOf["lowrate.mp3"]) == "unknown", std::format("the policy skip is not marked ({})", statusOf(idOf["lowrate.mp3"])));
+                report.check(statusOf(idOf["good.wav"]) == "ok" && statusOf(idOf["padded.mp3"]) == "ok",
+                    std::format("the analyzed tracks are marked ok ({}, {})", statusOf(idOf["good.wav"]), statusOf(idOf["padded.mp3"])));
             }
             else
             {
                 report.check(false, "the library could be reopened to read the statuses");
+            }
+
+            // --- A file that opens and then fails to decode is a read error, not an analyzed track ---
+            //
+            // Through analyzeTrack, which is what the task calls for each track, with a format manager that
+            // has the basic formats and the failing one. Before the fix the half-read buffer was analyzed,
+            // and its BPM stored with status ok.
+            {
+                juce::AudioFormatManager formats;
+                formats.registerBasicFormats();
+                formats.registerFormat(new FailingReadFormat{}, false);
+
+                const auto failPath = workRoot / "opens-then-fails.failread";
+                report.check(writeBytes(failPath, garbage), "a file for the failing reader could be written");
+
+                const auto failed = background_tasks::analyzeTrack(formats, failPath);
+                report.check(!failed.metadata.has_value() && failed.reason == SkipReason::ReadError,
+                    std::format("a file whose reader opens and then fails to read is a read error ({})", failed.detail));
+
+                // The control: the same manager analyzes a file it can read, so the failure above is the
+                // reader's and not the manager's.
+                const auto good = background_tasks::analyzeTrack(formats, workRoot / "good.wav");
+                report.check(good.metadata.has_value(), "while a readable file through the same manager is analyzed");
+            }
+
+            // --- The v34 rung puts every bad_format mark back to unknown, and nothing else ---
+            {
+                const auto dbPath = selfTestRoot / "bpmskip-v33" / "v33.db";
+                std::filesystem::remove_all(dbPath.parent_path(), ec);
+                std::filesystem::create_directories(dbPath.parent_path(), ec);
+                {
+                    SqliteTrackDatabase fresh;
+                    report.check(fresh.connect(dbPath).isOk(), "v34: a scratch database could be created");
+                }
+                {
+                    SqliteDatabase seed;
+                    const bool seeded = seed.open(pathToString(dbPath)) &&
+                        seed.execute("INSERT INTO Folders (folder_id, parent_id, name, root_path) VALUES (1, NULL, 'p', 'c:\\p');") &&
+                        seed.execute("INSERT INTO Tracks (track_id, folder_id, filename, status) VALUES "
+                                     "(1, 1, 'a.mp3', 'bad_format'), (2, 1, 'b.mp3', 'ok'), (3, 1, 'c.mp3', 'unknown'), (4, 1, 'd.wav', 'bad_format');") &&
+                        seed.execute("UPDATE SchemaInfo SET value = '33' WHERE key = 'schema_version';");
+                    report.check(seeded, std::format("v34: a v33 database with marked tracks could be seeded ({})", seed.getLastError()));
+                }
+                {
+                    SqliteTrackDatabase migrated;
+                    report.check(migrated.connect(dbPath).isOk(), "v34: it migrates");
+                }
+                SqliteDatabase after;
+                std::string statuses;
+                if (after.open(pathToString(dbPath)))
+                {
+                    SqliteStatement stmt{after, "SELECT status FROM Tracks ORDER BY track_id;"};
+                    while (stmt.getNextResult())
+                    {
+                        statuses += (statuses.empty() ? "" : " ") + stmt.getText(0);
+                    }
+                }
+                report.check(statuses == "unknown ok unknown unknown",
+                    std::format("v34: both bad_format marks are reset, the ok and unknown statuses are left alone ({})", statuses));
             }
 
             writeResultsFile(resultsPath, title, report);

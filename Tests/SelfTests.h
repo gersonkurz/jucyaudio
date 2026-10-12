@@ -267,10 +267,13 @@ namespace jucyaudio
         /**
          * @brief Headless check that BPM analysis reports why it skipped each track.
          *
-         * Writes one playable WAV, one WAV no decoder accepts, one MP3 the pre-check turns down, and adds
-         * a track whose file does not exist; runs BpmAnalysisTask over them; and checks the reason it
-         * records for each, which of them are offered for removal from a working set (not the pre-checked
-         * MP3, see #77), the summary line, and that the skipped tracks are still marked bad_format.
+         * Writes a playable WAV, a playable VBR MP3 with undeclared padding after its ID3v2 tag, a WAV
+         * and an MP3 no decoder accepts, and a 32 kbps MP3 the bitrate rule skips, and adds a track whose
+         * file does not exist; runs BpmAnalysisTask over them; and checks the reason it records for each
+         * (the padded MP3 is analyzed, #77), which are offered for removal from a working set (not the
+         * policy skip), what Keep All and Remove do to two working sets, the summary line, the statuses
+         * (unreadable: bad_format, policy skip: unchanged, analyzed: ok), and that the v34 rung resets
+         * bad_format marks and nothing else.
          *
          * @param selfTestRoot The root returned by prepareSelfTestEnvironment().
          * @param databasePath The self test library's database, opened by theTrackLibrary.

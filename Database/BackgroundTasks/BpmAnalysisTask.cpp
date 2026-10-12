@@ -29,7 +29,7 @@ namespace jucyaudio
                 case SkipReason::FileMissing:
                     return "file missing";
                 case SkipReason::Mp3PreCheck:
-                    return "turned down by the MP3 pre-check";
+                    return "skipped by the MP3 size/bitrate rule";
                 case SkipReason::NoDecoder:
                     return "no decoder could open it";
                 case SkipReason::ReadError:
@@ -89,6 +89,80 @@ namespace jucyaudio
                 }
                 spdlog::info("Removed {} unreadable track(s) from working set {}", removable.size(), workingSetId);
                 return removable.size();
+            }
+
+            TrackAnalysis analyzeTrack(juce::AudioFormatManager &formats, const std::filesystem::path &trackPath)
+            {
+                const auto skipped = [](SkipReason reason, std::string detail = {})
+                {
+                    return TrackAnalysis{std::nullopt, reason, std::move(detail)};
+                };
+
+                try
+                {
+                    juce::File audioFile{ui::jucePathFromFs(trackPath)};
+                    if (!audioFile.existsAsFile())
+                    {
+                        spdlog::debug("File does not exist: {}", trackPath.string());
+                        return skipped(SkipReason::FileMissing);
+                    }
+
+                    const auto extension = trackPath.extension().string();
+                    if ((extension == ".mp3" || extension == ".MP3") && !Mp3QuickCheck::checkMp3File(trackPath).has_value())
+                    {
+                        // A policy skip: larger than 50 MB, below 64 kbps, or a VBR file over 30 MB
+                        return skipped(SkipReason::Mp3PreCheck);
+                    }
+
+                    const auto startTime = std::chrono::steady_clock::now();
+                    std::unique_ptr<juce::AudioFormatReader> reader{formats.createReaderFor(audioFile)};
+                    const auto openTime = std::chrono::steady_clock::now() - startTime;
+                    if (std::chrono::duration_cast<std::chrono::seconds>(openTime).count() > 1)
+                    {
+                        spdlog::warn("File took {} ms to open: {}", std::chrono::duration_cast<std::chrono::milliseconds>(openTime).count(), trackPath.string());
+                    }
+                    if (!reader)
+                    {
+                        spdlog::debug("Cannot create reader for: {}", trackPath.string());
+                        return skipped(SkipReason::NoDecoder);
+                    }
+
+                    // The middle minute of the track, or all of it if it is shorter.
+                    const double totalDurationSeconds = reader->lengthInSamples / reader->sampleRate;
+                    const double analysisDurationSeconds = 60.0;
+                    int64_t startSample = 0;
+                    int numSamplesToRead = static_cast<int>(reader->lengthInSamples);
+                    if (totalDurationSeconds > analysisDurationSeconds)
+                    {
+                        startSample = static_cast<int64_t>(((totalDurationSeconds / 2.0) - (analysisDurationSeconds / 2.0)) * reader->sampleRate);
+                        numSamplesToRead = static_cast<int>(analysisDurationSeconds * reader->sampleRate);
+                        if (startSample + numSamplesToRead > reader->lengthInSamples)
+                        {
+                            numSamplesToRead = static_cast<int>(reader->lengthInSamples - startSample);
+                        }
+                    }
+
+                    juce::AudioBuffer<float> buffer(static_cast<int>(reader->numChannels), numSamplesToRead);
+                    // A reader can open a file and still fail to decode it. Analyzing the buffer anyway
+                    // would store a BPM computed from whatever it holds and mark the track ok.
+                    if (!reader->read(&buffer, 0, numSamplesToRead, startSample, true, true))
+                    {
+                        spdlog::debug("Decoding failed after opening: {}", trackPath.string());
+                        return skipped(SkipReason::ReadError, "decoding failed after the file was opened");
+                    }
+
+                    return TrackAnalysis{analyzeAudioBuffer(buffer, reader->sampleRate), SkipReason::ReadError, {}};
+                }
+                catch (const std::exception &e)
+                {
+                    spdlog::debug("Exception reading {}: {}", trackPath.string(), e.what());
+                    return skipped(SkipReason::ReadError, e.what());
+                }
+                catch (...)
+                {
+                    spdlog::error("Unknown non-std::exception reading {}", trackPath.string());
+                    return skipped(SkipReason::ReadError, "unknown exception");
+                }
             }
 
             BpmAnalysisTask::BpmAnalysisTask(std::vector<TrackInfo> trackInfos)
@@ -171,13 +245,17 @@ namespace jucyaudio
                 std::atomic<size_t> tracksAnalyzed = 0;
                 std::atomic<size_t> tracksSkipped = 0;
 
-                // Thread-safe collection of skipped tracks. Every skip is also marked BadFormat in the
-                // library, as before; what is new is that the reason survives to the report.
+                // Thread-safe collection of skipped tracks. A track that could not be read is marked
+                // BadFormat, which the background analyzer then leaves alone; one skipped by the MP3
+                // size/bitrate rule is not, because nothing is wrong with the file (#77).
                 std::vector<SkippedTrack> skippedTracks;
                 std::mutex skippedMutex;
                 const auto skip = [&](const TrackInfo &trackInfo, SkipReason reason, std::string detail = {})
                 {
-                    theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
+                    if (reason != SkipReason::Mp3PreCheck)
+                    {
+                        theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
+                    }
                     {
                         std::lock_guard<std::mutex> lock(skippedMutex);
                         skippedTracks.push_back(SkippedTrack{trackInfo, reason, std::move(detail)});
@@ -207,115 +285,37 @@ namespace jucyaudio
                                 }
 
                                 const auto trackInfo = tracksToProcess[trackIndex];
-
+                                // analyzeTrack never throws; resolving the path can, and an exception
+                                // leaving a worker thread would terminate the application.
+                                TrackAnalysis outcome;
                                 try
                                 {
-                                    const auto trackPath = trackInfo->reconstructFullPath();
-
-                                    // Check for cancel before starting expensive operations
-                                    if (shouldCancel)
-                                        break;
-
-                                    juce::File audioFile{ui::jucePathFromFs(trackPath)};
-
-                                    // Quick existence check
-                                    if (!audioFile.existsAsFile())
-                                    {
-                                        spdlog::debug("File does not exist: {}", trackPath.string());
-                                        skip(*trackInfo, SkipReason::FileMissing);
-                                        tracksProcessed++;
-                                        continue;
-                                    }
-
-                                    // For MP3 files, do a quick pre-check
-                                    const auto extension = trackPath.extension().string();
-                                    if (extension == ".mp3" || extension == ".MP3")
-                                    {
-                                        auto mp3Info = Mp3QuickCheck::checkMp3File(trackPath);
-                                        if (!mp3Info.has_value())
-                                        {
-                                            // File should be skipped (VBR, low bitrate, or too large)
-                                            skip(*trackInfo, SkipReason::Mp3PreCheck);
-                                            tracksProcessed++;
-                                            continue;
-                                        }
-                                    }
-
-                                    // Try to create reader - this might hang on some files
-                                    // So we'll do a quick timeout check
-                                    std::unique_ptr<juce::AudioFormatReader> reader;
-
-                                    // Use a simple approach - try to open the file
-                                    // If it takes too long, we'll detect it in the next iteration
-                                    auto startTime = std::chrono::steady_clock::now();
-                                    reader.reset(formatManager.createReaderFor(audioFile));
-                                    auto openTime = std::chrono::steady_clock::now() - startTime;
-
-                                    // Log if opening took a long time
-                                    if (std::chrono::duration_cast<std::chrono::seconds>(openTime).count() > 1)
-                                    {
-                                        spdlog::warn("File took {} ms to open: {}",
-                                            std::chrono::duration_cast<std::chrono::milliseconds>(openTime).count(),
-                                            trackPath.string());
-                                    }
-
-                                    if (!reader)
-                                    {
-                                        spdlog::debug("Cannot create reader for: {}", trackPath.string());
-                                        skip(*trackInfo, SkipReason::NoDecoder);
-                                        tracksProcessed++;
-                                        continue;
-                                    }
-
-                                    // Check for cancel before analysis
-                                    if (shouldCancel)
-                                        break;
-
-                                    // Successfully opened file - analyze it
-                                    const double totalDurationSeconds = reader->lengthInSamples / reader->sampleRate;
-                                    const double analysisDurationSeconds = 60.0;
-                                    int64_t startSample = 0;
-                                    int numSamplesToRead = static_cast<int>(reader->lengthInSamples);
-
-                                    if (totalDurationSeconds > analysisDurationSeconds)
-                                    {
-                                        startSample =
-                                            static_cast<int64_t>(((totalDurationSeconds / 2.0) - (analysisDurationSeconds / 2.0)) * reader->sampleRate);
-                                        numSamplesToRead = static_cast<int>(analysisDurationSeconds * reader->sampleRate);
-                                        if (startSample + numSamplesToRead > reader->lengthInSamples)
-                                        {
-                                            numSamplesToRead = static_cast<int>(reader->lengthInSamples - startSample);
-                                        }
-                                    }
-
-                                    juce::AudioBuffer<float> buffer(static_cast<int>(reader->numChannels), numSamplesToRead);
-
-                                    // Read the audio data
-                                    reader->read(&buffer, 0, numSamplesToRead, startSample, true, true);
-
-                                    // Check for cancel before analysis
-                                    if (shouldCancel)
-                                        break;
-
-                                    // Analyze the buffer
-                                    AudioMetadata metadata = analyzeAudioBuffer(buffer, reader->sampleRate);
-
-                                    // Add to results queue
-                                    {
-                                        std::lock_guard<std::mutex> lock(resultsMutex);
-                                        resultsQueue.push({trackInfo->trackId, metadata});
-                                    }
-                                    tracksAnalyzed++;
+                                    outcome = analyzeTrack(formatManager, trackInfo->reconstructFullPath());
                                 }
                                 catch (const std::exception &e)
                                 {
-                                    spdlog::debug("Exception reading track {}: {}", trackInfo->trackId, e.what());
-                                    skip(*trackInfo, SkipReason::ReadError, e.what());
+                                    outcome = TrackAnalysis{std::nullopt, SkipReason::ReadError, e.what()};
                                 }
                                 catch (...)
                                 {
-                                    spdlog::error("Unknown non-std::exception reading track {}", trackInfo->trackId);
-                                    skip(*trackInfo, SkipReason::ReadError, "unknown exception");
+                                    outcome = TrackAnalysis{std::nullopt, SkipReason::ReadError, "unknown exception"};
+                                }
+
+                                // A cancel that arrived while this track was being read: drop the result.
+                                if (shouldCancel)
+                                    break;
+
+                                if (outcome.metadata.has_value())
+                                {
+                                    {
+                                        std::lock_guard<std::mutex> lock(resultsMutex);
+                                        resultsQueue.push({trackInfo->trackId, *outcome.metadata});
+                                    }
+                                    tracksAnalyzed++;
+                                }
+                                else
+                                {
+                                    skip(*trackInfo, outcome.reason, std::move(outcome.detail));
                                 }
 
                                 tracksProcessed++;

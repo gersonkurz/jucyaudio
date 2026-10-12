@@ -17,8 +17,10 @@ struct Mp3Info {
 
 class Mp3QuickCheck {
 public:
-    // Quick check of MP3 file without full parsing
-    // Returns empty optional if file should be skipped
+    // Quick check of MP3 file without full parsing.
+    // Returns an empty optional only when a policy says to skip the file: larger than 50 MB, below
+    // 64 kbps, or VBR and larger than 30 MB. Whether the file is readable is the decoder's call, so
+    // a file this check cannot parse is returned with isValid false, not skipped.
     static std::optional<Mp3Info> checkMp3File(const std::filesystem::path& path);
     
 private:

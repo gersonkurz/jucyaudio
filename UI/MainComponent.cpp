@@ -2264,7 +2264,7 @@ namespace jucyaudio
             }
 
             juce::String summary{juce::String::fromUTF8(background_tasks::summarizeSkippedTracks(skipped).c_str())};
-            summary << " These tracks have no BPM and are marked as bad format in the library.";
+            summary << " None of them has a BPM. The ones that could not be read are marked as bad format, so background analysis leaves them alone.";
 
             const auto removable = background_tasks::removableTrackIds(skipped);
             if (workingSetId <= 0 || removable.empty())
@@ -2273,14 +2273,14 @@ namespace jucyaudio
                 return;
             }
 
-            // Only the tracks known to be broken. The pre-check turns down files the decoder can read
-            // (#77), so those stay in the set.
+            // Only the tracks known to be broken. Those skipped by the MP3 size/bitrate rule are fine,
+            // so they stay in the set.
             const auto keptCount = skipped.size() - removable.size();
             summary << " Remove the " << static_cast<int>(removable.size()) << " that could not be read from \""
                     << juce::String::fromUTF8(workingSetName.c_str()) << "\"?";
             if (keptCount > 0)
             {
-                summary << " The " << static_cast<int>(keptCount) << " turned down by the MP3 pre-check stay.";
+                summary << " The " << static_cast<int>(keptCount) << " skipped by the size/bitrate rule stay.";
             }
 
             juce::Component::SafePointer<MainComponent> safeThis{this};

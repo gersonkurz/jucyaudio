@@ -119,11 +119,13 @@ namespace jucyaudio
                         return std::nullopt;
                     }
 
-                    // Open file for quick header check
+                    // Open file for quick header check. From here on, anything this check cannot read is
+                    // left to the decoder: only the size and bitrate rules are reasons to skip a file,
+                    // and the decoder is what knows whether it is readable.
                     std::ifstream file(path, std::ios::binary);
                     if (!file)
                     {
-                        return std::nullopt;
+                        return info;
                     }
 
                     // Skip ID3v2 tag if present
@@ -155,16 +157,20 @@ namespace jucyaudio
 
                     if (file.gcount() < 4)
                     {
-                        spdlog::debug("MP3 file too short for header: {}", path.string());
-                        return std::nullopt;
+                        spdlog::debug("MP3 file too short for a header, leaving it to the decoder: {}", path.string());
+                        return info;
                     }
 
                     uint32_t header = (header_bytes[0] << 24) | (header_bytes[1] << 16) | (header_bytes[2] << 8) | header_bytes[3];
 
+                    // No frame where the ID3v2 tag says the audio starts. Usually padding the tag did
+                    // not declare, which the decoder scans past (#77): rejecting here turned playable
+                    // files into bad_format. The bitrate and VBR rules need a header, so they cannot
+                    // be applied; the size rule above already was.
                     if (!isMp3Header(header))
                     {
-                        spdlog::debug("Invalid MP3 header in: {}", path.string());
-                        return std::nullopt;
+                        spdlog::debug("No MP3 frame at the declared start, leaving it to the decoder: {}", path.string());
+                        return info;
                     }
 
                     // Get bitrate from first frame
@@ -195,8 +201,8 @@ namespace jucyaudio
                 }
                 catch (const std::exception &e)
                 {
-                    spdlog::debug("Error checking MP3 file {}: {}", path.string(), e.what());
-                    return std::nullopt;
+                    spdlog::debug("Error checking MP3 file {}, leaving it to the decoder: {}", path.string(), e.what());
+                    return info;
                 }
             }
         } // namespace background_tasks
