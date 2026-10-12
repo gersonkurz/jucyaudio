@@ -5,7 +5,9 @@
 #include <Database/TrackLibrary.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
+#include <algorithm>
 #include <condition_variable>
+#include <format>
 #include <functional>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <mutex>
@@ -20,6 +22,75 @@ namespace jucyaudio
     {
         namespace background_tasks
         {
+            std::string_view describe(SkipReason reason)
+            {
+                switch (reason)
+                {
+                case SkipReason::FileMissing:
+                    return "file missing";
+                case SkipReason::Mp3PreCheck:
+                    return "turned down by the MP3 pre-check";
+                case SkipReason::NoDecoder:
+                    return "no decoder could open it";
+                case SkipReason::ReadError:
+                    return "reading it failed";
+                }
+                return "unknown";
+            }
+
+            bool isRemovable(SkipReason reason)
+            {
+                return reason != SkipReason::Mp3PreCheck;
+            }
+
+            std::vector<TrackId> removableTrackIds(const std::vector<SkippedTrack> &skipped)
+            {
+                std::vector<TrackId> ids;
+                for (const auto &entry : skipped)
+                {
+                    if (isRemovable(entry.reason))
+                    {
+                        ids.push_back(entry.track.trackId);
+                    }
+                }
+                return ids;
+            }
+
+            std::string summarizeSkippedTracks(const std::vector<SkippedTrack> &skipped)
+            {
+                std::string text = std::format("{} skipped", skipped.size());
+                const char *separator = ": ";
+                for (const auto reason : {SkipReason::FileMissing, SkipReason::Mp3PreCheck, SkipReason::NoDecoder, SkipReason::ReadError})
+                {
+                    const auto count = std::ranges::count_if(skipped, [reason](const SkippedTrack &entry) { return entry.reason == reason; });
+                    if (count > 0)
+                    {
+                        text += std::format("{}{} {}", separator, count, describe(reason));
+                        separator = ", ";
+                    }
+                }
+                return text + ".";
+            }
+
+            std::optional<size_t> applySkippedTracksChoice(IWorkingSetManager &workingSets,
+                WorkingSetId workingSetId,
+                const std::vector<SkippedTrack> &skipped,
+                bool confirmed)
+            {
+                const auto removable = removableTrackIds(skipped);
+                if (!confirmed || workingSetId <= 0 || removable.empty())
+                {
+                    return size_t{0};
+                }
+                if (!workingSets.removeTracksFromWorkingSet(workingSetId, removable))
+                {
+                    spdlog::error("Could not remove {} unreadable track(s) from working set {}", removable.size(), workingSetId);
+                    return std::nullopt;
+                }
+                spdlog::info("Removed {} unreadable track(s) from working set {}", removable.size(), workingSetId);
+                return removable.size();
+            }
+
             BpmAnalysisTask::BpmAnalysisTask(std::vector<TrackInfo> trackInfos)
                 : ILongRunningTask{"Running BPM Analysis", true},
                   m_trackInfos{std::move(trackInfos)}
@@ -100,9 +171,19 @@ namespace jucyaudio
                 std::atomic<size_t> tracksAnalyzed = 0;
                 std::atomic<size_t> tracksSkipped = 0;
 
-                // Thread-safe collection of bad files
-                std::vector<TrackInfo> badFiles;
-                std::mutex badFilesMutex;
+                // Thread-safe collection of skipped tracks. Every skip is also marked BadFormat in the
+                // library, as before; what is new is that the reason survives to the report.
+                std::vector<SkippedTrack> skippedTracks;
+                std::mutex skippedMutex;
+                const auto skip = [&](const TrackInfo &trackInfo, SkipReason reason, std::string detail = {})
+                {
+                    theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
+                    {
+                        std::lock_guard<std::mutex> lock(skippedMutex);
+                        skippedTracks.push_back(SkippedTrack{trackInfo, reason, std::move(detail)});
+                    }
+                    tracksSkipped++;
+                };
 
                 // Worker threads pool
                 std::vector<std::thread> workers;
@@ -141,12 +222,7 @@ namespace jucyaudio
                                     if (!audioFile.existsAsFile())
                                     {
                                         spdlog::debug("File does not exist: {}", trackPath.string());
-                                        theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
-                                        {
-                                            std::lock_guard<std::mutex> lock(badFilesMutex);
-                                            badFiles.push_back(*trackInfo);
-                                        }
-                                        tracksSkipped++;
+                                        skip(*trackInfo, SkipReason::FileMissing);
                                         tracksProcessed++;
                                         continue;
                                     }
@@ -159,12 +235,7 @@ namespace jucyaudio
                                         if (!mp3Info.has_value())
                                         {
                                             // File should be skipped (VBR, low bitrate, or too large)
-                                            theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
-                                            {
-                                                std::lock_guard<std::mutex> lock(badFilesMutex);
-                                                badFiles.push_back(*trackInfo);
-                                            }
-                                            tracksSkipped++;
+                                            skip(*trackInfo, SkipReason::Mp3PreCheck);
                                             tracksProcessed++;
                                             continue;
                                         }
@@ -191,12 +262,7 @@ namespace jucyaudio
                                     if (!reader)
                                     {
                                         spdlog::debug("Cannot create reader for: {}", trackPath.string());
-                                        theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
-                                        {
-                                            std::lock_guard<std::mutex> lock(badFilesMutex);
-                                            badFiles.push_back(*trackInfo);
-                                        }
-                                        tracksSkipped++;
+                                        skip(*trackInfo, SkipReason::NoDecoder);
                                         tracksProcessed++;
                                         continue;
                                     }
@@ -244,22 +310,12 @@ namespace jucyaudio
                                 catch (const std::exception &e)
                                 {
                                     spdlog::debug("Exception reading track {}: {}", trackInfo->trackId, e.what());
-                                    theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
-                                    {
-                                        std::lock_guard<std::mutex> lock(badFilesMutex);
-                                        badFiles.push_back(*trackInfo);
-                                    }
-                                    tracksSkipped++;
+                                    skip(*trackInfo, SkipReason::ReadError, e.what());
                                 }
                                 catch (...)
                                 {
                                     spdlog::error("Unknown non-std::exception reading track {}", trackInfo->trackId);
-                                    theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo->trackId, TrackStatus::BadFormat);
-                                    {
-                                        std::lock_guard<std::mutex> lock(badFilesMutex);
-                                        badFiles.push_back(*trackInfo);
-                                    }
-                                    tracksSkipped++;
+                                    skip(*trackInfo, SkipReason::ReadError, "unknown exception");
                                 }
 
                                 tracksProcessed++;
@@ -379,11 +435,8 @@ namespace jucyaudio
                     tracksWritten += resultsBatch.size();
                 }
 
-                // Save bad files to the task
-                {
-                    std::lock_guard<std::mutex> lock(badFilesMutex);
-                    m_badFiles = std::move(badFiles);
-                }
+                // The workers are joined, so this is the only thread left touching the list.
+                m_skippedTracks = std::move(skippedTracks);
 
                 // Final status
                 if (shouldCancel)
@@ -391,11 +444,11 @@ namespace jucyaudio
                     std::string finalStatus = std::format("Cancelled. Analyzed {} / {} tracks.",
                         ui::formatStandardStringNumber(tracksWritten),
                         ui::formatStandardStringNumber(nrTracksToProcess));
-                    if (!m_badFiles.empty())
+                    if (!m_skippedTracks.empty())
                     {
-                        finalStatus += std::format(" ({} files skipped due to read errors).", m_badFiles.size());
+                        finalStatus += " " + summarizeSkippedTracks(m_skippedTracks);
                     }
-                    spdlog::info("BPM Analysis cancelled: {} analyzed, {} skipped", tracksWritten, m_badFiles.size());
+                    spdlog::info("BPM Analysis cancelled: {} analyzed, {} skipped", tracksWritten, m_skippedTracks.size());
                     completionCb(false, finalStatus);
                 }
                 else
@@ -403,11 +456,11 @@ namespace jucyaudio
                     std::string finalStatus = std::format("Successfully analyzed {} / {} tracks.",
                         ui::formatStandardStringNumber(tracksWritten),
                         ui::formatStandardStringNumber(nrTracksToProcess));
-                    if (!m_badFiles.empty())
+                    if (!m_skippedTracks.empty())
                     {
-                        finalStatus += std::format(" ({} files skipped due to read errors).", m_badFiles.size());
+                        finalStatus += " " + summarizeSkippedTracks(m_skippedTracks);
                     }
-                    spdlog::info("BPM Analysis complete: {} analyzed, {} skipped", tracksWritten, m_badFiles.size());
+                    spdlog::info("BPM Analysis complete: {} analyzed, {} skipped", tracksWritten, m_skippedTracks.size());
                     progressCb(100, finalStatus);
                     completionCb(true, finalStatus);
                 }

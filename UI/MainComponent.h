@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <Audio/AudioLibrary.h>
 #include <Audio/Includes/ActiveExportSettings.h>
+#include <Database/BackgroundTasks/BpmAnalysisTask.h>
 #include <Database/Includes/INavigationNode.h>
 #include <Database/Nodes/RootNode.h>
 #include <Database/TrackLibrary.h>
@@ -157,7 +158,11 @@ namespace jucyaudio
             /// @brief Re-check the selected rows' files and correct is_missing.
             void onCheckFilesForSelectedRows();
 
-            void showBadFilesDialog(const std::vector<TrackInfo> &badFiles);
+            /// @brief Report the tracks a BPM analysis skipped, and offer to take the broken ones out of the
+            ///        working set it ran on. @p workingSetId is 0 when it did not run on a working set.
+            void showSkippedTracksReport(const std::vector<database::background_tasks::SkippedTrack> &skipped,
+                WorkingSetId workingSetId,
+                const std::string &workingSetName);
 
             void onEditWorkingSetMetadata(INavigationNode *node);
             void onEditMixMetadata(INavigationNode *node);

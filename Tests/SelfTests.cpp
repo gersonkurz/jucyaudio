@@ -33,6 +33,7 @@
 #include <Database/Scanners/Id3TagScanner.h>
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
+#include <Database/BackgroundTasks/BpmAnalysisTask.h>
 #include <Database/Sqlite/SqliteTrackDatabase.h>
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/Sqlite/SqliteWorkingSetManager.h>
@@ -9947,6 +9948,183 @@ namespace jucyaudio
 
             writeResultsFile(resultsPath, title, report);
             spdlog::info("[SelfTest] Working set order test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
+            return report.failures() == 0 ? 0 : 1;
+        }
+
+        int runBpmSkipReportSelfTest(const std::filesystem::path &selfTestRoot, const std::filesystem::path &databasePath)
+        {
+            Report report;
+            const auto resultsPath = selfTestRoot / "bpmskip-results.txt";
+            constexpr const char *title = "jucyaudio BPM skip report self test";
+            const auto workRoot = selfTestRoot / "bpmskip-library";
+
+            spdlog::info("[SelfTest] Starting BPM skip report self test. Root: {}", pathToString(selfTestRoot));
+
+            const auto stop = [&](const std::string &why)
+            {
+                report.abort(why);
+                writeResultsFile(resultsPath, title, report);
+                return 1;
+            };
+
+            std::error_code ec;
+            std::filesystem::remove_all(workRoot, ec);
+            std::filesystem::create_directories(workRoot, ec);
+            if (ec)
+            {
+                return stop(std::format("Could not create {}: {}", pathToString(workRoot), ec.message()));
+            }
+
+            // One file of each kind the task can tell apart, plus one it should simply analyze. The
+            // garbage is the same bytes under two extensions: as .wav it reaches the decoder, which
+            // refuses it; as .mp3 the pre-check refuses it first. missing.wav is a track with no file.
+            const std::string garbage(4096, '\x5a');
+            const auto writeBytes = [](const std::filesystem::path &path, const std::string &bytes)
+            {
+                std::ofstream out{path, std::ios::binary};
+                out << bytes;
+                return static_cast<bool>(out);
+            };
+            if (!writeSilentWav(workRoot / "good.wav", 44100) || !writeBytes(workRoot / "noise.wav", garbage) ||
+                !writeBytes(workRoot / "bogus.mp3", garbage))
+            {
+                return stop("Could not write the fixture files.");
+            }
+
+            auto &trackDb = theTrackLibrary.getTrackDatabase();
+            if (!trackDb.getLibraryRootManager().addRoot(pathToString(workRoot)).has_value())
+            {
+                return stop("Could not add the fixture folder as a library root.");
+            }
+            const auto folderId = trackDb.getFolderDatabase().findOrCreateFolderByPath(workRoot);
+            if (folderId <= 0)
+            {
+                return stop("Could not create the fixture folder.");
+            }
+
+            {
+                SqliteDatabase direct;
+                const bool inserted = direct.open(pathToString(databasePath)) &&
+                    direct.execute(std::format("INSERT INTO Tracks (folder_id, filename) VALUES ({0}, 'good.wav'), ({0}, 'noise.wav'), "
+                                               "({0}, 'bogus.mp3'), ({0}, 'missing.wav');",
+                        folderId));
+                if (!inserted)
+                {
+                    return stop(std::format("Could not insert the fixture tracks: {}", direct.getLastError()));
+                }
+            }
+
+            TrackQueryArgs args{};
+            args.folderIds = {folderId};
+            args.usePaging = false;
+            auto tracks = trackDb.getTracks(args);
+            std::map<std::string, TrackId> idOf;
+            for (const auto &track : tracks)
+            {
+                idOf[track.filename] = track.trackId;
+            }
+            if (idOf.size() != 4)
+            {
+                return stop(std::format("Expected 4 fixture tracks, found {}.", idOf.size()));
+            }
+
+            std::atomic<bool> cancel{false};
+            bool succeeded = false;
+            auto *task = new background_tasks::BpmAnalysisTask{tracks};
+            ILongRunningTask &asTask = *task;
+            // A real progress callback, not nullptr: the task calls it unconditionally, as TaskDialog always supplies one.
+            asTask.run(
+                [](int, const std::string &) {},
+                [&succeeded](bool success, const std::string &)
+                {
+                    succeeded = success;
+                },
+                cancel);
+            const auto skipped = task->getSkippedTracks();
+            task->release(REFCOUNT_DEBUG_ARGS);
+
+            report.check(succeeded, "the analysis ran to the end");
+
+            std::map<std::string, background_tasks::SkipReason> reasonOf;
+            for (const auto &entry : skipped)
+            {
+                reasonOf[entry.track.filename] = entry.reason;
+            }
+            using background_tasks::SkipReason;
+            report.check(skipped.size() == 3, std::format("three tracks were skipped ({})", skipped.size()));
+            report.check(!reasonOf.contains("good.wav"), "the playable file was analyzed, not skipped");
+            report.check(reasonOf.contains("missing.wav") && reasonOf["missing.wav"] == SkipReason::FileMissing, "the track without a file is reported as missing");
+            report.check(reasonOf.contains("noise.wav") && reasonOf["noise.wav"] == SkipReason::NoDecoder, "the WAV no decoder accepts is reported as such");
+            report.check(reasonOf.contains("bogus.mp3") && reasonOf["bogus.mp3"] == SkipReason::Mp3PreCheck, "the MP3 the pre-check turns down is reported as such");
+
+            // Only the tracks known to be broken are offered for removal from the working set.
+            auto removable = background_tasks::removableTrackIds(skipped);
+            std::ranges::sort(removable);
+            std::vector<TrackId> expectedRemovable{idOf["missing.wav"], idOf["noise.wav"]};
+            std::ranges::sort(expectedRemovable);
+            report.check(removable == expectedRemovable, "the missing and the undecodable track are offered for removal, the pre-checked MP3 is not");
+
+            // What the report's two buttons do, through the same function its callback calls. Two working
+            // sets hold all four tracks; the analysis is taken to have run on the first.
+            {
+                auto &wsManager = theTrackLibrary.getWorkingSetManager();
+                WorkingSetInfo analyzed{}, other{};
+                const bool created = wsManager.createWorkingSetFromTrackInfos(tracks, "BpmSkip analyzed", analyzed) &&
+                    wsManager.createWorkingSetFromTrackInfos(tracks, "BpmSkip other", other);
+                report.check(created, "two working sets holding all four tracks could be created");
+
+                const auto membersOf = [&trackDb](WorkingSetId wsId)
+                {
+                    TrackQueryArgs members{};
+                    members.workingSetId = wsId;
+                    members.usePaging = false;
+                    std::vector<std::string> names;
+                    for (const auto &track : trackDb.getTracks(members))
+                    {
+                        names.push_back(track.filename);
+                    }
+                    std::ranges::sort(names);
+                    return names;
+                };
+                const std::vector<std::string> all{"bogus.mp3", "good.wav", "missing.wav", "noise.wav"};
+
+                const auto kept = background_tasks::applySkippedTracksChoice(wsManager, analyzed.id, skipped, false);
+                report.check(kept == size_t{0} && membersOf(analyzed.id) == all && membersOf(other.id) == all,
+                    "Keep All changes no working set");
+
+                const auto removed = background_tasks::applySkippedTracksChoice(wsManager, analyzed.id, skipped, true);
+                report.check(removed == size_t{2}, std::format("Remove reports the two unreadable tracks ({})", removed ? std::to_string(*removed) : "failed"));
+                const std::vector<std::string> remaining{"bogus.mp3", "good.wav"};
+                report.check(membersOf(analyzed.id) == remaining, "Remove takes the missing and the undecodable track out of the analyzed set, and keeps the pre-checked MP3");
+                report.check(membersOf(other.id) == all, "and leaves every membership of the other working set alone");
+            }
+
+            const auto summary = background_tasks::summarizeSkippedTracks(skipped);
+            report.check(summary == "3 skipped: 1 file missing, 1 turned down by the MP3 pre-check, 1 no decoder could open it.",
+                std::format("the summary counts each reason (said: '{}')", summary));
+
+            // The marking is unchanged: every skipped track is bad_format, the analyzed one is not.
+            SqliteDatabase check;
+            if (check.open(pathToString(databasePath)))
+            {
+                const auto statusOf = [&check](TrackId id)
+                {
+                    SqliteStatement stmt{check, "SELECT status FROM Tracks WHERE track_id = ?;"};
+                    stmt.addParam(id);
+                    return stmt.getNextResult() ? stmt.getText(0) : std::string{"<none>"};
+                };
+                report.check(statusOf(idOf["missing.wav"]) == "bad_format" && statusOf(idOf["noise.wav"]) == "bad_format" &&
+                        statusOf(idOf["bogus.mp3"]) == "bad_format",
+                    "the skipped tracks are marked bad_format, as before");
+                report.check(statusOf(idOf["good.wav"]) != "bad_format", "the analyzed track is not");
+            }
+            else
+            {
+                report.check(false, "the library could be reopened to read the statuses");
+            }
+
+            writeResultsFile(resultsPath, title, report);
+            spdlog::info("[SelfTest] BPM skip report test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
             return report.failures() == 0 ? 0 : 1;
         }
     } // namespace tests

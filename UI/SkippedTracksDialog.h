@@ -106,7 +106,7 @@ namespace jucyaudio
             void closeEnclosingWindow();
 
             static constexpr int kMargin = 12;
-            static constexpr int kSummaryHeight = 40;
+            static constexpr int kSummaryHeight = 58; // three lines: the BPM report's counts, marking note and question
             static constexpr int kButtonHeight = 26;
             static constexpr int kButtonWidth = 90;
             static constexpr int kButtonGap = 8;

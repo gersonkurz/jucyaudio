@@ -264,5 +264,19 @@ namespace jucyaudio
          */
         int runWorkingSetOrderSelfTest(const std::filesystem::path &selfTestRoot, const std::filesystem::path &databasePath);
 
+        /**
+         * @brief Headless check that BPM analysis reports why it skipped each track.
+         *
+         * Writes one playable WAV, one WAV no decoder accepts, one MP3 the pre-check turns down, and adds
+         * a track whose file does not exist; runs BpmAnalysisTask over them; and checks the reason it
+         * records for each, which of them are offered for removal from a working set (not the pre-checked
+         * MP3, see #77), the summary line, and that the skipped tracks are still marked bad_format.
+         *
+         * @param selfTestRoot The root returned by prepareSelfTestEnvironment().
+         * @param databasePath The self test library's database, opened by theTrackLibrary.
+         * @return 0 if every check passed, 1 otherwise.
+         */
+        int runBpmSkipReportSelfTest(const std::filesystem::path &selfTestRoot, const std::filesystem::path &databasePath);
+
     } // namespace tests
 } // namespace jucyaudio

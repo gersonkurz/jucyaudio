@@ -40,6 +40,7 @@
 #include <UI/Settings.h>
 #include <UI/SettingsDialog.h>
 #include <UI/SingletonDialog.h>
+#include <UI/SkippedTracksDialog.h>
 #include <UI/TaskDialog.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/UiUtils.h>
@@ -1954,19 +1955,21 @@ namespace jucyaudio
                 return;
             }
 
+            // Taken now, not when the report is shown: by then the user may have navigated elsewhere, and
+            // the report's Remove applies to the set the analysis ran on.
+            const auto workingSetId = node->getWorkingSetId();
+            const auto workingSetName = node->getName();
+
             auto *task = new background_tasks::BpmAnalysisTask{std::move(trackResult.trackInfos)};
             TaskDialog::launch("BPM Analysis",
                 task,
                 TaskDialog::AutoCloseMode::NoAutoClose, 500, this,
-                [this, task](bool /*success*/)
+                [this, task, workingSetId, workingSetName](bool /*success*/)
                 {
                     m_dataViewComponent.refreshView();
-
-                    // Check for bad files
-                    const auto &badFiles = task->getBadFiles();
-                    if (!badFiles.empty())
+                    if (!task->getSkippedTracks().empty())
                     {
-                        showBadFilesDialog(badFiles);
+                        showSkippedTracksReport(task->getSkippedTracks(), workingSetId, workingSetName);
                     }
                 });
             task->release(REFCOUNT_DEBUG_ARGS);
@@ -2223,82 +2226,97 @@ namespace jucyaudio
                     std::format("Analyzing {} tracks ({} non-track items skipped)", trackResult.trackInfos.size(), trackResult.nonApplicableCount), false);
             }
 
+            // As in onRunBpmAnalysis: the set the analysis runs on, not whatever is current when it ends.
+            const auto workingSetId = m_currentNode->getWorkingSetId();
+            const auto workingSetName = m_currentNode->getName();
+
             auto *task = new background_tasks::BpmAnalysisTask{std::move(trackResult.trackInfos)};
             TaskDialog::launch("BPM Analysis",
                 task,
                 TaskDialog::AutoCloseMode::WithDelay,
                 500,  // Show success briefly
                 this,
-                [this, task](bool /*success*/)
+                [this, task, workingSetId, workingSetName](bool /*success*/)
                 {
                     m_dataViewComponent.refreshView();
-
-                    // Check for bad files
-                    const auto &badFiles = task->getBadFiles();
-                    if (!badFiles.empty())
+                    if (!task->getSkippedTracks().empty())
                     {
-                        showBadFilesDialog(badFiles);
+                        showSkippedTracksReport(task->getSkippedTracks(), workingSetId, workingSetName);
                     }
                 });
             task->release(REFCOUNT_DEBUG_ARGS);
         }
 
-        void MainComponent::showBadFilesDialog(const std::vector<database::TrackInfo> &badFiles)
+        void MainComponent::showSkippedTracksReport(const std::vector<background_tasks::SkippedTrack> &skipped,
+            WorkingSetId workingSetId,
+            const std::string &workingSetName)
         {
-            juce::String message = "The following files could not be analyzed due to unsupported decoder format:\n\n";
-
-            for (const auto &track : badFiles)
+            std::vector<SkippedTracksDialog::Entry> entries;
+            entries.reserve(skipped.size());
+            for (const auto &entry : skipped)
             {
-                const auto trackPath{track.reconstructFullPath()};
-                message += juce::String(trackPath.filename().string()) + juce::String("\n");
+                auto reason = std::string{background_tasks::describe(entry.reason)};
+                if (!entry.detail.empty())
+                {
+                    reason += ": " + entry.detail;
+                }
+                entries.push_back(SkippedTracksDialog::Entry{entry.track.filename, entry.track.reconstructFullPath(), std::move(reason)});
             }
 
-            message += "\nWould you like to remove these files from all working sets?\n";
-            message += "(They will remain in the library but marked as bad format,\n";
-            message += "and won't be included in future BPM analysis or playback)";
+            juce::String summary{juce::String::fromUTF8(background_tasks::summarizeSkippedTracks(skipped).c_str())};
+            summary << " These tracks have no BPM and are marked as bad format in the library.";
 
-            juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,
-                "Bad Files Detected",
-                message,
-                "Remove from Working Sets",
-                "Keep in Working Sets",
+            const auto removable = background_tasks::removableTrackIds(skipped);
+            if (workingSetId <= 0 || removable.empty())
+            {
+                SkippedTracksDialog::show("Tracks Not Analyzed", summary, entries, this);
+                return;
+            }
+
+            // Only the tracks known to be broken. The pre-check turns down files the decoder can read
+            // (#77), so those stay in the set.
+            const auto keptCount = skipped.size() - removable.size();
+            summary << " Remove the " << static_cast<int>(removable.size()) << " that could not be read from \""
+                    << juce::String::fromUTF8(workingSetName.c_str()) << "\"?";
+            if (keptCount > 0)
+            {
+                summary << " The " << static_cast<int>(keptCount) << " turned down by the MP3 pre-check stay.";
+            }
+
+            juce::Component::SafePointer<MainComponent> safeThis{this};
+            SkippedTracksDialog::showConfirm("Tracks Not Analyzed",
+                summary,
+                entries,
+                "Remove " + juce::String{static_cast<int>(removable.size())} + " from Working Set",
+                "Keep All",
                 this,
-                juce::ModalCallbackFunction::create(
-                    [this, badFiles](int result)
+                [safeThis, workingSetId, workingSetName, skipped](bool confirmed)
+                {
+                    if (safeThis == nullptr)
                     {
-                        if (result == 1) // OK button clicked
-                        {
-                            // Collect track IDs
-                            std::vector<TrackId> badTrackIds;
-                            badTrackIds.reserve(badFiles.size());
-                            for (const auto &track : badFiles)
-                            {
-                                badTrackIds.push_back(track.trackId);
-                            }
-
-                            // Remove bad files from all working sets
-                            auto &wsManager = theTrackLibrary.getWorkingSetManager();
-                            const auto allWorkingSets = wsManager.getWorkingSets(database::TrackQueryArgs{});
-
-                            int removedCount = 0;
-                            for (const auto &ws : allWorkingSets)
-                            {
-                                // Try to remove all bad tracks from this working set
-                                // The method will ignore tracks that aren't in the set
-                                if (wsManager.removeTracksFromWorkingSet(ws.id, badTrackIds))
-                                {
-                                    removedCount++;
-                                }
-                            }
-
-                            m_statusPanel.getStatusBar().postMessage(
-                                std::format("Marked {} bad files and removed from {} working sets", badFiles.size(), removedCount), false);
-
-                            // Refresh the view to show updated working sets
-                            m_dataViewComponent.refreshView();
-                            // m_navigationPanel.refreshCurrentNode();
-                        }
-                    }));
+                        return;
+                    }
+                    // Both answers go through applySkippedTracksChoice, so the self test executes what Keep
+                    // All does as well as what Remove does.
+                    const auto removed = background_tasks::applySkippedTracksChoice(theTrackLibrary.getWorkingSetManager(), workingSetId, skipped, confirmed);
+                    if (!confirmed)
+                    {
+                        return;
+                    }
+                    auto *self = safeThis.getComponent();
+                    if (removed)
+                    {
+                        self->m_statusPanel.getStatusBar().postMessage(
+                            std::format("Removed {} unreadable track(s) from working set '{}'.", *removed, workingSetName), false);
+                    }
+                    else
+                    {
+                        self->m_statusPanel.getStatusBar().postMessage(
+                            std::format("Could not remove the unreadable tracks from working set '{}'.", workingSetName), true);
+                    }
+                    // Flush: the node is still holding the rows it fetched before the removal.
+                    self->m_dataViewComponent.refreshView(true);
+                });
         }
 
         // --- Action Execution Method Stubs ---

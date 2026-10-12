@@ -73,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix exported MP3s carrying an unfinished LAME Info frame at the head and a duplicate at the end, which made duration and seeking unreliable in other players
 - Fix reading MP3 VBR files with padding after the ID3v2 header (via JUCE 9.0.2)
 - A truncated WAV whose data chunk claims more bytes than the file holds no longer reads as if the missing samples existed (via JUCE 9.0.1)
+- The report after BPM analysis lists the tracks it skipped in a scrollable, copyable window with the reason for each (file missing, turned down by the MP3 pre-check, no decoder, read error), instead of every filename in one alert box under a single wrong reason. Its Remove takes only the tracks that could not be read out of the working set the analysis ran on, rather than out of every working set, and it no longer claims the tracks are excluded from later analysis and playback
 - macOS builds link one zlib. JUCE now calls the system libz that TagLib already used for compressed ID3 frames, instead of compiling a second copy into the executable beside it, and the build fails if that ever comes back
 
 ---
