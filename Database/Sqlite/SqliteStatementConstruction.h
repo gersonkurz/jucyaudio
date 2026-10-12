@@ -53,6 +53,8 @@ namespace jucyaudio
         private:
             SqliteStatement &m_stmt;
             int m_paramIndex; // Renamed for clarity from m_searchTermIndex
+            /// @brief The ?N the ws_id condition was bound to, so ORDER BY can name the same parameter; 0 if none.
+            int m_workingSetParamIndex{0};
             std::vector<std::string> m_filterParams; // Stores filter values for parameterized binding
 
             void addWhereClause(StringWriter &writer, const TrackQueryArgs &trackQueryArgs);

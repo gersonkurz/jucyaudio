@@ -8,6 +8,7 @@
 #include <Database/Sqlite/SqliteMixSummary.h>
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/Sqlite/SqliteAlbumManager.h>
+#include <Database/Sqlite/SqliteWorkingSetManager.h>
 #include <Utils/AssortedUtils.h>
 #include <Utils/StringWriter.h>
 #include <algorithm> // For std::reverse
@@ -577,10 +578,11 @@ namespace
         );)SQL",
         R"SQL(
         CREATE TABLE IF NOT EXISTS WorkingSetTracks(
-            ws_id INTEGER NOT NULL, track_id INTEGER NOT NULL, PRIMARY KEY(ws_id, track_id),
+            ws_id INTEGER NOT NULL, track_id INTEGER NOT NULL, position INTEGER, PRIMARY KEY(ws_id, track_id),
             FOREIGN KEY(ws_id) REFERENCES WorkingSets(ws_id) ON DELETE CASCADE,
             FOREIGN KEY(track_id) REFERENCES Tracks(track_id) ON DELETE CASCADE
         );)SQL",
+        "CREATE INDEX IF NOT EXISTS idx_workingsettracks_position ON WorkingSetTracks(ws_id, position);",
         R"SQL(
         CREATE TABLE IF NOT EXISTS Mixes(
             mix_id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, timestamp INTEGER,
@@ -1149,7 +1151,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 32;
+            const int latestSchemaVersion = 33;
 
             if (currentVersion == 0)
             {
@@ -3678,6 +3680,96 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 32;
+            }
+
+            if (currentVersion < 33)
+            {
+                spdlog::info("Migrating database from version 32 to 33 - a working set stores its own track order...");
+                // Until now a working set was displayed in the ORDER BY of its saved column sort. Each
+                // set is numbered by that same sort here, so it shows exactly what it showed before.
+                if (SqliteTransaction transaction{m_db})
+                {
+                    const auto fail = [this, &transaction](std::string_view what)
+                    {
+                        const auto error{m_db.getLastError()};
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, std::format("v33 {} failed: {}", what, error));
+                    };
+
+                    // Every set is read before anything is written. A read that stops part way would
+                    // otherwise leave the sets after the failure unnumbered under a schema stamped 33,
+                    // which no later open would revisit - so a failed read is a failed migration.
+                    std::vector<std::pair<WorkingSetId, std::vector<SortOrderInfo>>> workingSets;
+                    {
+                        SqliteStatement stmt{m_db, "SELECT ws_id, sort_order FROM WorkingSets;"};
+                        while (stmt.getNextResult())
+                        {
+                            workingSets.emplace_back(stmt.getInt64(0), stmt.isNull(1) ? std::vector<SortOrderInfo>{} : parseSortOrderJson(stmt.getText(1)));
+                        }
+                        if (!stmt.isValid() || stmt.hasError())
+                        {
+                            return fail("reading the working sets");
+                        }
+                    }
+
+                    // Checked rather than assumed, as v10 does: the migration self tests build a database
+                    // from today's schema and stamp it back to an older version, and that database
+                    // already has the column. A real library below 33 never does.
+                    bool hasPosition{false};
+                    {
+                        SqliteStatement columns{m_db, "PRAGMA table_info(WorkingSetTracks);"};
+                        while (columns.getNextResult())
+                        {
+                            hasPosition = hasPosition || columns.getText(1) == "position";
+                        }
+                        if (!columns.isValid() || columns.hasError())
+                        {
+                            return fail("reading the WorkingSetTracks columns");
+                        }
+                    }
+
+                    if (!(hasPosition || m_db.execute("ALTER TABLE WorkingSetTracks ADD COLUMN position INTEGER;")) ||
+                        !m_db.execute("CREATE INDEX IF NOT EXISTS idx_workingsettracks_position ON WorkingSetTracks(ws_id, position);"))
+                    {
+                        return fail("working set position column");
+                    }
+
+                    for (auto &[workingSetId, sortOrder] : workingSets)
+                    {
+                        // A set without a sort displayed in whatever order SQLite returned; it is given
+                        // the order a new set starts in, and saved as such so the header shows it.
+                        if (sortOrder.empty())
+                        {
+                            sortOrder = defaultWorkingSetSortOrder();
+                            SqliteStatement save{m_db, "UPDATE WorkingSets SET sort_order = ? WHERE ws_id = ?;"};
+                            if (!save.isValid() || !save.addParam(sortOrderToJson(sortOrder)) || !save.addParam(workingSetId) || !save.execute())
+                            {
+                                return fail(std::format("saving the sort of working set {}", workingSetId));
+                            }
+                        }
+                        if (!numberUnpositionedTracks(m_db, workingSetId, sortOrder))
+                        {
+                            return fail(std::format("numbering working set {}", workingSetId));
+                        }
+                    }
+
+                    if (auto result = setDBSchemaVersion(33); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 33.");
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated to version 33 - {} working set(s) numbered.", workingSets.size());
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 33;
             }
 
             return DbResult::success();

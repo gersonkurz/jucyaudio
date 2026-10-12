@@ -96,7 +96,8 @@ namespace jucyaudio
 
             if (args.workingSetId > 0)
             {
-                addCondition(std::format("track_id IN (SELECT track_id FROM WorkingSetTracks WHERE ws_id = ?{})", m_paramIndex++));
+                m_workingSetParamIndex = m_paramIndex++;
+                addCondition(std::format("track_id IN (SELECT track_id FROM WorkingSetTracks WHERE ws_id = ?{})", m_workingSetParamIndex));
             }
             if (args.mixId > 0)
             {
@@ -134,6 +135,18 @@ namespace jucyaudio
 
         void SqliteStatementConstruction::addOrderByClause(StringWriter &writer, const TrackQueryArgs &args)
         {
+            // A working set has an order of its own; a column sort is applied to it by renumbering
+            // (SqliteWorkingSetManager::applySortOrder), not here. Same ?N as the ws_id condition, so
+            // nothing more is bound. A subquery rather than a join, because a join would make the
+            // unqualified column names in the filter criteria ambiguous. A row without a position is
+            // shown last, by track_id - the order the repair in numberUnpositionedTracks' callers keeps.
+            if (args.workingSetId > 0 && m_workingSetParamIndex > 0)
+            {
+                writer.appendFormatted(" ORDER BY (SELECT position FROM WorkingSetTracks WHERE ws_id = ?{} AND track_id = Tracks.track_id) "
+                                       "NULLS LAST, Tracks.track_id",
+                    m_workingSetParamIndex);
+                return;
+            }
             if (args.sortBy.empty())
                 return;
             writer.append(" ORDER BY ");
@@ -242,6 +255,7 @@ namespace jucyaudio
         bool SqliteStatementConstruction::createSelectStatement(const TrackQueryArgs &args)
         {
             m_paramIndex = 1;
+            m_workingSetParamIndex = 0;
             m_filterParams.clear();
             StringWriter writer;
             
@@ -270,7 +284,8 @@ namespace jucyaudio
                 // Add other WHERE conditions if needed
                 if (args.workingSetId > 0)
                 {
-                    writer.appendFormatted(" AND track_id IN (SELECT track_id FROM WorkingSetTracks WHERE ws_id = ?{})", m_paramIndex++);
+                    m_workingSetParamIndex = m_paramIndex++;
+                    writer.appendFormatted(" AND track_id IN (SELECT track_id FROM WorkingSetTracks WHERE ws_id = ?{})", m_workingSetParamIndex);
                 }
                 if (args.mixId > 0)
                 {

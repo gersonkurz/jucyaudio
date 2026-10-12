@@ -33,7 +33,10 @@
 #include <Database/Scanners/Id3TagScanner.h>
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
+#include <Database/Sqlite/SqliteTrackDatabase.h>
 #include <Database/Sqlite/SqliteTransaction.h>
+#include <Database/Sqlite/SqliteWorkingSetManager.h>
+#include <Database/Nodes/WorkingSetNode.h>
 #include <Database/TrackLibrary.h>
 #include <Database/TrackScanner.h>
 #include <UI/CreateMixDialogComponent.h>
@@ -76,6 +79,7 @@
 #include <format>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -5858,6 +5862,10 @@ namespace jucyaudio
                             std::format("{}: so did all three mix rows, including the second copy of the same track", label));
                         report.check(scalar("SELECT COUNT(*) FROM WorkingSetTracks WHERE ws_id = 1") == "2",
                             std::format("{}: and the working set kept its tracks", label));
+                        report.check(scalar("SELECT COUNT(*) FROM WorkingSetTracks WHERE position IS NULL") == "0",
+                            std::format("{}: each with a position, from the v33 rung", label));
+                        report.check(parseSortOrderJson(scalar("SELECT sort_order FROM WorkingSets WHERE ws_id = 1")) == defaultWorkingSetSortOrder(),
+                            std::format("{}: and the set, which had no sort, is saved as sorted by BPM ascending", label));
                         report.check(scalar("SELECT COUNT(*) FROM TracksSearchData") == "2",
                             std::format("{}: the search content is there for both tracks", label));
                     }
@@ -9385,6 +9393,560 @@ namespace jucyaudio
 
             writeResultsFile(resultsPath, "jucyaudio audio format self test", report);
             spdlog::info("[SelfTest] Audio format test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
+            return report.failures() == 0 ? 0 : 1;
+        }
+
+        int runWorkingSetOrderSelfTest(const std::filesystem::path &selfTestRoot, const std::filesystem::path &databasePath)
+        {
+            Report report;
+            const auto resultsPath = selfTestRoot / "wsorder-results.txt";
+            constexpr const char *title = "jucyaudio working set order self test";
+            // More than one page, so the order is checked across the LIMIT/OFFSET boundary the view pages at.
+            constexpr int kTracks = 2100;
+
+            spdlog::info("[SelfTest] Starting working set order self test. Root: {}", pathToString(selfTestRoot));
+
+            auto &trackDb = theTrackLibrary.getTrackDatabase();
+            auto &wsManager = theTrackLibrary.getWorkingSetManager();
+
+            // A second connection to the library's database, for fixtures and for reading positions
+            // straight out of the table. What it writes is committed, so the library sees it.
+            SqliteDatabase direct;
+            if (!direct.open(pathToString(databasePath)))
+            {
+                report.abort("Could not open a second connection to the self test library.");
+                writeResultsFile(resultsPath, title, report);
+                return 1;
+            }
+
+            // Tracks inserted directly, under a folder no root knows about, so no scan touches them. Every
+            // third has no BPM, the rest a scattered one; titles alternate 'even' and 'odd' so a search
+            // term selects half; years cycle so a structured filter selects a known subset.
+            FolderId folderId{0};
+            {
+                const bool built = direct.execute("INSERT INTO Folders (parent_id, name, root_path, actual_path) VALUES "
+                                                  "(NULL, 'wsorder', 'c:\\wsorder-selftest', 'C:\\wsorder-selftest');");
+                folderId = direct.getLastInsertRowId();
+                const auto sql = std::format(
+                    "INSERT INTO Tracks (folder_id, filename, title, bpm, year) "
+                    "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < {}) "
+                    "SELECT {}, 'wso' || i || '.wav', (CASE WHEN i % 2 = 0 THEN 'even' ELSE 'odd' END) || ' w' || ((i * 7907) % 10007), "
+                    "CASE WHEN i % 3 = 0 THEN NULL ELSE (60 + (i * 7919) % 120) * 1000 END, 1990 + i % 30 FROM n;",
+                    kTracks,
+                    folderId);
+                if (!built || folderId <= 0 || !direct.execute(sql))
+                {
+                    report.abort(std::format("Could not build the fixture tracks: {}", direct.getLastError()));
+                    writeResultsFile(resultsPath, title, report);
+                    return 1;
+                }
+            }
+
+            std::vector<TrackId> allIds;
+            {
+                SqliteStatement stmt{direct, "SELECT track_id FROM Tracks WHERE folder_id = ? ORDER BY track_id;"};
+                stmt.addParam(folderId);
+                while (stmt.getNextResult())
+                {
+                    allIds.push_back(stmt.getInt64(0));
+                }
+            }
+            report.check(static_cast<int>(allIds.size()) == kTracks, std::format("the fixture holds {} tracks ({} expected)", allIds.size(), kTracks));
+
+            const auto trackInfosFor = [](const std::vector<TrackId> &ids)
+            {
+                std::vector<TrackInfo> infos;
+                for (const auto id : ids)
+                {
+                    TrackInfo info{};
+                    info.trackId = id;
+                    infos.push_back(info);
+                }
+                return infos;
+            };
+
+            // What the view shows: the working set query, paged exactly as LibraryNode pages it.
+            const auto displayed = [&trackDb](WorkingSetId wsId, const std::string &search = {}, const std::vector<utils::FilterCriterion> &filters = {})
+            {
+                std::vector<TrackId> ids;
+                TrackQueryArgs args{};
+                args.workingSetId = wsId;
+                if (!search.empty())
+                {
+                    args.searchTerms = {search};
+                }
+                args.filterCriteria = filters;
+                args.usePaging = true;
+                for (args.offset = 0;; args.offset += QUERY_PAGE_SIZE)
+                {
+                    const auto page = trackDb.getTracks(args);
+                    for (const auto &track : page)
+                    {
+                        ids.push_back(track.trackId);
+                    }
+                    if (page.size() < QUERY_PAGE_SIZE)
+                    {
+                        break;
+                    }
+                }
+                return ids;
+            };
+
+            const auto positions = [&direct](WorkingSetId wsId)
+            {
+                std::map<TrackId, std::optional<int64_t>> byTrack;
+                SqliteStatement stmt{direct, "SELECT track_id, position FROM WorkingSetTracks WHERE ws_id = ?;"};
+                stmt.addParam(wsId);
+                while (stmt.getNextResult())
+                {
+                    byTrack[stmt.getInt64(0)] = stmt.isNull(1) ? std::nullopt : std::optional<int64_t>{stmt.getInt64(1)};
+                }
+                return byTrack;
+            };
+
+            // An order computed independently of the code under test: a plain ORDER BY over the members.
+            const auto membersOrderedBy = [&direct](WorkingSetId wsId, const std::string &orderBy)
+            {
+                std::vector<TrackId> ids;
+                SqliteStatement stmt{direct,
+                    std::format("SELECT t.track_id FROM WorkingSetTracks w JOIN Tracks t ON t.track_id = w.track_id WHERE w.ws_id = ? ORDER BY {};", orderBy)};
+                stmt.addParam(wsId);
+                while (stmt.getNextResult())
+                {
+                    ids.push_back(stmt.getInt64(0));
+                }
+                return ids;
+            };
+
+            const auto sameMembers = [](std::vector<TrackId> a, std::vector<TrackId> b)
+            {
+                std::ranges::sort(a);
+                std::ranges::sort(b);
+                return a == b;
+            };
+
+            const auto createSet = [&](const std::string &name, const std::vector<TrackId> &ids) -> WorkingSetId
+            {
+                WorkingSetInfo info{};
+                if (!wsManager.createWorkingSetFromTrackInfos(trackInfosFor(ids), name, info) || info.id <= 0)
+                {
+                    report.check(false, std::format("working set '{}' could be created", name));
+                    return 0;
+                }
+                return info.id;
+            };
+
+            // --- T3: a new set is numbered BPM ascending, whatever order it was handed its tracks in ---
+            {
+                std::vector<TrackId> scrambled{allIds};
+                std::ranges::reverse(scrambled);
+                std::rotate(scrambled.begin(), scrambled.begin() + 333, scrambled.end());
+                const auto wsId = createSet("WsOrder T3", scrambled);
+                const auto shown = displayed(wsId);
+                report.check(shown == membersOrderedBy(wsId, "t.bpm ASC, t.track_id"),
+                    std::format("T3: a new set of {} tracks reads back BPM ascending, missing BPM first, across {} pages", shown.size(), (shown.size() + QUERY_PAGE_SIZE - 1) / QUERY_PAGE_SIZE));
+
+                std::vector<WorkingSetInfo> sets = wsManager.getWorkingSets(TrackQueryArgs{});
+                const auto it = std::ranges::find_if(sets, [wsId](const WorkingSetInfo &ws) { return ws.id == wsId; });
+                report.check(it != sets.end() && it->sortOrder == defaultWorkingSetSortOrder(), "T3: and it is saved as sorted by BPM ascending, so the header shows that");
+            }
+
+            // --- T6: the view is in position order, across pages, with search and filter too ---
+            {
+                const auto wsId = createSet("WsOrder T6", allIds);
+                // Positions written by hand: reversed track_id order, and one track left without one.
+                const auto unpositioned = allIds[kTracks / 2];
+                const bool written = direct.execute(std::format("UPDATE WorkingSetTracks SET position = 100000 - track_id WHERE ws_id = {};", wsId)) &&
+                    direct.execute(std::format("UPDATE WorkingSetTracks SET position = NULL WHERE ws_id = {} AND track_id = {};", wsId, unpositioned));
+                report.check(written, "T6: positions could be written directly");
+
+                std::vector<TrackId> expected;
+                for (auto it = allIds.rbegin(); it != allIds.rend(); ++it)
+                {
+                    if (*it != unpositioned)
+                    {
+                        expected.push_back(*it);
+                    }
+                }
+                expected.push_back(unpositioned);
+                report.check(displayed(wsId) == expected, "T6: the view follows position across the page boundary, and the row without one comes last");
+
+                // Subsets of the same order. The predicates are the fixture's own formulas, applied to track_id.
+                const auto filtered = [&expected, &direct](const std::string &where)
+                {
+                    std::vector<TrackId> keep;
+                    for (const auto id : expected)
+                    {
+                        SqliteStatement stmt{direct, std::format("SELECT COUNT(*) FROM Tracks WHERE track_id = ? AND ({});", where)};
+                        stmt.addParam(id);
+                        if (stmt.getNextResult() && stmt.getInt64(0) == 1)
+                        {
+                            keep.push_back(id);
+                        }
+                    }
+                    return keep;
+                };
+                const std::vector<utils::FilterCriterion> after2005{utils::FilterCriterion{"year", ">", "2005", ""}};
+
+                const auto bySearch = displayed(wsId, "even");
+                report.check(!bySearch.empty() && bySearch == filtered("title LIKE 'even %'"),
+                    std::format("T6: with a search term, the {} matching rows are in position order", bySearch.size()));
+                const auto byFilter = displayed(wsId, {}, after2005);
+                report.check(!byFilter.empty() && byFilter == filtered("year > 2005"),
+                    std::format("T6: with a structured filter, the {} matching rows are in position order", byFilter.size()));
+                const auto byBoth = displayed(wsId, "even", after2005);
+                report.check(!byBoth.empty() && byBoth == filtered("title LIKE 'even %' AND year > 2005"),
+                    std::format("T6: with both, the {} matching rows are in position order", byBoth.size()));
+            }
+
+            // --- T1: a shuffle permutes the selection among its own rows and moves nothing else ---
+            {
+                const auto wsId = createSet("WsOrder T1", allIds);
+                const auto before = displayed(wsId);
+                const auto positionsBefore = positions(wsId);
+                // Rows 1020..1039, so the selection straddles the page boundary.
+                const std::vector<TrackId> selected{before.begin() + 1020, before.begin() + 1040};
+
+                report.check(wsManager.shuffleTracks(wsId, selected), "T1: shuffleTracks succeeded");
+                const auto after = displayed(wsId);
+                const auto positionsAfter = positions(wsId);
+
+                bool othersUnchanged{true};
+                std::vector<int64_t> heldBefore, heldAfter;
+                for (const auto &[id, position] : positionsBefore)
+                {
+                    if (std::ranges::find(selected, id) == selected.end())
+                    {
+                        othersUnchanged = othersUnchanged && positionsAfter.at(id) == position;
+                    }
+                    else
+                    {
+                        heldBefore.push_back(position.value_or(-1));
+                        heldAfter.push_back(positionsAfter.at(id).value_or(-1));
+                    }
+                }
+                std::ranges::sort(heldBefore);
+                std::ranges::sort(heldAfter);
+                report.check(othersUnchanged, "T1: no track outside the selection changed position");
+                report.check(heldBefore == heldAfter, "T1: the selection holds the same positions it held before");
+
+                bool rowsOutsideUnchanged{after.size() == before.size()};
+                for (size_t i = 0; rowsOutsideUnchanged && i < before.size(); ++i)
+                {
+                    rowsOutsideUnchanged = (i >= 1020 && i < 1040) || after[i] == before[i];
+                }
+                const std::vector<TrackId> selectedRowsAfter{after.begin() + 1020, after.begin() + 1040};
+                report.check(rowsOutsideUnchanged, "T1: every row outside the selection shows the track it showed before");
+                report.check(sameMembers(selectedRowsAfter, selected), "T1: the selected rows still hold exactly the selected tracks");
+                // A uniform shuffle of 20 returns the identity with probability 1/20!, about 4e-19.
+                report.check(selectedRowsAfter != selected, "T1: and in a different order");
+
+                report.check(wsManager.shuffleTracks(wsId, {selected.front()}) && positions(wsId) == positionsAfter, "T1: shuffling a single track changes nothing");
+            }
+
+            // --- T2: tracks added to a set go after everything already in it ---
+            {
+                const std::vector<TrackId> first{allIds.begin(), allIds.begin() + 1000};
+                const std::vector<TrackId> second{allIds.begin() + 1000, allIds.begin() + 1100};
+                const auto wsId = createSet("WsOrder T2", first);
+                const auto before = positions(wsId);
+                const auto shownBefore = displayed(wsId);
+
+                std::vector<TrackId> toAdd{second};
+                toAdd.push_back(first[500]); // already a member
+                report.check(wsManager.addToWorkingSet(wsId, trackInfosFor(toAdd)), "T2: addToWorkingSet succeeded");
+                const auto after = positions(wsId);
+
+                int64_t maxBefore{0};
+                bool existingUnchanged{true};
+                for (const auto &[id, position] : before)
+                {
+                    maxBefore = std::max(maxBefore, position.value_or(0));
+                    existingUnchanged = existingUnchanged && after.at(id) == position;
+                }
+                bool newAfterExisting{true};
+                for (const auto id : second)
+                {
+                    newAfterExisting = newAfterExisting && after.contains(id) && after.at(id).has_value() && *after.at(id) > maxBefore;
+                }
+                report.check(existingUnchanged, "T2: no existing track moved, including the one that was added again");
+                report.check(newAfterExisting, "T2: every new track is positioned after every existing one");
+
+                const auto shownAfter = displayed(wsId);
+                const bool prefixKept = shownAfter.size() == shownBefore.size() + second.size() &&
+                    std::equal(shownBefore.begin(), shownBefore.end(), shownAfter.begin());
+                report.check(prefixKept, "T2: the view shows the old rows unchanged, then the new ones");
+            }
+
+            // --- T4: a column sort renumbers the whole set in that order ---
+            {
+                const auto wsId = createSet("WsOrder T4", allIds);
+                const std::vector<SortOrderInfo> titleDescending{SortOrderInfo{"title", true}};
+                report.check(wsManager.applySortOrder(wsId, titleDescending), "T4: applySortOrder succeeded");
+                report.check(displayed(wsId) == membersOrderedBy(wsId, "t.title COLLATE NOCASE DESC, t.track_id"), "T4: the set reads back sorted by title, descending");
+            }
+
+            // --- T5: showing a set re-applies its saved sort, and that must not renumber it ---
+            {
+                const auto wsId = createSet("WsOrder T5", allIds);
+                const auto sets = wsManager.getWorkingSets(TrackQueryArgs{});
+                const auto it = std::ranges::find_if(sets, [wsId](const WorkingSetInfo &ws) { return ws.id == wsId; });
+                if (it == sets.end())
+                {
+                    report.check(false, "T5: the new working set is listed");
+                }
+                else
+                {
+                    const std::vector<TrackId> selected{allIds.begin() + 10, allIds.begin() + 40};
+                    wsManager.shuffleTracks(wsId, selected);
+                    const auto shuffled = positions(wsId);
+
+                    auto *node = new WorkingSetNode{nullptr, *it};
+                    report.check(node->setSortOrder(it->sortOrder), "T5: the node accepts its own saved sort");
+                    report.check(positions(wsId) == shuffled, "T5: re-applying the saved sort left the shuffle alone");
+
+                    const std::vector<SortOrderInfo> bpmDescending{SortOrderInfo{"bpm", true}};
+                    report.check(node->setSortOrder(bpmDescending) && displayed(wsId) == membersOrderedBy(wsId, "t.bpm DESC, t.track_id"),
+                        "T5: a different sort through the node does renumber the set");
+                    node->release(REFCOUNT_DEBUG_ARGS);
+                }
+            }
+
+            // --- T5a: rows without a position are repaired where they are shown, not by the saved sort ---
+            {
+                // Saved sort title ascending; half the rows lose their position. track_id order and title
+                // order disagree for them, so a repair by the saved sort would move them on screen.
+                const std::vector<TrackId> members{allIds.begin(), allIds.begin() + 200};
+                const auto setUp = [&](const std::string &name)
+                {
+                    const auto wsId = createSet(name, members);
+                    const std::vector<SortOrderInfo> titleAscending{SortOrderInfo{"title", false}};
+                    wsManager.applySortOrder(wsId, titleAscending);
+                    direct.execute(std::format("UPDATE WorkingSetTracks SET position = NULL WHERE ws_id = {} AND track_id % 2 = 0;", wsId));
+                    return wsId;
+                };
+
+                {
+                    const auto wsId = setUp("WsOrder T5a shuffle");
+                    const auto before = displayed(wsId);
+                    // Rows 90..129: the last positioned rows and the first unpositioned ones.
+                    const size_t from{90}, to{130};
+                    const std::vector<TrackId> selected{before.begin() + from, before.begin() + to};
+                    report.check(wsManager.shuffleTracks(wsId, selected), "T5a: shuffle with unpositioned rows succeeded");
+                    const auto after = displayed(wsId);
+
+                    bool outsideUnchanged{after.size() == before.size()};
+                    for (size_t i = 0; outsideUnchanged && i < before.size(); ++i)
+                    {
+                        outsideUnchanged = (i >= from && i < to) || after[i] == before[i];
+                    }
+                    report.check(outsideUnchanged, "T5a: every unselected row, positioned or not, keeps its row");
+                    report.check(sameMembers({after.begin() + from, after.begin() + to}, selected), "T5a: the selected rows still hold exactly the selected tracks");
+                }
+
+                {
+                    const auto wsId = setUp("WsOrder T5a append");
+                    const auto before = displayed(wsId);
+                    const std::vector<TrackId> added{allIds.begin() + 200, allIds.begin() + 230};
+                    report.check(wsManager.addToWorkingSet(wsId, trackInfosFor(added)), "T5a: append with unpositioned rows succeeded");
+                    const auto after = displayed(wsId);
+                    const bool prefixKept = after.size() == before.size() + added.size() && std::equal(before.begin(), before.end(), after.begin());
+                    report.check(prefixKept, "T5a: every existing row keeps its row, and the new tracks all come after them");
+                    report.check(sameMembers({after.begin() + static_cast<std::ptrdiff_t>(before.size()), after.end()}, added), "T5a: the rows after them are the new tracks");
+                }
+            }
+
+            // --- T6a: shuffling under a filter keeps the visible set and leaves hidden rows alone ---
+            {
+                const auto wsId = createSet("WsOrder T6a", allIds);
+                const std::vector<utils::FilterCriterion> after2005{utils::FilterCriterion{"year", ">", "2005", ""}};
+                const auto visibleBefore = displayed(wsId, {}, after2005);
+                const auto positionsBefore = positions(wsId);
+                const std::vector<TrackId> selected{visibleBefore.begin() + 5, visibleBefore.begin() + 45};
+
+                report.check(wsManager.shuffleTracks(wsId, selected), "T6a: shuffle under a filter succeeded");
+                const auto visibleAfter = displayed(wsId, {}, after2005);
+                const auto positionsAfter = positions(wsId);
+
+                bool hiddenUnchanged{true};
+                for (const auto &[id, position] : positionsBefore)
+                {
+                    if (std::ranges::find(visibleBefore, id) == visibleBefore.end())
+                    {
+                        hiddenUnchanged = hiddenUnchanged && positionsAfter.at(id) == position;
+                    }
+                }
+                bool outsideUnchanged{visibleAfter.size() == visibleBefore.size()};
+                for (size_t i = 0; outsideUnchanged && i < visibleBefore.size(); ++i)
+                {
+                    outsideUnchanged = (i >= 5 && i < 45) || visibleAfter[i] == visibleBefore[i];
+                }
+                report.check(sameMembers(visibleAfter, visibleBefore), "T6a: the filtered view shows the same tracks after the shuffle");
+                report.check(outsideUnchanged && sameMembers({visibleAfter.begin() + 5, visibleAfter.begin() + 45}, selected),
+                    "T6a: only the selected visible rows traded places");
+                report.check(hiddenUnchanged, "T6a: no track hidden by the filter changed position");
+            }
+
+            // --- T7: a v32 library is numbered by the sort each set was displayed by ---
+            {
+                const auto workRoot = selfTestRoot / "wsorder-migration";
+                const auto dbPath = workRoot / "v32.db";
+                std::error_code ec;
+                std::filesystem::remove_all(workRoot, ec);
+                std::filesystem::create_directories(workRoot, ec);
+
+                {
+                    SqliteTrackDatabase fresh;
+                    report.check(fresh.connect(dbPath).isOk(), "T7: a scratch database could be created");
+                }
+
+                std::vector<TrackId> titleOrder, bpmOrder;
+                {
+                    SqliteDatabase seed;
+                    // Put WorkingSetTracks back into its v32 shape, with two sets in it: one sorted by
+                    // title, one with no sort at all, which displayed in whatever order SQLite chose and
+                    // is given BPM ascending.
+                    const bool seeded = seed.open(pathToString(dbPath)) &&
+                        seed.execute("INSERT INTO Folders (folder_id, parent_id, name, root_path) VALUES (1, NULL, 'v32', 'c:\\v32');") &&
+                        seed.execute("INSERT INTO Tracks (track_id, folder_id, filename, title, bpm) VALUES "
+                                     "(1, 1, 'a.wav', 'Delta', 120000), (2, 1, 'b.wav', 'alpha', NULL), (3, 1, 'c.wav', 'Charlie', 90000), "
+                                     "(4, 1, 'd.wav', 'bravo', 100000), (5, 1, 'e.wav', 'Echo', NULL);") &&
+                        seed.execute("DROP INDEX idx_workingsettracks_position;") &&
+                        seed.execute("ALTER TABLE WorkingSetTracks DROP COLUMN position;") &&
+                        seed.execute("INSERT INTO WorkingSets (ws_id, name, sort_order) VALUES (1, 'by title', '[{\"column\":\"title\",\"descending\":false}]'), "
+                                     "(2, 'unsorted', NULL);") &&
+                        seed.execute("INSERT INTO WorkingSetTracks (ws_id, track_id) VALUES (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (2, 1), (2, 2), (2, 3), (2, 4), (2, 5);") &&
+                        seed.execute("UPDATE SchemaInfo SET value = '32' WHERE key = 'schema_version';");
+                    report.check(seeded, std::format("T7: a v32-shaped database with two working sets could be seeded ({})", seed.getLastError()));
+                    // Expected: what the old query showed for set 1, and BPM ascending for set 2.
+                    titleOrder = {2, 4, 3, 1, 5};
+                    bpmOrder = {2, 5, 3, 4, 1};
+                }
+
+                {
+                    SqliteTrackDatabase migrated;
+                    report.check(migrated.connect(dbPath).isOk(), "T7: it migrates to 33");
+                }
+
+                SqliteDatabase check;
+                if (check.open(pathToString(dbPath)))
+                {
+                    const auto orderOf = [&check](WorkingSetId wsId)
+                    {
+                        std::vector<TrackId> ids;
+                        SqliteStatement stmt{check, "SELECT track_id FROM WorkingSetTracks WHERE ws_id = ? ORDER BY position;"};
+                        stmt.addParam(wsId);
+                        while (stmt.getNextResult())
+                        {
+                            ids.push_back(stmt.getInt64(0));
+                        }
+                        return ids;
+                    };
+                    SqliteStatement unnumbered{check, "SELECT COUNT(*) FROM WorkingSetTracks WHERE position IS NULL;"};
+                    report.check(unnumbered.getNextResult() && unnumbered.getInt64(0) == 0, "T7: every row has a position after the migration");
+                    report.check(orderOf(1) == titleOrder, "T7: the set sorted by title is numbered in the order it was displayed in");
+                    report.check(orderOf(2) == bpmOrder, "T7: the set with no sort is numbered BPM ascending");
+                    SqliteStatement sort{check, "SELECT sort_order FROM WorkingSets WHERE ws_id = 2;"};
+                    report.check(sort.getNextResult() && parseSortOrderJson(sort.getText(0)) == defaultWorkingSetSortOrder(),
+                        "T7: and is saved as sorted by BPM ascending");
+                }
+                else
+                {
+                    report.check(false, "T7: the migrated database could be reopened");
+                }
+            }
+
+            // --- T8: reads that fail part way are failures, in the migration and in the shuffle ---
+            //
+            // Both make a table answer with some of its rows and then raise, the technique the timeline
+            // suite uses: abs() of the most negative integer is a runtime error, so the statement prepares
+            // and the failure lands in the middle of the iteration, where only hasError() can see it.
+            {
+                const auto workRoot = selfTestRoot / "wsorder-partial";
+                std::error_code ec;
+                std::filesystem::remove_all(workRoot, ec);
+                std::filesystem::create_directories(workRoot, ec);
+
+                // The migration: WorkingSets yields set 1 and then fails on set 2. Reading only set 1 and
+                // carrying on would number it, stamp 33 and commit, and set 2 would never be numbered.
+                {
+                    const auto dbPath = workRoot / "migration.db";
+                    {
+                        SqliteTrackDatabase fresh;
+                        report.check(fresh.connect(dbPath).isOk(), "T8: a scratch database for the failing migration read could be created");
+                    }
+                    {
+                        SqliteDatabase seed;
+                        const bool seeded = seed.open(pathToString(dbPath)) && seed.execute("PRAGMA legacy_alter_table=ON;") &&
+                            seed.execute("INSERT INTO Folders (folder_id, parent_id, name, root_path) VALUES (1, NULL, 'p', 'c:\\p');") &&
+                            seed.execute("INSERT INTO Tracks (track_id, folder_id, filename, title, bpm) VALUES (1, 1, 'a.wav', 'B', 1000), (2, 1, 'b.wav', 'A', 2000);") &&
+                            seed.execute("DROP INDEX idx_workingsettracks_position;") &&
+                            seed.execute("ALTER TABLE WorkingSetTracks DROP COLUMN position;") &&
+                            seed.execute("INSERT INTO WorkingSets (ws_id, name, sort_order) VALUES (1, 'one', '[{\"column\":\"title\",\"descending\":false}]'), (2, 'two', NULL);") &&
+                            seed.execute("INSERT INTO WorkingSetTracks (ws_id, track_id) VALUES (1, 1), (1, 2), (2, 1), (2, 2);") &&
+                            seed.execute("ALTER TABLE WorkingSets RENAME TO WorkingSets_real;") &&
+                            seed.execute("CREATE VIEW WorkingSets AS SELECT ws_id, name, timestamp, "
+                                         "CASE WHEN ws_id = 2 THEN abs(-9223372036854775807 - 1) ELSE sort_order END AS sort_order, next_mix_number "
+                                         "FROM WorkingSets_real ORDER BY ws_id;") &&
+                            seed.execute("UPDATE SchemaInfo SET value = '32' WHERE key = 'schema_version';");
+                        report.check(seeded, std::format("T8: a v32 database whose WorkingSets fails part way could be seeded ({})", seed.getLastError()));
+                    }
+                    {
+                        SqliteTrackDatabase migrating;
+                        report.check(!migrating.connect(dbPath).isOk(), "T8: the migration fails when its read of the working sets fails part way");
+                    }
+                    SqliteDatabase after;
+                    if (after.open(pathToString(dbPath)))
+                    {
+                        SqliteStatement version{after, "SELECT value FROM SchemaInfo WHERE key = 'schema_version';"};
+                        report.check(version.getNextResult() && version.getText(0) == "32", "T8: and the schema stays at 32, so the next open tries again");
+                        SqliteStatement column{after, "SELECT COUNT(*) FROM pragma_table_info('WorkingSetTracks') WHERE name = 'position';"};
+                        report.check(column.getNextResult() && column.getInt64(0) == 0, "T8: with nothing of the rung left behind");
+                    }
+                }
+
+                // The shuffle: WorkingSetTracks serves its rows until a write has gone through it, then
+                // fails part way through the next read. The repair before the shuffle is that write, so
+                // the shuffle's own read is the one that fails, after it has returned some rows.
+                {
+                    const auto dbPath = workRoot / "shuffle.db";
+                    {
+                        SqliteTrackDatabase fresh;
+                        report.check(fresh.connect(dbPath).isOk(), "T8: a scratch database for the failing shuffle read could be created");
+                    }
+                    SqliteDatabase db;
+                    const bool seeded = db.open(pathToString(dbPath)) && db.execute("PRAGMA legacy_alter_table=ON;") &&
+                        db.execute("INSERT INTO Folders (folder_id, parent_id, name, root_path) VALUES (1, NULL, 'p', 'c:\\p');") &&
+                        db.execute("INSERT INTO Tracks (track_id, folder_id, filename) VALUES (1, 1, 'a.wav'), (2, 1, 'b.wav'), (3, 1, 'c.wav'), (4, 1, 'd.wav'), (5, 1, 'e.wav');") &&
+                        db.execute("INSERT INTO WorkingSets (ws_id, name) VALUES (1, 'one');") &&
+                        db.execute("INSERT INTO WorkingSetTracks (ws_id, track_id, position) VALUES (1, 1, 1), (1, 2, 2), (1, 3, 3), (1, 4, 4), (1, 5, NULL);") &&
+                        db.execute("ALTER TABLE WorkingSetTracks RENAME TO WorkingSetTracks_real;") &&
+                        db.execute("CREATE TABLE Sabotage (armed INTEGER);") && db.execute("INSERT INTO Sabotage VALUES (0);") &&
+                        db.execute("CREATE VIEW WorkingSetTracks AS SELECT ws_id, track_id, "
+                                   "CASE WHEN track_id = 4 AND (SELECT armed FROM Sabotage) = 1 THEN abs(-9223372036854775807 - 1) ELSE position END AS position "
+                                   "FROM WorkingSetTracks_real;") &&
+                        db.execute("CREATE TRIGGER wst_update INSTEAD OF UPDATE ON WorkingSetTracks BEGIN "
+                                   "UPDATE WorkingSetTracks_real SET position = NEW.position WHERE ws_id = OLD.ws_id AND track_id = OLD.track_id; "
+                                   "UPDATE Sabotage SET armed = 1; END;");
+                    report.check(seeded, std::format("T8: a working set whose positions fail part way through a read could be seeded ({})", db.getLastError()));
+
+                    SqliteWorkingSetManager scratchManager{db};
+                    IWorkingSetManager &manager = scratchManager;
+                    report.check(!manager.shuffleTracks(1, {1, 2, 3, 4, 5}), "T8: the shuffle fails when its read of the positions fails part way");
+
+                    std::vector<std::string> left;
+                    SqliteStatement stmt{db, "SELECT track_id, COALESCE(position, 'NULL') FROM WorkingSetTracks_real ORDER BY track_id;"};
+                    while (stmt.getNextResult())
+                    {
+                        left.push_back(std::format("{}:{}", stmt.getInt64(0), stmt.getText(1)));
+                    }
+                    const std::vector<std::string> untouched{"1:1", "2:2", "3:3", "4:4", "5:NULL"};
+                    report.check(left == untouched, "T8: and nothing it wrote is left behind, not the repair and not a partial shuffle");
+                }
+            }
+
+            writeResultsFile(resultsPath, title, report);
+            spdlog::info("[SelfTest] Working set order test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
             return report.failures() == 0 ? 0 : 1;
         }
     } // namespace tests

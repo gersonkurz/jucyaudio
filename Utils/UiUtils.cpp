@@ -46,6 +46,8 @@ namespace jucyaudio
                 return "Run BPM Analysis";
             case DataAction::CheckFilesOnDisk:
                 return "Check Files on Disk";
+            case DataAction::ShuffleSelection:
+                return "Shuffle Selection";
             case DataAction::ShowMixEditor:
                 return "Show Mix Editor";
             case DataAction::ShowTrackEditor:

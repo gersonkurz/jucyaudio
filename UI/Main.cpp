@@ -504,8 +504,9 @@ namespace jucyaudio
                     const auto folderCacheResult = tests::runFolderCacheSelfTest(selfTestRoot);
                     const auto transactionResult = tests::runTransactionSelfTest(selfTestRoot);
                     const auto audioFormatResult = tests::runAudioFormatSelfTest(selfTestRoot);
+                    const auto workingSetOrderResult = tests::runWorkingSetOrderSelfTest(selfTestRoot, databasePath);
                     result = (scanResult != 0 || recoveryResult != 0 || backupResult != 0 || migrationResult != 0 || timelineResult != 0 ||
-                              folderCacheResult != 0 || transactionResult != 0 || audioFormatResult != 0)
+                              folderCacheResult != 0 || transactionResult != 0 || audioFormatResult != 0 || workingSetOrderResult != 0)
                         ? 1
                         : 0;
                 }

@@ -20,6 +20,7 @@ namespace jucyaudio
             DataAction::CreateMix,
             DataAction::ShowDetails,
             DataAction::CopyToClipboard,
+            DataAction::ShuffleSelection,
             DataAction::RemoveTracks,
             DataAction::RunBpmAnalysis,
             DataAction::CheckFilesOnDisk};
@@ -64,24 +65,26 @@ namespace jucyaudio
 
         bool WorkingSetNode::setSortOrder(const std::vector<SortOrderInfo> &sortOrders)
         {
-            // First call the base class implementation to update the query args
-            if (!LibraryNode::setSortOrder(sortOrders))
+            // The data view re-applies the saved sort through here every time this node is shown. That
+            // must not renumber the set, or showing it would undo every shuffle. A header click always
+            // asks for something else - another column, or the same one the other way round.
+            if (sortOrders == m_workingSetInfo.sortOrder)
             {
-                return false;
+                return true;
             }
 
-            // Update our local copy
+            // The set's stored positions are what it is displayed by, so a sort is applied by renumbering
+            // them; the query itself ignores sortBy for a working set.
+            if (!theTrackLibrary.getWorkingSetManager().applySortOrder(m_workingSetInfo.id, sortOrders))
+            {
+                spdlog::error("Failed to apply sort order to working set {}", m_workingSetInfo.id);
+                return false;
+            }
             m_workingSetInfo.sortOrder = sortOrders;
+            spdlog::info("Sorted working set {} ({})", m_workingSetInfo.id, m_workingSetInfo.name);
 
-            // Persist to database
-            if (!theTrackLibrary.getWorkingSetManager().updateSortOrder(m_workingSetInfo.id, sortOrders))
-            {
-                spdlog::error("Failed to persist sort order for working set {}", m_workingSetInfo.id);
-                return false;
-            }
-
-            spdlog::info("Persisted sort order for working set {} ({})", m_workingSetInfo.id, m_workingSetInfo.name);
-            return true;
+            // Flushes the rows this node is holding, which are in the old order.
+            return LibraryNode::setSortOrder(sortOrders);
         }
 
         std::vector<SortOrderInfo> WorkingSetNode::getCurrentSortOrder() const

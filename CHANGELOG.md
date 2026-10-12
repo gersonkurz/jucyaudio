@@ -53,6 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deterministic fallback when analysis data is unavailable
 - User preference toggle for smart transitions
 
+#### Working Sets
+- A working set keeps its own track order (schema v33). Clicking a column header sorts the set by that column, as before; new sets start sorted by BPM ascending, and tracks added to a set go after the ones already in it
+- **Shuffle Selection** in the track context menu puts the selected tracks in random order among the rows they occupy; no other track moves
+
 ### Changed
 - The export dialog can rename the mix, so renaming and exporting no longer need two dialogs. The track title, track number and output filename follow the new name unless you have edited them yourself
 - Updated JUCE from 9.0.0 to 9.0.2

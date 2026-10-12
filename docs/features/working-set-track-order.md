@@ -155,7 +155,7 @@ A header click always changes the sort (another column, or the same column with 
 toggled), so a click always renumbers.
 
 Consequence for the user: to restore "BPM ascending" after shuffling while the header already
-shows "BPM ▲", click BPM twice (▼, then ▲). Documented in the user manual.
+shows "BPM ▲", click BPM twice (▼, then ▲).
 
 `WorkingSetNode::setSortOrder` no longer forwards to `LibraryNode::setSortOrder` for the query
 (D3 ignores `sortBy` for working sets); it flushes the row cache and count as that does.
@@ -229,8 +229,10 @@ WHERE WorkingSetTracks.ws_id = ?1 AND WorkingSetTracks.track_id = r.track_id;
   (`SqliteTransaction` issues `BEGIN IMMEDIATE`, so nesting would fail).
 - `<cols>` are built the way `addOrderByClause` builds them (same `COLLATE NOCASE`, same direction
   keywords), qualified with `Tracks.`. Column names come from `DataColumn::sqlId` or from a saved
-  `sort_order` that was written from one; a name not in `LibraryColumns` is skipped with a warning,
-  so a hand-edited `sort_order` cannot inject SQL. An empty sort falls back to `bpm ASC`.
+  `sort_order` that was written from one; a name that is not a column of `Tracks` (per
+  `PRAGMA table_info(Tracks)`) is skipped with a warning, so a hand-edited `sort_order` cannot inject
+  SQL. Checked against the table rather than `LibraryColumns`, which is local to `LibraryNode.cpp`
+  and would make the SQLite layer depend on the nodes. An empty sort falls back to `bpm ASC`.
 - `parseSortOrderJson` is the existing parsing from `workingSetInfoFromStatement`, moved so the
   migration rung (in `SqliteTrackDatabase.cpp`) can read `sort_order` the same way.
 
@@ -324,4 +326,4 @@ manual check in the UI: shuffle twice, scroll past the first page (`QUERY_PAGE_S
 Roughly 10 files: `SqliteTrackDatabase.cpp` (schema, rung), `SqliteStatementConstruction.{h,cpp}`,
 `IWorkingSetManager.h`, `SqliteWorkingSetManager.{h,cpp}`, `WorkingSetNode.cpp`, `Constants.h`,
 `UiUtils.cpp`, `MainComponent.cpp`, `Tests/SelfTests.{h,cpp}`, `UI/Main.cpp`, `justfile`,
-`docs/features/user-manual.md`.
+`CHANGELOG.md`.

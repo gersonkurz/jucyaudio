@@ -165,6 +165,8 @@ namespace jucyaudio
         {
             std::string columnName; ///< Column name from DataColumn::name
             bool descending{false}; ///< true for descending order, false for ascending
+
+            bool operator==(const SortOrderInfo &) const = default;
         };
 
         /**
@@ -228,6 +230,7 @@ namespace jucyaudio
             ToggleMasterEffectsBypass, ///< Toggle global bypass for the master effects chain
             UnlockMixForEditing,    ///< Unlock an exported/locked mix for editing
             CheckFilesOnDisk,       ///< Re-check whether the selected tracks' files are still there
+            ShuffleSelection,       ///< Put the selected tracks of a working set in random order among their own rows
         };
 
         // @brief Collection of data actions available in the application

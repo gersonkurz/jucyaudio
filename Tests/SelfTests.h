@@ -247,5 +247,22 @@ namespace jucyaudio
          */
         int runAudioFormatSelfTest(const std::filesystem::path &selfTestRoot);
 
+        /**
+         * @brief Headless check of a working set's stored track order and of Shuffle Selection.
+         *
+         * Builds its fixture tracks directly in the library database, more than one page of them, and
+         * checks through the same paged query the view uses: a new set is numbered BPM ascending; the
+         * view follows the stored positions with and without a search term and a structured filter; a
+         * shuffle permutes only the selected tracks among the rows they already held; added tracks go
+         * after the existing ones; a column sort renumbers the set, and re-applying the saved sort (what
+         * the data view does whenever it shows the set) does not; rows without a position are repaired
+         * where they are shown; and a v32 library is numbered by the sort each set was displayed by.
+         *
+         * @param selfTestRoot The root returned by prepareSelfTestEnvironment().
+         * @param databasePath The self test library's database, opened by theTrackLibrary.
+         * @return 0 if every check passed, 1 otherwise.
+         */
+        int runWorkingSetOrderSelfTest(const std::filesystem::path &selfTestRoot, const std::filesystem::path &databasePath);
+
     } // namespace tests
 } // namespace jucyaudio

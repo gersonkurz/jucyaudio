@@ -1910,6 +1910,9 @@ namespace jucyaudio
             case DataAction::CheckFilesOnDisk:
                 onCheckFilesForSelectedRows();
                 break;
+            case DataAction::ShuffleSelection:
+                onShuffleSelection(rowIndex);
+                break;
             case DataAction::ShowDetails:
             {
                 if (!m_currentNode)
@@ -2053,6 +2056,37 @@ namespace jucyaudio
                     m_dataViewComponent.refreshView();
                 });
             task->release(REFCOUNT_DEBUG_ARGS);
+        }
+
+        void MainComponent::onShuffleSelection(RowIndex_t clickedRow)
+        {
+            if (!m_currentNode)
+                return;
+
+            const auto workingSetId = m_currentNode->getWorkingSetId();
+            if (workingSetId <= 0)
+                return;
+
+            auto rows = m_dataViewComponent.getSelectedRowIndices();
+            if (rows.empty())
+                rows = {clickedRow};
+
+            std::vector<TrackId> trackIds;
+            for (const auto &trackInfo : m_currentNode->getTrackInfosForOperation(rows).trackInfos)
+            {
+                trackIds.push_back(trackInfo.trackId);
+            }
+
+            if (!theTrackLibrary.getWorkingSetManager().shuffleTracks(workingSetId, trackIds))
+            {
+                m_statusPanel.getStatusBar().postMessage("Failed to shuffle the selected tracks.", true);
+                return;
+            }
+
+            // Flush: the node is still holding the rows it fetched in the old order. The selection stays
+            // as it is, and still covers the same tracks, because they only traded rows among themselves.
+            m_dataViewComponent.refreshView(true);
+            m_statusPanel.getStatusBar().postMessage(juce::String(trackIds.size()) + " tracks shuffled.", false);
         }
 
         void MainComponent::onCheckFilesForSelectedRows()

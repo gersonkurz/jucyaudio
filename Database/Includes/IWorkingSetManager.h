@@ -30,11 +30,19 @@ namespace jucyaudio
             virtual bool removeWorkingSet(WorkingSetId workingSetId) = 0;
             virtual bool removeWorkingSets(const std::vector<WorkingSetId> &workingSetIds) = 0;
 
-            /// @brief Update the sort order for a working set
-            /// @param workingSetId The working set to update
-            /// @param sortOrder The new sort order configuration
+            /// @brief Sort a working set: renumber every track's stored position in this order, and save the sort
+            /// @param workingSetId The working set to sort
+            /// @param sortOrder The column order to number the tracks by
             /// @return true if successful, false otherwise
-            virtual bool updateSortOrder(WorkingSetId workingSetId, const std::vector<SortOrderInfo> &sortOrder) = 0;
+            virtual bool applySortOrder(WorkingSetId workingSetId, const std::vector<SortOrderInfo> &sortOrder) = 0;
+
+            /// @brief Put the given tracks in random order among the positions they already hold.
+            /// @details No other track in the set moves, so the rows the tracks were displayed in are
+            ///          the rows they are displayed in afterwards, only in a different order.
+            /// @param workingSetId The working set the tracks belong to
+            /// @param trackIds The tracks to shuffle; ids not in the set are ignored
+            /// @return true if successful, false otherwise
+            virtual bool shuffleTracks(WorkingSetId workingSetId, const std::vector<TrackId> &trackIds) = 0;
 
             /// @brief Get the next mix number for a working set WITHOUT incrementing it
             /// @param workingSetId The working set to get the number for

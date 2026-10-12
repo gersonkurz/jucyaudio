@@ -117,6 +117,7 @@ namespace jucyaudio
             void onExportMix(INavigationNode *selectedNode);
             void onBatchExport();
             void onRemoveDuplicates(INavigationNode *selectedNode);
+            void onShuffleSelection(RowIndex_t clickedRow);
             void onExportMixSettingsReceived(const MixInfo &mixInfo, const audio::ActiveExportSettings &settings);
             std::unique_ptr<juce::FileChooser> m_activeFileChooser;
 
