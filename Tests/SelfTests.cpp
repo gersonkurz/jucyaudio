@@ -34,6 +34,7 @@
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
 #include <Database/BackgroundTasks/BpmAnalysisTask.h>
+#include <Database/BackgroundTasks/Mp3QuickCheck.h>
 #include <Database/Sqlite/SqliteTrackDatabase.h>
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/Sqlite/SqliteWorkingSetManager.h>
@@ -81,6 +82,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -10227,6 +10229,32 @@ namespace jucyaudio
                 // reader's and not the manager's.
                 const auto good = background_tasks::analyzeTrack(formats, workRoot / "good.wav");
                 report.check(good.metadata.has_value(), "while a readable file through the same manager is analyzed");
+            }
+
+            // --- Mp3QuickCheck::audioStart on truncated headers (#79) ---
+            //
+            // It used to read the "ID3" magic and the four size bytes without checking how many bytes it
+            // got, and compute the tag size from whatever the arrays held. Each case here stops short of
+            // a complete header and must be "cannot tell", not a size.
+            {
+                const auto startOf = [](const std::string &bytes)
+                {
+                    std::istringstream stream{bytes};
+                    return background_tasks::Mp3QuickCheck::audioStart(stream);
+                };
+                const std::string fullHeader{"ID3\x03\x00\x00\x00\x00\x08\x00", 10}; // declares 0x08 << 7 = 1024 bytes
+                report.check(!startOf("").has_value(), "#79: an empty file has no audio start");
+                report.check(!startOf("ID").has_value(), "#79: two bytes are too few to tell whether there is a tag");
+                report.check(!startOf(fullHeader.substr(0, 6)).has_value(), "#79: an ID3 header cut off before its size is too short to tell");
+                report.check(!startOf(fullHeader.substr(0, 9)).has_value(), "#79: and so is one cut off inside its size");
+                report.check(startOf(fullHeader) == size_t{1034}, "#79: a complete header gives 10 plus the size it declares");
+                report.check(startOf(std::string{"\xFF\xFB\x90\x00", 4}) == size_t{0}, "#79: a file without a tag starts at 0");
+
+                // And the whole check on such a file: the decoder decides, nothing is skipped.
+                const auto truncatedPath = workRoot / "truncated-id3.mp3";
+                report.check(writeBytes(truncatedPath, fullHeader.substr(0, 7)), "#79: a truncated ID3 file could be written");
+                const auto info = background_tasks::Mp3QuickCheck::checkMp3File(truncatedPath);
+                report.check(info.has_value() && !info->isValid, "#79: checkMp3File leaves a file with a truncated ID3 header to the decoder");
             }
 
             // --- The v34 rung puts every bad_format mark back to unknown, and nothing else ---

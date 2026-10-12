@@ -75,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A truncated WAV whose data chunk claims more bytes than the file holds no longer reads as if the missing samples existed (via JUCE 9.0.1)
 - The report after BPM analysis lists the tracks it skipped in a scrollable, copyable window with the reason for each (file missing, skipped by the MP3 size/bitrate rule, no decoder, read error), instead of every filename in one alert box under a single wrong reason. Its Remove takes only the tracks that could not be read out of the working set the analysis ran on, rather than out of every working set. (The old dialog also said marked tracks are left out of later analysis and playback; that is true only of background BPM analysis.)
 - BPM analysis no longer marks playable MP3s as bad format (#77). An MP3 with padding after its ID3v2 tag that the tag does not declare now goes to the decoder, which reads it, instead of being rejected by the pre-check; the size and bitrate rules still skip a file but no longer mark it; and a successful analysis marks a track ok. Schema v34 resets every existing bad_format mark, so background analysis re-checks each of those tracks once
+- The MP3 pre-check no longer reads uninitialized memory on a file cut off inside its ID3v2 header (#79); such a file is left to the decoder
 - macOS builds link one zlib. JUCE now calls the system libz that TagLib already used for compressed ID3 frames, instead of compiling a second copy into the executable beside it, and the build fails if that ever comes back
 
 ---

@@ -103,6 +103,38 @@ namespace jucyaudio
                 return false;
             }
 
+            std::optional<size_t> Mp3QuickCheck::audioStart(std::istream &stream)
+            {
+                // Both reads are checked before a byte of them is looked at: a truncated file would
+                // otherwise leave the arrays partly unwritten, and the tag size be computed from
+                // uninitialized memory (#79).
+                std::array<char, 3> magic{};
+                stream.read(magic.data(), magic.size());
+                if (stream.gcount() != static_cast<std::streamsize>(magic.size()))
+                {
+                    return std::nullopt;
+                }
+                if (memcmp(magic.data(), "ID3", magic.size()) != 0)
+                {
+                    return size_t{0};
+                }
+
+                // Version (2 bytes) and flags (1 byte), then the size.
+                std::array<char, 3> versionAndFlags{};
+                stream.read(versionAndFlags.data(), versionAndFlags.size());
+                std::array<unsigned char, 4> sizeBytes{};
+                stream.read(reinterpret_cast<char *>(sizeBytes.data()), sizeBytes.size());
+                if (!stream || stream.gcount() != static_cast<std::streamsize>(sizeBytes.size()))
+                {
+                    return std::nullopt;
+                }
+
+                // ID3v2 size is a syncsafe integer: seven bits per byte.
+                const size_t tagSize = (static_cast<size_t>(sizeBytes[0] & 0x7F) << 21) | (static_cast<size_t>(sizeBytes[1] & 0x7F) << 14) |
+                    (static_cast<size_t>(sizeBytes[2] & 0x7F) << 7) | static_cast<size_t>(sizeBytes[3] & 0x7F);
+                return 10 + tagSize;
+            }
+
             std::optional<Mp3Info> Mp3QuickCheck::checkMp3File(const std::filesystem::path &path)
             {
                 Mp3Info info;
@@ -128,30 +160,17 @@ namespace jucyaudio
                         return info;
                     }
 
-                    // Skip ID3v2 tag if present
-                    char id3[3];
-                    file.read(id3, 3);
-                    size_t dataStart = 0;
-
-                    if (memcmp(id3, "ID3", 3) == 0)
+                    const auto start = audioStart(file);
+                    if (!start.has_value())
                     {
-                        // Skip ID3v2 tag
-                        file.seekg(6);
-                        unsigned char size_bytes[4];
-                        file.read(reinterpret_cast<char *>(size_bytes), 4);
-
-                        // ID3v2 size is synchsafe integer
-                        size_t id3_size =
-                            ((size_bytes[0] & 0x7F) << 21) | ((size_bytes[1] & 0x7F) << 14) | ((size_bytes[2] & 0x7F) << 7) | (size_bytes[3] & 0x7F);
-                        dataStart = 10 + id3_size;
+                        spdlog::debug("MP3 file too short for its ID3v2 header, leaving it to the decoder: {}", path.string());
+                        return info;
                     }
-                    else
-                    {
-                        dataStart = 0;
-                    }
+                    const size_t dataStart = *start;
 
                     // Read first MP3 frame header
-                    file.seekg(dataStart);
+                    file.clear();
+                    file.seekg(static_cast<std::streamoff>(dataStart));
                     unsigned char header_bytes[4] = {0};
                     file.read(reinterpret_cast<char *>(header_bytes), 4);
 
