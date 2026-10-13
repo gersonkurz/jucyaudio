@@ -54,7 +54,9 @@ namespace jucyaudio
             SectionType *addNew()
             {
                 logger->debug("{} Adding new item to vector: {}", __FUNCTION__, m_keyName);
-                auto item = std::make_unique<SectionType>(nullptr, m_keyName + "/" + std::to_string(m_items.size()));
+                // The full path, as load() and save() use: an item named after m_keyName alone was saved at the
+                // top level of the file, where load() never looked (#80).
+                auto item = std::make_unique<SectionType>(nullptr, getConfigPath() + "/" + std::to_string(m_items.size()));
                 SectionType *ptr = item.get();
                 logger->debug("{}: Created new item {} at path: {}", __FUNCTION__, (const void*) ptr, ptr->getConfigPath());
                 m_items.push_back(std::move(item));
@@ -138,6 +140,14 @@ namespace jucyaudio
                         logger->error("{}: Failed to delete stale vector item at index {}", __FUNCTION__, i);
                         // Continue cleanup even if one fails
                     }
+                }
+
+                // 4. Before #80, addNew() saved items under the bare key at the top level of the file. Nothing
+                // ever loaded them, and the defaults written at every startup overwrote any choice saved there,
+                // so they are dropped, not migrated.
+                if (getConfigPath() != m_keyName && settings.sectionExists(m_keyName))
+                {
+                    settings.deleteSection(m_keyName);
                 }
 
                 return true;

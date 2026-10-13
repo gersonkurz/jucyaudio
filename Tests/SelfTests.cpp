@@ -8479,6 +8479,78 @@ namespace jucyaudio
                 }
             }
 
+            // --- 8. Column configuration survives a save and a load (#80) ---
+            //
+            // addNew() named its items after the vector's key alone, so they were saved at the top level of the
+            // file while load() looked under the parent section: a configured column layout never came back.
+            // A scratch file, so the app's own config is not involved.
+            {
+                const auto columnsFile = pathToString(selfTestRoot / "columns-roundtrip.toml");
+                {
+                    // What every config file written before #80 holds: the defaults, at the top level.
+                    std::ofstream legacy{columnsFile, std::ios::trunc};
+                    legacy << "[LibraryViewColumns.0]\nColumnName = 'Title'\nColumnWidth = 200\n";
+                }
+
+                const auto loadColumns = [&columnsFile]
+                {
+                    std::vector<std::pair<std::string, int>> found;
+                    config::RootSettings settings;
+                    config::TomlBackend backend{columnsFile};
+                    settings.load(backend);
+                    for (const auto &column : settings.uiSettings.libraryViewColumns.get())
+                    {
+                        found.emplace_back(column->columnName.get(), column->columnWidth.get());
+                    }
+                    return found;
+                };
+                const auto saveColumns = [&columnsFile](const std::vector<std::pair<std::string, int>> &columns)
+                {
+                    config::RootSettings settings;
+                    config::TomlBackend backend{columnsFile};
+                    settings.load(backend);
+                    settings.uiSettings.libraryViewColumns.clear();
+                    for (const auto &[name, width] : columns)
+                    {
+                        auto *item = settings.uiSettings.libraryViewColumns.addNew();
+                        item->columnName.set(name);
+                        item->columnWidth.set(width);
+                    }
+                    settings.save(backend);
+                };
+                const auto describe = [](const std::vector<std::pair<std::string, int>> &columns)
+                {
+                    std::string text;
+                    for (const auto &[name, width] : columns)
+                    {
+                        text += std::format("{}{}:{}", text.empty() ? "" : ", ", name, width);
+                    }
+                    return text;
+                };
+
+                const auto legacyLoaded = loadColumns();
+                report.check(legacyLoaded.empty(),
+                    std::format("#80: the top-level entries an older version wrote are not read as columns ({} loaded)", legacyLoaded.size()));
+
+                const std::vector<std::pair<std::string, int>> chosen{{"Artist", 210}, {"BPM", 55}, {"Title", 320}};
+                saveColumns(chosen);
+                const auto reloaded = loadColumns();
+                report.check(reloaded == chosen,
+                    std::format("#80: a saved column layout loads back, order and widths included ({})", describe(reloaded)));
+
+                {
+                    config::TomlBackend file{columnsFile};
+                    report.check(file.sectionExists("UI/LibraryViewColumns/0"), "#80: it is stored under the UI section");
+                    report.check(!file.sectionExists("LibraryViewColumns"), "#80: and the top-level entries an older version wrote are gone");
+                }
+
+                const std::vector<std::pair<std::string, int>> shorter{{"Title", 300}};
+                saveColumns(shorter);
+                const auto afterShrink = loadColumns();
+                report.check(afterShrink == shorter,
+                    std::format("#80: a shorter layout leaves no entries of the longer one behind ({})", describe(afterShrink)));
+            }
+
             writeResultsFile(resultsPath, "jucyaudio timeline self test", report);
             spdlog::info("[SelfTest] Timeline test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
             return report.failures() == 0 ? 0 : 1;
