@@ -9967,6 +9967,22 @@ namespace jucyaudio
                 report.check(stored == 0, std::format("#74: and leaves no working set behind ({} found)", stored));
             }
 
+            // --- #76: a set from a folder without its subfolders holds the folder's own tracks ---
+            {
+                // A subfolder with one track, which only a recursive set would take.
+                const bool built = direct.execute(std::format("INSERT INTO Folders (parent_id, name, root_path, actual_path) VALUES "
+                                                              "({}, 'child', 'c:\\wsorder-selftest\\child', 'C:\\wsorder-selftest\\child');",
+                                       folderId)) &&
+                    direct.execute(std::format("INSERT INTO Tracks (folder_id, filename) VALUES ({}, 'child.wav');", direct.getLastInsertRowId()));
+                report.check(built, std::format("#76: a subfolder with a track could be added ({})", direct.getLastError()));
+
+                WorkingSetInfo created{};
+                report.check(wsManager.createWorkingSetFromVirtualFolder(folderId, "WsOrder #76", created, false),
+                    "#76: a set could be created from a folder without its subfolders");
+                report.check(membersOrderedBy(created.id, "t.track_id") == allIds,
+                    std::format("#76: it holds the folder's {} tracks and not the subfolder's", allIds.size()));
+            }
+
             // --- T7: a v32 library is numbered by the sort each set was displayed by ---
             {
                 const auto workRoot = selfTestRoot / "wsorder-migration";

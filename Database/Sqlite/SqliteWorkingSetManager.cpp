@@ -354,7 +354,7 @@ GROUP BY ws.ws_id, ws.name, ws.sort_order)SQL";
                                 [&]
                                 {
                                     return transaction.execute("INSERT INTO WorkingSetTracks (ws_id, track_id) "
-                                                               "SELECT ?, track_id FROM Tracks WHERE virtual_folder_id = ?;",
+                                                               "SELECT ?, track_id FROM Tracks WHERE folder_id = ?;",
                                         newWorkingSet.id,
                                         folderId);
                                 }))
