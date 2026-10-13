@@ -399,9 +399,9 @@ namespace jucyaudio
 
             const juce::ScopedLock lock(m_critSec);
 
-            const auto currentPos = getPosition();
-
-            // Rebuild PlaybackState with updated track positions
+            // Rebuild PlaybackState with updated track positions. Its sources are not placed here: the audio
+            // thread places them at its own clock when it first renders the state, so a seek it applies while
+            // this rebuild runs is not overwritten by a position read before it.
             auto newState = buildPlaybackState(m_mixLoader);
             if (newState)
             {
@@ -412,40 +412,23 @@ namespace jucyaudio
                 }
                 collectGarbage();
             }
-
-            setPositionInternal(currentPos);
         }
 
-        void MixPlaybackEngine::setPositionInternal(Duration_t positionMs)
+        void MixPlaybackEngine::setPositionInternal(PlaybackState &state, juce::int64 positionSamples)
         {
-            if (!m_mixLoader)
-            {
-                return;
-            }
-
-            auto state = m_currentPlaybackState.load();
-            if (!state)
-            {
-                return;
-            }
-
-            Duration_t clampedPosition = std::max(Duration_t{0}, std::min(positionMs, state->totalDuration));
-
-            juce::int64 positionSamples = static_cast<juce::int64>((clampedPosition.count() / 1000.0) * m_sampleRate);
-
             m_currentPositionSamples = positionSamples;
 
             // Reposition all track sources using PlaybackState
-            for (size_t i = 0; i < state->trackSources.size(); ++i)
+            for (size_t i = 0; i < state.trackSources.size(); ++i)
             {
-                auto &source = state->trackSources[i];
+                auto &source = state.trackSources[i];
 
-                if (source->mixTrackIndex >= state->trackStartTimes.size())
+                if (source->mixTrackIndex >= state.trackStartTimes.size())
                 {
                     continue;
                 }
 
-                Duration_t trackStartMs = state->trackStartTimes[source->mixTrackIndex];
+                Duration_t trackStartMs = state.trackStartTimes[source->mixTrackIndex];
                 juce::int64 trackStartSamples = static_cast<juce::int64>((trackStartMs.count() / 1000.0) * m_sampleRate);
 
                 if (positionSamples >= trackStartSamples)
@@ -586,6 +569,20 @@ namespace jucyaudio
 
             bufferToFill.clearActiveBufferRegion();
 
+            // Only this thread moves the sources of a published state, so neither step takes a lock. A state
+            // rendered for the first time is placed at the clock first; then a pending seek, if any, moves it.
+            // exchange, not load-then-store, so a seek requested while this one is applied is not lost.
+            if (!state->positioned)
+            {
+                state->positioned = true;
+                setPositionInternal(*state, m_currentPositionSamples.load());
+            }
+            if (m_pendingSeek.exchange(false))
+            {
+                const auto target = std::clamp(Duration_t{m_targetPositionMs.load()}, Duration_t{0}, state->totalDuration);
+                setPositionInternal(*state, static_cast<juce::int64>((target.count() / 1000.0) * m_sampleRate));
+            }
+
             juce::int64 startSample = m_currentPositionSamples.load();
 
             // SAFETY: Process in chunks if host requests more samples than our scratch buffer can handle.
@@ -632,15 +629,6 @@ namespace jucyaudio
             if (currentPosMs >= totalDuration)
             {
                 m_currentPositionSamples = static_cast<juce::int64>((totalDuration.count() / 1000.0) * m_sampleRate);
-            }
-
-            // Check for pending seek and apply it (lock-free)
-            if (m_pendingSeek.load())
-            {
-                Duration_t targetPos{m_targetPositionMs.load()};
-                const juce::ScopedLock lock(m_critSec);  // Safe here - we're in audio thread, no contention
-                setPositionInternal(targetPos);
-                m_pendingSeek = false;
             }
         }
 

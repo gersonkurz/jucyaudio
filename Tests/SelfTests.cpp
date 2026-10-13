@@ -23,6 +23,7 @@
 #include <Audio/ExportMixToWav.h>
 #include <Audio/Includes/ActiveExportSettings.h>
 #include <Audio/MixExporter.h>
+#include <Audio/MixPlaybackEngine.h>
 #include <Audio/MixRecoveryM3U.h>
 #include <Database/DatabaseBackupManager.h>
 #include <Database/Includes/AlbumInfo.h>
@@ -81,6 +82,7 @@
 #include <fstream>
 #include <iterator>
 #include <format>
+#include <future>
 #include <map>
 #include <memory>
 #include <optional>
@@ -142,6 +144,43 @@ namespace jucyaudio
             static void releaseGuard(PluginChain &chain)
             {
                 chain.m_faultGuard.clear(std::memory_order_release);
+            }
+        };
+
+        /// @brief Where the engine's published state has placed its sources, and where they belong.
+        ///
+        /// The self-test fixtures are silent, so a source read from the wrong place sounds the same as one
+        /// read from the right place. currentPositionInSourceSamples is written only when a source is
+        /// placed, never while rendering, so it is a direct record of the last placement.
+        struct MixPlaybackEngineTestAccess
+        {
+            static juce::int64 clock(const MixPlaybackEngine &engine)
+            {
+                return engine.m_currentPositionSamples.load();
+            }
+
+            /// @brief How many sources are placed differently from where `clock` puts them; -1 for no state.
+            static int misplacedSources(const MixPlaybackEngine &engine, juce::int64 clock)
+            {
+                const auto state = engine.m_currentPlaybackState.load();
+                if (!state || state->trackSources.empty())
+                {
+                    return -1;
+                }
+                int misplaced = 0;
+                for (const auto &source : state->trackSources)
+                {
+                    const auto startMs = state->trackStartTimes[source->mixTrackIndex].count();
+                    const auto start = static_cast<juce::int64>((startMs / 1000.0) * engine.m_sampleRate);
+                    auto expected = std::max(juce::int64{0}, source->cueStartSamples);
+                    if (clock >= start)
+                    {
+                        const auto inTrack = static_cast<juce::int64>((clock - start) * source->reader->sampleRate / engine.m_sampleRate);
+                        expected = std::max(juce::int64{0}, inTrack + source->cueStartSamples);
+                    }
+                    misplaced += source->currentPositionInSourceSamples == expected ? 0 : 1;
+                }
+                return misplaced;
             }
         };
     } // namespace audio
@@ -8295,6 +8334,100 @@ namespace jucyaudio
                                 std::format("nor the track number (says '{}')", Access::trackNumber(reopened).getText().toStdString()));
                         }
                     }
+                }
+            }
+
+            // --- 7. Seeks and rebuilt states are placed on the audio thread, without the engine's lock (#66) ---
+            //
+            // m_critSec is held by the message thread while it unloads a mix, rebuilds the playback state
+            // or the device is prepared. A callback that took it to apply a seek waited on the message
+            // thread, which is a dropout. Without the lock, only the audio thread may move the sources of a
+            // published state, so a rebuilt state is placed by the audio thread when it first renders it.
+            {
+                using Engine = audio::MixPlaybackEngineTestAccess;
+                audio::MixProjectLoader engineLoader;
+                audio::MixPlaybackEngine engine;
+                constexpr int kBlock = 512;
+                constexpr double kRate = 44100.0;
+                const auto blockMs = static_cast<int64_t>(kBlock * 1000.0 / kRate); // 11 ms, truncated as getPosition does
+                const auto samplesAt = [kRate](int64_t ms)
+                {
+                    return static_cast<juce::int64>((ms / 1000.0) * kRate);
+                };
+
+                if (!engineLoader.loadMix(mixId) || !engine.loadMix(&engineLoader))
+                {
+                    report.check(false, "#66: the fixture mix loads into a playback engine");
+                }
+                else
+                {
+                    engine.prepareToPlay(kBlock, kRate);
+                    engine.setPaused(false);
+                    juce::AudioBuffer<float> buffer{2, kBlock};
+                    const juce::AudioSourceChannelInfo block{&buffer, 0, kBlock};
+                    const auto total = engine.getTotalDuration().count();
+                    report.note(std::format("#66: the engine holds a {} ms mix", total));
+
+                    // A seek takes effect on the next block, before it is rendered.
+                    engine.setPosition(Duration_t{total / 2});
+                    engine.getNextAudioBlock(block);
+                    const auto afterSeek = engine.getPosition().count();
+                    report.check(afterSeek == total / 2 + blockMs,
+                        std::format("#66: a seek takes effect on the next block, which then plays from there (at {} ms, expected {})",
+                            afterSeek,
+                            total / 2 + blockMs));
+                    const auto misplacedBySeek = Engine::misplacedSources(engine, samplesAt(total / 2));
+                    report.check(misplacedBySeek == 0, std::format("#66: and every source was placed at the seek target ({} misplaced)", misplacedBySeek));
+
+                    // Applied while another thread holds the lock. The callback runs with a deadline: one that
+                    // blocks fails the check, and is then let go, instead of hanging the suite.
+                    bool returned = false;
+                    {
+                        const juce::ScopedLock heldByAnotherThread{engine.getLock()};
+                        engine.setPosition(Duration_t{total / 4});
+                        auto callback = std::async(std::launch::async,
+                            [&engine, &block]
+                            {
+                                engine.getNextAudioBlock(block);
+                            });
+                        returned = callback.wait_for(std::chrono::seconds{2}) == std::future_status::ready;
+                        if (!returned)
+                        {
+                            const juce::ScopedUnlock release{engine.getLock()};
+                            callback.wait();
+                        }
+                    }
+                    report.check(returned, "#66: the audio callback applies a seek while another thread holds the engine's lock");
+                    const auto afterLockedSeek = engine.getPosition().count();
+                    report.check(afterLockedSeek == total / 4 + blockMs,
+                        std::format("#66: and that seek took effect (at {} ms, expected {})", afterLockedSeek, total / 4 + blockMs));
+
+                    // A rebuilt state is published unplaced and placed by the callback at the clock it renders
+                    // from. The rebuild itself leaves the clock alone.
+                    const auto clockBeforeRebuild = Engine::clock(engine);
+                    engine.recalculateTrackPositions();
+                    report.check(Engine::clock(engine) == clockBeforeRebuild,
+                        std::format("#66: rebuilding the playback state leaves the clock alone ({} -> {} samples)", clockBeforeRebuild, Engine::clock(engine)));
+                    engine.getNextAudioBlock(block);
+                    const auto misplacedAfterRebuild = Engine::misplacedSources(engine, clockBeforeRebuild);
+                    report.check(misplacedAfterRebuild == 0,
+                        std::format("#66: the first block of the rebuilt state places every source at the clock ({} misplaced)", misplacedAfterRebuild));
+                    report.check(Engine::clock(engine) == clockBeforeRebuild + kBlock,
+                        std::format("#66: and plays one block from there ({} -> {} samples)", clockBeforeRebuild, Engine::clock(engine)));
+
+                    // A seek still pending when a rebuilt state is first rendered wins over the clock.
+                    engine.recalculateTrackPositions();
+                    engine.setPosition(Duration_t{total / 3});
+                    engine.getNextAudioBlock(block);
+                    const auto misplacedRebuildAndSeek = Engine::misplacedSources(engine, samplesAt(total / 3));
+                    report.check(misplacedRebuildAndSeek == 0,
+                        std::format("#66: a seek pending when a rebuilt state is first rendered places it at the seek target ({} misplaced)",
+                            misplacedRebuildAndSeek));
+                    report.check(Engine::clock(engine) == samplesAt(total / 3) + kBlock,
+                        std::format("#66: and plays from there ({} samples, expected {})", Engine::clock(engine), samplesAt(total / 3) + kBlock));
+
+                    engine.setPaused(true);
+                    engine.releaseResources();
                 }
             }
 

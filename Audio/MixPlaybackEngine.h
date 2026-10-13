@@ -45,6 +45,12 @@ namespace jucyaudio
             std::vector<Duration_t> trackStartTimes;
             Duration_t totalDuration{0};
 
+            // Whether the audio thread has placed every source at the playback clock. A state is built and
+            // published with its sources unplaced; the audio thread places them the first time it renders the
+            // state, so the clock it uses is the one it is rendering from. After publication only the audio
+            // thread reads or writes this.
+            bool positioned{false};
+
             // Background pre-warming of MP3 seek indexes (see buildPlaybackState). A bounded
             // pool warms the first tracks in timeline order while paused; warming is stopped
             // (and joined) before playback starts, so it never races the audio thread. Threads
@@ -121,6 +127,10 @@ namespace jucyaudio
                                  : static_cast<juce::AudioSource*>(readerSource.get());
             }
         };
+
+        /// @brief The self test's way in. Declared here, defined in Tests/SelfTests.cpp. Where a state's sources
+        /// were placed is private and not audible in the silent fixtures, so this is how a check can see it.
+        struct MixPlaybackEngineTestAccess;
 
         /**
          * MixPlaybackEngine - Real-time playback engine for mix previews
@@ -242,7 +252,11 @@ namespace jucyaudio
             float getEnvelopeGainForTrack(const MixTrack &mixTrack, Duration_t timeInTrack);
             void unloadMixInternal(); // Internal version that doesn't lock
 
-            void setPositionInternal(Duration_t positionMs); // Internal version that assumes mutex is already locked
+            // Moves the playback clock and every source of `state` to positionSamples. Audio thread only, on the
+            // state it is rendering: once a state is published, nothing else moves its sources, so this takes no lock.
+            void setPositionInternal(PlaybackState &state, juce::int64 positionSamples);
+
+            friend struct MixPlaybackEngineTestAccess;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixPlaybackEngine)
         };
