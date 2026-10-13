@@ -1,6 +1,7 @@
-#include <Database/BackgroundTasks/AudioAnalysis.h>
 #include <Database/BackgroundTasks/BpmAnalysis.h>
+#include <Database/BackgroundTasks/BpmAnalysisTask.h>
 #include <Database/TrackLibrary.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <spdlog/spdlog.h>
 
 namespace jucyaudio
@@ -23,39 +24,56 @@ namespace jucyaudio
                     return;
                 }
 
-                // --- 1. Get a track to process ---
-                std::optional<TrackInfo> trackOpt = theTrackLibrary.getTrackDatabase().getNextTrackForBpmAnalysis();
+                juce::AudioFormatManager formats;
+                formats.registerBasicFormats();
+                analyzeNextTrack(formats);
+            }
+
+            bool analyzeNextTrack(juce::AudioFormatManager &formats)
+            {
+                auto &trackDb = theTrackLibrary.getTrackDatabase();
+                const auto trackOpt = trackDb.getNextTrackForBpmAnalysis();
                 if (!trackOpt)
                 {
                     spdlog::info("BPM Analysis Task: No tracks available for analysis.");
-                    return; // No work to do
+                    return false;
                 }
-
                 const auto &trackInfo = *trackOpt;
 
-                const auto start_time = std::chrono::high_resolution_clock::now();
-                const auto trackPath{trackInfo.reconstructFullPath()};
-                AudioMetadata am = analyzeAudioFile(trackPath);
-                const auto end_time = std::chrono::high_resolution_clock::now();
-                const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-
-                // Check if analysis failed (BPM = 0 indicates failure)
-                if (am.bpm <= 0.0)
+                const auto startTime = std::chrono::steady_clock::now();
+                TrackAnalysis outcome;
+                std::filesystem::path trackPath;
+                try
                 {
-                    spdlog::error("Failed to analyze '{}' - marking as bad format", trackPath.filename().string());
+                    trackPath = trackInfo.reconstructFullPath();
+                    outcome = analyzeTrack(formats, trackPath);
+                }
+                catch (const std::exception &e)
+                {
+                    outcome = TrackAnalysis{std::nullopt, SkipReason::ReadError, e.what()};
+                }
+                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startTime);
 
-                    // Mark the track as bad format so it won't be retried
-                    theTrackLibrary.getTrackDatabase().updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
+                if (outcome.metadata.has_value())
+                {
+                    // A BPM of 0 is a result, not a failure: the file decoded and has no beat to find -
+                    // ambient, drones, spoken word. Stored as 0, which the selection counts as analyzed,
+                    // and the track is ok. It used to be marked bad format, the only way to stop the
+                    // selection picking it again (#78).
+                    spdlog::info("Analyzed '{}' in {} ms. BPM: {:.2f}", trackPath.filename().string(), elapsed.count(), outcome.metadata->bpm);
+                    trackDb.updateTrackBpm(trackInfo.trackId, *outcome.metadata);
                 }
                 else
                 {
-                    spdlog::info("Analyzed '{}' in {} ms. BPM: {:.2f}",
+                    // Not decoded, or no file: marked so the selection does not pick it again.
+                    spdlog::error("Failed to analyze '{}' ({}{}{}) - marking as bad format",
                         trackPath.filename().string(),
-                        duration.count(),
-                        am.bpm);
-
-                    theTrackLibrary.getTrackDatabase().updateTrackBpm(trackInfo.trackId, am);
+                        describe(outcome.reason),
+                        outcome.detail.empty() ? "" : ": ",
+                        outcome.detail);
+                    trackDb.updateTrackStatus(trackInfo.trackId, TrackStatus::BadFormat);
                 }
+                return true;
             }
         } // namespace background_tasks
     } // namespace database

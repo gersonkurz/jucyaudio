@@ -68,61 +68,6 @@ namespace jucyaudio
                 metadata.bpm = detectBPM(buffer, sampleRate);
                 return metadata;
             }
-
-            AudioMetadata analyzeAudioFile(const std::filesystem::path &filepath)
-            {
-                AudioMetadata metadata;
-
-                // Initialize JUCE audio format manager
-                juce::AudioFormatManager formatManager;
-                formatManager.registerBasicFormats();
-
-                // Load the audio file
-                juce::File audioFile{ui::jucePathFromFs(filepath)};
-                if (!audioFile.existsAsFile())
-                {
-                    spdlog::error("Audio file does not exist: {}", pathToString(filepath));
-                    return metadata;
-                }
-
-                std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(audioFile));
-                if (!reader)
-                {
-                    spdlog::error("Could not create audio format reader for: {}", pathToString(filepath));
-                    return metadata;
-                }
-
-                // For BPM detection, analyzing the middle 60 seconds is sufficient and much faster
-                const double totalDurationSeconds = reader->lengthInSamples / reader->sampleRate;
-                const double analysisDurationSeconds = 60.0;
-                int64_t startSample = 0;
-                int numSamplesToRead = static_cast<int>(reader->lengthInSamples);
-
-                if (totalDurationSeconds > analysisDurationSeconds)
-                {
-                    // Start reading from the middle of the track
-                    startSample = static_cast<int64_t>(((totalDurationSeconds / 2.0) - (analysisDurationSeconds / 2.0)) * reader->sampleRate);
-                    numSamplesToRead = static_cast<int>(analysisDurationSeconds * reader->sampleRate);
-
-                    // Ensure we don't read past the end of the file
-                    if (startSample + numSamplesToRead > reader->lengthInSamples)
-                    {
-                        numSamplesToRead = static_cast<int>(reader->lengthInSamples - startSample);
-                    }
-                }
-
-                // Read the selected audio portion into a buffer
-                const int numChannels = static_cast<int>(reader->numChannels);
-                const double sampleRate = reader->sampleRate;
-
-                juce::AudioBuffer<float> audioBuffer(numChannels, numSamplesToRead);
-                reader->read(&audioBuffer, 0, numSamplesToRead, startSample, true, true);
-
-                // Perform BPM analysis
-                metadata = analyzeAudioBuffer(audioBuffer, sampleRate);
-
-                return metadata;
-            }
         } // namespace background_tasks
     } // namespace database
 } // namespace jucyaudio

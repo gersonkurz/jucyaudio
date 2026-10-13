@@ -46,9 +46,11 @@ namespace jucyaudio
                 std::string detail;
             };
 
-            /// @brief Open, read and analyze one file, the way BpmAnalysisTask does for each track.
-            /// @details Takes the format manager so a test can register a format whose reader fails on
-            ///          purpose; the task passes one with the basic formats. Never throws.
+            /// @brief Open, read and analyze one file. Shared by BpmAnalysisTask and the background analyzer.
+            /// @details Metadata with a BPM of 0 means the file decoded and no beat was found, not a failure.
+            ///          No MP3 size/bitrate rule: BpmAnalysisTask applies that before calling this.
+            ///          Takes the format manager so a test can register a format whose reader fails on
+            ///          purpose; the callers pass one with the basic formats. Never throws.
             TrackAnalysis analyzeTrack(juce::AudioFormatManager &formats, const std::filesystem::path &path);
 
             /// @brief What the reason means, in words for the user.

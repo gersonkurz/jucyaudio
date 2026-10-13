@@ -33,6 +33,7 @@
 #include <Database/Scanners/Id3TagScanner.h>
 #include <Database/Sqlite/SqliteDatabase.h>
 #include <Database/Sqlite/SqliteStatement.h>
+#include <Database/BackgroundTasks/BpmAnalysis.h>
 #include <Database/BackgroundTasks/BpmAnalysisTask.h>
 #include <Database/BackgroundTasks/Mp3QuickCheck.h>
 #include <Database/Sqlite/SqliteTrackDatabase.h>
@@ -10368,6 +10369,73 @@ namespace jucyaudio
                 report.check(writeBytes(truncatedPath, fullHeader.substr(0, 7)), "#79: a truncated ID3 file could be written");
                 const auto info = background_tasks::Mp3QuickCheck::checkMp3File(truncatedPath);
                 report.check(info.has_value() && !info->isValid, "#79: checkMp3File leaves a file with a truncated ID3 header to the decoder");
+            }
+
+            // --- #78: the background analyzer records a beatless track as analyzed, and finishes ---
+            //
+            // Run the way the background service runs it, one analyzeNextTrack per step, until it says
+            // there is nothing left. Every track of the self test library it has not analyzed goes through
+            // it; this suite runs last, so marking theirs changes nothing a later check reads.
+            // - bg-silent.wav decodes and has no beat: BPM 0, ok;
+            // - bg-garbage.wav cannot be decoded: bad format;
+            // - bg-earlier.wav has BPM 0 and status unknown, what the manual analyzer left before #77 (the
+            //   DARK AMBIENT case): already analyzed, so not touched;
+            // - good.wav, analyzed above to BPM 0 and ok, is not picked again. With the old selection it
+            //   was, on every step, and the queue never emptied.
+            {
+                SqliteDatabase direct;
+                const bool seeded = writeSilentWav(workRoot / "bg-silent.wav", 44100) && writeSilentWav(workRoot / "bg-earlier.wav", 44100) &&
+                    writeBytes(workRoot / "bg-garbage.wav", garbage) && direct.open(pathToString(databasePath)) &&
+                    direct.execute(std::format("INSERT INTO Tracks (folder_id, filename, bpm, status) VALUES ({0}, 'bg-silent.wav', NULL, 'unknown'), "
+                                               "({0}, 'bg-garbage.wav', NULL, 'unknown'), ({0}, 'bg-earlier.wav', 0, 'unknown');",
+                        folderId));
+                report.check(seeded, std::format("#78: the background fixtures could be written ({})", direct.getLastError()));
+
+                // good.wav in a mix as well, so the mix-track query (priority 1) is the one that would pick it again.
+                MixInfo bgMix{};
+                bgMix.name = "SelfTest #78 Mix";
+                MixTrack inMix{};
+                inMix.trackId = idOf["good.wav"];
+                std::vector<MixTrack> bgMixTracks{inMix};
+                report.check(theTrackLibrary.getMixManager().createOrUpdateMix(bgMix, bgMixTracks) && bgMix.mixId > 0,
+                    "#78: the BPM-0 track could be put in a mix");
+
+                const auto countWhere = [&direct](const std::string &condition)
+                {
+                    SqliteStatement stmt{direct, std::format("SELECT COUNT(*) FROM Tracks WHERE {};", condition)};
+                    return stmt.getNextResult() ? stmt.getInt64(0) : int64_t{-1};
+                };
+                const auto rowOf = [&direct, folderId](const std::string &filename)
+                {
+                    SqliteStatement stmt{direct, "SELECT bpm, status FROM Tracks WHERE folder_id = ? AND filename = ?;"};
+                    stmt.addParam(folderId);
+                    stmt.addParam(filename);
+                    if (!stmt.getNextResult())
+                    {
+                        return std::string{"<none>"};
+                    }
+                    return std::format("{}/{}", stmt.isNull(0) ? std::string{"NULL"} : std::to_string(stmt.getInt64(0)), stmt.getText(1));
+                };
+
+                // Each unanalyzed track takes one step; a few more allow for nothing. A track picked twice
+                // would run past this, which is the failure being checked.
+                const auto bound = countWhere("bpm IS NULL AND status != 'bad_format'") + 5;
+                juce::AudioFormatManager formats;
+                formats.registerBasicFormats();
+                int64_t steps{0};
+                while (steps <= bound && background_tasks::analyzeNextTrack(formats))
+                {
+                    ++steps;
+                }
+                report.check(steps <= bound, std::format("#78: the background analyzer finished, in {} steps (at most {})", steps, bound));
+                report.check(rowOf("bg-silent.wav") == "0/ok", std::format("#78: a decodable track with no beat is stored as BPM 0 and ok ({})", rowOf("bg-silent.wav")));
+                report.check(rowOf("bg-garbage.wav") == "NULL/bad_format",
+                    std::format("#78: a track that cannot be decoded is marked bad format ({})", rowOf("bg-garbage.wav")));
+                report.check(rowOf("bg-earlier.wav") == "0/unknown",
+                    std::format("#78: a track already analyzed to BPM 0 is not picked again ({})", rowOf("bg-earlier.wav")));
+                report.check(rowOf("good.wav") == "0/ok",
+                    std::format("#78: nor is one the manual analysis stored as BPM 0, though it is in a mix ({})", rowOf("good.wav")));
+                theTrackLibrary.getMixManager().removeMix(bgMix.mixId);
             }
 
             // --- The v34 rung puts every bad_format mark back to unknown, and nothing else ---

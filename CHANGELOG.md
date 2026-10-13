@@ -78,6 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The MP3 pre-check no longer reads uninitialized memory on a file cut off inside its ID3v2 header (#79); such a file is left to the decoder
 - A working set created from a view filtered without search text, such as `bpm:>120`, holds only the tracks the filter shows, instead of every track in the view (#75). With Show Offline Tracks on, a filter on the whole library no longer produces invalid SQL
 - Creating a working set from a view reports failure, and leaves no empty set behind, when its tracks could not be inserted (#74)
+- Background BPM analysis no longer marks a track with no detectable beat (ambient, drones, spoken word, or a tempo outside 60-200 BPM) as bad format (#78). It stores BPM 0 and marks the track ok, as Run BPM Analysis does, and a track stored with BPM 0 counts as analyzed, so neither analyzer's result is picked up again. Only a file that cannot be decoded, or is missing, is marked bad format
 - The status line for a mix shows the mix's own track count and length, with cue points and crossfades applied and a repeated track counted twice, instead of the totals of its source files (#70)
 - macOS builds link one zlib. JUCE now calls the system libz that TagLib already used for compressed ID3 frames, instead of compiling a second copy into the executable beside it, and the build fails if that ever comes back
 

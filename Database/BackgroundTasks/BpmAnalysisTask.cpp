@@ -107,13 +107,6 @@ namespace jucyaudio
                         return skipped(SkipReason::FileMissing);
                     }
 
-                    const auto extension = trackPath.extension().string();
-                    if ((extension == ".mp3" || extension == ".MP3") && !Mp3QuickCheck::checkMp3File(trackPath).has_value())
-                    {
-                        // A policy skip: larger than 50 MB, below 64 kbps, or a VBR file over 30 MB
-                        return skipped(SkipReason::Mp3PreCheck);
-                    }
-
                     const auto startTime = std::chrono::steady_clock::now();
                     std::unique_ptr<juce::AudioFormatReader> reader{formats.createReaderFor(audioFile)};
                     const auto openTime = std::chrono::steady_clock::now() - startTime;
@@ -290,7 +283,19 @@ namespace jucyaudio
                                 TrackAnalysis outcome;
                                 try
                                 {
-                                    outcome = analyzeTrack(formatManager, trackInfo->reconstructFullPath());
+                                    const auto trackPath = trackInfo->reconstructFullPath();
+                                    const auto extension = trackPath.extension().string();
+                                    if ((extension == ".mp3" || extension == ".MP3") && !Mp3QuickCheck::checkMp3File(trackPath).has_value())
+                                    {
+                                        // A policy skip: larger than 50 MB, below 64 kbps, or a VBR file over 30 MB.
+                                        // Here rather than in analyzeTrack, which the background analyzer shares
+                                        // and which has never applied it there.
+                                        outcome = TrackAnalysis{std::nullopt, SkipReason::Mp3PreCheck, {}};
+                                    }
+                                    else
+                                    {
+                                        outcome = analyzeTrack(formatManager, trackPath);
+                                    }
                                 }
                                 catch (const std::exception &e)
                                 {

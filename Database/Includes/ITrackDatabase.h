@@ -134,7 +134,8 @@ namespace jucyaudio
             // Update the status of a track (Unknown, Ok, BadFormat)
             virtual DbResult updateTrackStatus(TrackId trackId, TrackStatus status) = 0;
 
-            // Finds one track that has no BPM data and returns its info.
+            // Finds one track that has not been analyzed (bpm NULL; 0 means analyzed, no beat) and is
+            // not marked bad format, and returns its info.
             // Returns std::nullopt if no such tracks are found.
             virtual std::optional<TrackInfo> getNextTrackForBpmAnalysis() const = 0;
 

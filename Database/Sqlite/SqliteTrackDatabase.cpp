@@ -4051,6 +4051,10 @@ CREATE TABLE MixUndoHistory (
             }
             m_lastErrorMessage.clear(); // mutable m_lastErrorMessage
 
+            // Un-analyzed means bpm IS NULL. Only analysis writes bpm, and it writes 0 for a file that
+            // decoded with no beat to find; picking those again analyzed them forever, so the
+            // background analyzer marked them bad format to stop (#78).
+            //
             // --- PRIORITY 1: Un-analyzed tracks that are part of ANY mix project ---
             //
             // Unaliased, so the one qualified column list works here as well as in the unjoined query
@@ -4058,7 +4062,7 @@ CREATE TABLE MixUndoHistory (
             const auto sql_priority1 = std::format(R"SQL(
                 SELECT {} FROM Tracks
                 JOIN MixTracks ON Tracks.track_id = MixTracks.track_id
-                WHERE (Tracks.bpm IS NULL OR Tracks.bpm <= 0)
+                WHERE Tracks.bpm IS NULL
                 AND Tracks.status != 'bad_format'
                 LIMIT 1;
             )SQL",
@@ -4072,7 +4076,7 @@ CREATE TABLE MixUndoHistory (
 
             // --- PRIORITY 2: Any other un-analyzed track ---
             const auto sql_priority2 =
-                std::format("SELECT {} FROM Tracks WHERE (bpm IS NULL OR bpm <= 0) AND status != 'bad_format' LIMIT 1;", trackColumnsForDecoding);
+                std::format("SELECT {} FROM Tracks WHERE bpm IS NULL AND status != 'bad_format' LIMIT 1;", trackColumnsForDecoding);
             SqliteStatement stmt2{m_db, sql_priority2};
             if (stmt2.getNextResult())
             {

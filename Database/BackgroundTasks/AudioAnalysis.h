@@ -15,9 +15,6 @@ namespace jucyaudio
     {
         namespace background_tasks
         {
-            // This function is now shared between BpmAnalysis and BpmAnalysisTask
-            AudioMetadata analyzeAudioFile(const std::filesystem::path &filepath);
-
             // This function performs the analysis on an in-memory buffer
             AudioMetadata analyzeAudioBuffer(const juce::AudioBuffer<float>& buffer, double sampleRate);
 
