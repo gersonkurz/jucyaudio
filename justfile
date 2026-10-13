@@ -273,7 +273,7 @@ _package-windows arch_target:
     cmake --install build-{{arch_target}}-release --config Release
     if (-not (Test-Path releases)) { New-Item -ItemType Directory -Path releases | Out-Null }
     Write-Host "Creating MSI installer ({{arch_target}})..."
-    Push-Location setup; msis /BUILD /STANDALONE /SET:PRODUCT_VERSION={{version}} jucyaudio-{{arch_target}}.msis; Pop-Location
+    Push-Location setup; msis /BUILD /STANDALONE /SET:PRODUCT_VERSION={{version}} jucyaudio-{{arch_target}}.msis; $rc = $LASTEXITCODE; Pop-Location; if ($rc -ne 0) { Write-Host "MSI BUILD FAILED"; exit $rc }
     Move-Item -Force "setup/jucyaudio-{{version}}-{{arch_target}}.msi" "releases/"
     Write-Host "Installer created: releases/jucyaudio-{{version}}-{{arch_target}}.msi"
 

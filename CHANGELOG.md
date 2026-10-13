@@ -81,6 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Creating a working set from a view reports failure, and leaves no empty set behind, when its tracks could not be inserted (#74)
 - Background BPM analysis no longer marks a track with no detectable beat (ambient, drones, spoken word, or a tempo outside 60-200 BPM) as bad format (#78). It stores BPM 0 and marks the track ok, as Run BPM Analysis does, and a track stored with BPM 0 counts as analyzed, so neither analyzer's result is picked up again. Only a file that cannot be decoded, or is missing, is marked bad format
 - The status line for a mix shows the mix's own track count and length, with cue points and crossfades applied and a repeated track counted twice, instead of the totals of its source files (#70)
+- `just package` fails when the MSI compiler fails, instead of reporting success and publishing an MSI left over from an earlier build (#67)
 - macOS builds link one zlib. JUCE now calls the system libz that TagLib already used for compressed ID3 frames, instead of compiling a second copy into the executable beside it, and the build fails if that ever comes back
 
 ---
