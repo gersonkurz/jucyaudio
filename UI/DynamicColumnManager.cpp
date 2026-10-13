@@ -36,23 +36,20 @@ namespace jucyaudio
             {
                 if (configColumns.empty())
                 {
-                    spdlog::info("DynamicColumnManager: No columns defined in config for node '{}'. Initializing with default columns.", node->getName());
-                    config::TomlBackend backend{g_strConfigFilename};
-                    if (!config::theSettings.load(backend) || configColumns.empty())
+                    // No reload from disk first: the settings were loaded at startup, and loading them again here
+                    // replaced every setting changed in memory since the last save, not just these columns (#72).
+                    spdlog::info("DynamicColumnManager: No columns defined in config for node '{}'. Initializing with all columns.", node->getName());
+                    const auto &allColumns = node->getColumns();
+                    for (ColumnIndex_t i = 0; i < allColumns.size(); ++i)
                     {
-                        spdlog::info("not loaded or only {} columns defined, initializing with all columns", configColumns.size());
-                        configColumns.clear();
-                        const auto &allColumns = node->getColumns();
-                        for (ColumnIndex_t i = 0; i < allColumns.size(); ++i)
-                        {
-                            const auto &col = allColumns[i];
-                            auto newItem = configColumns.addNew();
-                            newItem->columnName.set(col.name);
-                            newItem->columnWidth.set(col.defaultWidth);
-                        }
-                        spdlog::info("Initialized {} columns from node '{}'", configColumns.size(), node->getName());
-                        config::theSettings.save(backend);
+                        const auto &col = allColumns[i];
+                        auto newItem = configColumns.addNew();
+                        newItem->columnName.set(col.name);
+                        newItem->columnWidth.set(col.defaultWidth);
                     }
+                    spdlog::info("Initialized {} columns from node '{}'", configColumns.size(), node->getName());
+                    config::TomlBackend backend{g_strConfigFilename};
+                    config::theSettings.save(backend);
                 }
                 // now translate config columns to DataColumnWithIndex, making use of the full list of columns
 

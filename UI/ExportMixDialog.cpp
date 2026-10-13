@@ -1,3 +1,4 @@
+#include <Config/toml_backend.h>
 #include <UI/ExportMixDialog.h>
 #include <UI/Settings.h>
 #include <UI/ThemeManager.h>
@@ -11,6 +12,8 @@ namespace jucyaudio
 {
     namespace ui
     {
+        extern std::string g_strConfigFilename;
+
         ExportMixDialog::ExportMixDialog(const database::MixInfo &mixInfo, OnExportCallback callback)
             : m_mixInfo{mixInfo},
               m_callback{callback},
@@ -748,8 +751,12 @@ namespace jucyaudio
             m_settings.outputPath = file.getFullPathName().toStdString();
             m_settings.exportFolder = m_exportFolderCombo.getText().toStdString();
 
-            // Save the selected folder for next time
+            // Save the selected folder for next time. set() changes only the value in memory; save() writes it.
             config::theSettings.exportSettings.lastUsedExportFolder.set(m_settings.exportFolder);
+            {
+                config::TomlBackend backend{g_strConfigFilename};
+                config::theSettings.save(backend);
+            }
 
             if (scheduling)
             {

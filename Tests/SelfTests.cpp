@@ -20,6 +20,7 @@
 #include <Tests/SelfTests.h>
 
 #include <Audio/ExportMixToMp3.h>
+#include <Config/toml_backend.h>
 #include <Audio/ExportMixToWav.h>
 #include <Audio/Includes/ActiveExportSettings.h>
 #include <Audio/MixExporter.h>
@@ -40,6 +41,7 @@
 #include <Database/Sqlite/SqliteTrackDatabase.h>
 #include <Database/Sqlite/SqliteTransaction.h>
 #include <Database/Sqlite/SqliteWorkingSetManager.h>
+#include <Database/Nodes/LibraryNode.h>
 #include <Database/Nodes/MixNode.h>
 #include <Database/Nodes/WorkingSetNode.h>
 #include <Database/TrackLibrary.h>
@@ -49,6 +51,7 @@
 #include <Audio/Plugins/MasterPluginChainPersistence.h>
 #include <Audio/Plugins/PluginChain.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
+#include <UI/DynamicColumnManager.h>
 #include <UI/EditMixMetaDataDialog.h>
 #include <UI/ExportMixDialog.h>
 #include <UI/LibraryRootsComponent.h>
@@ -187,6 +190,8 @@ namespace jucyaudio
 
     namespace ui
     {
+        extern std::string g_strConfigFilename;
+
         /// @brief A plugin that refuses every bus layout, for the prepareToPlay checks.
         ///
         /// PluginChain::configurePlugin asks for stereo in and stereo out and gives up if
@@ -8259,6 +8264,21 @@ namespace jucyaudio
                         // none, so one is made here rather than the check being skipped.
                         report.check(theTrackLibrary.getMixManager().createExportFolder("SelfTest Exports", "for the export dialog checks"),
                             "an export folder could be created");
+
+                        // #72: the folder the dialog last used has to reach the config file, not only memory. The
+                        // file is given a different value first, because the self-test config outlives a run.
+                        const auto savedExportFolder = []
+                        {
+                            config::RootSettings fromDisk;
+                            config::TomlBackend backend{ui::g_strConfigFilename};
+                            fromDisk.load(backend);
+                            return fromDisk.exportSettings.lastUsedExportFolder.get();
+                        };
+                        config::theSettings.exportSettings.lastUsedExportFolder.set("#72: not the folder the dialog will use");
+                        {
+                            config::TomlBackend backend{ui::g_strConfigFilename};
+                            config::theSettings.save(backend);
+                        }
                         {
                             int calls = 0;
                             ExportMixDialog::Result seen{ExportMixDialog::Result::Cancelled};
@@ -8296,6 +8316,34 @@ namespace jucyaudio
                                 report.check(seenName == "Scheduled Rename", "and hands the caller the new name");
                                 report.check(theTrackLibrary.getMixManager().getMix(buttonMix.mixId).name == "Scheduled Rename",
                                     "a scheduled export renames the mix now rather than when it runs");
+
+                                const auto onDisk = savedExportFolder();
+                                report.check(!submitted.exportFolder.empty() && onDisk == submitted.exportFolder,
+                                    std::format("#72: the export folder the dialog used is saved to the config file (file says '{}', dialog used '{}')",
+                                        onDisk,
+                                        submitted.exportFolder));
+
+                                // #72: showing a view with no stored columns used to reload every setting from disk,
+                                // discarding whatever had changed in memory since the last save.
+                                config::theSettings.exportSettings.lastUsedExportFolder.set("#72: changed in memory, not saved");
+                                config::theSettings.uiSettings.libraryViewColumns.clear();
+                                database::INavigationNode *libraryNode = new database::LibraryNode{nullptr, "", "Library", "Libraries"};
+                                std::vector<database::DataColumnWithIndex> shown;
+                                const bool gotColumns = ui::columns::get(libraryNode, shown);
+                                const auto shownCount = shown.size();
+                                const auto columnCount = libraryNode->getColumns().size();
+                                shown.clear(); // its entries point into the node's columns
+                                libraryNode->release();
+                                report.check(gotColumns && columnCount > 0 && shownCount == columnCount,
+                                    std::format("#72: a view with no stored columns gets all of them ({} shown of {})", shownCount, columnCount));
+                                const auto inMemory = config::theSettings.exportSettings.lastUsedExportFolder.get();
+                                report.check(inMemory == "#72: changed in memory, not saved",
+                                    std::format("#72: and an unrelated setting changed in memory survives it (now '{}')", inMemory));
+
+                                // Back to what the dialog chose, in memory and on disk, for the checks that follow.
+                                config::theSettings.exportSettings.lastUsedExportFolder.set(submitted.exportFolder);
+                                config::TomlBackend backend{ui::g_strConfigFilename};
+                                config::theSettings.save(backend);
                             }
                         }
 
