@@ -679,6 +679,22 @@ namespace jucyaudio
                 }
             }
 
+            // Tracks that came back go back into the mixes they were recorded in (#35). After the deletions
+            // above, so a mix that lost a track in this very scan is seen as having lost it; and on every scan,
+            // not only one that inserted something, so a scan that was cancelled is made good by the next.
+            {
+                int restoredRows = 0;
+                if (const auto restore = m_db.getMixManager().restoreReturnedTracks(restoredRows); !restore.isOk())
+                {
+                    spdlog::error("Could not put returned tracks back into their recorded mixes: {}", restore.errorMessage);
+                    ++writeFailures;
+                }
+                else if (restoredRows > 0)
+                {
+                    spdlog::info("Put {} returned track(s) back into the mixes they were recorded in.", restoredRows);
+                }
+            }
+
             if (m_progressCb)
                 m_progressCb(1.0f, "Scan complete.");
 

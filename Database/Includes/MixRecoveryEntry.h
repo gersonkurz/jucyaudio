@@ -129,6 +129,14 @@ namespace jucyaudio
              * the flag existed: the old rule refused anything else.
              */
             bool isComplete{true};
+
+            /// @brief When this entry was last put back into the mix, after its file came back (#35).
+            ///
+            /// Empty until then. A track counts as having come back only if it was added after both the
+            /// capture and this: a restored track the user then took out of the mix existed before it was
+            /// restored, so it is not put back again, while one deleted and returned once more is newer and
+            /// is. A time rather than a track id, because ids are reused.
+            std::optional<Timestamp_t> restoredAt;
         };
 
         /// @brief What a capture will accept.

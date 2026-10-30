@@ -179,6 +179,34 @@ namespace jucyaudio
                 const std::vector<MixTrack> *renderedTracks = nullptr,
                 RecoveryCaptureMode mode = RecoveryCaptureMode::IntactOnly) const = 0;
 
+            /**
+             * @brief Puts tracks that came back into the recorded mixes that lost them (#35).
+             *
+             * A track deleted from the library takes its MixTracks rows with it. When its file comes back,
+             * the scan inserts it as a new row with a new id, and the mixes it belonged to stay short. This
+             * goes through every MixRecovery record, and for each entry the mix no longer holds, looks for a
+             * track with the same filename, file size and folder - all three, because filename and size alone
+             * are a candidate, not proof - that was added to the library after the record was captured. Such
+             * a track is the file coming back: the row the record describes existed when it was captured, and
+             * a row for the same folder and filename can only be newer if that one was deleted. A track the
+             * user took out of the mix themselves is older than the record and is left out; so is one that
+             * was restored once and then taken out, because the entry remembers when it was restored
+             * (MixRecovery.restored_at) and that track is older than that.
+             *
+             * It goes back with the entry's saved settings (mix_data), right after the nearest earlier entry
+             * of the record that the mix still holds, or at the start when none does. So a mix edited since
+             * it was recorded keeps its edits. Each mix is read and changed in one transaction, with its
+             * summary refreshed; a mix with nothing to restore is not written to.
+             *
+             * Considers every record each time rather than only tracks a scan has just inserted, so a scan
+             * that was cancelled, or a restore that failed, is made good by the next one.
+             *
+             * @param restored Receives how many mix rows were put back.
+             * @return Ok if every read completed and every mix that needed a row back got it; a failure names
+             *         the first that did not, and that mix is left as it was.
+             */
+            virtual DbResult restoreReturnedTracks(int &restored) const = 0;
+
             // @brief Get the track count for a specific mix (efficient COUNT query).
             // @param mixId The ID of the mix.
             // @return The number of tracks in the mix.

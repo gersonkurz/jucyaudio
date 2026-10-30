@@ -646,6 +646,11 @@ namespace
             -- lost. Nullable: rows written before this column existed do not know, though the
             -- v30 migration fills it in for them, since order_in_mix was the source value then.
             source_order_in_mix INTEGER,
+            -- When this entry was last put back into the mix, after a scan found its file again (#35). NULL
+            -- until then. A track only counts as having come back if it was added after both the capture and
+            -- this, so a restored track the user later takes out of the mix is not put back by every scan
+            -- that follows. A time rather than a track id: ids are reused. Cleared by a new capture.
+            restored_at INTEGER,
             PRIMARY KEY (mix_id, order_in_mix),
             FOREIGN KEY (mix_id) REFERENCES Mixes(mix_id) ON DELETE CASCADE
         );)SQL",
@@ -1151,7 +1156,7 @@ namespace jucyaudio
 
             spdlog::info("Verifying/Creating database schema...");
             int currentVersion = getDBSchemaVersion();
-            const int latestSchemaVersion = 34;
+            const int latestSchemaVersion = 35;
 
             if (currentVersion == 0)
             {
@@ -3808,6 +3813,59 @@ CREATE TABLE MixUndoHistory (
                     return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
                 }
                 currentVersion = 34;
+            }
+
+            if (currentVersion < 35)
+            {
+                spdlog::info("Migrating database from version 34 to 35 - MixRecovery remembers when entries were restored...");
+                // A track whose file comes back after it was deleted is put back into the mixes recorded
+                // with it (#35). Without remembering that it was, a restored track the user then takes out
+                // of the mix by hand would be put back by every scan that follows. Nothing has been
+                // restored before this version, so every existing row starts as NULL.
+                if (SqliteTransaction transaction{m_db})
+                {
+                    // Checked rather than assumed, as v33 does: the migration self tests build a database from
+                    // today's schema and stamp it back to an older version, and that database already has the
+                    // column. A real library below 35 never does.
+                    bool hasColumn{false};
+                    {
+                        SqliteStatement columns{m_db, "PRAGMA table_info(MixRecovery);"};
+                        while (columns.getNextResult())
+                        {
+                            hasColumn = hasColumn || columns.getText(1) == "restored_at";
+                        }
+                        if (!columns.isValid() || columns.hasError())
+                        {
+                            const auto error{m_db.getLastError()};
+                            transaction.rollback();
+                            return DbResult::failure(DbResultStatus::ErrorDB, "v35 reading the MixRecovery columns failed: " + error);
+                        }
+                    }
+
+                    if (!hasColumn && !m_db.execute("ALTER TABLE MixRecovery ADD COLUMN restored_at INTEGER;"))
+                    {
+                        const auto error{m_db.getLastError()};
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "v35 adding MixRecovery.restored_at failed: " + error);
+                    }
+
+                    if (auto result = setDBSchemaVersion(35); !result.isOk())
+                    {
+                        transaction.rollback();
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to update schema version to 35.");
+                    }
+
+                    if (!transaction.commit())
+                    {
+                        return DbResult::failure(DbResultStatus::ErrorDB, "Failed to commit migration transaction.");
+                    }
+                    spdlog::info("Successfully migrated to version 35 - MixRecovery remembers when entries were restored.");
+                }
+                else
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, "Failed to begin migration transaction.");
+                }
+                currentVersion = 35;
             }
 
             return DbResult::success();

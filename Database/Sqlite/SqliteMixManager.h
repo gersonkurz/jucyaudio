@@ -27,6 +27,7 @@ namespace jucyaudio
                 MixRecoveryCapture &result,
                 const std::vector<MixTrack> *renderedTracks = nullptr,
                 RecoveryCaptureMode mode = RecoveryCaptureMode::IntactOnly) const override;
+            DbResult restoreReturnedTracks(int &restored) const override;
             int getTrackCountForMix(MixId mixId) const override;
             bool createOrUpdateMix(MixInfo &mixInfo, std::vector<MixTrack> &tracks) const override;
             bool removeMix(MixId mixId) const override;

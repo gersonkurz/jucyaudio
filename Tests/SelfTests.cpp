@@ -4977,6 +4977,218 @@ namespace jucyaudio
                 }
             }
 
+            // --- A track that comes back goes back into the mix it was recorded in (#35) ---
+            //
+            // Deleting a track deletes its MixTracks rows. Its file returning makes it a new row with a new id,
+            // which no mix refers to. Every scan now goes through the MixRecovery records and puts such a track
+            // back - matched by filename, size and folder, and only if it was added after the record was
+            // captured - after the nearest earlier entry of the record that the mix still holds. Each original
+            // row carries its own cue start, so the order of the mix can be read from those alone.
+            {
+                // Offline tracks shown for the whole fixture, as elsewhere in this file: the offline filter reads a
+                // temp table that only the library-root machinery builds, and this scratch library has no roots. The
+                // scan's own scope query goes through the same filter.
+                const auto offlineShownBefore = config::theSettings.uiSettings.showOfflineTracks.get();
+                config::theSettings.uiSettings.showOfflineTracks.set(true);
+
+                const auto returnRoot = selfTestRoot / "mixrecovery-returns";
+                const auto returnDb = returnRoot / "jucyaudio.db";
+                std::error_code returnEc;
+                std::filesystem::remove_all(returnRoot, returnEc);
+                std::filesystem::create_directories(returnRoot / "music", returnEc);
+                std::filesystem::create_directories(returnRoot / "elsewhere", returnEc);
+                const auto file = [&returnRoot](int n, const char *folder = "music")
+                {
+                    return returnRoot / folder / std::format("t{}.wav", n);
+                };
+                bool written = true;
+                for (int n = 1; n <= 4; ++n)
+                {
+                    written = written && writeSilentWav(file(n), 44100);
+                }
+
+                SqliteTrackDatabase returns;
+                const bool connected = written && returns.connect(returnDb).isOk();
+                const auto rootId = connected ? returns.getFolderDatabase().findOrCreateFolderByPath(returnRoot) : FolderId{-1};
+                std::atomic<bool> neverCancel{false};
+                const auto scan = [&returns, rootId, &neverCancel]()
+                {
+                    TrackScanner scanner{returns};
+                    return scanner.scan({rootId}, false, true, nullptr, nullptr, &neverCancel);
+                };
+                const auto cueOrder = [&returns](MixId mixId)
+                {
+                    std::vector<int64_t> cues;
+                    for (const auto &track : returns.getMixManager().getMixTracks(mixId))
+                    {
+                        cues.push_back(track.cueStart.count());
+                    }
+                    return cues;
+                };
+                const auto describe = [](const std::vector<int64_t> &cues)
+                {
+                    std::string text;
+                    for (const auto cue : cues)
+                    {
+                        text += std::format("{}{}", text.empty() ? "" : " ", cue);
+                    }
+                    return text;
+                };
+
+                const bool scanned = rootId > 0 && scan();
+                const auto musicId = scanned ? returns.getFolderDatabase().findOrCreateFolderByPath(returnRoot / "music") : FolderId{-1};
+                std::vector<TrackInfo> found;
+                if (musicId > 0)
+                {
+                    TrackQueryArgs args{};
+                    args.folderIds = {musicId};
+                    found = returns.getTracks(args);
+                    std::sort(found.begin(),
+                        found.end(),
+                        [](const TrackInfo &a, const TrackInfo &b)
+                        {
+                            return a.filename < b.filename;
+                        });
+                }
+                report.check(found.size() == 4, std::format("#35: four tracks were scanned into a scratch library ({})", found.size()));
+
+                if (found.size() == 4)
+                {
+                    auto &mixes = returns.getMixManager();
+                    std::vector<MixTrack> rows;
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        MixTrack row{};
+                        row.trackId = found[static_cast<size_t>(i)].trackId;
+                        row.orderInMix = i;
+                        row.cueStart = Duration_t{11 * (i + 1)};
+                        row.cueEnd = Duration_t{900};
+                        rows.push_back(row);
+                    }
+                    MixInfo mix{};
+                    mix.name = "Returns";
+                    const bool created = mixes.createOrUpdateMix(mix, rows) && mix.mixId > 0;
+                    MixRecoveryCapture capture{};
+                    const bool captured = created && mixes.captureRecoveryData(mix.mixId, capture).isOk() && capture.captured;
+                    report.check(captured, "#35: a four-track mix was created and recorded");
+
+                    // date_added is stored to the millisecond and compared against captured_at with '>': a track
+                    // inserted in the same millisecond as the capture would not count as having come back.
+                    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+
+                    // t2 and t3 are deleted from disk, and the scan deletes their rows - and with them their
+                    // places in the mix, leaving t1 at position 0 and t4 at 3: deleting renumbers nothing.
+                    std::filesystem::remove(file(2), returnEc);
+                    std::filesystem::remove(file(3), returnEc);
+                    const bool removedScan = captured && scan();
+                    report.check(removedScan && cueOrder(mix.mixId) == std::vector<int64_t>{11, 44},
+                        std::format("#35: deleting two files took them out of the mix ({})", describe(cueOrder(mix.mixId))));
+
+                    // A file with t3's name and size turns up in another folder. Not the file the record describes,
+                    // as far as anyone can tell, so it is not attached.
+                    writeSilentWav(file(3, "elsewhere"), 44100);
+                    report.check(scan(), "#35: the scan that finds a t3.wav in another folder succeeds");
+                    report.check(cueOrder(mix.mixId) == std::vector<int64_t>{11, 44},
+                        std::format("#35: and a file of the same name and size in another folder is not put into the mix ({})", describe(cueOrder(mix.mixId))));
+
+                    // Moved to where the record says it was. The scan keeps its row (a move), and the row is newer
+                    // than the record, so it goes back - after t1, since t2 is still gone. Into the gapped mix.
+                    std::filesystem::rename(file(3, "elsewhere"), file(3), returnEc);
+                    report.check(!returnEc && scan(), "#35: the scan that finds it moved into the recorded folder succeeds");
+                    report.check(cueOrder(mix.mixId) == std::vector<int64_t>{11, 33, 44},
+                        std::format("#35: then t3 is back, with its own settings, after the nearest earlier track the mix still has ({})",
+                            describe(cueOrder(mix.mixId))));
+                    std::vector<int> positions;
+                    for (const auto &track : mixes.getMixTracks(mix.mixId))
+                    {
+                        positions.push_back(track.orderInMix);
+                    }
+                    report.check(positions == std::vector<int>{0, 1, 2}, "#35: and the mix's positions are 0, 1, 2 again, not the gapped ones");
+
+                    // Then the mix is edited: t4 moves to the front.
+                    const bool edited = mixes.reorderTrackInMix(mix.mixId, 2, 0);
+                    report.check(edited && cueOrder(mix.mixId) == std::vector<int64_t>{44, 11, 33},
+                        std::format("#35: the mix is edited afterwards ({})", describe(cueOrder(mix.mixId))));
+
+                    // t2 comes back, and the scan that inserts it stops before the restore, which is what a
+                    // cancelled scan leaves behind: the row, and a mix still without it.
+                    writeSilentWav(file(2), 44100);
+                    TrackInfo returned{};
+                    returned.trackId = -1;
+                    returned.folderId = musicId;
+                    returned.filename = "t2.wav";
+                    returned.filesize_bytes = static_cast<int64_t>(std::filesystem::file_size(file(2), returnEc));
+                    returned.date_added = std::chrono::system_clock::now();
+                    returned.last_scanned = returned.date_added;
+                    report.check(returns.saveTrackInfo(returned).isOk() && returned.trackId > 0, "#35: t2's row is back, as a cancelled scan would leave it");
+
+                    // A read that fails is a failure, and the mix is left as it was. Tracks is hidden, so the
+                    // restore cannot tell which files the mix holds.
+                    const auto hideTracks = [&returnDb](bool hide)
+                    {
+                        SqliteDatabase saboteur;
+                        return saboteur.open(pathToString(returnDb)) && saboteur.execute("PRAGMA legacy_alter_table=ON;") &&
+                               saboteur.execute(hide ? "ALTER TABLE Tracks RENAME TO Tracks_hidden;" : "ALTER TABLE Tracks_hidden RENAME TO Tracks;");
+                    };
+                    if (hideTracks(true))
+                    {
+                        int duringFailure = -1;
+                        const auto failed = mixes.restoreReturnedTracks(duringFailure);
+                        const bool putBack = hideTracks(false);
+                        report.check(!failed.isOk(), std::format("#35: a restore that cannot read the tracks says so (said: '{}')", failed.errorMessage));
+                        report.check(putBack && cueOrder(mix.mixId) == std::vector<int64_t>{44, 11, 33},
+                            std::format("#35: and leaves the mix as it was ({})", describe(cueOrder(mix.mixId))));
+                    }
+                    else
+                    {
+                        report.check(false, "#35: the Tracks table could be hidden");
+                    }
+
+                    // The next scan inserts nothing - the row is there - and still puts t2 back, after t1 wherever
+                    // the edit has put t1.
+                    report.check(scan(), "#35: the next scan succeeds");
+                    report.check(cueOrder(mix.mixId) == std::vector<int64_t>{44, 11, 22, 33},
+                        std::format("#35: and makes good what the cancelled one did not: t2 is back after t1 ({})", describe(cueOrder(mix.mixId))));
+                    report.check(mixes.getMix(mix.mixId).numberOfTracks == 4,
+                        std::format("#35: and the mix's summary counts it ({} tracks)", mixes.getMix(mix.mixId).numberOfTracks));
+
+                    // Nothing is lost any more, so nothing is added: not a second copy of a track the mix holds.
+                    int again = -1;
+                    const bool askedAgain = mixes.restoreReturnedTracks(again).isOk();
+                    report.check(askedAgain && again == 0, std::format("#35: asking again restores nothing ({} rows)", again));
+                    report.check(cueOrder(mix.mixId).size() == 4, std::format("#35: and the mix still has four tracks ({})", cueOrder(mix.mixId).size()));
+
+                    // A track the user takes out of the mix themselves stays out: its row is older than the record,
+                    // so it is not a file that came back. t1 is at position 1 after the edit above.
+                    const bool removedByHand = mixes.removeTrackFromMixAtOrder(mix.mixId, 1);
+                    report.check(removedByHand && cueOrder(mix.mixId) == std::vector<int64_t>{44, 22, 33},
+                        std::format("#35: t1 is taken out of the mix by hand ({})", describe(cueOrder(mix.mixId))));
+                    report.check(scan(), "#35: and the next scan succeeds");
+                    report.check(cueOrder(mix.mixId) == std::vector<int64_t>{44, 22, 33},
+                        std::format("#35: without putting back a track the user removed, whose file never went away ({})", describe(cueOrder(mix.mixId))));
+
+                    // Nor one that was restored and then taken out: its row is newer than the record, but the
+                    // record remembers that it was put back once.
+                    const bool restoredRemoved = mixes.removeTrackFromMixAtOrder(mix.mixId, 1);
+                    report.check(restoredRemoved && cueOrder(mix.mixId) == std::vector<int64_t>{44, 33},
+                        std::format("#35: t2, restored earlier, is taken out of the mix by hand ({})", describe(cueOrder(mix.mixId))));
+                    report.check(scan(), "#35: and the next scan succeeds");
+                    report.check(cueOrder(mix.mixId) == std::vector<int64_t>{44, 33},
+                        std::format("#35: without putting back a restored track the user removed ({})", describe(cueOrder(mix.mixId))));
+
+                    // Deleted again and back again: the track it was restored as is gone, so the entry is
+                    // pending once more. Nothing it followed in the record is left, so it goes to the start.
+                    std::filesystem::remove(file(2), returnEc);
+                    report.check(scan(), "#35: t2's file is deleted, and the scan removes its row");
+                    writeSilentWav(file(2), 44100);
+                    report.check(scan(), "#35: the scan that finds it a second time succeeds");
+                    report.check(cueOrder(mix.mixId) == std::vector<int64_t>{22, 44, 33},
+                        std::format("#35: and a track deleted and returned a second time is restored again ({})", describe(cueOrder(mix.mixId))));
+                }
+
+                config::theSettings.uiSettings.showOfflineTracks.set(offlineShownBefore);
+            }
+
             writeResultsFile(resultsPath, "jucyaudio mix recovery self test", report);
             spdlog::info("[SelfTest] Mix recovery finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
             return report.failures() == 0 ? 0 : 1;
