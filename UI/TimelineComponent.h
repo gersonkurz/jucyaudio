@@ -7,7 +7,7 @@ namespace jucyaudio
 {
     namespace ui
     {
-        class TimelineComponent : public juce::Component
+        class TimelineComponent : public juce::Component, private juce::ChangeListener
         {
         public:
             /**
@@ -21,6 +21,12 @@ namespace jucyaudio
             };
             
             TimelineComponent(juce::AudioFormatManager &formatManager, juce::AudioThumbnailCache &thumbnailCache);
+
+            /// Unsubscribes from the loader, which outlives the timeline or has released it first.
+            ~TimelineComponent() override
+            {
+                watchLoader(nullptr);
+            }
 
             /**
              * @brief Populates the timeline with track components based on a mix data model.
@@ -142,7 +148,7 @@ namespace jucyaudio
                 removeAllChildren();
                 m_cachedNumLanes = -1;
 
-                m_mixLoader = nullptr;
+                watchLoader(nullptr);
             }
 
             /**
@@ -459,8 +465,17 @@ namespace jucyaudio
             static_assert(!std::is_pointer_v<decltype(TrackView::mixTrackData)> && !std::is_pointer_v<decltype(TrackView::trackInfoData)>,
                 "TrackView must own its data: a pointer into MixProjectLoader's vectors dangles on every reload.");
 
-            /** @brief A non-owning pointer to the MixProjectLoader that serves as the master data source for this timeline. */
+            /** @brief A non-owning pointer to the MixProjectLoader that serves as the master data source for this timeline.
+             *         Set only through watchLoader, which keeps this timeline subscribed to that loader's changes. */
             audio::MixProjectLoader *m_mixLoader = nullptr;
+
+            /// @brief Points m_mixLoader at `loader`, moving the change subscription from the old loader to the
+            ///        new one. The old loader must still be alive: whoever owns it releases the timeline first.
+            void watchLoader(audio::MixProjectLoader *loader);
+
+            /// @brief A loader's rows changed without this timeline being told (#37): rebuild from them, unless
+            ///        the timeline already did.
+            void changeListenerCallback(juce::ChangeBroadcaster *source) override;
 
             /** @brief The loader's contents generation at the last populate; see refuseIfViewsAreStale. */
             uint64_t m_populatedGeneration{0};

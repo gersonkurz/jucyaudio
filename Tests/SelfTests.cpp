@@ -8719,6 +8719,76 @@ namespace jucyaudio
                 }
             }
 
+            // --- 10. A timeline rebuilds itself when its mix's rows change under it (#37) ---
+            //
+            // Before, it found out only when an edit was refused as stale, so until then it showed rows the
+            // loader no longer had. An in-memory removal changes the rows without telling anyone, the way
+            // a reload from the data view does.
+            {
+                audio::MixProjectLoader watchedLoader;
+                juce::AudioFormatManager watchedFormats;
+                watchedFormats.registerBasicFormats();
+                juce::AudioThumbnailCache watchedThumbnails{16};
+                ui::TimelineComponent watching{watchedFormats, watchedThumbnails};
+                watching.setSize(4000, 600);
+
+                if (!watchedLoader.loadMix(mixId) || !watching.populateFrom(&watchedLoader))
+                {
+                    report.check(false, "#37: the fixture mix loads into a timeline");
+                }
+                else
+                {
+                    const auto shownBefore = watching.getNumChildComponents();
+                    report.check(watchedLoader.removeTrackAtOrder(0), "#37: a row can be removed from the loader behind the timeline's back");
+                    report.check(watching.getNumChildComponents() == shownBefore,
+                        std::format("#37: (nothing has been delivered yet: {} track components)", watching.getNumChildComponents()));
+
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+                    report.check(watching.getNumChildComponents() + 1 == shownBefore,
+                        std::format("#37: once the change is delivered the timeline shows the loader's rows ({} -> {} track components)",
+                            shownBefore,
+                            watching.getNumChildComponents()));
+
+                    // Released, it stops listening: a later change neither rebuilds it nor reaches it.
+                    watching.releaseMixLoader();
+                    report.check(watchedLoader.removeTrackAtOrder(0), "#37: and another row can be removed after the timeline let go");
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+                    report.check(watching.getNumChildComponents() == 0,
+                        std::format("#37: a released timeline stays empty when the loader changes ({} track components)", watching.getNumChildComponents()));
+                }
+
+                // That a release unsubscribes, which the check above cannot see: its callback ignores a null
+                // loader either way. This one counts deliveries instead of acting on them. A subscription left
+                // behind is what would call into a destroyed timeline.
+                struct CountingTimeline : ui::TimelineComponent
+                {
+                    using ui::TimelineComponent::TimelineComponent;
+                    int deliveries{0};
+                    void changeListenerCallback(juce::ChangeBroadcaster *) override
+                    {
+                        ++deliveries;
+                    }
+                };
+                audio::MixProjectLoader countedLoader;
+                CountingTimeline counting{watchedFormats, watchedThumbnails};
+                counting.setSize(4000, 600);
+                if (countedLoader.loadMix(mixId) && counting.populateFrom(&countedLoader))
+                {
+                    countedLoader.removeTrackAtOrder(0);
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+                    report.check(counting.deliveries == 1, std::format("#37: a populated timeline is told when its loader changes ({} deliveries)", counting.deliveries));
+
+                    counting.releaseMixLoader();
+                    countedLoader.removeTrackAtOrder(0);
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+                    report.check(counting.deliveries == 1, std::format("#37: and is not told any more once it has released the loader ({} deliveries)", counting.deliveries));
+                }
+                else
+                {
+                    report.check(false, "#37: the fixture mix loads into the counting timeline");
+                }
+            }
+
             writeResultsFile(resultsPath, "jucyaudio timeline self test", report);
             spdlog::info("[SelfTest] Timeline test finished with {} failure(s). Results: {}", report.failures(), pathToString(resultsPath));
             return report.failures() == 0 ? 0 : 1;

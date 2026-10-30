@@ -102,6 +102,7 @@ namespace jucyaudio
             // With the new contents, not before them: anything comparing against this number is asking
             // whether what it cached still describes what is here now.
             ++m_contentsGeneration;
+            sendChangeMessage();
             //int index = 0;
             
             // Only dump context in debug builds or when explicitly debugging
@@ -162,6 +163,7 @@ namespace jucyaudio
             // A row is gone and the rest have been renumbered, so anything holding a copy of the old
             // set is describing positions that have moved.
             ++m_contentsGeneration;
+            sendChangeMessage();
 
             return true;
         }
@@ -307,6 +309,7 @@ namespace jucyaudio
             // now belong to other tracks. Bumped here rather than only in loadMix because this happens
             // without one: the caller reorders, then saves, and a save that fails never reloads.
             ++m_contentsGeneration;
+            sendChangeMessage();
 
             spdlog::info("Successfully moved track {} from position {} to {}", 
                 trackId, currentPosition, newPosition);

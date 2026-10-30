@@ -4,6 +4,7 @@
 #include <Database/Includes/TrackInfo.h>
 #include <Database/TrackLibrary.h>
 #include <Audio/Model/EQSettings.h>
+#include <juce_events/juce_events.h>
 #include <unordered_map>
 
 namespace jucyaudio
@@ -14,7 +15,11 @@ namespace jucyaudio
 
         // This class is a simple data holder and loader for a mix project.
         // It is not a component and has no UI.
-        class MixProjectLoader
+        //
+        // It broadcasts a change whenever its rows change - each time getContentsGeneration() moves - so
+        // a view built from them can rebuild itself rather than wait to be told by whoever changed them
+        // (#37). The message is asynchronous and arrives on the message thread.
+        class MixProjectLoader : public juce::ChangeBroadcaster
         {
         public:
             // Constructor loads all necessary data from the database.

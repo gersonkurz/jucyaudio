@@ -1084,6 +1084,34 @@ namespace jucyaudio
             }
         }
 
+        void TimelineComponent::watchLoader(audio::MixProjectLoader *loader)
+        {
+            if (m_mixLoader == loader)
+            {
+                return;
+            }
+            if (m_mixLoader)
+            {
+                m_mixLoader->removeChangeListener(this);
+            }
+            m_mixLoader = loader;
+            if (m_mixLoader)
+            {
+                m_mixLoader->addChangeListener(this);
+            }
+        }
+
+        void TimelineComponent::changeListenerCallback(juce::ChangeBroadcaster *source)
+        {
+            // The generation, not the message, decides: the timeline's own edits change the rows too and
+            // rebuild the views as they go, so by the time their message arrives there is nothing to do.
+            if (m_mixLoader != nullptr && source == m_mixLoader && m_populatedGeneration != m_mixLoader->getContentsGeneration())
+            {
+                spdlog::info("[Timeline] The mix's rows changed under the timeline; rebuilding the views.");
+                populateFrom(m_mixLoader);
+            }
+        }
+
         bool TimelineComponent::refuseIfViewsAreStale(const char *action)
         {
             if (!m_mixLoader)
@@ -1831,7 +1859,7 @@ namespace jucyaudio
             }
             else
             {
-                m_mixLoader = mixLoader;
+                watchLoader(mixLoader);
             }
             clearTrackContext();
             // Before the components go: the drag holds a pointer to one of them.

@@ -529,6 +529,9 @@ namespace jucyaudio
             if (m_node)
             {
                 spdlog::info("[MixEditor] Releasing previous node");
+                // The timeline first: it is subscribed to the loader this node owns, and releasing the node
+                // can free that loader. unloadMix does the same, in the same order.
+                m_timeline.releaseMixLoader();
                 m_node->release(REFCOUNT_DEBUG_ARGS); // Release previous node if any
             }
             m_node = node; // Take ownership of the new node
