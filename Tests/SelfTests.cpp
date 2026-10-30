@@ -60,6 +60,7 @@
 #include <UI/Settings.h>
 #include <UI/SingletonDialog.h>
 #include <UI/TimelineComponent.h>
+#include <Utils/LoggingUtils.h>
 #include <Utils/AssortedUtils.h>
 
 #include <nlohmann/json.hpp>
@@ -7569,8 +7570,8 @@ namespace jucyaudio
                 // PluginChain::processBlock is reached from PlaybackController::getNextAudioBlock, so
                 // everything in it runs on the audio callback. Both of its exception handlers used to
                 // call spdlog::error with plugin->getName().toStdString() - a juce::String allocation,
-                // spdlog formatting, a sink mutex, and an fflush, because the flush threshold is set
-                // equal to the log threshold (Utils/LoggingUtils.cpp:18) and error is enabled at every
+                // spdlog formatting, a sink mutex, and an fflush, because errors are flushed as they are
+                // written (setLogLevelFromString, Utils/LoggingUtils.cpp) and error is enabled at every
                 // level this app offers. Once per offending plugin, since suspendProcessing follows
                 // immediately, but once is a dropout at the moment someone is listening.
                 //
@@ -8787,6 +8788,25 @@ namespace jucyaudio
                 {
                     report.check(false, "#37: the fixture mix loads into the counting timeline");
                 }
+            }
+
+            // --- 11. Choosing a log level changes what is logged, and nothing else (#60) ---
+            //
+            // The flush threshold used to follow the level, so debug meant an fflush per record, and
+            // spdlog::set_level re-enabled the Config logger that startup deliberately keeps at warn.
+            {
+                const auto levelBefore = spdlog::default_logger()->level();
+                setLogLevelFromString("debug");
+                const auto flushLevel = spdlog::default_logger()->flush_level();
+                const auto configLevel = config::logger ? config::logger->level() : spdlog::level::off;
+                setLogLevelFromString(std::string{spdlog::level::to_string_view(levelBefore).data()});
+
+                report.check(flushLevel == spdlog::level::err,
+                    std::format("#60: at debug, records are flushed from errors up, not each one ({})", spdlog::level::to_string_view(flushLevel).data()));
+                report.check(configLevel == spdlog::level::warn,
+                    std::format("#60: and the Config logger stays at warn ({})", spdlog::level::to_string_view(configLevel).data()));
+                report.check(spdlog::default_logger()->level() == levelBefore,
+                    std::format("#60: (the level is back to {} for the rest of the run)", spdlog::level::to_string_view(levelBefore).data()));
             }
 
             writeResultsFile(resultsPath, "jucyaudio timeline self test", report);

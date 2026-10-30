@@ -65,7 +65,13 @@ namespace jucyaudio
 
         bool Section::load(ConfigBackend &settings)
         {
-            logger->debug("{}: loading section {} at path {}", __FUNCTION__, (const void*) this, getConfigPath());
+            // getConfigPath builds a string by walking the parents, so the records that need it are only
+            // assembled when they will be kept (#60). This runs for every section on every settings load.
+            const bool tracing = logger->should_log(spdlog::level::debug);
+            if (tracing)
+            {
+                logger->debug("{}: loading section {} at path {}", __FUNCTION__, (const void*) this, getConfigPath());
+            }
             bool success = true;
             for (const auto item : m_childItems)
             {
@@ -75,9 +81,15 @@ namespace jucyaudio
                     logger->error("{} Failed to load config item: {}", __FUNCTION__, item->getConfigPath());
                     success = false;
                 }
-                logger->debug("{}: loaded item {} at path {}", __FUNCTION__, (const void*) item, item->getConfigPath());
+                if (tracing)
+                {
+                    logger->debug("{}: loaded item {} at path {}", __FUNCTION__, (const void*) item, item->getConfigPath());
+                }
             }
-            logger->debug("{}: complete loading section {} at path {} with {}", __FUNCTION__, (const void*) this, getConfigPath(), success ? "success" : "failure");
+            if (tracing)
+            {
+                logger->debug("{}: complete loading section {} at path {} with {}", __FUNCTION__, (const void*) this, getConfigPath(), success ? "success" : "failure");
+            }
             return success;
         }
 

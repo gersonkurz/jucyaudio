@@ -9,7 +9,11 @@ namespace jucyaudio
         {
             juce::ignoreUnused(shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
 
-            spdlog::debug("JucyLookAndFeel::drawToggleButton called for: {}", button.getButtonText().toStdString());
+            // A paint path: the text conversion is only paid for when the record is kept (#60).
+            if (spdlog::should_log(spdlog::level::debug))
+            {
+                spdlog::debug("JucyLookAndFeel::drawToggleButton called for: {}", button.getButtonText().toStdString());
+            }
 
             const auto fontSize = juce::jmin(15.0f, button.getHeight() * 0.75f);
             const auto tickWidth = fontSize * 1.1f;

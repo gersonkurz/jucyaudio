@@ -656,8 +656,14 @@ namespace jucyaudio
                     auto conf_logger = std::make_shared<spdlog::logger>("conf", sinks.begin(), sinks.end());
                     conf_logger->set_level(spdlog::level::warn); // Disable config logger by default
                     config::logger = conf_logger;
-                    spdlog::register_logger(conf_logger);
+                    // Not registered: spdlog::set_level applies to every registered logger, so the log level
+                    // setting re-enabled the Config diagnostics this line keeps off (#60). It shares the sinks,
+                    // so the default logger's flushes cover its output too.
                     spdlog::set_default_logger(combined_logger);
+
+                    // What is not an error reaches the file within a second, rather than on every record
+                    // (flush_on in setLogLevelFromString) or only when the buffer fills.
+                    spdlog::flush_every(std::chrono::seconds{1});
 
                     // 4. Set Log Level from config file
                     config::TomlBackend backend{g_strConfigFilename};

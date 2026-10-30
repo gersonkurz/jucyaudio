@@ -16,7 +16,11 @@ namespace jucyaudio
         }
 
         spdlog::set_level(level);
-        spdlog::default_logger()->flush_on(level);
+
+        // Errors are flushed as they are written; everything else by the periodic flush Main starts. Tying
+        // this to the log level made every record an fflush at debug, which is the level chosen to investigate
+        // something - and the one where that cost distorts what is being measured (#60).
+        spdlog::default_logger()->flush_on(spdlog::level::err);
 
         spdlog::info("Log level dynamically set to \"{}\"", spdlog::level::to_string_view(level));
     }
