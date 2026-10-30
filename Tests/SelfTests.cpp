@@ -65,6 +65,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <spdlog/sinks/ringbuffer_sink.h>
 #include <spdlog/spdlog.h>
 
 #include <lame.h>
@@ -9626,6 +9627,92 @@ namespace jucyaudio
                     const auto recovered = folders.getFolderById(1);
                     report.check(recovered.has_value() && recovered->folderId == 1, "the folder reads back once its albums can be read again");
                     report.check(albumCount("Albums") == 3, "and the complete read still leaves that folder alone");
+                }
+            }
+
+            // --- The scanner's second guard: a root whose folders cannot be determined (#43) ---
+            //
+            // TrackScanner reads the folder tree twice: once for the scan scope and once per root, for
+            // inspectedFolders. The first guard is covered above. The second fires only when the cache goes
+            // invalid between the two and then cannot be rebuilt, which is staged here without timing:
+            //   - the scanning database's cache is built, and then a folder under the first root is created
+            //     through another connection, so the cache is valid but does not have it;
+            //   - Albums loses the column the cache build reads, so every rebuild fails after the folders
+            //     have been read - the maps hold them, so a root's path still resolves, but the cache never
+            //     becomes valid again;
+            //   - walking the first root finds the folder, the insert is refused by the unique index, and
+            //     addFolder's recovery branch invalidates the cache.
+            // The second root's path then resolves out of the maps, and its folders cannot be determined.
+            {
+                const auto guardRoot = selfTestRoot / "scanner-second-guard";
+                std::error_code guardEc;
+                std::filesystem::remove_all(guardRoot, guardEc);
+                const auto rootA = guardRoot / "rootA";
+                const auto rootB = guardRoot / "rootB";
+                const bool filesWritten = std::filesystem::create_directories(rootA / "F", guardEc) && std::filesystem::create_directories(rootB, guardEc) && writeSilentWav(rootA / "F" / "a.wav", 4410) &&
+                                          writeSilentWav(rootB / "b.wav", 4410);
+                report.check(filesWritten, "#43: the two roots could be written");
+
+                const auto guardDbPath = guardRoot / "jucyaudio.db";
+                SqliteTrackDatabase scanning;
+                const bool connected = filesWritten && scanning.connect(guardDbPath).isOk();
+                auto &scanningFolders = scanning.getFolderDatabase();
+                const auto rootAId = connected ? scanningFolders.findOrCreateFolderByPath(rootA) : FolderId{-1};
+                const auto rootBId = connected ? scanningFolders.findOrCreateFolderByPath(rootB) : FolderId{-1};
+
+                FolderId behindItsBack{-1};
+                if (rootAId > 0 && rootBId > 0)
+                {
+                    SqliteTrackDatabase other;
+                    if (other.connect(guardDbPath).isOk())
+                    {
+                        behindItsBack = other.getFolderDatabase().findOrCreateFolderByPath(rootA / "F");
+                    }
+                }
+                bool sabotaged = false;
+                if (behindItsBack > 0)
+                {
+                    SqliteDatabase saboteur;
+                    sabotaged = saboteur.open(pathToString(guardDbPath)) && saboteur.execute("ALTER TABLE Albums DROP COLUMN album_artist;");
+                }
+                report.check(rootAId > 0 && rootBId > 0 && behindItsBack > 0 && sabotaged,
+                    std::format("#43: staged two roots, a folder the scanning cache does not have (id {}) and an album read that fails", behindItsBack));
+
+                if (sabotaged)
+                {
+                    // The scanner reports only true or false, so which guard refused is read from the log. A
+                    // temporary default logger with the same sinks plus a ring buffer, swapped back afterwards:
+                    // adding a sink to the live logger would race the periodic flush, which walks its sinks.
+                    const auto previousLogger = spdlog::default_logger();
+                    auto ring = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(512);
+                    auto captureSinks = previousLogger->sinks();
+                    captureSinks.push_back(ring);
+                    auto capture = std::make_shared<spdlog::logger>("selftest-capture", captureSinks.begin(), captureSinks.end());
+                    capture->set_level(previousLogger->level());
+                    spdlog::set_default_logger(capture);
+
+                    std::atomic<bool> neverCancel{false};
+                    TrackScanner scanner{scanning};
+                    const bool scanSucceeded = scanner.scan({rootAId, rootBId}, false, true, nullptr, nullptr, &neverCancel);
+
+                    spdlog::set_default_logger(previousLogger);
+                    spdlog::drop("selftest-capture");
+
+                    const auto lines = ring->last_formatted();
+                    const auto logged = [&lines](const std::string &needle, const std::string &alsoNeedle = {})
+                    {
+                        return std::any_of(lines.begin(),
+                            lines.end(),
+                            [&](const std::string &line)
+                            {
+                                return line.find(needle) != std::string::npos && (alsoNeedle.empty() || line.find(alsoNeedle) != std::string::npos);
+                            });
+                    };
+
+                    report.check(logged("the cache did not have it"), "#43: walking the first root took addFolder's recovery branch, which invalidates the cache");
+                    report.check(!scanSucceeded, "#43: the scan refuses");
+                    report.check(logged("Scan refused: the folders under root", pathToString(rootB)),
+                        "#43: and it is the per-root guard that refused, for the second root, not some other failure");
                 }
             }
 
