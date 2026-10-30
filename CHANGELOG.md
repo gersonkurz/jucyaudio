@@ -86,6 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The export dialog remembers the last export folder (#72). It is now saved when you export or schedule, rather than whenever something unrelated next saved the settings, and opening a view no longer reloads every setting from disk, which threw away the folder and any other setting changed since the last save
 - Column choices made in the Column Configurator survive a restart (#80). They were saved at the top level of `jucyaudio.toml` and looked for under `[UI]`, so every session started with all columns at their default widths. The misplaced entries were never read and were overwritten with the defaults at every startup; they are removed the next time the settings are saved
 - Switching to another working set, folder or view no longer keeps the scroll position of the one before (#81). Each opens where it was last left during the session, and one not shown yet opens at the top
+- A folder lookup that runs while the folder cache is being invalidated no longer reports the folder as missing (#36). The lookup reads under the same lock that confirmed the cache was valid, instead of releasing it and taking it again
 - macOS builds link one zlib. JUCE now calls the system libz that TagLib already used for compressed ID3 frames, instead of compiling a second copy into the executable beside it, and the build fails if that ever comes back
 
 ---

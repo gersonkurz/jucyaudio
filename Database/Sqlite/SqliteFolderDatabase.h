@@ -81,6 +81,15 @@ namespace jucyaudio
             /// @brief Loads all folders from the database into the cache if it's empty.
             bool buildCacheIfNeeded() const;
 
+            /// @brief The cache mutex, held, with the cache built if it could be (`built` says whether).
+            ///        Accessors read under the lock this returns: building and then locking again for the
+            ///        read left a gap an invalidation could empty the maps in (#36).
+            std::unique_lock<std::mutex> lockBuiltCache(bool &built) const;
+
+            /// @brief Fills the cache from the database. Call with the database mutex and then the cache
+            ///        mutex held, after checking that the cache is not already valid.
+            bool buildCacheLocked() const;
+
             /// @brief Helper function that updates root_path values in the database, once.
             bool updateRootPathValuesInDatabase(const std::unordered_map<FolderId, std::string> &pathUpdates) const;
 

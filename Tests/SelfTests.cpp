@@ -8782,13 +8782,54 @@ namespace jucyaudio
                 std::format("every folder the writer asked for was created ({} failed)", creationsThatFailed.load()));
             report.check(pathsThatChangedId == 0,
                 std::format("the same path always came back as the same row ({} did not)", pathsThatChangedId.load()));
-            // A count, not a check. An accessor builds the cache, releases both mutexes and then takes
-            // the cache mutex to read, so the invalidator can empty it in between and the read misses -
-            // the known window tracked as issue #36, and not something this change set out to close.
-            // Asserting zero here would fail a correct implementation on an unlucky schedule.
-            report.note(std::format("{} of {} reads found the cache emptied under them, which is the known accessor window",
-                readsThatLostTheRoot.load(),
-                kIterations));
+            // A check since #36: an accessor reads under the lock that saw the cache valid, so an
+            // invalidation can no longer land between the build and the read.
+            report.check(readsThatLostTheRoot == 0,
+                std::format("#36: no read found the cache emptied under it ({} of {} did)", readsThatLostTheRoot.load(), kIterations));
+
+            // #36 again, with the odds in the defect's favour. The pass above invalidates once per read and
+            // rebuilds before reading, so the gap between an accessor's build and its read was rarely hit
+            // there. Here the readers only read, several at once, while one thread does nothing but empty
+            // the cache: every read that finds it empty rebuilds it and then reads, which is the gap.
+            {
+                constexpr int kReaders = 4;
+                std::atomic<bool> stop{false};
+                std::atomic<long long> reads{0};
+                std::atomic<long long> misses{0};
+                std::thread emptier{[&]()
+                    {
+                        while (!stop)
+                        {
+                            folders.invalidateCache();
+                        }
+                    }};
+                const auto ancestors = folders.getParentSet(rootFolderId).size();
+                report.check(ancestors > 1, std::format("#36: the watched folder has ancestors in the cache, so a miss is visible ({} in its parent set)", ancestors));
+                // Taken after the setup above, so the readers get their full two seconds however long it took.
+                const auto until = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+                std::vector<std::thread> readers;
+                for (int r = 0; r < kReaders; ++r)
+                {
+                    readers.emplace_back([&]()
+                        {
+                            while (std::chrono::steady_clock::now() < until)
+                            {
+                                misses += folders.getFolderById(rootFolderId).has_value() ? 0 : 1;
+                                // The starting id is always in the set; on a miss the walk finds none of its ancestors.
+                                misses += folders.getParentSet(rootFolderId).size() > 1 ? 0 : 1;
+                                reads += 2;
+                            }
+                        });
+                }
+                for (auto &reader : readers)
+                {
+                    reader.join();
+                }
+                stop = true;
+                emptier.join();
+                report.check(reads > 0 && misses == 0,
+                    std::format("#36: reads racing a thread that empties the cache never find a folder missing ({} of {} did)", misses.load(), reads.load()));
+            }
 
             // The cache has to agree with the database afterwards, or the locking is right and the
             // bookkeeping is not.

@@ -20,15 +20,28 @@ namespace jucyaudio
 
         bool SqliteFolderDatabase::buildCacheIfNeeded() const
         {
+            bool built{false};
+            std::ignore = lockBuiltCache(built);
+            return built;
+        }
+
+        std::unique_lock<std::mutex> SqliteFolderDatabase::lockBuiltCache(bool &built) const
+        {
             // The common case first, and under the cache mutex alone: every accessor comes through
             // here, so a valid cache must not wait for the database mutex. Navigation is meant to be
             // answered from the cache without touching the connection, and a long statement elsewhere
             // would otherwise stall the message thread walking the folder tree.
+            //
+            // The lock that saw the cache valid is the one handed back, so the caller reads under it. The
+            // accessors used to build, release, and take the cache mutex again for the read, and an
+            // invalidation landing in between emptied the maps they then read from (#36).
+            std::unique_lock cacheLock{m_cacheMutex};
+            if (m_isCacheValid)
             {
-                std::lock_guard cacheLock{m_cacheMutex};
-                if (m_isCacheValid)
-                    return true;
+                built = true;
+                return cacheLock;
             }
+            cacheLock.unlock();
 
             // Building is the other case, and it needs both, in this order. This function fills the
             // cache from the database, so it holds the cache mutex across statements that each take the
@@ -36,14 +49,20 @@ namespace jucyaudio
             // findOrCreateFolderByPath took them the other way round. Taking the database mutex first
             // here is what makes one order out of the two. It is recursive, so the caller that already
             // holds it - findOrCreateFolderByPath - is unaffected.
+            //
+            // The database mutex is released when this returns and the cache mutex is not. Releasing out of
+            // order acquires nothing, so the lock order still holds.
             std::lock_guard dbLock{m_db.getMutex()};
-            std::lock_guard cacheLock{m_cacheMutex};
+            cacheLock.lock();
 
             // Rechecked, because the fast path above released the cache mutex: another thread may have
             // built the whole cache while this one waited for the connection.
-            if (m_isCacheValid)
-                return true;
+            built = m_isCacheValid || buildCacheLocked();
+            return cacheLock;
+        }
 
+        bool SqliteFolderDatabase::buildCacheLocked() const
+        {
             spdlog::debug("Building all folder caches...");
 
             m_folderInfoFromId.clear();
@@ -483,9 +502,9 @@ namespace jucyaudio
             // The build happens first and its answer is kept, but the walk runs either way: a caller
             // that wants to show what could be read still can, and the one that must not act on a
             // partial tree has the status to refuse on. Same shape as ITrackDatabase::getTracks.
-            const bool built = buildCacheIfNeeded();
+            bool built{false};
             {
-                std::lock_guard cacheLock{m_cacheMutex};
+                const auto cacheLock = lockBuiltCache(built);
                 for (const auto &folderId : folderIdsToScan)
                 {
                     getChildFoldersRecursive(results, folderId);
@@ -548,8 +567,8 @@ namespace jucyaudio
 
         std::optional<FolderInfo> SqliteFolderDatabase::getFolderById(FolderId folderId) const
         {
-            buildCacheIfNeeded();
-            std::lock_guard lock{m_cacheMutex};
+            bool built{false};
+            const auto lock = lockBuiltCache(built);
 
             const auto it = m_folderInfoFromId.find(folderId);
             if (it != m_folderInfoFromId.end())
@@ -561,8 +580,8 @@ namespace jucyaudio
 
         bool SqliteFolderDatabase::hasChildren(FolderId parentId) const
         {
-            buildCacheIfNeeded();
-            std::lock_guard lock{m_cacheMutex};
+            bool built{false};
+            const auto lock = lockBuiltCache(built);
 
             // Check if parent has any children in the map
             auto it = m_childrenFromParents.find(parentId);
@@ -585,8 +604,8 @@ namespace jucyaudio
 
         std::unordered_set<FolderId> SqliteFolderDatabase::getParentSet(FolderId folderId) const
         {
-            buildCacheIfNeeded();
-            std::lock_guard lock(m_cacheMutex);
+            bool built{false};
+            const auto lock = lockBuiltCache(built);
 
             std::unordered_set<FolderId> parents;
             while (folderId > 0)
@@ -602,8 +621,8 @@ namespace jucyaudio
 
         std::vector<FolderInfo> SqliteFolderDatabase::getChildFolders(FolderId parentId) const
         {
-            buildCacheIfNeeded();
-            std::lock_guard lock(m_cacheMutex);
+            bool built{false};
+            const auto lock = lockBuiltCache(built);
 
             std::vector<FolderInfo> children;
 
