@@ -1252,9 +1252,11 @@ namespace jucyaudio
             {
                 int64_t bytesAccepted{0};
                 int refusals{0};
-                // Only the MP3 exporter seeks, and only to reach the LAME info frame, so this doubles
-                // as "the render finished and finalisation began".
+                // Only the MP3 exporter seeks: once to the LAME info frame, once back to the end for the
+                // ID3v1 footer. So this doubles as "the render finished and finalisation began".
                 int seeks{0};
+                // Set by a check's progress callback, for RefusalTrigger::WhenArmed.
+                bool armed{false};
             };
 
             class RefusingOutputStream final : public juce::OutputStream
@@ -1372,10 +1374,18 @@ namespace jucyaudio
             /// those are reached by the seek instead: this exporter seeks exactly once, to put the
             /// finished LAME info frame over the placeholder, so "after the first seek" names that
             /// moment exactly and does not move when the fixture's length changes.
+            ///
+            /// Two more for the writes those cannot name (#53). The ID3v1 footer is the write after the
+            /// second seek, back to the end of the audio. The flush write is the first write after the
+            /// render's last progress report, which the stream cannot see but the check's progress
+            /// callback can: it arms the stream at 100%, so the trigger does not depend on how many bytes
+            /// the fixture encodes to.
             enum class RefusalTrigger
             {
                 AfterBytes,
                 AfterSeek,
+                AfterSecondSeek,
+                WhenArmed,
             };
 
             class RefusingFileOutputStream final : public juce::FileOutputStream
@@ -1399,7 +1409,22 @@ namespace jucyaudio
 
                 bool write(const void *data, size_t numBytes) override
                 {
-                    const bool refusing = m_trigger == RefusalTrigger::AfterSeek ? m_log.seeks > 0 : m_log.bytesAccepted >= m_refuseAfterBytes;
+                    bool refusing{false};
+                    switch (m_trigger)
+                    {
+                    case RefusalTrigger::AfterBytes:
+                        refusing = m_log.bytesAccepted >= m_refuseAfterBytes;
+                        break;
+                    case RefusalTrigger::AfterSeek:
+                        refusing = m_log.seeks > 0;
+                        break;
+                    case RefusalTrigger::AfterSecondSeek:
+                        refusing = m_log.seeks > 1;
+                        break;
+                    case RefusalTrigger::WhenArmed:
+                        refusing = m_log.armed;
+                        break;
+                    }
                     if (refusing)
                     {
                         ++m_log.refusals;
@@ -7186,6 +7211,67 @@ namespace jucyaudio
                             std::format("the MP3 that was already there is untouched ({} bytes)", mp3SizeBefore));
                         report.check(
                             !std::filesystem::exists(mp3Partial, ec), "and the fully encoded partial was discarded rather than committed, tag frame and all");
+                    }
+
+                    // --- The other three refused writes (#53) ---
+                    //
+                    // The two blocks above pin the per-block write and the info-frame write. These are the
+                    // remaining three, each asserting the same shape: the export fails, the first error names
+                    // that write and not a neighbour, exactly one write was refused so the check pins this
+                    // write rather than a later one, the MP3 already there is untouched and no partial is left.
+                    {
+                        struct RefusedWrite
+                        {
+                            const char *what;
+                            RefusalTrigger trigger;
+                            const char *expectedError;
+                        };
+                        const RefusedWrite refusedWrites[]{
+                            // From byte zero: the tag is the first thing written, during setup.
+                            {"the ID3v2 tag", RefusalTrigger::AfterBytes, "could not write the ID3v2 tag"},
+                            {"the flushed MP3 data", RefusalTrigger::WhenArmed, "Failed to write flushed MP3 data"},
+                            {"the ID3v1 footer", RefusalTrigger::AfterSecondSeek, "could not write the ID3v1 footer"},
+                        };
+
+                        for (const auto &refusedWrite : refusedWrites)
+                        {
+                            WriteRefusalLog log;
+                            std::vector<std::string> errors;
+                            {
+                                audio::ActiveExportSettings settings{mp3Settings};
+                                WriteRefusingMp3Export refusing{toneMixInfo.mixId,
+                                    settings,
+                                    refusedWrite.trigger,
+                                    0,
+                                    log,
+                                    [&errors, &log](float progress, const std::string &message)
+                                    {
+                                        if (message.starts_with("Error: "))
+                                        {
+                                            errors.push_back(message);
+                                        }
+                                        else if (message.starts_with("Exporting MP3...") && progress >= 1.0f)
+                                        {
+                                            // The last block has been written; the next write is the flush.
+                                            log.armed = true;
+                                        }
+                                        return true;
+                                    }};
+                                const auto refused = refusing.run();
+                                report.check(!refused.success,
+                                    std::format("#53: an MP3 export whose write of {} is refused reports failure (said: '{}')", refusedWrite.what, refused.message));
+                            }
+
+                            const auto firstError = errors.empty() ? std::string{"nothing"} : errors.front();
+                            report.check(firstError.find(refusedWrite.expectedError) != std::string::npos,
+                                std::format("#53: and names the write of {} as what failed (said: '{}')", refusedWrite.what, firstError));
+                            report.check(log.refusals == 1,
+                                std::format("#53: and stopped at that write rather than carrying on ({} refusals)", log.refusals));
+                            report.check(std::filesystem::exists(mp3Settings.outputPath, ec) &&
+                                    std::filesystem::file_size(mp3Settings.outputPath, ec) == mp3SizeBefore,
+                                std::format("#53: the MP3 that was already there is untouched ({} bytes)", mp3SizeBefore));
+                            report.check(!std::filesystem::exists(mp3Partial, ec), "#53: and no partial was left behind");
+                        }
                     }
 
                     // Break it again and re-export over the MP3 that is now there.
