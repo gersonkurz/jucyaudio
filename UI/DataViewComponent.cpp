@@ -169,6 +169,31 @@ namespace jucyaudio
             m_dropOverlay.setBounds(getLocalBounds());
         }
 
+        std::string NodeScrollPositions::keyFor(const INavigationNode *node)
+        {
+            std::string key;
+            for (auto *current = node; current != nullptr; current = current->getParent())
+            {
+                key = key.empty() ? current->getName() : current->getName() + "/" + key;
+            }
+            return key;
+        }
+
+        void NodeScrollPositions::remember(const std::string &key, juce::ListBox &list)
+        {
+            if (!key.empty())
+            {
+                m_positions[key] = list.getViewport()->getViewPositionY();
+            }
+        }
+
+        void NodeScrollPositions::restore(const std::string &key, juce::ListBox &list) const
+        {
+            const auto it = m_positions.find(key);
+            auto *viewport = list.getViewport();
+            viewport->setViewPosition(viewport->getViewPositionX(), it != m_positions.end() ? it->second : 0);
+        }
+
         DataViewComponent::DataViewComponent(MainComponent &mainComponent)
             : m_tableListBox{juce::String{}, this},
               m_mainComponent{mainComponent}
@@ -258,6 +283,14 @@ namespace jucyaudio
                 return;
             }
 
+            // A refresh of the same node keeps where it is; another node opens where it was last left (#81).
+            const bool otherNode{m_currentNode != node};
+            if (otherNode)
+            {
+                m_scrollPositions.remember(m_currentScrollKey, m_tableListBox);
+                m_currentScrollKey = NodeScrollPositions::keyFor(node);
+            }
+
             m_currentNode = node;
             m_currentDataColumns.clear();
 
@@ -274,6 +307,10 @@ namespace jucyaudio
             m_tableListBox.deselectAllRows();
 
             m_tableListBox.updateContent();
+            if (otherNode)
+            {
+                m_scrollPositions.restore(m_currentScrollKey, m_tableListBox);
+            }
             const auto end{std::chrono::high_resolution_clock::now()};
             const auto duration{std::chrono::duration_cast<std::chrono::milliseconds>(end - start)};
             spdlog::info("DataViewComponent::setCurrentNode took {} ms", duration.count());

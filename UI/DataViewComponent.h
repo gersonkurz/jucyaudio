@@ -6,6 +6,8 @@
 #include <UI/DynamicColumnManager.h>
 #include <juce_graphics/juce_graphics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <string>
+#include <unordered_map>
 
 namespace jucyaudio
 {
@@ -17,6 +19,27 @@ namespace jucyaudio
 
         // Alias for the row action callback function type
         using RowActionCallback = std::function<void(RowIndex_t rowNumber, DataAction action, const juce::Point<int> &screenPosition)>;
+
+        /// @brief Where each node's list was scrolled to when the user left it, for this session only (#81).
+        ///
+        /// Keyed by the node's name path ("Working Sets/Electronix"), not by its unique id: folder and library
+        /// nodes are re-created when the tree is rebuilt and take a fresh id each time. Renaming a node forgets
+        /// its position, and two siblings with the same name share one.
+        class NodeScrollPositions
+        {
+        public:
+            static std::string keyFor(const INavigationNode *node);
+
+            /// @brief Records where `list` is scrolled to, under `key`. Call before the list shows another node.
+            void remember(const std::string &key, juce::ListBox &list);
+
+            /// @brief Scrolls `list` to the position remembered under `key`, or to the top. Call after
+            /// updateContent(), so the list already has the new node's rows; a position past its end is clamped.
+            void restore(const std::string &key, juce::ListBox &list) const;
+
+        private:
+            std::unordered_map<std::string, int> m_positions;
+        };
 
         // Drop indicator overlay component
         class DropIndicatorOverlay : public juce::Component
@@ -182,6 +205,11 @@ namespace jucyaudio
             MainComponent &m_mainComponent;
             INavigationNode *m_currentNode{nullptr};
             std::vector<DataColumnWithIndex> m_currentDataColumns;
+
+            // The current node's key, taken when it became current: by the time the next node is set, the
+            // caller may already have released this one, so its position is filed under a key read earlier.
+            std::string m_currentScrollKey;
+            NodeScrollPositions m_scrollPositions;
 
             // Font size management
             float m_fontScale{1.0f};

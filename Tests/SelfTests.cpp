@@ -51,6 +51,7 @@
 #include <Audio/Plugins/MasterPluginChainPersistence.h>
 #include <Audio/Plugins/PluginChain.h>
 #include <UI/CreateWorkingSetDialogComponent.h>
+#include <UI/DataViewComponent.h>
 #include <UI/DynamicColumnManager.h>
 #include <UI/EditMixMetaDataDialog.h>
 #include <UI/ExportMixDialog.h>
@@ -8333,7 +8334,7 @@ namespace jucyaudio
                                 const auto shownCount = shown.size();
                                 const auto columnCount = libraryNode->getColumns().size();
                                 shown.clear(); // its entries point into the node's columns
-                                libraryNode->release();
+                                libraryNode->release(REFCOUNT_DEBUG_ARGS);
                                 report.check(gotColumns && columnCount > 0 && shownCount == columnCount,
                                     std::format("#72: a view with no stored columns gets all of them ({} shown of {})", shownCount, columnCount));
                                 const auto inMemory = config::theSettings.exportSettings.lastUsedExportFolder.get();
@@ -8549,6 +8550,87 @@ namespace jucyaudio
                 const auto afterShrink = loadColumns();
                 report.check(afterShrink == shorter,
                     std::format("#80: a shorter layout leaves no entries of the longer one behind ({})", describe(afterShrink)));
+            }
+
+            // --- 9. Each node opens where it was last left, and a new one at the top (#81) ---
+            //
+            // DataViewComponent needs a MainComponent, which the self test does not have, so this drives the
+            // same NodeScrollPositions calls setCurrentNode makes, in the same order, against a real
+            // TableListBox whose row count changes the way it does when the view switches nodes.
+            {
+                struct Rows : juce::TableListBoxModel
+                {
+                    int count{0};
+                    int getNumRows() override
+                    {
+                        return count;
+                    }
+                    void paintRowBackground(juce::Graphics &, int, int, int, bool) override
+                    {
+                    }
+                    void paintCell(juce::Graphics &, int, int, int, int, bool) override
+                    {
+                    }
+                };
+
+                Rows rows;
+                juce::TableListBox list{{}, &rows};
+                list.getHeader().addColumn("Title", 1, 200);
+                list.setRowHeight(20);
+                list.setSize(400, 300);
+                ui::NodeScrollPositions positions;
+                auto *viewport = list.getViewport();
+                const auto show = [&](const std::string &leaving, const std::string &arriving, int rowCount)
+                {
+                    positions.remember(leaving, list);
+                    rows.count = rowCount;
+                    list.updateContent();
+                    positions.restore(arriving, list);
+                    return viewport->getViewPositionY();
+                };
+
+                rows.count = 2000;
+                list.updateContent();
+                viewport->setViewPosition(0, 6000);
+                report.check(viewport->getViewPositionY() == 6000,
+                    std::format("#81: the list scrolls, so the checks below are about something ({} px)", viewport->getViewPositionY()));
+
+                const auto firstVisitB = show("Working Sets/A", "Working Sets/B", 500);
+                report.check(firstVisitB == 0, std::format("#81: a working set not shown before opens at the top, not where the last one was ({} px)", firstVisitB));
+
+                viewport->setViewPosition(0, 2000);
+                const auto backToA = show("Working Sets/B", "Working Sets/A", 2000);
+                report.check(backToA == 6000, std::format("#81: going back to a working set opens it where it was left ({} px, expected 6000)", backToA));
+
+                const auto backToB = show("Working Sets/A", "Working Sets/B", 500);
+                report.check(backToB == 2000, std::format("#81: and so does the other one ({} px, expected 2000)", backToB));
+
+                // An export took most of B's tracks while the user was elsewhere.
+                const auto shrunkB = show("Working Sets/B", "Working Sets/A", 2000);
+                report.check(shrunkB == 6000, std::format("#81: A still opens where it was left ({} px, expected 6000)", shrunkB));
+                const auto clampedB = show("Working Sets/A", "Working Sets/B", 20);
+                const auto lastPosition = std::max(0, viewport->getViewedComponent()->getHeight() - viewport->getViewHeight());
+                report.check(clampedB == lastPosition,
+                    std::format("#81: a working set that shrank opens at its last row instead ({} px, expected {})", clampedB, lastPosition));
+
+                report.check(ui::NodeScrollPositions::keyFor(nullptr).empty(), "#81: no node has no key, so nothing is remembered for it");
+
+                // Keys from real parent chains. A node's parent is not retained by it, so each is released on its own.
+                auto *workingSets = new database::LibraryNode{nullptr, "Working Sets", "Working Set", "Working Sets"};
+                auto *folders = new database::LibraryNode{nullptr, "Folders", "Folder", "Folders"};
+                auto *setA = new database::LibraryNode{workingSets, "A", "Working Set", "Working Sets"};
+                auto *setARebuilt = new database::LibraryNode{workingSets, "A", "Working Set", "Working Sets"};
+                auto *folderA = new database::LibraryNode{folders, "A", "Folder", "Folders"};
+                const auto keyA = ui::NodeScrollPositions::keyFor(setA);
+                report.check(keyA == "Working Sets/A", std::format("#81: a node's key is its name path, root first ('{}')", keyA));
+                report.check(ui::NodeScrollPositions::keyFor(setARebuilt) == keyA,
+                    "#81: a node re-created when the tree is rebuilt gets the same key, so its position is still found");
+                report.check(ui::NodeScrollPositions::keyFor(folderA) != keyA,
+                    std::format("#81: a node with the same name under another parent gets its own key ('{}')", ui::NodeScrollPositions::keyFor(folderA)));
+                for (auto *node : std::initializer_list<database::INavigationNode *>{folderA, setARebuilt, setA, folders, workingSets})
+                {
+                    node->release(REFCOUNT_DEBUG_ARGS);
+                }
             }
 
             writeResultsFile(resultsPath, "jucyaudio timeline self test", report);
