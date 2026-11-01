@@ -5092,7 +5092,8 @@ namespace jucyaudio
                         std::format("#35: and a file of the same name and size in another folder is not put into the mix ({})", describe(cueOrder(mix.mixId))));
 
                     // Moved to where the record says it was. The scan keeps its row (a move), and the row is newer
-                    // than the record, so it goes back - after t1, since t2 is still gone. Into the gapped mix.
+                    // than the record, so it goes back - into the slot it had, 2, which is still free and between t1
+                    // at 0 and t4 at 3. Then the mix is numbered contiguously again.
                     std::filesystem::rename(file(3, "elsewhere"), file(3), returnEc);
                     report.check(!returnEc && scan(), "#35: the scan that finds it moved into the recorded folder succeeds");
                     report.check(cueOrder(mix.mixId) == std::vector<int64_t>{11, 33, 44},
@@ -5103,7 +5104,14 @@ namespace jucyaudio
                     {
                         positions.push_back(track.orderInMix);
                     }
-                    report.check(positions == std::vector<int>{0, 1, 2}, "#35: and the mix's positions are 0, 1, 2 again, not the gapped ones");
+                    report.check(positions == std::vector<int>{0, 1, 2}, "#35: and the mix is numbered 0, 1, 2 again");
+
+                    // Still missing t2, so it must not be recorded as whole - which would replace the record that still
+                    // knows t2. The record itself says so: t2 is in neither the mix nor the library.
+                    MixRecoveryCapture stillDamaged{};
+                    const bool askedToCapture = mixes.captureRecoveryData(mix.mixId, stillDamaged).isOk();
+                    report.check(askedToCapture && !stillDamaged.captured,
+                        std::format("#35: so a mix that got only some tracks back is still refused as a whole record ({})", stillDamaged.skipReason));
 
                     // Then the mix is edited: t4 moves to the front.
                     const bool edited = mixes.reorderTrackInMix(mix.mixId, 2, 0);
@@ -5121,6 +5129,13 @@ namespace jucyaudio
                     returned.date_added = std::chrono::system_clock::now();
                     returned.last_scanned = returned.date_added;
                     report.check(returns.saveTrackInfo(returned).isOk() && returned.trackId > 0, "#35: t2's row is back, as a cancelled scan would leave it");
+
+                    // Back in the library but not yet in the mix: recording the mix now would forget the entry the next
+                    // scan is about to restore.
+                    MixRecoveryCapture beforeRetry{};
+                    const bool askedBeforeRetry = mixes.captureRecoveryData(mix.mixId, beforeRetry).isOk();
+                    report.check(askedBeforeRetry && !beforeRetry.captured,
+                        std::format("#82: a mix whose returned track is waiting to be restored is refused as a whole record ({})", beforeRetry.skipReason));
 
                     // A read that fails is a failure, and the mix is left as it was. Tracks is hidden, so the
                     // restore cannot tell which files the mix holds.
@@ -5184,6 +5199,160 @@ namespace jucyaudio
                     report.check(scan(), "#35: the scan that finds it a second time succeeds");
                     report.check(cueOrder(mix.mixId) == std::vector<int64_t>{22, 44, 33},
                         std::format("#35: and a track deleted and returned a second time is restored again ({})", describe(cueOrder(mix.mixId))));
+
+                    // t1 is out of the mix but its file is still in the library: removed by hand, not lost. That must
+                    // not stop the mix being recorded as it now is.
+                    MixRecoveryCapture asItIs{};
+                    const bool recordedAsItIs = mixes.captureRecoveryData(mix.mixId, asItIs).isOk() && asItIs.captured;
+                    report.check(recordedAsItIs,
+                        std::format("#82: a track taken out by hand, whose file is still in the library, does not count as lost ({})", asItIs.skipReason));
+                }
+
+                // Two more mixes of four, each from its own folder, for what a gap cannot show.
+                auto &recordedMixes = returns.getMixManager();
+                const auto recordedMix = [&](const char *folder, const char *name) -> MixId
+                {
+                    std::filesystem::create_directories(returnRoot / folder, returnEc);
+                    for (int n = 1; n <= 4; ++n)
+                    {
+                        writeSilentWav(file(n, folder), 44100);
+                    }
+                    if (!scan())
+                    {
+                        return 0;
+                    }
+                    TrackQueryArgs args{};
+                    args.folderIds = {returns.getFolderDatabase().findOrCreateFolderByPath(returnRoot / folder)};
+                    auto tracks = returns.getTracks(args);
+                    std::sort(tracks.begin(),
+                        tracks.end(),
+                        [](const TrackInfo &a, const TrackInfo &b)
+                        {
+                            return a.filename < b.filename;
+                        });
+                    if (tracks.size() != 4)
+                    {
+                        return 0;
+                    }
+                    std::vector<MixTrack> rows;
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        MixTrack row{};
+                        row.trackId = tracks[static_cast<size_t>(i)].trackId;
+                        row.orderInMix = i;
+                        row.cueStart = Duration_t{11 * (i + 1)};
+                        row.cueEnd = Duration_t{900};
+                        rows.push_back(row);
+                    }
+                    MixInfo info{};
+                    info.name = name;
+                    MixRecoveryCapture recorded{};
+                    if (!recordedMixes.createOrUpdateMix(info, rows) || info.mixId <= 0 || !recordedMixes.captureRecoveryData(info.mixId, recorded).isOk() ||
+                        !recorded.captured)
+                    {
+                        return 0;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+                    return info.mixId;
+                };
+                const auto positionsOf = [&recordedMixes](MixId mixId)
+                {
+                    std::vector<int> positions;
+                    for (const auto &track : recordedMixes.getMixTracks(mixId))
+                    {
+                        positions.push_back(track.orderInMix);
+                    }
+                    return positions;
+                };
+                const auto recordable = [&recordedMixes](MixId mixId)
+                {
+                    MixRecoveryCapture capture{};
+                    return recordedMixes.captureRecoveryData(mixId, capture).isOk() && capture.captured;
+                };
+
+                // A partial restore, then an edit: the edit refreshes the summary and nothing about the positions
+                // shows a loss any more. The record still does. t2 and t4 go; t2 comes back alone; the mix is reordered.
+                const auto suffixMix = recordedMix("suffix", "Lost Last Track");
+                report.check(suffixMix > 0, "#82: a second recorded mix of four was created");
+                if (suffixMix > 0)
+                {
+                    std::filesystem::remove(file(2, "suffix"), returnEc);
+                    std::filesystem::remove(file(4, "suffix"), returnEc);
+                    {
+                        const bool done = scan();
+                        report.check(done && cueOrder(suffixMix) == std::vector<int64_t>{11, 33},
+                            std::format("#82: losing its second and last track leaves two ({})", describe(cueOrder(suffixMix))));
+                    }
+                    writeSilentWav(file(2, "suffix"), 44100);
+                    {
+                        const bool done = scan();
+                        report.check(done && cueOrder(suffixMix) == std::vector<int64_t>{11, 22, 33},
+                            std::format("#82: t2 comes back alone ({})", describe(cueOrder(suffixMix))));
+                    }
+                    {
+                        const bool done = recordedMixes.reorderTrackInMix(suffixMix, 0, 2);
+                        report.check(done && cueOrder(suffixMix) == std::vector<int64_t>{22, 33, 11},
+                            std::format("#82: the mix is reordered, which refreshes its summary ({})", describe(cueOrder(suffixMix))));
+                    }
+                    report.check(!recordable(suffixMix), "#82: and is still refused as a whole record, because t4 is recorded and lost");
+
+                    writeSilentWav(file(4, "suffix"), 44100);
+                    {
+                        const bool done = scan();
+                        report.check(done && cueOrder(suffixMix) == std::vector<int64_t>{22, 33, 11, 44},
+                            std::format("#82: t4 comes back later, from the record that still knew it ({})", describe(cueOrder(suffixMix))));
+                    }
+                    report.check(recordable(suffixMix), "#82: whole again, the mix can be recorded");
+                }
+
+                // Only the last track lost: no gap, and the deletion refreshed the count, so before this nothing said
+                // the mix was short (#83).
+                const auto lastMix = recordedMix("last", "Lost Only Last");
+                report.check(lastMix > 0, "#83: a recorded mix of four was created");
+                if (lastMix > 0)
+                {
+                    std::filesystem::remove(file(4, "last"), returnEc);
+                    {
+                        const bool done = scan();
+                        report.check(done && cueOrder(lastMix) == std::vector<int64_t>{11, 22, 33} && positionsOf(lastMix) == std::vector<int>{0, 1, 2},
+                            std::format("#83: losing only its last track leaves three, numbered 0 to 2 ({})", describe(cueOrder(lastMix))));
+                    }
+                    report.check(!recordable(lastMix), "#83: and the mix is refused as a whole record, from what its record lists");
+                    writeSilentWav(file(4, "last"), 44100);
+                    {
+                        const bool done = scan();
+                        report.check(done && cueOrder(lastMix) == std::vector<int64_t>{11, 22, 33, 44},
+                            std::format("#83: t4 comes back ({})", describe(cueOrder(lastMix))));
+                    }
+                    report.check(recordable(lastMix), "#83: and the mix can be recorded again");
+                }
+
+                // Reordered while it was short, then everything comes back: whole, so it must not stay marked damaged.
+                const auto reorderedMix = recordedMix("reorder", "Reordered While Short");
+                report.check(reorderedMix > 0, "#82: a third recorded mix of four was created");
+                if (reorderedMix > 0)
+                {
+                    std::filesystem::remove(file(2, "reorder"), returnEc);
+                    {
+                        const bool done = scan();
+                        report.check(done && positionsOf(reorderedMix) == std::vector<int>{0, 2, 3},
+                            std::format("#82: losing t2 leaves a gap ({})", describe(cueOrder(reorderedMix))));
+                    }
+                    {
+                        // To position 3, in a mix of three rows - which reorderTrackInMix refused while it measured
+                        // positions against the row count (#82).
+                        const bool done = recordedMixes.reorderTrackInMix(reorderedMix, 0, 3);
+                        report.check(done && cueOrder(reorderedMix) == std::vector<int64_t>{33, 44, 11},
+                            std::format("#82: a mix with a gap in its positions can be reordered: t1 to the end ({})", describe(cueOrder(reorderedMix))));
+                    }
+                    writeSilentWav(file(2, "reorder"), 44100);
+                    {
+                        const bool done = scan();
+                        report.check(done && cueOrder(reorderedMix) == std::vector<int64_t>{33, 44, 11, 22},
+                            std::format("#82: t2 comes back after t1, its slot being taken ({})", describe(cueOrder(reorderedMix))));
+                    }
+                    report.check(positionsOf(reorderedMix) == std::vector<int>{0, 1, 2, 3}, "#82: and the mix, whole again, is numbered 0 to 3 in its edited order");
+                    report.check(recordable(reorderedMix), "#82: so it can be recorded again");
                 }
 
                 config::theSettings.uiSettings.showOfflineTracks.set(offlineShownBefore);

@@ -138,9 +138,12 @@ namespace jucyaudio
              * @brief Record what this mix currently contains, replacing any previous record of it.
              *
              * By default, refuses to record a mix that is not demonstrably intact: the row count must
-             * match `Mixes.track_count` and the positions must run contiguously from zero, and if
-             * either fails the mix is left exactly as it was - including whatever was recorded for it
-             * previously.
+             * match `Mixes.track_count`, the positions must run contiguously from zero, and every track
+             * the previous record lists must either still be in the mix or have been taken out of it - a
+             * recorded track that is in neither the mix nor the library was lost, and one whose file came
+             * back after the record (or after its last restore) is waiting to be restored (#82). If any of
+             * these fails the
+             * mix is left exactly as it was - including whatever was recorded for it previously.
              *
              * That refusal is the point of the whole function. A mix quietly loses rows when the tracks
              * behind them are deleted, and the loss is invisible until someone looks. Replacing a good
@@ -193,10 +196,13 @@ namespace jucyaudio
              * was restored once and then taken out, because the entry remembers when it was restored
              * (MixRecovery.restored_at) and that track is older than that.
              *
-             * It goes back with the entry's saved settings (mix_data), right after the nearest earlier entry
-             * of the record that the mix still holds, or at the start when none does. So a mix edited since
-             * it was recorded keeps its edits. Each mix is read and changed in one transaction, with its
-             * summary refreshed; a mix with nothing to restore is not written to.
+             * It goes back with the entry's saved settings (mix_data) into the position it had when the record
+             * was captured, if that is free and still between its neighbours; otherwise right after the nearest
+             * earlier entry of the record that the mix still holds, or at the start when none does. So a mix
+             * edited since it was recorded keeps its edits. The positions are then renumbered in the mix's current
+             * order and its summary refreshed. A mix that still lacks a recorded track is refused as a whole record
+             * by captureRecoveryData, from the record itself. Each mix is read and changed in one transaction; a mix
+             * with nothing to restore is not written to.
              *
              * Considers every record each time rather than only tracks a scan has just inserted, so a scan
              * that was cancelled, or a restore that failed, is made good by the next one.

@@ -16,6 +16,7 @@
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <format>
 #include <optional>
@@ -536,6 +537,110 @@ WHERE m.export_folder IS NULL
             return DbResult::success();
         }
 
+        namespace
+        {
+            /// @brief A file as MixRecovery records it and as the live tables hold it: name, size, folder.
+            /// The folder is the normalised path (Folders.root_path), so a record that stored the
+            /// case-preserving actual_path compares equal once normalised.
+            std::string fileIdentity(const std::string &filename, int64_t filesizeBytes, const std::string &folderKey)
+            {
+                return std::format("{}\n{}\n{}", filename, filesizeBytes, folderKey);
+            }
+
+            /// @brief The file identity of a live track, or empty for a row with no track behind it.
+            DbResult liveFileIdentity(SqliteDatabase &db, TrackId trackId, std::string &identity)
+            {
+                identity.clear();
+                SqliteStatement stmt{db,
+                    "SELECT t.filename, t.filesize_bytes, COALESCE(f.root_path, '') FROM Tracks t "
+                    "LEFT JOIN Folders f ON f.folder_id = t.folder_id WHERE t.track_id = ?"};
+                if (!stmt.isValid() || !stmt.addParam(trackId))
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, std::format("could not look up track {}: {}", trackId, db.getLastError()));
+                }
+                if (stmt.getNextResult())
+                {
+                    identity = fileIdentity(stmt.getText(0), stmt.getInt64(1), stmt.getText(2));
+                }
+                else if (stmt.hasError())
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, std::format("could not read track {}: {}", trackId, db.getLastError()));
+                }
+                return DbResult::success();
+            }
+
+            /// @brief A track holding the file a record entry describes, added after `since` (milliseconds); 0 if none.
+            DbResult trackForEntry(SqliteDatabase &db, const MixRecoveryEntry &entry, int64_t since, TrackId &trackId)
+            {
+                trackId = 0;
+                SqliteStatement stmt{db,
+                    "SELECT t.track_id FROM Folders f JOIN Tracks t ON t.folder_id = f.folder_id "
+                    "WHERE f.root_path = ? AND t.filename = ? AND t.filesize_bytes = ? AND t.date_added > ?"};
+                if (!stmt.isValid() || !stmt.addParam(normalizeForCache(entry.folderPath)) || !stmt.addParam(entry.filename) ||
+                    !stmt.addParam(entry.filesizeBytes) || !stmt.addParam(since))
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, std::format("could not look for {} again: {}", entry.filename, db.getLastError()));
+                }
+                if (stmt.getNextResult())
+                {
+                    trackId = stmt.getInt64(0);
+                }
+                else if (stmt.hasError())
+                {
+                    return DbResult::failure(DbResultStatus::ErrorDB, std::format("could not look for {} again: {}", entry.filename, db.getLastError()));
+                }
+                return DbResult::success();
+            }
+
+            /// @brief The track a record entry describes, if it came back after the record was captured and after the
+            /// entry was last restored; 0 if not.
+            DbResult returnedTrackFor(SqliteDatabase &db, const MixRecoveryEntry &entry, TrackId &trackId)
+            {
+                const auto since = std::max(timestampToInt64(entry.capturedAt), entry.restoredAt ? timestampToInt64(*entry.restoredAt) : int64_t{0});
+                return trackForEntry(db, entry, since, trackId);
+            }
+
+            /// @brief A row of a mix as the restore sees it: which file, at which stored position.
+            struct LiveRow
+            {
+                std::string identity;
+                int order{0};
+            };
+
+            /// @brief The file identities of a mix's rows, with their stored positions, gaps included.
+            DbResult liveRows(SqliteDatabase &db, MixId mixId, std::vector<LiveRow> &live)
+            {
+                live.clear();
+                std::vector<MixTrack> rows;
+                if (const auto read = readMixTracksChecked(db, mixId, rows); !read.isOk())
+                {
+                    return read;
+                }
+                for (const auto &row : rows)
+                {
+                    std::string identity;
+                    if (const auto looked = liveFileIdentity(db, row.trackId, identity); !looked.isOk())
+                    {
+                        return looked;
+                    }
+                    live.push_back(LiveRow{std::move(identity), row.orderInMix});
+                }
+                return DbResult::success();
+            }
+
+            /// @brief The stored position of the first row holding this file, if the mix holds it.
+            std::optional<int> positionOf(const std::vector<LiveRow> &live, const std::string &identity)
+            {
+                const auto it = std::find_if(live.begin(),
+                    live.end(),
+                    [&identity](const LiveRow &row)
+                    {
+                        return row.identity == identity;
+                    });
+                return it != live.end() ? std::optional<int>{it->order} : std::nullopt;
+            }
+        } // namespace
+
         DbResult SqliteMixManager::captureRecoveryData(MixId mixId,
             MixRecoveryCapture &result,
             const std::vector<MixTrack> *renderedTracks,
@@ -707,6 +812,61 @@ WHERE m.export_folder IS NULL
                     damage = std::format("track positions are not contiguous - expected {} at index {}, found {}", i, i, loaded[i].orderInMix);
                 }
             }
+            // The record is evidence too, and the one an edit cannot erase. The two checks above read signs a
+            // loss leaves behind - a count that disagrees, a gap - and those go when the mix is edited or its
+            // summary refreshed, and never appear at all when the lost track was the last one (#83). A track the
+            // record lists, that the mix no longer holds and whose file is nowhere in the library, is still lost:
+            // recording the mix as whole now would replace the record that still knows it, and it could never be
+            // put back (#35). Nor is one whose file is back but has not been restored yet. A track the user took out
+            // of the mix has a file that is still there, in a row older than the record or than its last restore.
+            if (damage.empty())
+            {
+                std::vector<MixRecoveryEntry> previous;
+                if (const auto read = getRecoveryData(mixId, previous); !read.isOk())
+                {
+                    transaction.rollback();
+                    return read;
+                }
+                std::vector<std::string> held;
+                for (const auto &entry : loaded)
+                {
+                    held.push_back(fileIdentity(entry.filename, entry.filesizeBytes, normalizeForCache(entry.folderPath)));
+                }
+                for (const auto &entry : previous)
+                {
+                    const auto identity = fileIdentity(entry.filename, entry.filesizeBytes, normalizeForCache(entry.folderPath));
+                    if (std::find(held.begin(), held.end(), identity) != held.end())
+                    {
+                        continue;
+                    }
+                    TrackId anywhere{0};
+                    if (const auto looked = trackForEntry(m_db, entry, std::numeric_limits<int64_t>::min(), anywhere); !looked.isOk())
+                    {
+                        transaction.rollback();
+                        return looked;
+                    }
+                    if (anywhere == 0)
+                    {
+                        damage = std::format("the recorded track {} is not in the mix and its file is not in the library", entry.filename);
+                        break;
+                    }
+
+                    // Its file is back, but the restore has not run yet - a scan cancelled after the insert. Not a
+                    // removal either: the same test restoreReturnedTracks puts a track back on, so recording now would
+                    // forget the entry the next scan is about to restore.
+                    TrackId waiting{0};
+                    if (const auto looked = returnedTrackFor(m_db, entry, waiting); !looked.isOk())
+                    {
+                        transaction.rollback();
+                        return looked;
+                    }
+                    if (waiting > 0)
+                    {
+                        damage = std::format("the recorded track {} is back in the library but not yet back in the mix", entry.filename);
+                        break;
+                    }
+                }
+            }
             const bool intact = damage.empty();
 
             if (!intact && mode == RecoveryCaptureMode::IntactOnly)
@@ -849,84 +1009,6 @@ WHERE m.export_folder IS NULL
             return DbResult::success();
         }
 
-        namespace
-        {
-            /// @brief A file as MixRecovery records it and as the live tables hold it: name, size, folder.
-            /// The folder is the normalised path (Folders.root_path), so a record that stored the
-            /// case-preserving actual_path compares equal once normalised.
-            std::string fileIdentity(const std::string &filename, int64_t filesizeBytes, const std::string &folderKey)
-            {
-                return std::format("{}\n{}\n{}", filename, filesizeBytes, folderKey);
-            }
-
-            /// @brief The file identity of a live track, or empty for a row with no track behind it.
-            DbResult liveFileIdentity(SqliteDatabase &db, TrackId trackId, std::string &identity)
-            {
-                identity.clear();
-                SqliteStatement stmt{db,
-                    "SELECT t.filename, t.filesize_bytes, COALESCE(f.root_path, '') FROM Tracks t "
-                    "LEFT JOIN Folders f ON f.folder_id = t.folder_id WHERE t.track_id = ?"};
-                if (!stmt.isValid() || !stmt.addParam(trackId))
-                {
-                    return DbResult::failure(DbResultStatus::ErrorDB, std::format("could not look up track {}: {}", trackId, db.getLastError()));
-                }
-                if (stmt.getNextResult())
-                {
-                    identity = fileIdentity(stmt.getText(0), stmt.getInt64(1), stmt.getText(2));
-                }
-                else if (stmt.hasError())
-                {
-                    return DbResult::failure(DbResultStatus::ErrorDB, std::format("could not read track {}: {}", trackId, db.getLastError()));
-                }
-                return DbResult::success();
-            }
-
-            /// @brief The track a record entry describes, if it came back after the record was captured and after the
-            /// entry was last restored; 0 if not.
-            DbResult returnedTrackFor(SqliteDatabase &db, const MixRecoveryEntry &entry, TrackId &trackId)
-            {
-                trackId = 0;
-                const auto since = std::max(timestampToInt64(entry.capturedAt), entry.restoredAt ? timestampToInt64(*entry.restoredAt) : int64_t{0});
-                SqliteStatement stmt{db,
-                    "SELECT t.track_id FROM Folders f JOIN Tracks t ON t.folder_id = f.folder_id "
-                    "WHERE f.root_path = ? AND t.filename = ? AND t.filesize_bytes = ? AND t.date_added > ?"};
-                if (!stmt.isValid() || !stmt.addParam(normalizeForCache(entry.folderPath)) || !stmt.addParam(entry.filename) ||
-                    !stmt.addParam(entry.filesizeBytes) || !stmt.addParam(since))
-                {
-                    return DbResult::failure(DbResultStatus::ErrorDB, std::format("could not look for {} again: {}", entry.filename, db.getLastError()));
-                }
-                if (stmt.getNextResult())
-                {
-                    trackId = stmt.getInt64(0);
-                }
-                else if (stmt.hasError())
-                {
-                    return DbResult::failure(DbResultStatus::ErrorDB, std::format("could not look for {} again: {}", entry.filename, db.getLastError()));
-                }
-                return DbResult::success();
-            }
-
-            /// @brief The file identities of a mix's rows, in their order.
-            DbResult liveFileIdentities(SqliteDatabase &db, MixId mixId, std::vector<std::string> &identities)
-            {
-                identities.clear();
-                std::vector<MixTrack> rows;
-                if (const auto read = readMixTracksChecked(db, mixId, rows); !read.isOk())
-                {
-                    return read;
-                }
-                for (const auto &row : rows)
-                {
-                    std::string identity;
-                    if (const auto looked = liveFileIdentity(db, row.trackId, identity); !looked.isOk())
-                    {
-                        return looked;
-                    }
-                    identities.push_back(std::move(identity));
-                }
-                return DbResult::success();
-            }
-        } // namespace
 
         DbResult SqliteMixManager::restoreReturnedTracks(int &restored) const
         {
@@ -975,8 +1057,8 @@ WHERE m.export_folder IS NULL
                     recordIdentities.push_back(fileIdentity(entry.filename, entry.filesizeBytes, normalizeForCache(entry.folderPath)));
                 }
 
-                std::vector<std::string> live;
-                if (const auto read = liveFileIdentities(m_db, mixId, live); !read.isOk())
+                std::vector<LiveRow> live;
+                if (const auto read = liveRows(m_db, mixId, live); !read.isOk())
                 {
                     return fail(read);
                 }
@@ -986,7 +1068,7 @@ WHERE m.export_folder IS NULL
                 std::vector<std::pair<size_t, TrackId>> returning;
                 for (size_t i = 0; i < record.size(); ++i)
                 {
-                    if (std::find(live.begin(), live.end(), recordIdentities[i]) != live.end())
+                    if (positionOf(live, recordIdentities[i]).has_value())
                     {
                         continue; // The mix holds this file, so it did not lose it.
                     }
@@ -1007,40 +1089,46 @@ WHERE m.export_folder IS NULL
                     continue;
                 }
 
-                // Positions 0, 1, 2 ... before anything is inserted. Deleting a track removes its rows through
-                // the foreign key and renumbers nothing (#82), so a mix that lost tracks has gaps, and an index
-                // into `live` is then not its order_in_mix. One statement, so it cannot stop part way. Then read
-                // again: with the positions unique, the order of `live` is the order just written.
-                if (!transaction.execute("UPDATE MixTracks SET order_in_mix = ranked.n FROM "
-                                         "(SELECT rowid AS rid, ROW_NUMBER() OVER (ORDER BY order_in_mix, rowid) - 1 AS n FROM MixTracks WHERE mix_id = ?) "
-                                         "AS ranked WHERE MixTracks.rowid = ranked.rid",
-                        mixId))
-                {
-                    return fail(DbResult::failure(DbResultStatus::ErrorDB, std::format("could not renumber mix {}: {}", mixId, m_db.getLastError())));
-                }
-                if (const auto read = liveFileIdentities(m_db, mixId, live); !read.isOk())
-                {
-                    return fail(read);
-                }
-
+                // A track goes back into the slot it had when the record was captured, if that is free and still
+                // between its neighbours - which, in a mix nobody has edited since the loss, it is: the gap is where it
+                // was. Otherwise right after the nearest earlier entry the mix holds, shifting the rows only if that
+                // position is taken. The positions are made contiguous afterwards.
                 const auto restoredAt = timestampToInt64(std::chrono::system_clock::now());
                 int restoredHere = 0;
                 for (const auto &[index, trackId] : returning)
                 {
-                    // After the nearest earlier entry of the record that the mix still holds.
-                    int position = 0;
-                    for (size_t j = index; j-- > 0;)
+                    std::optional<int> before;
+                    for (size_t j = index; !before && j-- > 0;)
                     {
-                        const auto it = std::find(live.begin(), live.end(), recordIdentities[j]);
-                        if (it != live.end())
-                        {
-                            position = static_cast<int>(std::distance(live.begin(), it)) + 1;
-                            break;
-                        }
+                        before = positionOf(live, recordIdentities[j]);
+                    }
+                    std::optional<int> after;
+                    for (size_t j = index + 1; !after && j < record.size(); ++j)
+                    {
+                        after = positionOf(live, recordIdentities[j]);
+                    }
+                    const auto occupied = [&live](int position)
+                    {
+                        return std::any_of(live.begin(),
+                            live.end(),
+                            [position](const LiveRow &row)
+                            {
+                                return row.order == position;
+                            });
+                    };
+
+                    const auto slot = record[index].sourceOrderInMix;
+                    int position = before ? *before + 1 : 0;
+                    if (slot && *slot >= 0 && !occupied(*slot) && (!before || *before < *slot) && (!after || *slot < *after))
+                    {
+                        position = *slot;
                     }
 
+                    const bool shift = occupied(position);
                     // The row and the mark in one transaction, so a restore is never made without being remembered.
-                    if (!transaction.execute("UPDATE MixTracks SET order_in_mix = order_in_mix + 1 WHERE mix_id = ? AND order_in_mix >= ?", mixId, position) ||
+                    if ((shift && !transaction.execute("UPDATE MixTracks SET order_in_mix = order_in_mix + 1 WHERE mix_id = ? AND order_in_mix >= ?",
+                                      mixId,
+                                      position)) ||
                         !transaction.execute("INSERT INTO MixTracks (mix_id, track_id, order_in_mix, mix_data) VALUES (?, ?, ?, ?)",
                             mixId,
                             trackId,
@@ -1054,15 +1142,34 @@ WHERE m.export_folder IS NULL
                         return fail(DbResult::failure(
                             DbResultStatus::ErrorDB, std::format("could not put track {} back into mix {}: {}", trackId, mixId, m_db.getLastError())));
                     }
-                    live.insert(live.begin() + position, recordIdentities[index]);
+                    if (shift)
+                    {
+                        for (auto &row : live)
+                        {
+                            row.order += row.order >= position ? 1 : 0;
+                        }
+                    }
+                    live.push_back(LiveRow{recordIdentities[index], position});
                     ++restoredHere;
                     spdlog::info("[MixRecovery] {} is back as track {}; restored it to mix {} at position {}.", record[index].filename, trackId, mixId, position);
                 }
 
+                // Positions 0, 1, 2 ... in the order the mix now has, and its summary refreshed. A mix that still lacks
+                // a recorded track is told apart by captureRecoveryData from the record itself, not from gaps or a
+                // stale count, so nothing here has to be kept wrong on its behalf. One statement, so it cannot stop part
+                // way.
+                if (!transaction.execute("UPDATE MixTracks SET order_in_mix = ranked.n FROM "
+                                         "(SELECT rowid AS rid, ROW_NUMBER() OVER (ORDER BY order_in_mix, rowid) - 1 AS n FROM MixTracks WHERE mix_id = ?) "
+                                         "AS ranked WHERE MixTracks.rowid = ranked.rid",
+                        mixId))
+                {
+                    return fail(DbResult::failure(DbResultStatus::ErrorDB, std::format("could not renumber mix {}: {}", mixId, m_db.getLastError())));
+                }
                 if (const auto summary = refreshMixSummary(m_db, transaction, mixId); !summary.isOk())
                 {
                     return fail(summary);
                 }
+
                 if (!transaction.commit())
                 {
                     return DbResult::failure(DbResultStatus::ErrorDB, std::format("could not commit the restore of mix {}: {}", mixId, m_db.getLastError()));
@@ -1513,24 +1620,28 @@ WHERE m.export_folder IS NULL
                     return true;
                 }
 
-                // Validate newOrderInMix is within bounds
-                SqliteStatement countStmt{m_db, "SELECT COUNT(*) FROM MixTracks WHERE mix_id = ?"};
-                countStmt.addParam(mixId);
-                int trackCount = 0;
-                if (countStmt.getNextResult())
+                // Bounded by the highest position the mix holds, not by how many rows it has. A mix that lost a
+                // track to a library deletion keeps a gap where it was - the foreign key deletes the row and
+                // renumbers nothing, and captureRecoveryData reads that gap as the evidence of the loss - so
+                // its positions can run past its row count (#82). The shifts below work on position values and
+                // keep such a gap; only the bound assumed there was none.
+                SqliteStatement maxStmt{m_db, "SELECT MAX(order_in_mix) FROM MixTracks WHERE mix_id = ?"};
+                if (!maxStmt.isValid() || !maxStmt.addParam(mixId) || !maxStmt.getNextResult() || maxStmt.isNull(0))
                 {
-                    trackCount = countStmt.getInt32(0);
+                    spdlog::error("Could not read the positions of mix {}: {}", mixId, m_db.getLastError());
+                    return transaction.rollback();
                 }
+                const int highestOrder = maxStmt.getInt32(0);
 
-                if (currentOrderInMix < 0 || currentOrderInMix >= trackCount)
+                if (currentOrderInMix < 0 || currentOrderInMix > highestOrder)
                 {
-                    spdlog::error("Invalid currentOrderInMix {} for mix {} with {} tracks", currentOrderInMix, mixId, trackCount);
+                    spdlog::error("Invalid currentOrderInMix {} for mix {} whose highest position is {}", currentOrderInMix, mixId, highestOrder);
                     return false;
                 }
 
-                if (newOrderInMix < 0 || newOrderInMix >= trackCount)
+                if (newOrderInMix < 0 || newOrderInMix > highestOrder)
                 {
-                    spdlog::error("Invalid newOrderInMix {} for mix {} with {} tracks", newOrderInMix, mixId, trackCount);
+                    spdlog::error("Invalid newOrderInMix {} for mix {} whose highest position is {}", newOrderInMix, mixId, highestOrder);
                     return false;
                 }
 
